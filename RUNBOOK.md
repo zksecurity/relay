@@ -287,9 +287,9 @@ verification before publishing or relying on the evidence.
   before work begins. R2 grants may not exceed `168h`; AWS grants must fit the
   role's configured STS limits.
 - Relay records the highest public index seen under `~/.relay` and refuses a
-  pointer that moves backward. Existing `~/.mpc-sync` state is migrated on
-  first use. Ask the coordinator about a rollback warning; do not delete the
-  local state to bypass it.
+  pointer that moves backward. Older high-water state is migrated on first
+  use. Ask the coordinator about a rollback warning; do not delete the local
+  state to bypass it.
 - Relay refuses to overwrite a mismatching local transcript file and refuses
   to upload files outside the published allowlist.
 - A bucket can hide, delay, or equivocate about state, but artifacts remain
