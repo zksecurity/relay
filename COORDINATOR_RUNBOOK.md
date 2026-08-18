@@ -1,5 +1,10 @@
 # Coordinator runbook
 
+> This is the production/manual operator procedure. For the test-only tiny
+> ceremony, use the
+> [scripted three-machine rehearsal](scripts/three-machine-rehearsal/README.md)
+> and its machine-specific `.env` files.
+
 This is the coordinator checklist for operating `relay`. Participants,
 witnesses, mirrors, auditors, release upload stations, and decision signers use
 [ROLE_RUNBOOK.md](ROLE_RUNBOOK.md).
@@ -12,10 +17,10 @@ are in [README.md](README.md).
 
 ## 1. Install and verify the tools
 
-Follow the coordinator/source-build path in
-[docs/INSTALL.md](docs/INSTALL.md). It gives exact instructions for installing
-AWS CLI v2 and creating signed, reproducible release packages for both Relay
-and proof-tool.
+Follow the published-binary path in [docs/INSTALL.md](docs/INSTALL.md). It gives
+exact instructions for downloading and hash-checking Relay and `mpc-ceremony`,
+then installing AWS CLI v2. The coordinator does not need Go or either
+project's build-signing private key.
 
 Do not continue until all of these succeed and resolve to the reviewed paths:
 
@@ -24,15 +29,13 @@ Do not continue until all of these succeed and resolve to the reviewed paths:
     aws --version
     command -v relay mpc-ceremony aws
 
-Record the Relay and `mpc-ceremony` SHA-256 values, signed tags, source commits,
-build metadata, package-signing public keys, and AWS CLI version in the
-coordinator log. Distribute these trust inputs independently of ceremony
-storage:
+Record the Relay and `mpc-ceremony` release tags and SHA-256 values, plus the AWS
+CLI version, in the coordinator log. Distribute these trust inputs independently
+of ceremony storage:
 
 - the coordinator public key;
-- both approved binary digests;
-- both signed tags, tag-signer fingerprints, and source commits; and
-- both independently trusted package-signing public keys.
+- both approved release tags; and
+- both approved binary digests.
 
 ## 2. Prepare the ceremony
 

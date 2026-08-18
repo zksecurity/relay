@@ -1,3 +1,4 @@
 dist/
 /relay
 .wrangler/
+scripts/three-machine-rehearsal/machine-*/.env

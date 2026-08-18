@@ -1,5 +1,10 @@
 # Ceremony role runbook
 
+> This is the production/manual operator procedure. For the test-only tiny
+> ceremony, use the
+> [scripted three-machine rehearsal](scripts/three-machine-rehearsal/README.md)
+> and its machine-specific `.env` files.
+
 This runbook is for participants, public witnesses, mirror operators, auditors,
 release upload stations, and production-decision signers. The coordinator uses
 [COORDINATOR_RUNBOOK.md](COORDINATOR_RUNBOOK.md).
@@ -13,8 +18,9 @@ identities, and evidence.
 
 Follow the role-machine path in [docs/INSTALL.md](docs/INSTALL.md). It contains
 the official AWS CLI v2 installation procedure and exact steps for verifying
-and installing prebuilt `relay` and `mpc-ceremony` binaries. Advanced operators
-may instead reproduce the binaries from the approved source commits.
+and installing published `relay` and `mpc-ceremony` binaries. Release
+maintainers and independent build auditors use
+[docs/RELEASE.md](docs/RELEASE.md); ceremony roles do not need Go.
 
 Do not continue until these commands resolve to the reviewed paths and versions:
 
@@ -30,8 +36,8 @@ Record the outputs in your local operator log.
 Obtain these trust inputs independently of ceremony storage:
 
 - the coordinator public key;
-- the expected hash of the reviewed Relay binary; and
-- the expected hash of the trusted `mpc-ceremony` binary.
+- the approved Relay release tag and expected binary hash; and
+- the approved proof-tool release tag and expected `mpc-ceremony` binary hash.
 
 Verify both binary hashes before using them. Do not accept these trust inputs
 merely because they appeared in the same bucket as the artifacts they are meant

@@ -55,6 +55,50 @@ Create signed proof-of-possession enrollment records for every non-participant
 identity that will receive a grant. Relay authenticates them before granting
 witness, mirror, auditor, release, or decision access.
 
+## Three-machine rehearsal `.env` mapping
+
+The [scripted three-machine rehearsal](../scripts/three-machine-rehearsal/README.md)
+records non-secret paths, approved binary digests, and storage names in one
+private `.env` per machine. These files are a rehearsal convenience, not the
+production storage procedure.
+
+Machine 1 copies
+[its example](../scripts/three-machine-rehearsal/machine-1/.env.example) and
+sets the storage variables as follows:
+
+| Variable | Meaning |
+|---|---|
+| `STORAGE_PROVIDER` | `aws` for AWS S3 or `r2` for Cloudflare R2 |
+| `PUBLISHED_BUCKET` | Published bucket name |
+| `PUBLISHED_BASE_URL` | Anonymous HTTPS base URL for published objects |
+| `INBOX_BUCKET` | Private inbox bucket name |
+| `STORAGE_ENDPOINT` | S3-compatible endpoint URL, such as `https://s3.us-east-1.amazonaws.com` for AWS or the account endpoint for R2 |
+| `COORDINATOR_PROFILE` | AWS CLI profile with coordinator bucket access |
+| `REHEARSAL_WITNESS_BUFFER_SECONDS` | Tiny-rehearsal witness observation buffer |
+| `AWS_REGION` | AWS region; used only when `STORAGE_PROVIDER=aws` |
+| `ISSUER_PROFILE` | AWS CLI profile allowed to assume the inbox grant role |
+| `GRANT_ROLE_ARN` | IAM role Relay assumes for scoped inbox grants |
+| `GRANT_ROLE_MAX_TTL` | Maximum session duration configured on that role |
+| `R2_ACCOUNT_ID` | R2 account ID; used only when `STORAGE_PROVIDER=r2` |
+| `R2_PARENT_ACCESS_KEY_ID` | Access-key ID for the inbox-limited parent token |
+
+Machines 2 and 3 copy their respective
+[Machine 2](../scripts/three-machine-rehearsal/machine-2/.env.example) and
+[Machine 3](../scripts/three-machine-rehearsal/machine-3/.env.example) examples.
+Their `PUBLISHED_READER_PROFILE` names an AWS CLI profile with read-only access
+to published ceremony objects. It is used by witness, mirror, and auditor
+commands. `STORAGE_ENDPOINT` must match Machine 1's endpoint, including an R2
+endpoint when applicable. Participants download published inputs through the
+`PUBLISHED_BASE_URL` embedded in `relay-storage.json`; they do not receive the
+coordinator profile or inbox issuer credential.
+
+Keep each `.env` at mode `0600`. Do not put temporary role grants, AWS secret
+access keys, `RELAY_R2_PARENT_TOKEN`, ceremony signing keys, or build-signing
+keys in it. Configure named AWS profiles outside the repository. The R2 setup
+script prompts for the parent token without echoing it. Evidence writers use
+their separately issued, prefix-scoped grants; they never receive general
+write access to either bucket.
+
 ## Cloudflare R2
 
 The S3 endpoint is:
