@@ -14,8 +14,8 @@ are in [README.md](README.md).
 
 Follow the coordinator/source-build path in
 [docs/INSTALL.md](docs/INSTALL.md). It gives exact instructions for installing
-AWS CLI v2, building Relay from an approved commit, and creating the signed,
-reproducible proof-tool release package.
+AWS CLI v2 and creating signed, reproducible release packages for both Relay
+and proof-tool.
 
 Do not continue until all of these succeed and resolve to the reviewed paths:
 
@@ -24,13 +24,15 @@ Do not continue until all of these succeed and resolve to the reviewed paths:
     aws --version
     command -v relay mpc-ceremony aws
 
-Record the Relay and `mpc-ceremony` SHA-256 values, source commits, build
-metadata, and AWS CLI version in the coordinator log. Distribute these trust
-inputs independently of ceremony storage:
+Record the Relay and `mpc-ceremony` SHA-256 values, signed tags, source commits,
+build metadata, package-signing public keys, and AWS CLI version in the
+coordinator log. Distribute these trust inputs independently of ceremony
+storage:
 
 - the coordinator public key;
-- the hash of the trusted `mpc-ceremony` binary; and
-- the reviewed Relay digest.
+- both approved binary digests;
+- both signed tags, tag-signer fingerprints, and source commits; and
+- both independently trusted package-signing public keys.
 
 ## 2. Prepare the ceremony
 

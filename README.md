@@ -236,6 +236,7 @@ as the artifacts it checks would prove only that the bucket agrees with itself.
 ## Requirements
 
 Go 1.26.5, the AWS CLI, and a trusted `mpc-ceremony` binary on `PATH`. Relay has
-no third-party Go dependencies. Exact source-build, production-package, AWS CLI,
+no third-party Go dependencies. Its production builder emits a signed,
+reproducible release package. Exact source-build, production-package, AWS CLI,
 and role-machine installation steps are in
 [docs/INSTALL.md](docs/INSTALL.md).
