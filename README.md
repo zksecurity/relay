@@ -4,7 +4,10 @@ Moves MPC ceremony transcript artifacts between a local directory and
 S3-compatible object storage (AWS S3, Cloudflare R2), and lets each ceremony
 role discover from the bucket where the ceremony stands.
 
-Operating procedures per role and bucket setup are in [RUNBOOK.md](RUNBOOK.md).
+Operating procedures are split by audience:
+
+- [Coordinator runbook](COORDINATOR_RUNBOOK.md)
+- [Participant and other role runbook](ROLE_RUNBOOK.md)
 
 ## What it is not
 
@@ -73,8 +76,10 @@ manifest-last candidate. The coordinator then runs:
 
 Other roles upload their already signed proof-tool outputs with
 `relay submit-evidence --grant FILE --dir DIR`; the coordinator discovers them
-with `relay coordinator evidence --storage FILE`. See [RUNBOOK.md](RUNBOOK.md)
-for provider setup, exact flags, and operational cautions.
+with `relay coordinator evidence --storage FILE`. See the
+[coordinator runbook](COORDINATOR_RUNBOOK.md) for provider setup and ceremony
+operation, and the [role runbook](ROLE_RUNBOOK.md) for participant and evidence
+workflows.
 
 ### Long-running progress
 
@@ -231,4 +236,6 @@ as the artifacts it checks would prove only that the bucket agrees with itself.
 ## Requirements
 
 Go 1.26.5, the AWS CLI, and a trusted `mpc-ceremony` binary on `PATH`. Relay has
-no third-party Go dependencies.
+no third-party Go dependencies. Exact source-build, production-package, AWS CLI,
+and role-machine installation steps are in
+[docs/INSTALL.md](docs/INSTALL.md).

@@ -1,8 +1,8 @@
 # Storage setup reference
 
 This reference describes the infrastructure that must exist before running
-`relay coordinator configure-storage`. The chronological ceremony procedure is
-in [RUNBOOK.md](../RUNBOOK.md).
+`relay coordinator configure-storage`. The ceremony procedure is in the
+[coordinator runbook](../COORDINATOR_RUNBOOK.md).
 
 ## Storage model
 
