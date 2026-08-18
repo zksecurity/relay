@@ -90,7 +90,10 @@ func TranscriptFiles(root string, chain Chain) ([]File, error) {
 		return nil, err
 	}
 	files = append(files, File{Name: chainName})
-	signatureName := strings.TrimSuffix(chainName, ".json") + ".sig"
+	signatureName, err := logicalName(root, chain.ChainSignaturePath)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(signatureName))); err == nil {
 		files = append(files, File{Name: signatureName})
 	} else {

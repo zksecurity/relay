@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zksecurity/mpc-sync/internal/state"
-	"github.com/zksecurity/mpc-sync/internal/store"
-	"github.com/zksecurity/mpc-sync/internal/transcript"
+	"github.com/zksecurity/relay/internal/state"
+	"github.com/zksecurity/relay/internal/store"
+	"github.com/zksecurity/relay/internal/transcript"
 )
 
 // roleOpts are the flags every role-scoped command shares.
@@ -21,10 +21,10 @@ type roleOpts struct {
 	definition     string
 	definitionSig  string
 	coordinatorKey string
+	ceremonyBinary string
 	phase          string
 	role           string
 	client         store.Client
-	print          bool
 	signingKey     string
 	envPath        string
 	outDir         string
@@ -35,33 +35,23 @@ type roleOpts struct {
 // registerRole declares the shared flags without parsing, so a command can add
 // its own before the single Parse call. Parsing in two passes would reject the
 // second command's flags during the first pass.
-func registerRole(set *flag.FlagSet, o *roleOpts, withExec bool) {
+func registerRole(set *flag.FlagSet, o *roleOpts) {
 	set.StringVar(&o.root, "root", "", "local transcript root")
 	set.StringVar(&o.definition, "ceremony", "", "path to the signed ceremony definition")
 	set.StringVar(&o.definitionSig, "ceremony-signature", "", "path to the definition's detached signature")
 	set.StringVar(&o.coordinatorKey, "coordinator-key", "",
 		"path to coordinator-public-key.hex, obtained out of band")
+	set.StringVar(&o.ceremonyBinary, "ceremony-binary", "mpc-ceremony", "trusted mpc-ceremony executable")
 	set.StringVar(&o.phase, "phase", "phase1", "phase1 or phase2")
-	set.StringVar(&o.role, "role", "", "this machine's ceremony identity, e.g. participant-03")
 	set.StringVar(&o.client.Bucket, "bucket", "", "bucket name")
 	set.StringVar(&o.client.Endpoint, "endpoint", "", "S3-compatible endpoint URL")
 	set.StringVar(&o.client.Profile, "profile", "default", "AWS CLI profile holding the credentials")
-	if withExec {
-		set.BoolVar(&o.print, "print", false, "print the ceremony command instead of running it")
-		set.StringVar(&o.signingKey, "signing-key", "", "path to this role's Ed25519 private key")
-		set.StringVar(&o.envPath, "environment", "", "path to this participant's environment.json")
-		set.StringVar(&o.outDir, "out-dir", "",
-			"fresh directory for the contribution candidate; must not exist")
-		set.StringVar(&o.phase1Seal, "phase1-seal", "",
-			"phase 2 only: the sealed phase-1 record")
-		set.StringVar(&o.phase1SealSig, "phase1-seal-signature", "",
-			"phase 2 only: its coordinator signature")
-	}
 }
 
 func checkRole(o roleOpts) error {
 	for name, value := range map[string]string{
 		"--root": o.root, "--ceremony": o.definition,
+		"--ceremony-signature": o.definitionSig, "--coordinator-key": o.coordinatorKey,
 		"--bucket": o.client.Bucket, "--endpoint": o.client.Endpoint,
 	} {
 		if value == "" {
@@ -74,10 +64,27 @@ func checkRole(o roleOpts) error {
 	return nil
 }
 
+func (o roleOpts) inspector() transcript.Inspector {
+	return transcript.Inspector{
+		Executable:               o.ceremonyBinary,
+		CeremonyPath:             o.definition,
+		CeremonySignaturePath:    o.definitionSig,
+		CoordinatorPublicKeyPath: o.coordinatorKey,
+		TranscriptRoot:           o.root,
+	}
+}
+
+func (o roleOpts) ceremonyExecutable() string {
+	if o.ceremonyBinary == "" {
+		return "mpc-ceremony"
+	}
+	return o.ceremonyBinary
+}
+
 // bindRole is the common case: shared flags only.
-func bindRole(set *flag.FlagSet, args []string, withExec bool) (roleOpts, error) {
+func bindRole(set *flag.FlagSet, args []string) (roleOpts, error) {
 	var o roleOpts
-	registerRole(set, &o, withExec)
+	registerRole(set, &o)
 	if err := set.Parse(args); err != nil {
 		return o, err
 	}
@@ -106,12 +113,12 @@ type position struct {
 // pointer naming the wrong object fails the digest check. All it really
 // supplies is which object to go and get.
 func resolvePosition(o roleOpts) (position, error) {
-	definition, err := transcript.LoadDefinition(o.definition)
+	definition, err := o.inspector().Definition()
 	if err != nil {
 		return position{}, err
 	}
 
-	temp, err := os.MkdirTemp("", "mpc-sync-state-")
+	temp, err := os.MkdirTemp("", "relay-state-")
 	if err != nil {
 		return position{}, err
 	}
@@ -164,7 +171,7 @@ func resolvePosition(o roleOpts) (position, error) {
 		return position{}, err
 	}
 
-	chain, err := transcript.LoadChain(chainPath)
+	chain, err := o.inspector().Chain(chainPath, sigPath)
 	if err != nil {
 		return position{}, err
 	}
@@ -215,8 +222,14 @@ func fetchVerified(client store.Client, ref state.Ref, localPath string) error {
 }
 
 func runStatus(args []string) error {
-	o, err := bindRole(flag.NewFlagSet("status", flag.ContinueOnError), args, false)
-	if err != nil {
+	var o roleOpts
+	set := flag.NewFlagSet("participant status", flag.ContinueOnError)
+	registerRole(set, &o)
+	set.StringVar(&o.role, "role", "", "participant identity, e.g. participant-03")
+	if err := set.Parse(args); err != nil {
+		return err
+	}
+	if err := checkRole(o); err != nil {
 		return err
 	}
 	pos, err := resolvePosition(o)
@@ -272,82 +285,7 @@ func mustSchedule(pos position, phase string) []string {
 	return schedule
 }
 
-func runFetch(args []string) error {
-	o, err := bindRole(flag.NewFlagSet("fetch", flag.ContinueOnError), args, true)
-	if err != nil {
-		return err
-	}
-	if o.role == "" {
-		return errors.New("--role is required")
-	}
-	pos, err := resolvePosition(o)
-	if err != nil {
-		return err
-	}
-	if err := reportTurn(o, pos); err != nil {
-		return err
-	}
-
-	files, err := transcript.TranscriptFiles(o.root, pos.chain)
-	if err != nil {
-		return err
-	}
-	// The compiled constraint system is named by the definition rather than the
-	// chain, so TranscriptFiles cannot reach it from a root that does not have
-	// it yet. Contribute needs the file, and the definition states its digest,
-	// so it is fetched and verified like any other artifact.
-	if r1cs, err := pos.definition.R1CS(); err == nil {
-		files = append(files, transcript.File{Name: r1cs.Name, Digest: r1cs.Digest})
-	}
-	// Anything the publisher listed that the chain cannot name: the closure,
-	// beacon and seal records, and the constraint system.
-	extra := pos.pointer.Files
-	// Phase 2 is built on phase 1's sealed output, and contribute loads the
-	// closed phase 1 to derive the commons, so a phase-2 participant needs
-	// phase 1's phase-ending records too. They live under phase 1's pointer.
-	if o.phase == "phase2" {
-		if phase1 := readPointer(o, "phase1"); phase1 != nil {
-			extra = append(extra, phase1.Files...)
-		}
-	}
-	got, err := fetchListed(o, extra)
-	if err != nil {
-		return err
-	}
-	for _, file := range files {
-		local, err := transcript.Resolve(o.root, file.Name)
-		if err != nil {
-			return err
-		}
-		if _, _, err := transcript.DigestFile(local); err == nil {
-			continue // already held; push and pull both verify, so this is enough
-		}
-		if !file.HasDigest() {
-			continue // no signed digest: the chain and its signature came with the pointer
-		}
-		if err := os.MkdirAll(filepath.Dir(local), 0o700); err != nil {
-			return err
-		}
-		if err := o.client.Get(store.Key(file.Digest.SHA256), local); err != nil {
-			return fmt.Errorf("%s: %w", file.Name, err)
-		}
-		sum, size, err := transcript.DigestFile(local)
-		if err != nil {
-			return err
-		}
-		if sum != file.Digest.SHA256 || size != file.Digest.Size {
-			_ = os.Remove(local)
-			return fmt.Errorf("%s: fetched bytes do not match the chain digest", file.Name)
-		}
-		got++
-		fmt.Printf("  got    %s\n", file.Name)
-	}
-	fmt.Printf("%d fetched, transcript verified against %s\n", got, filepath.Base(pos.chainPath))
-
-	return runNext(o, pos)
-}
-
-// runNext runs the ceremony command this role owes next, or prints it.
+// runNext runs the ceremony command this role owes next.
 //
 // Running is the default because the checks that matter are enforced by the
 // ceremony binary itself, not by a human reading a command line:
@@ -356,31 +294,18 @@ func runFetch(args []string) error {
 // rejects a contribution at the wrong index. The genuinely human step is
 // confirming the coordinator public key and binary hash arrived over a trusted
 // channel, and that happens once at setup rather than per contribution.
-//
-// --print remains for the first run, for a dry run, and for re-running by hand
-// after a failure part way through a multi-hour replay.
 func runNext(o roleOpts, pos position) error {
-	keyPath, envPath, outDir := o.signingKey, o.envPath, o.outDir
-	if keyPath == "" {
-		keyPath = "<your key path>"
-	}
-	if envPath == "" {
-		envPath = "<your environment.json>"
-	}
-	if outDir == "" {
-		outDir = fmt.Sprintf("<fresh candidate dir for %s index %d>", o.phase, pos.nextIndex)
-	}
 	command := []string{
-		"mpc-ceremony", o.phase, "contribute",
+		o.ceremonyExecutable(), o.phase, "contribute",
 		"--ceremony", o.definition,
 		"--ceremony-signature", o.definitionSig,
 		"--coordinator-public-key-file", o.coordinatorKey,
 		"--transcript-dir", o.root,
 		"--chain", pos.chainPath,
-		"--chain-signature", strings.TrimSuffix(pos.chainPath, ".json") + ".sig",
+		"--chain-signature", pos.chain.ChainSignaturePath,
 		"--participant-id", o.role,
-		"--participant-signing-key", keyPath,
-		"--environment", envPath,
+		"--participant-signing-key", o.signingKey,
+		"--environment", o.envPath,
 		"--contributed-at", time.Now().UTC().Format(time.RFC3339),
 		"--out-dir", o.outDir,
 	}
@@ -398,10 +323,6 @@ func runNext(o roleOpts, pos position) error {
 		command = append(command, "--phase1-seal", seal, "--phase1-seal-signature", sealSig)
 	}
 
-	if o.print {
-		fmt.Printf("\nnext:\n  %s\n", formatCommand(command))
-		return nil
-	}
 	// The trust inputs are never derived from a path and never fetched from the
 	// bucket. The coordinator public key decides whether any signature counts,
 	// so taking it from the same place as the artifacts it checks would prove
@@ -413,9 +334,7 @@ func runNext(o roleOpts, pos position) error {
 				"deliberately not fetched from the bucket")
 	}
 	if o.signingKey == "" || o.envPath == "" || o.outDir == "" {
-		return errors.New(
-			"--signing-key, --environment and --out-dir are required to run; " +
-				"pass --print to see the command instead")
+		return errors.New("participant signing key, environment and candidate directory are required")
 	}
 	// contribute requires the directory itself to be absent but will not create
 	// its parent.
@@ -425,7 +344,7 @@ func runNext(o roleOpts, pos position) error {
 	fmt.Printf("\nrunning: %s\n\n", strings.Join(command[:3], " "))
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	return cmd.Run()
+	return runWithProgress(o.phase+" contribution", cmd.Run)
 }
 
 // runPublish is the coordinator's write path: push the transcript, then move
@@ -433,11 +352,13 @@ func runNext(o roleOpts, pos position) error {
 // not yet in the bucket, or a reader races ahead of the data.
 func runPublish(args []string) error {
 	var o roleOpts
-	set := flag.NewFlagSet("publish", flag.ContinueOnError)
-	registerRole(set, &o, false)
+	set := flag.NewFlagSet("coordinator publish", flag.ContinueOnError)
+	registerRole(set, &o)
 	var chainPath string
+	var chainSignaturePath string
 	var closed bool
 	set.StringVar(&chainPath, "chain", "", "chain document to publish as the new head")
+	set.StringVar(&chainSignaturePath, "chain-signature", "", "detached signature for the chain head")
 	set.BoolVar(&closed, "closed", false, "mark the phase as closed")
 	var verify bool
 	set.BoolVar(&verify, "verify", false,
@@ -448,15 +369,20 @@ func runPublish(args []string) error {
 	if err := checkRole(o); err != nil {
 		return err
 	}
-	if chainPath == "" {
-		return errors.New("--chain is required")
+	if chainPath == "" || chainSignaturePath == "" {
+		return errors.New("--chain and --chain-signature are required")
 	}
+	return runWithProgress("publishing authenticated transcript", func() error {
+		return publishHead(o, chainPath, chainSignaturePath, closed, verify)
+	})
+}
 
-	definition, err := transcript.LoadDefinition(o.definition)
+func publishHead(o roleOpts, chainPath, chainSignaturePath string, closed, verify bool) error {
+	definition, err := o.inspector().Definition()
 	if err != nil {
 		return err
 	}
-	chain, err := transcript.LoadChain(chainPath)
+	chain, err := o.inspector().Chain(chainPath, chainSignaturePath)
 	if err != nil {
 		return err
 	}
@@ -479,6 +405,7 @@ func runPublish(args []string) error {
 		if file.HasDigest() && (sum != file.Digest.SHA256 || size != file.Digest.Size) {
 			return fmt.Errorf("%s: local file does not match the chain digest", file.Name)
 		}
+		fmt.Fprintf(os.Stderr, "  uploading %s (%s)\n", file.Name, formatBytes(size))
 		switch err := o.client.PutNoReplace(store.Key(sum), local); {
 		case err == nil:
 			fmt.Printf("  put    %s\n", file.Name)
@@ -488,12 +415,15 @@ func runPublish(args []string) error {
 			return fmt.Errorf("%s: %w", file.Name, err)
 		}
 		published = append(published, state.Ref{Name: file.Name, SHA256: sum})
-		if local == chainPath {
+		if sameLocalPath(local, chainPath) {
 			chainRef = state.Ref{Name: file.Name, SHA256: sum}
 		}
-		if strings.HasSuffix(file.Name, ".sig") && strings.Contains(file.Name, "chain-") {
+		if sameLocalPath(local, chainSignaturePath) {
 			chainSigRef = state.Ref{Name: file.Name, SHA256: sum}
 		}
+	}
+	if chainRef.Name == "" || chainSigRef.Name == "" {
+		return errors.New("published file set did not contain the requested chain and signature")
 	}
 
 	pointer := state.Pointer{
@@ -511,7 +441,7 @@ func runPublish(args []string) error {
 	if err != nil {
 		return err
 	}
-	temp, err := os.MkdirTemp("", "mpc-sync-publish-")
+	temp, err := os.MkdirTemp("", "relay-publish-")
 	if err != nil {
 		return err
 	}
@@ -532,6 +462,12 @@ func runPublish(args []string) error {
 		return nil
 	}
 	return verifyPublished(o, definition, chain, files)
+}
+
+func sameLocalPath(left, right string) bool {
+	leftAbs, leftErr := filepath.Abs(left)
+	rightAbs, rightErr := filepath.Abs(right)
+	return leftErr == nil && rightErr == nil && filepath.Clean(leftAbs) == filepath.Clean(rightAbs)
 }
 
 // verifyPublished re-derives what a participant will look for and confirms the
@@ -598,22 +534,6 @@ func verifyPublished(
 	return nil
 }
 
-// formatCommand renders an argv as a pasteable shell command, keeping each flag
-// on one line with its value rather than splitting the pair across lines.
-func formatCommand(argv []string) string {
-	var lines []string
-	for i := 0; i < len(argv); {
-		if strings.HasPrefix(argv[i], "--") && i+1 < len(argv) && !strings.HasPrefix(argv[i+1], "--") {
-			lines = append(lines, argv[i]+" "+argv[i+1])
-			i += 2
-			continue
-		}
-		lines = append(lines, argv[i])
-		i++
-	}
-	return strings.Join(lines, " \\\n    ")
-}
-
 // readPointer fetches a phase pointer without resolving a full position.
 //
 // Used when one phase needs another's artifacts: phase 2 is built on phase 1's
@@ -621,18 +541,14 @@ func formatCommand(argv []string) string {
 // participant needs records that live under phase 1's pointer. A missing or
 // malformed pointer returns nil rather than failing, because the caller can
 // still proceed if it already holds those files locally.
-func readPointer(o roleOpts, phase string) *state.Pointer {
-	definition, err := transcript.LoadDefinition(o.definition)
-	if err != nil {
-		return nil
-	}
-	temp, err := os.MkdirTemp("", "mpc-sync-peer-")
+func readPointer(o roleOpts, ceremonyID, phase string) *state.Pointer {
+	temp, err := os.MkdirTemp("", "relay-peer-")
 	if err != nil {
 		return nil
 	}
 	defer os.RemoveAll(temp)
 	local := filepath.Join(temp, "head.json")
-	if err := o.client.Get(state.Key(definition.CeremonyID, phase), local); err != nil {
+	if err := o.client.Get(state.Key(ceremonyID, phase), local); err != nil {
 		return nil
 	}
 	raw, err := os.ReadFile(local)

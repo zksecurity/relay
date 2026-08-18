@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
-	"strings"
 )
 
 // MirrorReceiptDraft is the operator-authored form of the ceremony's
@@ -19,11 +18,11 @@ import (
 // implementation of a format whose whole purpose is that there is exactly one.
 // Instead the draft is handed to the ceremony CLI:
 //
-//	mpc-ceremony ops export-signing --record-type mirror-receipt --record draft.json ...
+//	mpc-ceremony ops prepare-mirror-receipt --draft draft.json ...
 //
-// which canonicalizes it, and the mirror operator signs the canonical bytes
-// offline. Field order below matches the ceremony struct so the draft reads the
-// same as the record it becomes.
+// which authenticates the chain and mirror enrollment, recomputes the draft,
+// and exports the canonical bytes the mirror operator signs offline. Field
+// order below matches the ceremony draft struct for readability.
 type MirrorReceiptDraft struct {
 	CeremonyID            string        `json:"ceremony_id"`
 	Phase                 string        `json:"phase"`
@@ -41,46 +40,20 @@ type MirrorReceiptDraft struct {
 // a missing, extra or misordered entry fails verification. The composition is
 // the accepted contribution evidence, plus the verification record, plus the
 // accepted chain prefix and its signature, sorted by logical name.
-func MirrorReceiptFiles(record ChainRecordRefs, chainPrefix, chainPrefixSignature ArtifactRef) []ArtifactRef {
-	files := []ArtifactRef{
-		record.Attestation,
-		record.AttestationSignature,
-		record.Erasure,
-		record.ErasureSignature,
-		record.OutputPayload,
-		record.Verification,
-		chainPrefix,
-		chainPrefixSignature,
-	}
+func MirrorReceiptFiles(record ChainRecord, chainPrefix, chainPrefixSignature ArtifactRef) []ArtifactRef {
+	files := append([]ArtifactRef(nil), record.Artifacts...)
+	files = append(files, chainPrefix, chainPrefixSignature)
 	sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
 	return files
 }
 
-// ChainRecordRefs is the artifact set of one accepted contribution.
-type ChainRecordRefs struct {
-	OutputPayload        ArtifactRef
-	Attestation          ArtifactRef
-	AttestationSignature ArtifactRef
-	Erasure              ArtifactRef
-	ErasureSignature     ArtifactRef
-	Verification         ArtifactRef
-}
-
 // RecordAt returns the artifact set of the one-based accepted contribution at
-// index, along with the head record id the receipt must bind.
-func (c Chain) RecordAt(index int) (ChainRecordRefs, string, error) {
-	if index < 1 || index > len(c.records) {
-		return ChainRecordRefs{}, "", fmt.Errorf("accepted head %d is out of range 1..%d", index, len(c.records))
+// index.
+func (c Chain) RecordAt(index int) (ChainRecord, error) {
+	if index < 1 || index > len(c.Records) {
+		return ChainRecord{}, fmt.Errorf("accepted head %d is out of range 1..%d", index, len(c.Records))
 	}
-	r := c.records[index-1]
-	return ChainRecordRefs{
-		OutputPayload:        r.OutputPayload,
-		Attestation:          r.Attestation,
-		AttestationSignature: r.AttestationSignature,
-		Erasure:              r.Erasure,
-		ErasureSignature:     r.ErasureSignature,
-		Verification:         r.Verification,
-	}, r.RecordID, nil
+	return c.Records[index-1], nil
 }
 
 // Encode renders the draft as indented JSON. Indentation is intentional: this
@@ -106,7 +79,10 @@ func ChainPrefixRefs(chain Chain) (ArtifactRef, ArtifactRef, error) {
 	if err != nil {
 		return ArtifactRef{}, ArtifactRef{}, err
 	}
-	signatureName := strings.TrimSuffix(recordName, ".json") + ".sig"
+	signatureName, err := logicalName(root, chain.ChainSignaturePath)
+	if err != nil {
+		return ArtifactRef{}, ArtifactRef{}, err
+	}
 
 	refs := make([]ArtifactRef, 0, 2)
 	for _, name := range []string{recordName, signatureName} {

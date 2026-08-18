@@ -1,6 +1,7 @@
 package state
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +33,18 @@ func TestPointerRoundTrip(t *testing.T) {
 	}
 	if decoded.Index != 3 || decoded.Phase != "phase1" {
 		t.Fatalf("round trip lost fields: %+v", decoded)
+	}
+}
+
+func TestDecodeAcceptsLegacySchema(t *testing.T) {
+	p := validPointer()
+	p.Schema = legacySchema
+	raw, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Decode(raw); err != nil {
+		t.Fatalf("Decode rejected a pointer published before the rename: %v", err)
 	}
 }
 
@@ -140,9 +153,41 @@ func TestHighWaterIsPerCeremony(t *testing.T) {
 		t.Errorf("one ceremony's progress blocked another: %v", err)
 	}
 	// The ceremony id contains a colon; the directory must still be usable.
-	entries, err := os.ReadDir(filepath.Join(home, ".mpc-sync"))
+	entries, err := os.ReadDir(filepath.Join(home, ".relay"))
 	if err != nil || len(entries) != 2 {
 		t.Fatalf("expected two ceremony directories, got %v (%v)", entries, err)
+	}
+}
+
+func TestHighWaterMigratesLegacyState(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	ceremonyID := "sha256:" + hex64
+	ceremonyDir := strings.ReplaceAll(ceremonyID, ":", "-")
+	legacyDir := filepath.Join(home, ".mpc-sync", ceremonyDir)
+	if err := os.MkdirAll(legacyDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "phase1.highwater"), []byte("7\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	hw, err := OpenHighWater(ceremonyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen, err := hw.Seen("phase1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seen != 7 {
+		t.Fatalf("migrated high-water = %d, want 7", seen)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".relay", ceremonyDir)); err != nil {
+		t.Fatalf("migrated directory is unavailable: %v", err)
+	}
+	if _, err := os.Stat(legacyDir); !os.IsNotExist(err) {
+		t.Fatalf("legacy directory still exists after migration: %v", err)
 	}
 }
 
