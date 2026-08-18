@@ -1,217 +1,303 @@
-# Runbook
+# Ceremony runbook
 
-Operating `mpc-sync` during a ceremony: bucket setup, and what each role runs.
+This is the operator checklist for `relay`. The
+[proof-tool repository](https://github.com/Emurgo/proof-tool) remains the
+authority for ceremony commands and validity rules. Relay transports bytes and
+asks the trusted `mpc-ceremony` binary to authenticate them; storage state is
+only a scheduling hint. The full trust model and low-level command reference
+are in [README.md](README.md).
 
-The ceremony itself is documented in the [proof-tool
-repository](https://github.com/Emurgo/proof-tool). This covers only the
-transport layer. Where a step says "run the ceremony command", the authority on
-that command is the ceremony runbook, not this one.
+## 1. Prepare the ceremony and trust inputs
 
-## Division of labour
+Install the reviewed `relay`, AWS CLI, and `mpc-ceremony` binaries. Record and
+distribute these two trust inputs independently of ceremony storage:
 
-`mpc-sync` decides **where the ceremony is** and **what you should do about it**.
-The ceremony CLI decides **whether anything is valid**.
+- the coordinator public key; and
+- the hash of the trusted `mpc-ceremony` binary.
 
-That split is deliberate. Everything `mpc-sync` learns from the bucket is a
-scheduling hint: it tells you which object to fetch, and the object's own
-digest and signature decide whether to believe it. A bucket that lies can waste
-your time. It cannot produce a transcript that verifies.
+Run `mpc-ceremony init`, then confirm that `ceremony.json` contains the intended
+coordinator, participant order, at least two auditors, and a distinct release
+signer. Keep the coordinator signing key protected.
 
-Concretely, `mpc-sync` never verifies a signature, never holds a signing key,
-and never decides that a transcript is genuine.
+Relay requires a proof-tool version that supports read-only inspection of
+definitions, chains, participants, and operational enrollments, plus the
+public-witness receipt builder. Mirror receipt preparation uses
+`mpc-ceremony ops prepare-mirror-receipt`.
 
-## Bucket setup
+## 2. Configure storage
 
-One bucket per ceremony. Two layouts inside it:
+Create a published bucket, a private inbox bucket, and a public HTTPS URL for
+the published bucket. The inbox must never be public. Give the coordinator a
+runtime credential for both buckets and configure the provider-specific
+temporary-credential issuer.
 
-    blob/sha256/<hex>          immutable, content-addressed, never rewritten
-    state/<phase>/head.json    mutable pointer, moved by the coordinator
+Before continuing, read [docs/STORAGE.md](docs/STORAGE.md). It contains the
+required R2 and AWS setup, IAM permissions, caching rules, credential limits,
+and preflight checks.
 
-Uploads to `blob/` use `If-None-Match: *`, so a retry that would overwrite fails
-instead of replacing published bytes. `state/` is the one prefix that must be
-overwritable, because moving it is how the ceremony advances.
+For R2:
 
-### Cloudflare R2
+    relay coordinator configure-storage \
+      --provider r2 \
+      --account-id <cloudflare-account-id> \
+      --parent-access-key-id <parent-access-key-id> \
+      --endpoint https://<account-id>.r2.cloudflarestorage.com \
+      --published-bucket <published-bucket> \
+      --published-base-url https://ceremony.example.org \
+      --inbox-bucket <private-inbox-bucket> \
+      --profile r2-coordinator \
+      --ceremony ceremony.json \
+      --ceremony-signature ceremony.sig \
+      --coordinator-key coordinator-public-key.hex \
+      --out relay-storage.json
 
-    aws configure set aws_access_key_id     <key>    --profile r2
-    aws configure set aws_secret_access_key <secret> --profile r2
-    aws configure set region                auto     --profile r2
+Expose the parent R2 token only to this process when issuing grants:
 
-Endpoint is `https://<account-id>.r2.cloudflarestorage.com`. Region is `auto`:
-R2 has no regions, but SigV4 requires the field.
+    RELAY_R2_PARENT_TOKEN=<parent-api-token> relay coordinator grant ...
 
-On AWS CLI v2.23 or later, if uploads fail with a checksum error:
+For AWS:
 
-    aws configure set request_checksum_calculation when_required --profile r2
-    aws configure set response_checksum_validation when_required --profile r2
+    relay coordinator configure-storage \
+      --provider aws \
+      --region us-east-1 \
+      --published-bucket <published-bucket> \
+      --published-base-url https://d111111abcdef8.cloudfront.net \
+      --inbox-bucket <private-inbox-bucket> \
+      --profile aws-coordinator \
+      --issuer-profile aws-grant-issuer \
+      --grant-role-arn arn:aws:iam::<account-id>:role/relay-inbox-grant \
+      --grant-role-max-ttl 12h \
+      --ceremony ceremony.json \
+      --ceremony-signature ceremony.sig \
+      --coordinator-key coordinator-public-key.hex \
+      --out relay-storage.json
 
-Scope the API token to Object Read & Write on the single bucket. Admin
-permissions are only needed to create the bucket, which is a one-off.
+`configure-storage` authenticates the ceremony, checks coordinator access,
+writes and re-reads a disposable published probe, reads it anonymously through
+the public URL, confirms that the inbox is not anonymously readable, and
+removes the probe.
 
-### AWS S3
+## 3. Run a participant turn
 
-    aws s3api create-bucket --bucket <name> --object-lock-enabled-for-bucket
-    aws s3api put-bucket-versioning --bucket <name> \
-        --versioning-configuration Status=Enabled
+### Coordinator: issue access
 
-**Object Lock can only be enabled at creation.** Adding it later means going
-through AWS support, so get it right the first time.
+Choose a TTL long enough for replay, contribution, erasure, and upload. Relay
+will refuse to start expensive work unless the configured minimum window
+remains.
 
-For the evidentiary mirror, use COMPLIANCE mode rather than GOVERNANCE:
+    relay coordinator grant \
+      --storage relay-storage.json \
+      --role participant \
+      --identity participant-03 \
+      --credential-ttl 72h \
+      --minimum-upload-window 2h \
+      --out participant-03.grant.json
 
-    aws s3api put-object-lock-configuration --bucket <name> \
-        --object-lock-configuration '{"ObjectLockEnabled":"Enabled",
-          "Rule":{"DefaultRetention":{"Mode":"COMPLIANCE","Years":10}}}'
+Send `relay-storage.json` and the participant's grant through the agreed
+private channel. The grant is a bearer credential, is written with mode `0600`,
+and permits writes only under that participant's candidate prefix. Replace it
+immediately if it leaks.
 
-GOVERNANCE can be bypassed by anyone holding `s3:BypassGovernanceRetention`,
-which defeats a mirror whose purpose is to be evidence against its own operator.
-COMPLIANCE cannot be shortened by anyone, including the root account.
+### Participant: enroll once
 
-Note the consequence before enabling it on a test bucket: objects genuinely
-cannot be deleted until retention expires, mistakes included.
-
-### Which provider
-
-R2 for distribution, S3 for the evidentiary mirror.
-
-R2 charges no egress, which matters because every participant downloads the
-whole accepted prefix before contributing and every auditor and mirror pulls the
-full transcript. R2 does not implement the S3 Object Lock API at all, so it
-cannot make the immutability claim an evidentiary mirror needs.
-
-Two mirrors must also be two operators. Two buckets in one account is one
-mirror: one credential, one legal entity, one deletion.
-
-## Roles
-
-Every command takes the same core flags, omitted below for brevity:
-
-    --root DIR --ceremony FILE --bucket NAME --endpoint URL --profile P
-
-`--phase` defaults to `phase1`.
-
-### Coordinator
-
-After each accepted contribution, and after closure, beacon and seal:
-
-    mpc-sync publish --chain /ceremony/public/phase1/chain-0003.json
-
-That uploads every file the transcript names and then moves the pointer. Order
-matters and the tool enforces it: the pointer must never name an object that is
-not yet in the bucket.
-
-Once the phase is closed:
-
-    mpc-sync publish --chain <final chain> --closed
-
-The `--closed` flag is what lets witnesses know there is something to observe.
-
-### Participant
-
-    mpc-sync status --role participant-03
-
-Reports the position and whether it is your turn. If it is not, it says so and
-exits non-zero:
-
-    not your turn: you are index 3, 1 of 5 accepted, waiting on participant-02
-
-That refusal is the point of the command. Discovering you were early after a
-multi-hour replay is the expensive way to find out.
-
-When it is your turn:
-
-    mpc-sync fetch --role participant-03 \
+    relay enroll \
+      --storage relay-storage.json \
+      --grant participant-03.grant.json \
+      --phase phase1 \
+      --root /ceremony/public \
+      --ceremony /ceremony/public/ceremony.json \
+      --ceremony-signature /ceremony/public/ceremony.sig \
+      --coordinator-key /trusted/coordinator-public-key.hex \
       --signing-key /secure/participant-03.ed25519.private.hex \
-      --environment /secure/participant-03.environment.json
+      --environment /secure/participant-03.environment.json \
+      --candidate-parent /ceremony/candidates \
+      --out participant-03.relay.json
 
-This pulls the accepted prefix, verifies every file against the signed chain,
-and then runs the ceremony `contribute` command. Expect hours: contribution
-replays the entire accepted chain before sampling any randomness.
+Enrollment asks proof-tool to match the local signing key to the authenticated
+participant roster. It does not trust a filename or coordinator assertion for
+the participant's identity.
 
-Pass `--print` to see the command without running it — worth doing the first
-time, and the way to re-run by hand if something fails part way through.
+### Participant: run one command
 
-Then destroy the ephemeral environment, record the erasure with the ceremony
-CLI's `attest-erasure`, and hand the candidate back:
+When contacted by the coordinator:
 
-    mpc-sync submit --role participant-03 --candidate /ceremony/candidates/phase1-0003
+    relay participate --config participant-03.relay.json
 
-`submit` refuses if `erasure.json` is absent, because the coordinator will not
-accept a contribution without it. It files the candidate under the index the
-tool derived rather than one you supply, so a submission cannot land in someone
-else's slot.
+Relay checks the grant lifetime and public head before computation. It refuses
+if this participant is out of turn. Otherwise it downloads and verifies the
+transcript, invokes the proof-tool contribution, asks the participant to
+destroy the contribution environment, and requires `DESTROYED` before creating
+the signed erasure attestation. It rechecks the head and uploads the candidate
+manifest last, so an interrupted upload never appears complete.
 
-Tell the coordinator out of band. They run the ceremony's `verify` to accept it.
+Long operations print UTC start, completion, and failure times, plus a
+one-minute elapsed-time heartbeat while otherwise silent. Proof-tool replay
+counts and Relay transfer progress remain visible. A heartbeat is not a
+percentage or ETA.
+
+### Coordinator: review and accept
+
+List complete candidates:
+
+    relay coordinator candidates --storage relay-storage.json --phase phase1
+
+Then review, verify, and publish the selected candidate:
+
+    relay coordinator accept \
+      --storage relay-storage.json \
+      --candidate-key candidates/<ceremony-id>/participant-03/phase1/0003/<attempt>/manifest.json \
+      --root /ceremony/public \
+      --candidate-dir /ceremony/review/participant-03-<attempt> \
+      --coordinator-signing-key /secure/coordinator.ed25519.private.hex \
+      --verify-publish
+
+Relay verifies the manifest scope and hashes, checks the scheduled participant
+and current head, downloads into a fresh review directory, and invokes
+`mpc-ceremony <phase> verify`. Only a successful proof-tool acceptance becomes
+the new head. Inbox submissions are retained for review or provider lifecycle
+cleanup.
+
+Repeat this section for every participant and phase.
+
+## 4. Publish lifecycle changes
+
+After closure, beacon, seal, or another coordinator-signed chain update:
+
+    relay coordinator publish \
+      --chain /ceremony/public/phase1/chain-0003.json \
+      --chain-signature /ceremony/public/phase1/chain-0003.sig
+
+For a closed phase:
+
+    relay coordinator publish \
+      --chain <final-chain> \
+      --chain-signature <final-chain-signature> \
+      --closed
+
+Relay uploads every referenced artifact before moving the public pointer. The
+`--closed` marker tells public witnesses that a closure is ready to observe.
+
+Commands that inspect ceremony documents share these flags where applicable:
+
+    --root DIR --ceremony FILE --ceremony-signature FILE \
+    --coordinator-key FILE --bucket NAME --endpoint URL --profile PROFILE
+
+`--phase` defaults to `phase1`. `--ceremony-binary` defaults to
+`mpc-ceremony`; pin an explicit trusted path if `PATH` is not trusted.
+
+## 5. Run the other roles
+
+### Issue a scoped evidence grant
+
+Witnesses, mirrors, auditors, release upload stations, and decision signers
+receive access only to their own inbox prefix. Every non-participant grant must
+also authenticate the identity's signed enrollment:
+
+    relay coordinator grant \
+      --storage relay-storage.json \
+      --role witness \
+      --identity witness-01 \
+      --credential-ttl 24h \
+      --minimum-upload-window 2h \
+      --enrollment operations/enrollments/witness-01.json \
+      --enrollment-signature operations/enrollments/witness-01.sig \
+      --out witness-01.grant.json
+
+Substitute the appropriate role, identity, enrollment, and TTL. Storage access
+does not make evidence valid; proof-tool records and signatures do.
 
 ### Public witness
 
-    mpc-sync watch --interval 60s
+    relay witness watch --interval 60s
 
-Blocks until the coordinator publishes a closure, then tells you what to check.
-`--once` polls a single time and exits.
+`--once` polls once and exits. After observing closure, confirm that its beacon
+round has not occurred and is at least the definition's witness lead away.
+Then build and sign the public-witness receipt with proof-tool and upload it as
+described under “Submit evidence.” Relay cannot make the real-world timing
+claim for the witness.
 
-The tool reports; it does not sign. A witness receipt attests that you saw a
-closure published **before its beacon round existed**, which is a claim about
-the world that no tool can make for you. Fetch the closure record, confirm its
-round has not yet occurred and is at least the definition's witness lead away,
-and only then sign.
+### Mirror
 
-### Mirror operator
+    relay mirror sync
 
-    mpc-sync sync
+After retaining the authenticated chain prefix, draft a receipt for that head:
 
-Pulls everything the transcript names and keeps it. It then prints a `receipt`
-command per accepted head:
-
-    mpc-sync receipt --chain <chain> --index 3 \
-      --location s3://mirror/... --stored-at 2026-09-01T12:00:00Z \
+    relay mirror receipt \
+      --root <transcript-root> \
+      --chain <chain> \
+      --chain-signature <chain-signature> \
+      --index 3 \
+      --location s3://mirror/... \
+      --stored-at 2026-09-01T12:00:00Z \
       --out receipt-0003.json
 
-That writes a **draft**. Feed it to the ceremony CLI to canonicalize, then sign
-the canonical bytes offline with your mirror key:
+Authenticate and canonicalize the draft, then sign the canonical bytes offline:
 
-    mpc-ceremony ops export-signing --record-type mirror-receipt --record receipt-0003.json ...
+    mpc-ceremony ops prepare-mirror-receipt \
+      --draft receipt-0003.json \
+      --ceremony ceremony.json \
+      --ceremony-signature ceremony.sig \
+      --coordinator-public-key-file coordinator.pub \
+      --transcript-root . \
+      --chain phase1/chain-0003.json \
+      --chain-signature phase1/chain-0003.sig \
+      --mirror-enrollment operations/enrollments/mirror-01.json \
+      --mirror-enrollment-signature operations/enrollments/mirror-01.sig \
+      --out-dir receipt-0003-signing
 
-Only the location's SHA-256 goes into the record. The location itself is never
-published and nothing ever fetches it.
+Only the location's SHA-256 enters the record; the location itself is not
+published or fetched.
 
 ### Auditor
 
-    mpc-sync sync --phase phase1
-    mpc-sync sync --phase phase2
+    relay auditor sync --phase phase1
+    relay auditor sync --phase phase2
 
-Then replay with the ceremony CLI's `audit`. Do this from mirrors you checked
-independently, not from the coordinator.
+Replay with `mpc-ceremony audit` using independently checked mirrors, not the
+coordinator's copy, then upload the signed audit output.
 
-## What mpc-sync does not do
+### Release signer and decision signers
 
-**It does not verify signatures.** Digests are checked against the chain; the
-chain's authenticity is established by the ceremony CLI against a coordinator
-public key you obtained out of band.
+Keep the release signing machine offline. Move only the signed output to a
+separate upload station and give that station the release signer's scoped
+grant. Use the same separation for production-decision signatures.
 
-**It does not sync private material.** An allowlist restricts uploads to the
-published transcript layout. A mis-pointed `--root` is refused rather than
-uploaded.
+### Submit evidence
 
-**It does not make the bucket trustworthy.** The pointer is unsigned and
-rewritable. It can roll back, vanish, or say different things to different
-readers. None of that corrupts a transcript, because everything it names is
-digest-verified — but a rollback would silently waste a replay, so each machine
-records the furthest index it has seen under `~/.mpc-sync` and refuses a pointer
-claiming less.
+Each role uploads its already signed proof-tool output:
 
-If you see this, the bucket is stale or has been rewritten, and the right
-response is to ask the coordinator rather than to delete the file:
+    relay submit-evidence --grant witness-01.grant.json --dir ./signed-witness-output
 
-    published state claims phase1 index 2 but this machine has already seen 3
+or:
 
-## Two things must still travel out of band
+    relay submit-evidence --grant auditor-01.grant.json \
+      --file audit.json --file audit.sig
 
-`coordinator-public-key.hex` and the ceremony binary's hash. Everything else can
-cross untrusted transport, because tampering makes verification fail rather than
-succeed. Those two decide *whether* verification means anything, so taking them
-from the same bucket as the artifacts they check proves only that the bucket
-agrees with itself.
+Relay rejects unsafe files and uploads `manifest.json` last. The coordinator
+lists complete submissions with:
 
-Out-of-band messaging between roles also remains part of the process. The
-pointer makes "you're up" checkable; it does not replace a person saying it.
+    relay coordinator evidence --storage relay-storage.json [--role witness]
+
+The manifest is intake metadata, not proof. Run the corresponding proof-tool
+verification before publishing or relying on the evidence.
+
+## 6. Failure and recovery
+
+- An expired grant, or one below its minimum remaining window, must be replaced
+  before work begins. R2 grants may not exceed `168h`; AWS grants must fit the
+  role's configured STS limits.
+- Relay records the highest public index seen under `~/.relay` and refuses a
+  pointer that moves backward. Older high-water state is migrated on first
+  use. Ask the coordinator about a rollback warning; do not delete the local
+  state to bypass it.
+- Relay refuses to overwrite a mismatching local transcript file and refuses
+  to upload files outside the published allowlist.
+- A bucket can hide, delay, or equivocate about state, but artifacts remain
+  authenticated by proof-tool signatures and digests.
+- Out-of-band communication is still required. The public pointer makes whose
+  turn it is checkable; it does not replace the coordinator contacting roles.
+
+The older one-bucket `relay advanced push` and `relay advanced pull` commands
+remain for recovery and debugging. They use long-lived AWS CLI profiles and
+are documented under “Usage” and “Provider notes” in [README.md](README.md).
+New ceremonies should use the two-bucket workflow above.

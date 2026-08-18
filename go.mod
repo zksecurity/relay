@@ -1,3 +1,3 @@
-module github.com/zksecurity/mpc-sync
+module github.com/zksecurity/relay
 
 go 1.26.5

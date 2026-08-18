@@ -1,4 +1,4 @@
-# mpc-sync
+# relay
 
 Moves MPC ceremony transcript artifacts between a local directory and
 S3-compatible object storage (AWS S3, Cloudflare R2), and lets each ceremony
@@ -18,23 +18,74 @@ the ceremony CLI decides what is authentic.
 
 Concretely, this tool:
 
-- checks digests against the signed chain document and ceremony definition;
-- does **not** verify signatures;
-- does **not** decide whether a transcript is genuine;
-- never reads or holds signing-key material. `fetch` passes a key *path*
-  through to `mpc-ceremony contribute`; the key is opened only by that binary.
+- asks the trusted ceremony CLI to authenticate and interpret definitions and chains;
+- checks transported bytes against the authenticated artifact digests it returns;
+- contains no independent ceremony parser or signature implementation;
+- never reads or holds signing-key material. Participant commands pass a key
+  *path* to proof-tool for identity inspection and contribution; only the
+  trusted ceremony binary opens the key.
 
 Every artifact is digest-pinned in the coordinator-signed chain, so a hostile
 bucket can make this tool fail loudly. It cannot make it lie. The one mutable
 object it reads, the position pointer, is an unsigned scheduling hint: it can
 waste a round trip or a replay, never corrupt a transcript.
 
-The chain parser is an independent reimplementation rather than a shared
-package. Go forbids importing another module's `internal/`, and independence is
-better audit evidence anyway: if this tool and the ceremony CLI agree on a
-digest, two implementations agree; if they diverge, that is a finding.
+Relay invokes `mpc-ceremony --format json inspect definition|chain|participant|enrollment` for the
+security-sensitive boundary. Those read-only commands verify exact canonical
+bytes, detached signatures, ceremony binding, and frozen participant order,
+then return a versioned transport projection. Relay only resolves those names,
+hashes local bytes, and moves them.
 
-## Layout
+## Brokerless ceremony workflow
+
+The normal flow uses two buckets:
+
+    published bucket: state/<ceremony-id>/<phase>/head.json and blob/sha256/<hex>
+    private inbox:    one identity-scoped prefix for candidates or signed role evidence
+
+The coordinator validates the deployment once and mints explicit, expiring R2
+or AWS credentials scoped to one identity's inbox prefix:
+
+    relay coordinator configure-storage ... --out relay-storage.json
+    relay coordinator grant --storage relay-storage.json --role participant \
+      --identity participant-03 --credential-ttl 72h \
+      --minimum-upload-window 2h --out participant-03.grant.json
+
+The participant authenticates their local key once, then runs one command when
+the coordinator contacts them:
+
+    relay enroll --storage relay-storage.json --grant participant-03.grant.json \
+      --phase phase1 --root /ceremony/public --ceremony /ceremony/public/ceremony.json \
+      --ceremony-signature /ceremony/public/ceremony.sig \
+      --coordinator-key /trusted/coordinator-public-key.hex --signing-key /secure/key \
+      --environment /secure/environment.json --candidate-parent /ceremony/candidates \
+      --out participant-03.relay.json
+    relay participate --config participant-03.relay.json
+
+`participate` refuses out of turn before computation. On success it runs the
+contribution and erasure-attestation steps, rechecks the head, and uploads a
+manifest-last candidate. The coordinator then runs:
+
+    relay coordinator candidates --storage relay-storage.json
+    relay coordinator accept --storage relay-storage.json --candidate-key KEY \
+      --root /ceremony/public --candidate-dir /ceremony/review/attempt \
+      --coordinator-signing-key /secure/coordinator-key
+
+Other roles upload their already signed proof-tool outputs with
+`relay submit-evidence --grant FILE --dir DIR`; the coordinator discovers them
+with `relay coordinator evidence --storage FILE`. See [RUNBOOK.md](RUNBOOK.md)
+for provider setup, exact flags, and operational cautions.
+
+### Long-running progress
+
+Guided operations print UTC start, completion, and failure timestamps to
+stderr. While a stage is otherwise silent, Relay emits an elapsed-time
+heartbeat once per minute. Proof-tool's own replay counters continue to stream
+unchanged, and transfers announce the current public artifact name and size.
+Relay does not invent percentages or completion estimates for cryptographic
+operations whose underlying implementation exposes no measurable total.
+
+## Published layout
 
 Two prefixes:
 
@@ -65,25 +116,32 @@ transcript is still verifiable; you just have to ask a person where to look.
 
 ## Usage
 
-Low-level, given a chain document:
+Recovery/debugging commands, given a chain document:
 
-    mpc-sync push    --chain FILE --root DIR --bucket B --endpoint U [--profile P] [--verify]
-    mpc-sync pull    --chain FILE --root DIR --bucket B --endpoint U [--profile P]
-    mpc-sync receipt --chain FILE --index N --location URI --stored-at TIME [--out FILE]
+    relay advanced push --chain FILE --chain-signature FILE --root DIR --bucket B --endpoint U [--verify]
+    relay advanced pull --chain FILE --chain-signature FILE --root DIR --bucket B --endpoint U
+    relay mirror receipt --chain FILE --chain-signature FILE --root DIR --index N \
+                    --location URI --stored-at TIME [--out FILE]
 
-Role-scoped, discovering position from the bucket (`--root --ceremony --bucket
---endpoint` are always required; `--phase` defaults to `phase1`):
+All commands that inspect ceremony documents also require:
 
-    mpc-sync publish --chain FILE [--closed] [--verify]      coordinator: push, then move the pointer
-    mpc-sync status  [--role ID]                             anyone: where the ceremony stands
-    mpc-sync fetch   --role ID --ceremony-signature FILE     participant: pull, verify, then
-                     --coordinator-key FILE --signing-key FILE   run contribute (or --print it)
-                     --environment FILE --out-dir DIR [--print]
-    mpc-sync submit  --role ID --candidate DIR               participant: hand back a candidate
-    mpc-sync watch   [--interval D] [--once]                 witness: block until a closure is published
-    mpc-sync sync                                            mirror/auditor: pull everything
+    --ceremony FILE --ceremony-signature FILE --coordinator-key FILE
 
-`push` and `publish` upload what the chain names plus what it cannot name: the
+`--ceremony-binary` defaults to `mpc-ceremony`; set it to an explicitly trusted
+binary path when `PATH` is not part of the operator's trust setup.
+
+Role-scoped commands discover position from the bucket (`--root --ceremony
+--bucket --endpoint` are always required; `--phase` defaults to `phase1`):
+
+    relay coordinator publish --chain FILE --chain-signature FILE [--closed] [--verify]
+    relay participant status [--role ID]                  report ceremony position
+    relay witness watch [--interval D] [--once]           wait for a published closure
+    relay mirror sync                                     pull the authenticated transcript
+    relay mirror receipt --chain FILE ...                 draft mirror evidence
+    relay auditor sync                                    pull the authenticated transcript
+
+`advanced push` and `coordinator publish` upload what the chain names plus what
+it cannot name: the
 chain document and its signature, `ceremony.json` and its signature, the
 compiled constraint system, and whichever closure, beacon and seal records exist
 on disk. Every name is checked against an allowlist of the ceremony's published
@@ -91,25 +149,30 @@ layout, so a mis-pointed `--root` is refused rather than uploaded.
 
 `--verify` re-downloads every object after upload and re-hashes it, rather than
 trusting the upload response. It costs a full round trip of the transcript and
-is off by default. On `publish` it instead re-derives what a reader will ask
+is off by default. On `coordinator publish` it instead re-derives what a reader will ask
 for and confirms the bucket holds all of it.
 
-`pull`, `fetch` and `sync` refuse to overwrite an existing local file. If one is
+`advanced pull`, `mirror sync` and `auditor sync` refuse to overwrite an existing local file. If one is
 present it is hashed and compared, and a mismatch is an error rather than a
 silent replacement.
 
-`status` and `fetch` refuse when it is not your turn. That refusal is the point:
+`participant status` and `participate` refuse when it is not your turn. That refusal is the point:
 discovering you were early after a multi-hour replay is the expensive way to
 find out. Each machine also records the furthest index it has seen under
-`~/.mpc-sync` and refuses a pointer that has moved backwards.
+`~/.relay` and refuses a pointer that has moved backwards. On first use for a
+ceremony, existing high-water state from `~/.mpc-sync` is migrated automatically.
 
-`receipt` drafts an `ImmutableMirrorReceipt` for one accepted head. It stops at
-a draft: the ceremony CLI canonicalizes it, and the mirror operator signs the
-canonical bytes offline with their own key.
+`mirror receipt` drafts an `ImmutableMirrorReceipt` for the head of the exact chain
+prefix passed to it. It stops at a draft: `mpc-ceremony ops
+prepare-mirror-receipt` authenticates the chain and mirror enrollment,
+recomputes the file set, and exports canonical bytes for the mirror operator to
+sign offline with their own key.
 
-### Credentials
+### Credentials for advanced commands
 
-Credentials live in an AWS CLI profile; this program never handles them.
+The advanced one-bucket commands use an AWS CLI profile. The brokerless flow
+instead reads short-lived credentials from a mode-`0600` grant and exposes them
+only to the child AWS CLI process; it never prints their values.
 
     aws configure set aws_access_key_id     <key>    --profile r2
     aws configure set aws_secret_access_key <secret> --profile r2
@@ -125,10 +188,13 @@ If uploads fail with a checksum error on AWS CLI v2.23 or later:
 
 ### Example
 
-    mpc-sync publish \
+    relay coordinator publish \
       --root     /ceremony/public \
       --ceremony /ceremony/public/ceremony.json \
+      --ceremony-signature /ceremony/public/ceremony.sig \
+      --coordinator-key /trusted/coordinator-public-key.hex \
       --chain    /ceremony/public/phase1/chain-0003.json \
+      --chain-signature /ceremony/public/phase1/chain-0003.sig \
       --bucket   my-mirror \
       --endpoint https://<account-id>.r2.cloudflarestorage.com \
       --profile  r2 \
@@ -164,4 +230,5 @@ as the artifacts it checks would prove only that the bucket agrees with itself.
 
 ## Requirements
 
-Go 1.26.5 and the AWS CLI on `PATH`. No Go dependencies.
+Go 1.26.5, the AWS CLI, and a trusted `mpc-ceremony` binary on `PATH`. Relay has
+no third-party Go dependencies.

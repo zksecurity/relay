@@ -26,7 +26,10 @@ import (
 	"strings"
 )
 
-const Schema = "mpc-sync-state-v1"
+const (
+	Schema       = "relay-state-v1"
+	legacySchema = "mpc-sync-state-v1"
+)
 
 // Ref names a blob by its logical name and content hash. The hash is what
 // locates the object; the name is for humans and for writing it back to disk.
@@ -80,7 +83,7 @@ func Key(ceremonyID, phase string) string {
 }
 
 func (p Pointer) Validate() error {
-	if p.Schema != Schema {
+	if p.Schema != Schema && p.Schema != legacySchema {
 		return fmt.Errorf("state schema %q, want %q", p.Schema, Schema)
 	}
 	if p.Phase != "phase1" && p.Phase != "phase2" {
@@ -124,7 +127,19 @@ func OpenHighWater(ceremonyID string) (HighWater, error) {
 	}
 	// The ceremony id is a tagged hex hash, so it is already a safe path
 	// component once the tag separator is removed.
-	dir := filepath.Join(home, ".mpc-sync", strings.ReplaceAll(ceremonyID, ":", "-"))
+	ceremonyDir := strings.ReplaceAll(ceremonyID, ":", "-")
+	dir := filepath.Join(home, ".relay", ceremonyDir)
+	legacyDir := filepath.Join(home, ".mpc-sync", ceremonyDir)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		if _, legacyErr := os.Stat(legacyDir); legacyErr == nil {
+			if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
+				return HighWater{}, err
+			}
+			if err := os.Rename(legacyDir, dir); err != nil {
+				return HighWater{}, fmt.Errorf("migrate high-water state to .relay: %w", err)
+			}
+		}
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return HighWater{}, err
 	}

@@ -122,57 +122,35 @@ func TestDigestFileMatchesKnownVector(t *testing.T) {
 	}
 }
 
-const minimalChain = `{"schema":"proof-tool-mpc-accepted-chain-v1",` +
-	`"ceremony_id":"sha256:` + hex64 + `","phase":"phase1",` +
-	`"phase_id":"sha256:` + hex64 + `",` +
-	`"genesis":{"name":"phase1/genesis.bin","digest":{"sha256":"sha256:` + hex64 +
-	`","blake2b256":"blake2b256:` + hex64 + `","size":100}},"records":[]}`
-
 const hex64 = "1111111111111111111111111111111111111111111111111111111111111111"
 
-func writeChain(t *testing.T, body string) (root, chainPath string) {
+func writeChain(t *testing.T, withSignature bool) (string, Chain) {
 	t.Helper()
-	root = t.TempDir()
+	root := t.TempDir()
 	dir := filepath.Join(root, "phase1")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	chainPath = filepath.Join(dir, "chain-0000.json")
-	if err := os.WriteFile(chainPath, []byte(body), 0o600); err != nil {
+	chainPath := filepath.Join(dir, "chain-0000.json")
+	signaturePath := filepath.Join(dir, "chain-0000.sig")
+	if err := os.WriteFile(chainPath, []byte("chain"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return root, chainPath
-}
-
-func TestLoadChainReadsGenesis(t *testing.T) {
-	_, chainPath := writeChain(t, minimalChain)
-	chain, err := LoadChain(chainPath)
-	if err != nil {
-		t.Fatalf("LoadChain: %v", err)
-	}
-	if chain.Phase != "phase1" {
-		t.Errorf("phase = %q", chain.Phase)
-	}
-	if len(chain.Artifacts) != 1 || chain.Artifacts[0].Name != "phase1/genesis.bin" {
-		t.Fatalf("artifacts = %+v", chain.Artifacts)
-	}
-}
-
-// TestLoadChainRejectsMalformed covers the strict-parsing contract. The
-// ceremony writes canonical JSON, so anything else did not come from it, and
-// accepting it would mean syncing a transcript nobody signed.
-func TestLoadChainRejectsMalformed(t *testing.T) {
-	for label, body := range map[string]string{
-		"trailing data":  minimalChain + "{}",
-		"unknown field":  strings.Replace(minimalChain, `"records":[]`, `"records":[],"extra":1`, 1),
-		"missing phase":  strings.Replace(minimalChain, `"phase":"phase1",`, "", 1),
-		"bad sha length": strings.Replace(minimalChain, `"sha256:`+hex64+`","blake2b256`, `"sha256:aa","blake2b256`, 1),
-		"escaping name":  strings.Replace(minimalChain, "phase1/genesis.bin", "../escape.bin", 1),
-	} {
-		_, chainPath := writeChain(t, body)
-		if _, err := LoadChain(chainPath); err == nil {
-			t.Errorf("LoadChain accepted a chain with %s", label)
+	if withSignature {
+		if err := os.WriteFile(signaturePath, []byte("sig"), 0o600); err != nil {
+			t.Fatal(err)
 		}
+	}
+	return root, Chain{
+		Schema:             chainInspectionSchema,
+		CeremonyID:         "sha256:" + hex64,
+		Phase:              "phase1",
+		ChainPath:          chainPath,
+		ChainSignaturePath: signaturePath,
+		Artifacts: []ArtifactRef{{
+			Name:   "phase1/genesis.bin",
+			Digest: Digest{SHA256: "sha256:" + hex64, Blake2b256: "blake2b256:" + hex64, Size: 100},
+		}},
 	}
 }
 
@@ -181,14 +159,7 @@ func TestLoadChainRejectsMalformed(t *testing.T) {
 // the chain, so walking references alone leaves a bucket that cannot be
 // interpreted or bootstrapped from.
 func TestTranscriptFilesIncludesChainAndSignature(t *testing.T) {
-	root, chainPath := writeChain(t, minimalChain)
-	if err := os.WriteFile(filepath.Join(root, "phase1", "chain-0000.sig"), []byte("sig"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	chain, err := LoadChain(chainPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	root, chain := writeChain(t, true)
 	files, err := TranscriptFiles(root, chain)
 	if err != nil {
 		t.Fatalf("TranscriptFiles: %v", err)
@@ -205,11 +176,7 @@ func TestTranscriptFilesIncludesChainAndSignature(t *testing.T) {
 }
 
 func TestTranscriptFilesRequiresChainSignature(t *testing.T) {
-	root, chainPath := writeChain(t, minimalChain)
-	chain, err := LoadChain(chainPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	root, chain := writeChain(t, false)
 	if _, err := TranscriptFiles(root, chain); err == nil {
 		t.Fatal("TranscriptFiles accepted a chain with no signature alongside it")
 	}
@@ -219,10 +186,7 @@ func TestTranscriptFilesRequiresChainSignature(t *testing.T) {
 // gap: closure, beacon and seal documents are unreachable from the chain, so
 // they are listed by layout and included once they exist.
 func TestTranscriptFilesPicksUpPhaseEndingRecords(t *testing.T) {
-	root, chainPath := writeChain(t, minimalChain)
-	if err := os.WriteFile(filepath.Join(root, "phase1", "chain-0000.sig"), []byte("sig"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	root, chain := writeChain(t, true)
 	for _, name := range []string{"closure/record.json", "closure/record.sig", "sealed/commons.bin"} {
 		full := filepath.Join(root, "phase1", filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
@@ -231,10 +195,6 @@ func TestTranscriptFilesPicksUpPhaseEndingRecords(t *testing.T) {
 		if err := os.WriteFile(full, []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-	}
-	chain, err := LoadChain(chainPath)
-	if err != nil {
-		t.Fatal(err)
 	}
 	files, err := TranscriptFiles(root, chain)
 	if err != nil {
@@ -264,14 +224,14 @@ func TestMirrorReceiptFilesIsSortedAndComplete(t *testing.T) {
 	ref := func(name string) ArtifactRef {
 		return ArtifactRef{Name: name, Digest: Digest{SHA256: "sha256:" + hex64, Size: 1}}
 	}
-	files := MirrorReceiptFiles(ChainRecordRefs{
-		OutputPayload:        ref("phase1/contributions/0001/contribution.bin"),
-		Attestation:          ref("phase1/contributions/0001/attestation.json"),
-		AttestationSignature: ref("phase1/contributions/0001/attestation.sig"),
-		Erasure:              ref("phase1/contributions/0001/erasure.json"),
-		ErasureSignature:     ref("phase1/contributions/0001/erasure.sig"),
-		Verification:         ref("phase1/contributions/0001/verification.json"),
-	}, ref("phase1/chain-0001.json"), ref("phase1/chain-0001.sig"))
+	files := MirrorReceiptFiles(ChainRecord{Artifacts: []ArtifactRef{
+		ref("phase1/contributions/0001/contribution.bin"),
+		ref("phase1/contributions/0001/attestation.json"),
+		ref("phase1/contributions/0001/attestation.sig"),
+		ref("phase1/contributions/0001/erasure.json"),
+		ref("phase1/contributions/0001/erasure.sig"),
+		ref("phase1/contributions/0001/verification.json"),
+	}}, ref("phase1/chain-0001.json"), ref("phase1/chain-0001.sig"))
 
 	if len(files) != 8 {
 		t.Fatalf("got %d files, want 8", len(files))

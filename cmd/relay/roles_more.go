@@ -1,0 +1,129 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/zksecurity/relay/internal/state"
+	"github.com/zksecurity/relay/internal/store"
+	"github.com/zksecurity/relay/internal/transcript"
+)
+
+// runWatch blocks until a phase closure is published, then reports the timing a
+// witness needs in order to decide whether signing a receipt is honest.
+//
+// It deliberately reports rather than signs. A witness attests that they saw a
+// closure published before its beacon round existed; that is a claim about the
+// world, and a tool cannot make it on their behalf.
+func runWatch(args []string) error {
+	var o roleOpts
+	set := flag.NewFlagSet("witness watch", flag.ContinueOnError)
+	registerRole(set, &o)
+	var interval time.Duration
+	var once bool
+	set.DurationVar(&interval, "interval", 60*time.Second, "poll interval")
+	set.BoolVar(&once, "once", false, "check a single time and exit")
+	if err := set.Parse(args); err != nil {
+		return err
+	}
+	if err := checkRole(o); err != nil {
+		return err
+	}
+
+	for {
+		pos, err := resolvePosition(o)
+		if err != nil {
+			return err
+		}
+		if pos.phaseClosed {
+			fmt.Printf("%s is closed at index %d\n", o.phase, pos.accepted)
+			fmt.Printf("chain     %s\n", pos.pointer.Chain.SHA256)
+			fmt.Println()
+			fmt.Println("fetch the closure record, confirm its beacon round has not yet occurred,")
+			fmt.Println("and that the round is at least the definition's witness lead away.")
+			fmt.Println("only then sign a receipt: you are attesting that you saw this")
+			fmt.Println("published before its randomness existed.")
+			return nil
+		}
+		fmt.Printf("%s open, %d accepted, waiting on %s\n", o.phase, pos.accepted, pos.nextID)
+		if once {
+			return nil
+		}
+		time.Sleep(interval)
+	}
+}
+
+// runSync fetches everything the transcript names for a mirror or auditor to
+// keep. Unlike participation it does not care whose turn it is.
+func runSync(commandName string, args []string) error {
+	o, err := bindRole(flag.NewFlagSet(commandName, flag.ContinueOnError), args)
+	if err != nil {
+		return err
+	}
+	pos, err := resolvePosition(o)
+	if err != nil {
+		return err
+	}
+	files, err := transcript.TranscriptFiles(o.root, pos.chain)
+	if err != nil {
+		return err
+	}
+	var got, have int
+	if err := runWithProgress("syncing authenticated "+o.phase+" transcript", func() error {
+		for _, file := range files {
+			local, err := transcript.Resolve(o.root, file.Name)
+			if err != nil {
+				return err
+			}
+			if _, _, err := transcript.DigestFile(local); err == nil {
+				have++
+				continue
+			}
+			if !file.HasDigest() {
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "  downloading %s (%s)\n", file.Name, formatBytes(file.Digest.Size))
+			if err := os.MkdirAll(filepath.Dir(local), 0o700); err != nil {
+				return err
+			}
+			if err := o.client.Get(store.Key(file.Digest.SHA256), local); err != nil {
+				return fmt.Errorf("%s: %w", file.Name, err)
+			}
+			sum, size, err := transcript.DigestFile(local)
+			if err != nil {
+				return err
+			}
+			if sum != file.Digest.SHA256 || size != file.Digest.Size {
+				_ = os.Remove(local)
+				return fmt.Errorf("%s: fetched bytes do not match the chain digest", file.Name)
+			}
+			got++
+			fmt.Printf("  got    %s\n", file.Name)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	fmt.Printf("%d fetched, %d already held, %s at index %d\n", got, have, o.phase, pos.accepted)
+	fmt.Println()
+	fmt.Println("draft a receipt for the exact accepted chain prefix you now hold:")
+	fmt.Printf("  relay mirror receipt --chain %s --chain-signature %s --index %d --location <uri> --stored-at %s\n",
+		pos.chainPath, pos.chain.ChainSignaturePath, pos.accepted, time.Now().UTC().Format(time.RFC3339))
+	return nil
+}
+
+// pointerSummary is used by tests and by status to describe a pointer without
+// reaching into the bucket.
+func pointerSummary(p state.Pointer) string {
+	parts := []string{p.Phase, fmt.Sprintf("index %d", p.Index)}
+	if p.Closed {
+		parts = append(parts, "closed")
+	}
+	sort.Strings(parts[1:])
+	return strings.Join(parts, " ")
+}
