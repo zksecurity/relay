@@ -17,7 +17,7 @@ Expected:
 
     go version go1.26.5 linux/amd64
 
-The build host also needs Git, GnuPG, ripgrep, `sed`, GNU coreutils, and GNU
+The build host also needs Git, GnuPG, `grep`, `sed`, GNU coreutils, and GNU
 findutils. Do not allow `GOTOOLCHAIN` to silently select another production
 toolchain. Both production builders verify the Go version and toolchain
 digests.

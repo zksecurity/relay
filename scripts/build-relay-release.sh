@@ -73,7 +73,7 @@ else
   fi
 fi
 
-for command_name in git go sha256sum realpath mktemp rg sed xargs; do
+for command_name in git go sha256sum realpath mktemp grep sed xargs; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "FAIL: required command is missing: $command_name" >&2
     exit 1
@@ -209,7 +209,7 @@ verify_tool_hash "$GO_TOOL_DIR/compile" "$EXPECTED_COMPILE_SHA256"
 verify_tool_hash "$GO_TOOL_DIR/link" "$EXPECTED_LINK_SHA256"
 verify_tool_hash "$GO_TOOL_DIR/asm" "$EXPECTED_ASM_SHA256"
 
-if rg -n '^[[:space:]]*replace([[:space:]]|$)' go.mod >/dev/null; then
+if grep -En '^[[:space:]]*replace([[:space:]]|$)' go.mod >/dev/null; then
   echo "FAIL: release build forbids Go module replace directives" >&2
   exit 1
 fi

@@ -29,11 +29,6 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Install release dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes ripgrep
-
       - name: Verify toolchain
         run: |
           test "$(go env GOVERSION)" = go1.26.5
