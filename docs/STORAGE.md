@@ -45,7 +45,10 @@ Before `configure-storage`:
    the published bucket and list, read, write, and delete in the inbox. Deletes
    are needed only for disposable preflight probes.
 5. Configure a provider-specific temporary-credential issuer limited to the
-   inbox. Never distribute its parent credential to a ceremony role.
+   inbox. For R2, also create a separate Cloudflare API bearer token with the
+   account-level `Workers R2 Storage Read` permission so Relay can verify the
+   inbox's public-domain settings. Never distribute either credential to a
+   ceremony role.
 6. Decide the explicit credential TTL and minimum upload window for each role.
    Include replay, contribution, erasure, and upload time. Synchronize clocks.
 7. From another machine, confirm that the public URL works anonymously, the
@@ -93,11 +96,12 @@ endpoint when applicable. Participants download published inputs through the
 coordinator profile or inbox issuer credential.
 
 Keep each `.env` at mode `0600`. Do not put temporary role grants, AWS secret
-access keys, `RELAY_R2_PARENT_TOKEN`, ceremony signing keys, or build-signing
-keys in it. Configure named AWS profiles outside the repository. The R2 setup
-script prompts for the parent token without echoing it. Evidence writers use
-their separately issued, prefix-scoped grants; they never receive general
-write access to either bucket.
+access keys, `RELAY_R2_CONTROL_TOKEN`, `RELAY_R2_PARENT_TOKEN`, ceremony signing
+keys, or build-signing keys in it. Configure named AWS profiles outside the
+repository. The R2 configure script prompts for the control-plane token, and
+grant scripts prompt for the parent token, without echoing either one. Evidence
+writers use their separately issued, prefix-scoped grants; they never receive
+general write access to either bucket.
 
 ## Cloudflare R2
 
@@ -108,6 +112,19 @@ The S3 endpoint is:
 For production, map an ordinary HTTPS hostname controlled by the coordinator,
 such as `https://ceremony.example.org`, to the published bucket. Cloudflare's
 generated `r2.dev` URL is rate-limited and intended for development.
+
+Create a Cloudflare API bearer token with the account-level `Workers R2 Storage
+Read` permission, called R2 Admin Read only in the R2 token UI. Supply the token
+value—not an S3 secret access key—only while running `configure-storage`
+through `RELAY_R2_CONTROL_TOKEN`. Cloudflare does not support bucket-scoped
+configuration read; the token can list buckets, view their configuration, and
+read objects throughout the R2 account. Use a dedicated ceremony R2 account if
+that read scope is too broad.
+
+Relay queries Cloudflare's control-plane API and refuses the configuration if
+`r2.dev` is enabled or if any custom domain is attached to the inbox. An
+anonymous request to the account S3 endpoint cannot perform this check because
+R2 public buckets are exposed through separate domains.
 
 Create a parent R2 API token limited to the private inbox bucket and no broader
 than the access it delegates. Record its access-key ID. Supply the parent token

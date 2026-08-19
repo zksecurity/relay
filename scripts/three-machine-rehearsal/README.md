@@ -101,6 +101,14 @@ machine.
 "$S/01-coordinator-configure-storage.sh" "$E"
 ```
 
+For R2, the script prompts without echo for a Cloudflare API bearer token with
+the account-level `Workers R2 Storage Read` permission, called R2 Admin Read
+only in the R2 token UI. Cloudflare does not offer bucket-scoped configuration
+read, so use a dedicated rehearsal account if necessary. Relay uses the token
+only to confirm that the inbox has neither public `r2.dev` access nor an
+attached custom domain; the script removes it from the environment immediately
+afterward.
+
 Privately copy the resulting `relay-storage.json` to the `STORAGE_CONFIG` path
 configured in the `.env` files on Machines 2 and 3. It contains no temporary
 role credential, but do not use the public ceremony bucket as the handoff.

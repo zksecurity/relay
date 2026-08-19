@@ -22,7 +22,10 @@ import (
 	"github.com/zksecurity/relay/internal/transcript"
 )
 
-const r2ParentTokenEnvironment = "RELAY_R2_PARENT_TOKEN"
+const (
+	r2ParentTokenEnvironment  = "RELAY_R2_PARENT_TOKEN"
+	r2ControlTokenEnvironment = "RELAY_R2_CONTROL_TOKEN"
+)
 
 func runConfigureStorage(args []string) error {
 	set := flag.NewFlagSet("coordinator configure-storage", flag.ContinueOnError)
@@ -80,6 +83,11 @@ func runConfigureStorage(args []string) error {
 }
 
 func preflightStorage(config access.StorageConfig) error {
+	if config.Provider == "r2" {
+		if err := preflightR2InboxPrivacy(config); err != nil {
+			return err
+		}
+	}
 	attempt, err := randomID()
 	if err != nil {
 		return err
@@ -127,13 +135,15 @@ func preflightStorage(config access.StorageConfig) error {
 		return fmt.Errorf("inbox write probe: %w", err)
 	}
 	defer inbox.Delete(key)
-	unsigned := store.Client{Endpoint: config.Endpoint, Region: config.Region, Bucket: config.InboxBucket, NoSign: true}
-	publiclyVisible, headErr := unsigned.Head(key)
-	if headErr == nil && publiclyVisible {
-		return errors.New("private inbox probe was anonymously readable")
-	}
-	if headErr != nil && !isAccessDenied(headErr) {
-		return fmt.Errorf("anonymous inbox privacy probe was inconclusive: %w", headErr)
+	if config.Provider != "r2" {
+		unsigned := store.Client{Endpoint: config.Endpoint, Region: config.Region, Bucket: config.InboxBucket, NoSign: true}
+		publiclyVisible, headErr := unsigned.Head(key)
+		if headErr == nil && publiclyVisible {
+			return errors.New("private inbox probe was anonymously readable")
+		}
+		if headErr != nil && !isAccessDenied(headErr) {
+			return fmt.Errorf("anonymous inbox privacy probe was inconclusive: %w", headErr)
+		}
 	}
 	if err := inbox.Delete(key); err != nil {
 		return fmt.Errorf("remove inbox probe: %w", err)

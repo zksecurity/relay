@@ -158,3 +158,18 @@ read_r2_parent_token_if_needed() {
 clear_r2_parent_token() {
   unset RELAY_R2_PARENT_TOKEN || true
 }
+
+read_r2_control_token_if_needed() {
+  if [[ "${STORAGE_PROVIDER:-}" != r2 ]]; then
+    return
+  fi
+  if [[ -z "${RELAY_R2_CONTROL_TOKEN:-}" ]]; then
+    read -rsp 'Cloudflare R2 control-plane bearer token (Admin Read only): ' RELAY_R2_CONTROL_TOKEN
+    printf '\n'
+    export RELAY_R2_CONTROL_TOKEN
+  fi
+}
+
+clear_r2_control_token() {
+  unset RELAY_R2_CONTROL_TOKEN || true
+}

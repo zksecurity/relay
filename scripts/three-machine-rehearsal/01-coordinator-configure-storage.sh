@@ -41,6 +41,8 @@ case "$STORAGE_PROVIDER" in
   r2)
     require_var R2_ACCOUNT_ID
     require_var R2_PARENT_ACCESS_KEY_ID
+    read_r2_control_token_if_needed
+    trap clear_r2_control_token EXIT
     "$RELAY_BIN" coordinator configure-storage \
       --provider r2 \
       --account-id "$R2_ACCOUNT_ID" \
@@ -55,6 +57,8 @@ case "$STORAGE_PROVIDER" in
       --coordinator-key "$TRUSTED_COORDINATOR_KEY" \
       --ceremony-binary "$MPC_BIN" \
       --out "$STORAGE_CONFIG"
+    clear_r2_control_token
+    trap - EXIT
     ;;
   *)
     die "STORAGE_PROVIDER must be aws or r2"

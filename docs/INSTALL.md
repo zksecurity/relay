@@ -12,8 +12,8 @@ Release maintainers and independent build auditors use
 Obtain these values through the ceremony's authenticated trust channel:
 
 - the approved Relay release tag and Linux/amd64 binary SHA-256;
-- the approved proof-tool release tag and `mpc-ceremony` Linux/amd64 binary
-  SHA-256; and
+- the approved proof-tool GitHub repository, release tag, and `mpc-ceremony`
+  Linux/amd64 binary SHA-256; and
 - the expected AWS CLI major version, currently v2.
 
 The expected hashes must come from a channel independent of the binary
@@ -23,21 +23,34 @@ download corruption, but it does not protect against a compromised release.
 ## Download and install Relay and `mpc-ceremony`
 
 Install `curl`, `grep`, and `sha256sum` through the operating system first.
-Set the four values received through the authenticated release announcement.
+Set the five values received through the authenticated release announcement.
 The following checks stop immediately if any value is absent:
 
     : "${RELAY_TAG:?Set RELAY_TAG from the authenticated release announcement}"
+    : "${MPC_RELEASE_REPOSITORY:?Set MPC_RELEASE_REPOSITORY from the authenticated release announcement}"
     : "${MPC_TAG:?Set MPC_TAG from the authenticated release announcement}"
     : "${RELAY_SHA256:?Set RELAY_SHA256 from the authenticated release announcement}"
     : "${MPC_SHA256:?Set MPC_SHA256 from the authenticated release announcement}"
+    printf '%s\n' "$MPC_RELEASE_REPOSITORY" | \
+      grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
     INSTALL_ROOT=$(mktemp -d /tmp/ceremony-tools-install.XXXXXXXX)
 
     curl --fail --location \
       "https://github.com/zksecurity/relay/releases/download/$RELAY_TAG/relay" \
       --output "$INSTALL_ROOT/relay"
     curl --fail --location \
-      "https://github.com/Emurgo/proof-tool/releases/download/$MPC_TAG/mpc-ceremony" \
+      "https://github.com/$MPC_RELEASE_REPOSITORY/releases/download/$MPC_TAG/mpc-ceremony" \
       --output "$INSTALL_ROOT/mpc-ceremony"
+
+For an upstream production release, the authenticated announcement should name
+`Emurgo/proof-tool`. Before that release pipeline is merged upstream, a test
+announcement may explicitly name `zksecurity/proof-tool` and a prerelease tag.
+Never switch repositories merely because the announced asset is missing.
+
+For example, a fork rehearsal announcement sets
+`MPC_RELEASE_REPOSITORY=zksecurity/proof-tool`; the final upstream production
+announcement sets `MPC_RELEASE_REPOSITORY=Emurgo/proof-tool`. These are explicit
+trust inputs, not installer defaults.
 
 Reject placeholders or malformed hashes before checking the downloads:
 
@@ -124,5 +137,5 @@ clearly treat the run as a rehearsal rather than production evidence.
 
 Fill the remaining machine-specific paths, identities, and storage names, then
 run that machine's `00-check-machine.sh` command from the rehearsal guide. Do
-not store temporary grants, cloud secret keys, R2 parent tokens, ceremony
-private keys, or build-signing private keys in `.env`.
+not store temporary grants, cloud secret keys, R2 control-plane or parent
+tokens, ceremony private keys, or build-signing private keys in `.env`.

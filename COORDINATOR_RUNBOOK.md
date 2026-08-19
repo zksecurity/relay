@@ -61,6 +61,9 @@ preflight checks.
 
 For R2:
 
+    read -rsp 'R2 control-plane API token: ' RELAY_R2_CONTROL_TOKEN
+    export RELAY_R2_CONTROL_TOKEN
+    printf '\n'
     relay coordinator configure-storage \
       --provider r2 \
       --account-id <cloudflare-account-id> \
@@ -74,10 +77,21 @@ For R2:
       --ceremony-signature ceremony.sig \
       --coordinator-key coordinator-public-key.hex \
       --out relay-storage.json
+    unset RELAY_R2_CONTROL_TOKEN
 
-Expose the parent R2 token only to a grant command's process:
+The control-plane credential is a Cloudflare API bearer token with the
+account-level `Workers R2 Storage Read` permission, called R2 Admin Read only
+in the R2 token UI. Cloudflare does not offer bucket-scoped configuration read:
+use a dedicated ceremony R2 account if the coordinator must not read other
+buckets in the account. Relay uses the token to reject enabled `r2.dev` access
+or any attached custom domain. Keep the separate inbox parent token available
+only to a grant command's process:
 
-    RELAY_R2_PARENT_TOKEN=<parent-api-token> relay coordinator grant ...
+    read -rsp 'R2 inbox parent API token: ' RELAY_R2_PARENT_TOKEN
+    export RELAY_R2_PARENT_TOKEN
+    printf '\n'
+    relay coordinator grant ...
+    unset RELAY_R2_PARENT_TOKEN
 
 For AWS:
 
@@ -98,7 +112,9 @@ For AWS:
 
 `configure-storage` authenticates the ceremony, checks coordinator access,
 writes and re-reads a disposable published probe, reads it anonymously through
-the public URL, confirms that the inbox is private, and removes the probe.
+the public URL, confirms that the inbox is private, and removes the probe. For
+R2, the privacy check reads the inbox's `r2.dev` and custom-domain settings from
+Cloudflare's control-plane API.
 
 ## 4. Run each participant turn
 

@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test-and-rehearsal-release:
+    name: Tests and unsigned rehearsal release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Verify toolchain
+        run: |
+          test "$(go env GOVERSION)" = go1.26.5
+          test "$(go env GOHOSTOS)" = linux
+          test "$(go env GOHOSTARCH)" = amd64
+
+      - name: Check shell syntax
+        run: |
+          bash -n \
+            scripts/build-relay-release.sh \
+            scripts/verify-relay-release.sh \
+            scripts/verify-relay-reproducible.sh \
+            scripts/three-machine-rehearsal/*.sh \
+            scripts/three-machine-rehearsal/machine-*/.env.example
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build unsigned rehearsal release
+        run: |
+          mkdir "$RUNNER_TEMP/relay-rehearsal-parent"
+          scripts/build-relay-release.sh \
+            --mode rehearsal \
+            --out-dir "$RUNNER_TEMP/relay-rehearsal-parent/release"
+
+      - name: Verify unsigned rehearsal release
+        run: |
+          scripts/verify-relay-release.sh \
+            --mode rehearsal \
+            --expected-commit "$GITHUB_SHA" \
+            --expected-tag none \
+            --tag-signer-fingerprint none \
+            --trusted-build-public-key-file none \
+            "$RUNNER_TEMP/relay-rehearsal-parent/release"
+
+      - name: Confirm no production signature exists
+        run: |
+          test ! -e "$RUNNER_TEMP/relay-rehearsal-parent/release/build-package-manifest.sig"
+          test ! -e "$RUNNER_TEMP/relay-rehearsal-parent/release/build-package-manifest-public-key.hex"

@@ -28,6 +28,18 @@ Before a production build, agree through authenticated channels on:
 - the exact source commit referenced by that tag; and
 - the independently trusted build-package signing public key.
 
+## CI and offline-signing boundary
+
+Relay CI runs tests, checks shell syntax, builds an unsigned rehearsal package,
+and semantically verifies that package. The workflow has read-only repository
+permissions, receives no production signing input, and confirms that the
+rehearsal package contains no build signature or bundled build public key.
+
+CI must never receive the tag-signing key or build-signing private key. A
+production release is created only from the approved signed tag on the offline
+release machine described below. GitHub hosts the resulting public artifacts;
+it does not establish their production identity.
+
 ## Prepare retained release storage
 
 Choose a fresh, persistent, access-controlled directory for source checkouts,
@@ -121,6 +133,19 @@ Publish the release tag, source commit, binary and archive SHA-256 values,
 tag-signer fingerprint, and build-package public key through the project's
 authenticated release channel. The binary SHA-256 announced there is what
 normal operators compare with their download.
+
+A coordinated ceremony-tools release is usable only after proof-tool also
+publishes its approved signed tag and a standalone asset named
+`mpc-ceremony`. The authenticated announcement must name the exact proof-tool
+repository, tag, and binary SHA-256. Use `Emurgo/proof-tool` for the upstream
+production release. A `zksecurity/proof-tool` prerelease is test-only unless
+that fork is separately approved as a production trust input.
+
+The Relay and proof-tool tag names do not need to match. The coordinated
+release announcement pairs their independently signed tags, commits, and
+binary hashes. Merging proof-tool changes upstream does not copy a fork tag or
+GitHub Release; build and publish the production asset again from the approved
+tag created in `Emurgo/proof-tool`.
 
 ## Verify and reproduce a Relay release
 
