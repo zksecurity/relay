@@ -224,7 +224,7 @@ create_bucket "$INBOX_BUCKET"
 
 oac_name="relay-${PUBLISHED_BUCKET:0:40}-${setup_account}-oac"
 oac_id=$(aws --profile "$AWS_PROFILE" cloudfront list-origin-access-controls \
-  --query "OriginAccessControlList.Items[?OriginAccessControlConfig.Name=='$oac_name'].Id | [0]" --output text)
+  --query "OriginAccessControlList.Items[?Name=='$oac_name'].Id | [0]" --output text)
 if [[ -z "$oac_id" || "$oac_id" == None ]]; then
   printf 'Creating CloudFront origin access control\n'
   oac_id=$(aws --profile "$AWS_PROFILE" cloudfront create-origin-access-control \
