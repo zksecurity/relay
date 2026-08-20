@@ -23,8 +23,10 @@ Commands below are intentionally flush left for copying.
 ## One-time setup on each machine
 
 Copy this entire directory to the same repository-relative location on all
-three machines. Install Bash, Python 3, and GNU coreutils in addition to the
-three programs checked below. On each machine, create its private `.env`:
+three machines. Follow [the installation guide](../../docs/INSTALL.md), which
+uses the same machine `.env` to download and verify Relay and `mpc-ceremony`.
+Install Bash, Python 3, and GNU coreutils in addition to the three programs
+checked below. On each machine, create its private `.env`:
 
 Machine 1:
 

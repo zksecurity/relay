@@ -22,25 +22,53 @@ download corruption, but it does not protect against a compromised release.
 
 ## Download and install Relay and `mpc-ceremony`
 
-Install `curl`, `grep`, and `sha256sum` through the operating system first.
-Set the five values received through the authenticated release announcement.
-The following checks stop immediately if any value is absent:
+Install `curl` and `sha256sum` through the operating system first. For a general
+installation, create the installer dotenv file:
 
-    : "${RELAY_TAG:?Set RELAY_TAG from the authenticated release announcement}"
-    : "${MPC_RELEASE_REPOSITORY:?Set MPC_RELEASE_REPOSITORY from the authenticated release announcement}"
-    : "${MPC_TAG:?Set MPC_TAG from the authenticated release announcement}"
-    : "${RELAY_SHA256:?Set RELAY_SHA256 from the authenticated release announcement}"
-    : "${MPC_SHA256:?Set MPC_SHA256 from the authenticated release announcement}"
-    printf '%s\n' "$MPC_RELEASE_REPOSITORY" | \
-      grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
-    INSTALL_ROOT=$(mktemp -d /tmp/ceremony-tools-install.XXXXXXXX)
+```bash
+cd /path/to/relay
+cp scripts/install.env.example scripts/install.env
+chmod 0600 scripts/install.env
+INSTALL_ENV=scripts/install.env
+```
 
-    curl --fail --location \
-      "https://github.com/zksecurity/relay/releases/download/$RELAY_TAG/relay" \
-      --output "$INSTALL_ROOT/relay"
-    curl --fail --location \
-      "https://github.com/$MPC_RELEASE_REPOSITORY/releases/download/$MPC_TAG/mpc-ceremony" \
-      --output "$INSTALL_ROOT/mpc-ceremony"
+For the scripted three-machine rehearsal, use its machine `.env` for both
+installation and the later role commands. Replace `N` with `1`, `2`, or `3`:
+
+```bash
+cd /path/to/relay
+cp scripts/three-machine-rehearsal/machine-N/.env.example scripts/three-machine-rehearsal/machine-N/.env
+chmod 0600 scripts/three-machine-rehearsal/machine-N/.env
+INSTALL_ENV=scripts/three-machine-rehearsal/machine-N/.env
+```
+
+Fill these seven fields first:
+
+```text
+RELAY_TAG
+MPC_RELEASE_REPOSITORY
+MPC_TAG
+RELAY_SHA256
+MPC_SHA256
+RELAY_BIN
+MPC_BIN
+```
+
+The example installs into `/usr/local/bin`. Change the two absolute binary paths
+before installation if this machine uses another existing installation
+directory. Then run:
+
+```bash
+scripts/install-ceremony-tools.sh "$INSTALL_ENV"
+```
+
+The installer reads only those seven dotenv assignments without executing the
+file as shell code. It rejects missing values, placeholders, duplicate fields,
+malformed tags, repositories, hashes, or destination paths. It downloads both
+binaries into a private temporary directory, verifies both SHA-256 values
+before installing either binary, installs them with mode `0755`, and checks that
+both installed programs start. It uses `sudo` only when the destination is not
+writable by the current user.
 
 For an upstream production release, the authenticated announcement should name
 `Emurgo/proof-tool`. Before that release pipeline is merged upstream, a test
@@ -51,19 +79,6 @@ For example, a fork rehearsal announcement sets
 `MPC_RELEASE_REPOSITORY=zksecurity/proof-tool`; the final upstream production
 announcement sets `MPC_RELEASE_REPOSITORY=Emurgo/proof-tool`. These are explicit
 trust inputs, not installer defaults.
-
-Reject placeholders or malformed hashes before checking the downloads:
-
-    printf '%s\n' "$RELAY_SHA256" | grep -Eq '^[0-9a-f]{64}$'
-    printf '%s\n' "$MPC_SHA256" | grep -Eq '^[0-9a-f]{64}$'
-    printf '%s  %s\n' "$RELAY_SHA256" "$INSTALL_ROOT/relay" | sha256sum --check
-    printf '%s  %s\n' "$MPC_SHA256" "$INSTALL_ROOT/mpc-ceremony" | sha256sum --check
-
-Both checks must report `OK`. Only then install the binaries:
-
-    sudo install -m 0755 "$INSTALL_ROOT/relay" /usr/local/bin/relay
-    sudo install -m 0755 \
-      "$INSTALL_ROOT/mpc-ceremony" /usr/local/bin/mpc-ceremony
 
 If an approved release has not published these assets yet, stop and ask its
 maintainer to publish a reviewed release. Do not silently replace a production
@@ -117,23 +132,23 @@ Install Bash, Python 3, and GNU coreutils on every rehearsal machine. Python is
 used only by the rehearsal helpers to read the tiny ceremony definition; it is
 not a Relay runtime dependency.
 
-After installing and verifying both binaries, copy the example for the machine
-being prepared. Replace `N` with `1`, `2`, or `3`:
+If the machine `.env` was not used during installation, create it now from the
+appropriate machine example and copy the seven verified installer fields into
+it. Confirm the recorded binary paths and hashes before filling its remaining
+ceremony-specific fields:
 
 ```bash
 cd /path/to/relay
-cp scripts/three-machine-rehearsal/machine-N/.env.example scripts/three-machine-rehearsal/machine-N/.env
-chmod 0600 scripts/three-machine-rehearsal/machine-N/.env
 command -v relay mpc-ceremony
 sha256sum "$(command -v relay)" "$(command -v mpc-ceremony)"
 ```
 
-Paste the absolute paths reported by `command -v` into `RELAY_BIN` and
-`MPC_BIN`. Paste the independently approved digests into `RELAY_SHA256` and
-`MPC_SHA256`. Recording a digest in `.env` does not make it trusted: obtain the
-expected value through the authenticated release channel before comparing it.
-For a local test build without a published release, record its exact digest and
-clearly treat the run as a rehearsal rather than production evidence.
+The output must match `RELAY_BIN`, `MPC_BIN`, `RELAY_SHA256`, and `MPC_SHA256`
+already recorded in `.env`. Recording a digest there does not make it trusted:
+obtain the expected value through the authenticated release channel before
+installation. For a local test build without a published release, record its
+exact digest and clearly treat the run as a rehearsal rather than production
+evidence.
 
 Fill the remaining machine-specific paths, identities, and storage names, then
 run that machine's `00-check-machine.sh` command from the rehearsal guide. Do

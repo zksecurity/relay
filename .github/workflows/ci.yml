@@ -39,8 +39,10 @@ jobs:
         run: |
           bash -n \
             scripts/build-relay-release.sh \
+            scripts/install-ceremony-tools.sh \
             scripts/verify-relay-release.sh \
             scripts/verify-relay-reproducible.sh \
+            scripts/install.env.example \
             scripts/three-machine-rehearsal/*.sh \
             scripts/three-machine-rehearsal/machine-*/.env.example
 
