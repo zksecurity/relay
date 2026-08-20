@@ -14,6 +14,46 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  static:
+    name: Format, vet, and ShellCheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Go formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' go_files < <(git ls-files -z -- '*.go')
+          unformatted=$(gofmt -l "${go_files[@]}")
+          if [[ -n "$unformatted" ]]; then
+            printf 'Go files require gofmt:\n%s\n' "$unformatted" >&2
+            exit 1
+          fi
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: ShellCheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          shellcheck --version
+          mapfile -d '' shell_files < <(git ls-files -z -- 'scripts/*.sh')
+          shellcheck \
+            --shell=bash \
+            --external-sources \
+            --source-path=SCRIPTDIR \
+            "${shell_files[@]}"
+
   test-and-rehearsal-release:
     name: Tests and unsigned rehearsal release
     runs-on: ubuntu-latest
@@ -23,6 +63,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -145,22 +186,40 @@ jobs:
       - name: Test
         run: go test ./...
 
-      - name: Build unsigned rehearsal release
+      - name: Build two unsigned rehearsal releases
         run: |
           mkdir "$RUNNER_TEMP/relay-rehearsal-parent"
+          mkdir "$RUNNER_TEMP/relay-rehearsal-rebuild-parent"
           scripts/build-relay-release.sh \
             --mode rehearsal \
             --out-dir "$RUNNER_TEMP/relay-rehearsal-parent/release"
-
-      - name: Verify unsigned rehearsal release
-        run: |
-          scripts/verify-relay-release.sh \
+          scripts/build-relay-release.sh \
             --mode rehearsal \
-            --expected-commit "$GITHUB_SHA" \
-            --expected-tag none \
-            --tag-signer-fingerprint none \
-            --trusted-build-public-key-file none \
-            "$RUNNER_TEMP/relay-rehearsal-parent/release"
+            --out-dir "$RUNNER_TEMP/relay-rehearsal-rebuild-parent/release"
+
+      - name: Verify both unsigned rehearsal releases
+        run: |
+          for release in \
+            "$RUNNER_TEMP/relay-rehearsal-parent/release" \
+            "$RUNNER_TEMP/relay-rehearsal-rebuild-parent/release"
+          do
+            scripts/verify-relay-release.sh \
+              --mode rehearsal \
+              --expected-commit "$GITHUB_SHA" \
+              --expected-tag none \
+              --tag-signer-fingerprint none \
+              --trusted-build-public-key-file none \
+              "$release"
+          done
+
+      - name: Verify byte-for-byte rehearsal reproducibility
+        run: |
+          diff -r --no-dereference \
+            "$RUNNER_TEMP/relay-rehearsal-parent/release" \
+            "$RUNNER_TEMP/relay-rehearsal-rebuild-parent/release"
+          cmp \
+            "$RUNNER_TEMP/relay-rehearsal-parent/release/relay" \
+            "$RUNNER_TEMP/relay-rehearsal-rebuild-parent/release/relay"
 
       - name: Verify source-free operator assets
         run: |
@@ -280,5 +339,10 @@ jobs:
 
       - name: Confirm no production signature exists
         run: |
-          test ! -e "$RUNNER_TEMP/relay-rehearsal-parent/release/build-package-manifest.sig"
-          test ! -e "$RUNNER_TEMP/relay-rehearsal-parent/release/build-package-manifest-public-key.hex"
+          for release in \
+            "$RUNNER_TEMP/relay-rehearsal-parent/release" \
+            "$RUNNER_TEMP/relay-rehearsal-rebuild-parent/release"
+          do
+            test ! -e "$release/build-package-manifest.sig"
+            test ! -e "$release/build-package-manifest-public-key.hex"
+          done
