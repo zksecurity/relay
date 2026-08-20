@@ -157,6 +157,20 @@ jobs:
             --mpc-sha256 "$RELAY_SHA256" \
             --include-rehearsal \
             --out-dir "$RUNNER_TEMP/ceremony-kit-parent/ceremony-kit"
+          KIT_SOURCE_DATE_EPOCH=$(<"$RELEASE_DIR/source-date-epoch.txt")
+          CEREMONY_KIT_ARCHIVE="$RUNNER_TEMP/ceremony-kit-linux-amd64.tar.gz"
+          tar --sort=name --mtime="@$KIT_SOURCE_DATE_EPOCH" \
+            --owner=0 --group=0 --numeric-owner \
+            -cf - -C "$RUNNER_TEMP/ceremony-kit-parent" ceremony-kit | \
+            gzip -n >"$CEREMONY_KIT_ARCHIVE"
+          tar -tzf "$CEREMONY_KIT_ARCHIVE" >"$RUNNER_TEMP/ceremony-kit-contents.txt"
+          grep -Fx 'ceremony-kit/' "$RUNNER_TEMP/ceremony-kit-contents.txt"
+          grep -Fx 'ceremony-kit/setup' "$RUNNER_TEMP/ceremony-kit-contents.txt"
+          ! grep -Fx './setup' "$RUNNER_TEMP/ceremony-kit-contents.txt"
+          mkdir "$RUNNER_TEMP/ceremony-kit-extracted"
+          tar --no-same-owner -xzf "$CEREMONY_KIT_ARCHIVE" \
+            -C "$RUNNER_TEMP/ceremony-kit-extracted"
+          "$RUNNER_TEMP/ceremony-kit-extracted/ceremony-kit/setup" verify
           "$RUNNER_TEMP/ceremony-kit-parent/ceremony-kit/setup" verify
           "$RUNNER_TEMP/ceremony-kit-parent/ceremony-kit/setup" \
             --prefix "$RUNNER_TEMP/ceremony-kit-install" \

@@ -49,7 +49,7 @@ Expected:
 
 Do not extract or execute a kit whose hash does not report `OK`.
 
-## Install the coordinated binaries
+## Extract the kit and choose one setup path
 
 Extract the verified archive into a persistent, access-controlled directory:
 
@@ -65,10 +65,13 @@ cd "$CEREMONY_TOOLS_ROOT/ceremony-kit"
 ./setup verify
 ```
 
-`./setup verify` checks every internal file against the authenticated kit. The
-remaining setup flags can be combined, so choose the single command for this
-machine below. Setup places the two pinned binaries in `/usr/local/bin`, using
-`sudo` only if necessary, and confirms both programs start.
+`./setup verify` checks every internal file against the authenticated kit. Stop
+here and choose exactly one of the two setup paths below. Do not run the
+production or non-rehearsal setup commands before the three-machine rehearsal
+setup. Every setup path installs the two pinned binaries in `/usr/local/bin`,
+using `sudo` only if necessary, and confirms both programs start.
+
+### Production or non-rehearsal setup
 
 For a production participant or another machine that needs only the binaries:
 
@@ -76,8 +79,8 @@ For a production participant or another machine that needs only the binaries:
 ./setup
 ```
 
-For a coordinator, install the binaries and extract the authenticated provider
-guides and setup scripts in one invocation:
+For a production coordinator, install the binaries and extract the
+authenticated provider guides and setup scripts in one invocation:
 
 ```bash
 ./setup --storage-setup-root "$CEREMONY_TOOLS_ROOT"
@@ -85,10 +88,13 @@ cd "$CEREMONY_TOOLS_ROOT/storage-setup"
 ```
 
 Then follow `docs/AWS_SETUP.md` or `docs/R2_SETUP.md`. The extracted scripts
-and guides are covered by the ceremony-kit checksum.
+and guides are covered by the ceremony-kit checksum. Do not run this command
+separately for a three-machine rehearsal; its Machine 1 command below already
+performs the same extraction.
 
 To install the binaries in an existing user-writable directory instead, add
-`--prefix` to the selected command. For example:
+`--prefix` to whichever single setup command you select. For example, a
+non-rehearsal installation can use:
 
 ```bash
 mkdir -p "$HOME/.local/bin"
@@ -98,10 +104,12 @@ mkdir -p "$HOME/.local/bin"
 No ceremony credentials, role keys, cloud secrets, or temporary grants belong
 in the kit.
 
-## Three-machine rehearsal
+### Three-machine rehearsal
 
-An approved rehearsal kit also contains the versioned rehearsal scripts. On
-the coordinator's Machine 1, install everything with one command:
+An approved rehearsal kit also contains the versioned rehearsal scripts. Skip
+the production or non-rehearsal commands above. On the coordinator's Machine 1,
+this one command installs the binaries and extracts both the storage setup and
+rehearsal files:
 
 ```bash
 cd "$CEREMONY_TOOLS_ROOT/ceremony-kit"
@@ -111,8 +119,9 @@ cd "$CEREMONY_TOOLS_ROOT/ceremony-kit"
   --storage-setup-root "$CEREMONY_TOOLS_ROOT"
 ```
 
-On Machines 2 and 3, replace `N` with `2` or `3` and omit the coordinator-only
-storage setup:
+On Machines 2 and 3, this is also the only setup command to run. Replace `N`
+with `2` or `3`; these machines do not extract the coordinator-only storage
+setup:
 
 ```bash
 cd "$CEREMONY_TOOLS_ROOT/ceremony-kit"
