@@ -71,7 +71,7 @@ func runAcceptCandidate(args []string) error {
 	set.StringVar(&root, "root", "", "coordinator transcript root")
 	set.StringVar(&candidateDir, "candidate-dir", "", "fresh local directory for the downloaded candidate")
 	set.StringVar(&coordinatorSigningKey, "coordinator-signing-key", "", "coordinator Ed25519 private key")
-	set.StringVar(&acceptedAt, "accepted-at", "", "acceptance timestamp (defaults to now)")
+	set.StringVar(&acceptedAt, "accepted-at", "", "acceptance timestamp (defaults to the current time after candidate download)")
 	set.StringVar(&phase1Seal, "phase1-seal", "", "phase 2: sealed phase-1 record")
 	set.StringVar(&phase1SealSignature, "phase1-seal-signature", "", "phase 2: phase-1 seal signature")
 	set.BoolVar(&verify, "verify-publish", false, "confirm every published object after advancing the head")
@@ -81,11 +81,10 @@ func runAcceptCandidate(args []string) error {
 	if storagePath == "" || candidateKey == "" || coordinatorSigningKey == "" {
 		return errors.New("--storage, --candidate-key and --coordinator-signing-key are required; --root and --candidate-dir have ceremony-home defaults")
 	}
-	if acceptedAt == "" {
-		acceptedAt = time.Now().UTC().Format(time.RFC3339)
-	}
-	if _, err := time.Parse(time.RFC3339, acceptedAt); err != nil {
-		return errors.New("--accepted-at must be RFC3339")
+	if acceptedAt != "" {
+		if _, err := time.Parse(time.RFC3339, acceptedAt); err != nil {
+			return errors.New("--accepted-at must be RFC3339")
+		}
 	}
 	if !safeObjectKey(candidateKey) || !strings.HasSuffix(candidateKey, "/manifest.json") {
 		return errors.New("--candidate-key must be a safe manifest object key")
@@ -168,6 +167,9 @@ func runAcceptCandidate(args []string) error {
 	}); err != nil {
 		return err
 	}
+	if acceptedAt == "" {
+		acceptedAt = defaultAcceptanceTimestamp(time.Now())
+	}
 	command := []string{manifest.Phase, "verify", "--ceremony", config.CeremonyPath,
 		"--ceremony-signature", config.CeremonySignature, "--coordinator-public-key-file", config.CoordinatorPublicKey,
 		"--transcript-dir", root, "--chain", pos.chainPath, "--chain-signature", pos.chain.ChainSignaturePath,
@@ -203,6 +205,10 @@ func runAcceptCandidate(args []string) error {
 	}
 	fmt.Printf("accepted candidate %s and advanced the published head\n", candidateKey)
 	return nil
+}
+
+func defaultAcceptanceTimestamp(now time.Time) string {
+	return now.UTC().Format(time.RFC3339Nano)
 }
 
 func runEvidenceInbox(args []string) error {

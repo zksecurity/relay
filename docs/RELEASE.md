@@ -218,12 +218,25 @@ exact clean checkout can build the CLI directly:
       checkout --detach "$PROOF_TOOL_COMMIT"
     (
       cd "$RELEASE_EVIDENCE_ROOT/proof-tool-source"
-      CGO_ENABLED=0 go build -trimpath -buildvcs=true \
+      bash scripts/bootstrap-vendor.sh
+      CGO_ENABLED=0 go build -mod=vendor -trimpath -buildvcs=true \
         -o "$RELEASE_EVIDENCE_ROOT/mpc-ceremony" ./cmd/mpc-ceremony
     )
 
 Never use `go run` for `mpc-ceremony`; the program requires VCS metadata that
-`go run` omits.
+`go run` omits. Do not replace the vendored build above with `-mod=mod`:
+proof-tool's reviewed gnark changes are applied by `bootstrap-vendor.sh` and
+must be present in the tested binary.
+
+Before approving a coordinated release, exercise Relay against that exact
+proof-tool checkout, including the production-sized contribution and
+acceptance path:
+
+    cd /path/to/relay
+    RELAY_PROOF_TOOL_DIR="$RELEASE_EVIDENCE_ROOT/proof-tool-source" \
+    RELAY_PROOF_TOOL_FULL=1 \
+      go test ./cmd/relay -run '^TestProofToolCompatibility$' -count=1 \
+        -timeout 30m -v
 
 For a production proof-tool release, follow its repository's approved signed
 tag and reproducible-release procedure using
