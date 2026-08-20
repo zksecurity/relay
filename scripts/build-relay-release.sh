@@ -173,8 +173,8 @@ fi
 GO_VERSION=$(env -u GOROOT \
   CGO_ENABLED=0 GOARCH=amd64 GOENV=off GOEXPERIMENT= GOFIPS140=off \
   GOOS=linux GOAMD64=v1 GOTOOLCHAIN=local "$GO_BIN" env GOVERSION)
-if [[ "$GO_VERSION" != "go1.26.5" ]]; then
-  echo "FAIL: release build requires go1.26.5, found $GO_VERSION" >&2
+if [[ "$GO_VERSION" != "go1.26.6" ]]; then
+  echo "FAIL: release build requires go1.26.6, found $GO_VERSION" >&2
   exit 1
 fi
 GO_HOST_OS=$(env -u GOROOT GOENV=off GOTOOLCHAIN=local "$GO_BIN" env GOHOSTOS)

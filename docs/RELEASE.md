@@ -7,7 +7,7 @@ signing key.
 
 ## Trust inputs and prerequisites
 
-Production Relay and `mpc-ceremony` releases target Linux/amd64 with Go 1.26.5.
+Production Relay and `mpc-ceremony` releases target Linux/amd64 with Go 1.26.6.
 Install Go using the [official Go installation guide](https://go.dev/doc/install)
 and confirm:
 
@@ -15,7 +15,7 @@ and confirm:
 
 Expected:
 
-    go version go1.26.5 linux/amd64
+    go version go1.26.6 linux/amd64
 
 The build host also needs Git, GnuPG, `grep`, `sed`, GNU coreutils, and GNU
 findutils. Do not allow `GOTOOLCHAIN` to silently select another production

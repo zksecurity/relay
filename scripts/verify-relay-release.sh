@@ -156,8 +156,8 @@ fi
 GO_VERSION=$(env -u GOROOT GOENV=off GOTOOLCHAIN=local "$GO_BIN" env GOVERSION)
 GO_HOST_OS=$(env -u GOROOT GOENV=off GOTOOLCHAIN=local "$GO_BIN" env GOHOSTOS)
 GO_HOST_ARCH=$(env -u GOROOT GOENV=off GOTOOLCHAIN=local "$GO_BIN" env GOHOSTARCH)
-if [[ "$GO_VERSION" != "go1.26.5" || "$GO_HOST_OS" != "linux" || "$GO_HOST_ARCH" != "amd64" ]]; then
-  echo "FAIL: verification requires Go 1.26.5 on linux/amd64" >&2
+if [[ "$GO_VERSION" != "go1.26.6" || "$GO_HOST_OS" != "linux" || "$GO_HOST_ARCH" != "amd64" ]]; then
+  echo "FAIL: verification requires Go 1.26.6 on linux/amd64" >&2
   exit 1
 fi
 

@@ -259,6 +259,6 @@ bucket agrees with itself.
 Operators need the AWS CLI and the authenticated coordinated ceremony kit.
 Source-free installation is documented in
 [docs/INSTALL.md](docs/INSTALL.md). Release maintainers and independent build
-auditors need Go 1.26.5 and use [docs/RELEASE.md](docs/RELEASE.md). Relay has no
+auditors need Go 1.26.6 and use [docs/RELEASE.md](docs/RELEASE.md). Relay has no
 third-party Go dependencies; its production builder emits a signed,
 reproducible release package.
