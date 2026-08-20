@@ -66,6 +66,19 @@ jobs:
             --trusted-build-public-key-file none \
             "$RUNNER_TEMP/relay-rehearsal-parent/release"
 
+      - name: Verify source-free operator assets
+        run: |
+          RELEASE_DIR="$RUNNER_TEMP/relay-rehearsal-parent/release"
+          (
+            cd "$RELEASE_DIR"
+            sha256sum --check checksums.sha256
+          )
+          test -x "$RELEASE_DIR/install-ceremony-tools.sh"
+          cmp \
+            <(git archive --format=tar --prefix=three-machine-rehearsal/ \
+              "$GITHUB_SHA:scripts/three-machine-rehearsal" | tar -t) \
+            <(tar -tzf "$RELEASE_DIR/three-machine-rehearsal.tar.gz")
+
       - name: Confirm no production signature exists
         run: |
           test ! -e "$RUNNER_TEMP/relay-rehearsal-parent/release/build-package-manifest.sig"

@@ -73,7 +73,7 @@ else
   fi
 fi
 
-for command_name in git go sha256sum realpath mktemp grep sed xargs; do
+for command_name in git go gzip install sha256sum realpath mktemp grep sed xargs; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "FAIL: required command is missing: $command_name" >&2
     exit 1
@@ -270,6 +270,20 @@ printf '%s\n' 'go test ./...: passed' >"$STAGING/test-status.txt"
   -o "$STAGING/relay" \
   ./cmd/relay
 
+# These operator-facing assets are derived from the same exact source commit as
+# the binary and are covered by the release manifest. The rehearsal archive
+# contains only the tracked rehearsal subtree; private .env files cannot enter
+# it. gzip -n removes the gzip header timestamp and original filename.
+install -m 0755 scripts/install-ceremony-tools.sh \
+  "$STAGING/install-ceremony-tools.sh"
+install -m 0644 scripts/install.env.example "$STAGING/install.env.example"
+git archive \
+  --format=tar \
+  --mtime="@$SOURCE_DATE_EPOCH" \
+  --prefix=three-machine-rehearsal/ \
+  "$SOURCE_COMMIT:scripts/three-machine-rehearsal" |
+  gzip -n >"$STAGING/three-machine-rehearsal.tar.gz"
+
 (
   cd "$STAGING"
   "${go_env[@]}" "$GO_BIN" version -m ./relay >go-build-info.txt
@@ -286,7 +300,11 @@ printf '%s\n' 'go test ./...: passed' >"$STAGING/test-status.txt"
 )
 (
   cd "$STAGING"
-  sha256sum relay >checksums.sha256
+  sha256sum \
+    install-ceremony-tools.sh \
+    install.env.example \
+    relay \
+    three-machine-rehearsal.tar.gz >checksums.sha256
 )
 printf '%s\n' '-trimpath -buildvcs=true -ldflags=-buildid=' >"$STAGING/build-flags.txt"
 printf '%s\n' "$MODE" >"$STAGING/build-mode.txt"
@@ -319,7 +337,7 @@ if [[ "$MODE" == "production" ]]; then
 fi
 
 chmod 0444 "$STAGING"/*
-chmod 0555 "$STAGING/relay"
+chmod 0555 "$STAGING/relay" "$STAGING/install-ceremony-tools.sh"
 touch -d "@$SOURCE_DATE_EPOCH" "$STAGING"/*
 
 verify_args=(

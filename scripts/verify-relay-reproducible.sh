@@ -105,12 +105,15 @@ build_outputs=(
   build-flags.txt
   checksums.sha256
   go-build-info.txt
+  install-ceremony-tools.sh
+  install.env.example
   relay
   sbom.cdx.json
   source-checksums.sha256
   source-commit.txt
   source-date-epoch.txt
   test-status.txt
+  three-machine-rehearsal.tar.gz
   toolchain-checksums.sha256
 )
 for name in "${build_outputs[@]}"; do

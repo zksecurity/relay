@@ -38,6 +38,8 @@ var coreFiles = []string{
 	"build-mode.txt",
 	"checksums.sha256",
 	"go-build-info.txt",
+	"install-ceremony-tools.sh",
+	"install.env.example",
 	"relay",
 	"sbom.cdx.json",
 	"signed-tag-object.txt",
@@ -48,7 +50,15 @@ var coreFiles = []string{
 	"source-commit.txt",
 	"source-date-epoch.txt",
 	"test-status.txt",
+	"three-machine-rehearsal.tar.gz",
 	"toolchain-checksums.sha256",
+}
+
+var downloadableFiles = []string{
+	"install-ceremony-tools.sh",
+	"install.env.example",
+	"relay",
+	"three-machine-rehearsal.tar.gz",
 }
 
 type packageManifest struct {
@@ -414,7 +424,7 @@ func verifyPackage(opts verifyOptions) error {
 			return fmt.Errorf("release entry is not a regular file: %s", name)
 		}
 		wantMode := fs.FileMode(0o444)
-		if name == "relay" {
+		if name == "relay" || name == "install-ceremony-tools.sh" {
 			wantMode = 0o555
 		}
 		if runtime.GOOS != "windows" && info.Mode().Perm() != wantMode {
@@ -475,11 +485,15 @@ func verifyPackage(opts verifyOptions) error {
 	if err := requireExactFile(filepath.Join(opts.dir, "build-package-manifest.sha256"), wantManifestChecksum); err != nil {
 		return err
 	}
-	_, relayDigest, err := hashRegular(filepath.Join(opts.dir, "relay"))
-	if err != nil {
-		return err
+	var checksums strings.Builder
+	for _, name := range downloadableFiles {
+		_, digest, err := hashRegular(filepath.Join(opts.dir, name))
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(&checksums, "%s  %s\n", digest, name)
 	}
-	if err := requireExactFile(filepath.Join(opts.dir, "checksums.sha256"), relayDigest+"  relay\n"); err != nil {
+	if err := requireExactFile(filepath.Join(opts.dir, "checksums.sha256"), checksums.String()); err != nil {
 		return err
 	}
 	info, err := buildinfo.ReadFile(filepath.Join(opts.dir, "relay"))

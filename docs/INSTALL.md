@@ -12,34 +12,81 @@ Release maintainers and independent build auditors use
 Obtain these values through the ceremony's authenticated trust channel:
 
 - the approved Relay release tag and Linux/amd64 binary SHA-256;
+- the SHA-256 values of Relay's installer script and installer `.env`
+  template;
 - the approved proof-tool GitHub repository, release tag, and `mpc-ceremony`
-  Linux/amd64 binary SHA-256; and
+  Linux/amd64 binary SHA-256;
+- for a three-machine rehearsal, the rehearsal archive SHA-256; and
 - the expected AWS CLI major version, currently v2.
 
 The expected hashes must come from a channel independent of the binary
 downloads. A checksum copied from the same GitHub release as its binary detects
 download corruption, but it does not protect against a compromised release.
 
-## Download and install Relay and `mpc-ceremony`
+## Download the verified installer
 
-Install `curl` and `sha256sum` through the operating system first. For a general
-installation, create the installer dotenv file:
+Install `curl` and `sha256sum` through the operating system first. A source
+checkout is not required. Set the Relay tag and the two independently approved
+download hashes, then fetch the installer and its dotenv template:
 
 ```bash
-cd /path/to/relay
-cp scripts/install.env.example scripts/install.env
-chmod 0600 scripts/install.env
-INSTALL_ENV=scripts/install.env
+: "${RELAY_TAG:?Set RELAY_TAG from the authenticated release announcement}"
+: "${RELAY_INSTALLER_SHA256:?Set the approved installer script SHA-256}"
+: "${RELAY_INSTALL_ENV_SHA256:?Set the approved installer env SHA-256}"
+DOWNLOAD_ROOT=$(mktemp -d /tmp/ceremony-tools-download.XXXXXXXX)
+
+curl --proto '=https' --tlsv1.2 --fail --location --show-error \
+  "https://github.com/zksecurity/relay/releases/download/$RELAY_TAG/install-ceremony-tools.sh" \
+  --output "$DOWNLOAD_ROOT/install-ceremony-tools.sh"
+curl --proto '=https' --tlsv1.2 --fail --location --show-error \
+  "https://github.com/zksecurity/relay/releases/download/$RELAY_TAG/install.env.example" \
+  --output "$DOWNLOAD_ROOT/install.env"
+
+printf '%s  %s\n' "$RELAY_INSTALLER_SHA256" \
+  "$DOWNLOAD_ROOT/install-ceremony-tools.sh" | sha256sum --check
+printf '%s  %s\n' "$RELAY_INSTALL_ENV_SHA256" \
+  "$DOWNLOAD_ROOT/install.env" | sha256sum --check
+chmod 0700 "$DOWNLOAD_ROOT/install-ceremony-tools.sh"
+chmod 0600 "$DOWNLOAD_ROOT/install.env"
 ```
 
-For the scripted three-machine rehearsal, use its machine `.env` for both
-installation and the later role commands. Replace `N` with `1`, `2`, or `3`:
+Do not pipe a network response directly into Bash. Verifying the saved script
+before running it makes the code being executed an explicit authenticated
+input.
+
+## Choose the `.env` file
+
+For a general installation, edit the downloaded template and use it directly:
 
 ```bash
-cd /path/to/relay
-cp scripts/three-machine-rehearsal/machine-N/.env.example scripts/three-machine-rehearsal/machine-N/.env
-chmod 0600 scripts/three-machine-rehearsal/machine-N/.env
-INSTALL_ENV=scripts/three-machine-rehearsal/machine-N/.env
+INSTALL_ENV="$DOWNLOAD_ROOT/install.env"
+${EDITOR:-vi} "$INSTALL_ENV"
+```
+
+For the scripted three-machine rehearsal, download the versioned archive and
+use its machine `.env` for both installation and later role commands. Replace
+`N` with `1`, `2`, or `3`, and select a persistent, access-controlled directory:
+
+```bash
+: "${REHEARSAL_ARCHIVE_SHA256:?Set the approved rehearsal archive SHA-256}"
+curl --proto '=https' --tlsv1.2 --fail --location --show-error \
+  "https://github.com/zksecurity/relay/releases/download/$RELAY_TAG/three-machine-rehearsal.tar.gz" \
+  --output "$DOWNLOAD_ROOT/three-machine-rehearsal.tar.gz"
+printf '%s  %s\n' "$REHEARSAL_ARCHIVE_SHA256" \
+  "$DOWNLOAD_ROOT/three-machine-rehearsal.tar.gz" | sha256sum --check
+
+CEREMONY_TOOLS_ROOT="$HOME/ceremony-tools"
+mkdir -m 0700 -p "$CEREMONY_TOOLS_ROOT"
+chmod 0700 "$CEREMONY_TOOLS_ROOT"
+test ! -e "$CEREMONY_TOOLS_ROOT/three-machine-rehearsal"
+tar -xzf "$DOWNLOAD_ROOT/three-machine-rehearsal.tar.gz" \
+  -C "$CEREMONY_TOOLS_ROOT"
+REHEARSAL_ROOT="$CEREMONY_TOOLS_ROOT/three-machine-rehearsal"
+cp "$REHEARSAL_ROOT/machine-N/.env.example" \
+  "$REHEARSAL_ROOT/machine-N/.env"
+chmod 0600 "$REHEARSAL_ROOT/machine-N/.env"
+INSTALL_ENV="$REHEARSAL_ROOT/machine-N/.env"
+${EDITOR:-vi} "$INSTALL_ENV"
 ```
 
 Fill these seven fields first:
@@ -59,7 +106,7 @@ before installation if this machine uses another existing installation
 directory. Then run:
 
 ```bash
-scripts/install-ceremony-tools.sh "$INSTALL_ENV"
+"$DOWNLOAD_ROOT/install-ceremony-tools.sh" "$INSTALL_ENV"
 ```
 
 The installer reads only those seven dotenv assignments without executing the
@@ -133,12 +180,11 @@ used only by the rehearsal helpers to read the tiny ceremony definition; it is
 not a Relay runtime dependency.
 
 If the machine `.env` was not used during installation, create it now from the
-appropriate machine example and copy the seven verified installer fields into
-it. Confirm the recorded binary paths and hashes before filling its remaining
-ceremony-specific fields:
+appropriate machine example in the extracted archive and copy the seven
+verified installer fields into it. Confirm the recorded binary paths and
+hashes before filling its remaining ceremony-specific fields:
 
 ```bash
-cd /path/to/relay
 command -v relay mpc-ceremony
 sha256sum "$(command -v relay)" "$(command -v mpc-ceremony)"
 ```

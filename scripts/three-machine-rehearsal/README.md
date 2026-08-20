@@ -3,8 +3,7 @@
 This directory turns the tiny Relay rehearsal into explicit machine steps.
 All three machines use the same reviewed Relay and `mpc-ceremony` binaries.
 This is the detailed rehearsal walkthrough; production operators instead use
-the [coordinator](../../COORDINATOR_RUNBOOK.md) or
-[role](../../ROLE_RUNBOOK.md) runbook.
+the Relay coordinator or role runbook from the authenticated source release.
 
 The role split is:
 
@@ -22,34 +21,34 @@ Commands below are intentionally flush left for copying.
 
 ## One-time setup on each machine
 
-Copy this entire directory to the same repository-relative location on all
-three machines. Follow [the installation guide](../../docs/INSTALL.md), which
-uses the same machine `.env` to download and verify Relay and `mpc-ceremony`.
-Install Bash, Python 3, and GNU coreutils in addition to the three programs
-checked below. On each machine, create its private `.env`:
+Download and verify the versioned `three-machine-rehearsal.tar.gz` release
+asset on all three machines by following Relay's installation guide. The
+archive is standalone and does not require a Relay source checkout. Install
+Bash, Python 3, and GNU coreutils in addition to the three programs checked
+below. On each machine, create its private `.env`:
 
 Machine 1:
 
 ```bash
-cd /path/to/relay
-cp scripts/three-machine-rehearsal/machine-1/.env.example scripts/three-machine-rehearsal/machine-1/.env
-chmod 0600 scripts/three-machine-rehearsal/machine-1/.env
+cd /path/to/three-machine-rehearsal
+cp machine-1/.env.example machine-1/.env
+chmod 0600 machine-1/.env
 ```
 
 Machine 2:
 
 ```bash
-cd /path/to/relay
-cp scripts/three-machine-rehearsal/machine-2/.env.example scripts/three-machine-rehearsal/machine-2/.env
-chmod 0600 scripts/three-machine-rehearsal/machine-2/.env
+cd /path/to/three-machine-rehearsal
+cp machine-2/.env.example machine-2/.env
+chmod 0600 machine-2/.env
 ```
 
 Machine 3:
 
 ```bash
-cd /path/to/relay
-cp scripts/three-machine-rehearsal/machine-3/.env.example scripts/three-machine-rehearsal/machine-3/.env
-chmod 0600 scripts/three-machine-rehearsal/machine-3/.env
+cd /path/to/three-machine-rehearsal
+cp machine-3/.env.example machine-3/.env
+chmod 0600 machine-3/.env
 ```
 
 Replace every placeholder in each `.env` before continuing.
@@ -68,8 +67,8 @@ Run the machine check everywhere:
 Machine 1:
 
 ```bash
-cd /path/to/relay
-S=scripts/three-machine-rehearsal
+cd /path/to/three-machine-rehearsal
+S=$PWD
 E="$S/machine-1/.env"
 "$S/00-check-machine.sh" "$E"
 ```
@@ -77,8 +76,8 @@ E="$S/machine-1/.env"
 Machine 2:
 
 ```bash
-cd /path/to/relay
-S=scripts/three-machine-rehearsal
+cd /path/to/three-machine-rehearsal
+S=$PWD
 E="$S/machine-2/.env"
 "$S/00-check-machine.sh" "$E"
 ```
@@ -86,8 +85,8 @@ E="$S/machine-2/.env"
 Machine 3:
 
 ```bash
-cd /path/to/relay
-S=scripts/three-machine-rehearsal
+cd /path/to/three-machine-rehearsal
+S=$PWD
 E="$S/machine-3/.env"
 "$S/00-check-machine.sh" "$E"
 ```

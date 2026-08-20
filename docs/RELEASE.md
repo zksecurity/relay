@@ -110,9 +110,10 @@ Build the production package:
       --build-signing-key /offline/relay-build-signing-key \
       --out-dir "$RELEASE_EVIDENCE_ROOT/relay-release-parent/release"
 
-The output contains `relay`, its checksums, exact Go/VCS metadata, a CycloneDX
-SBOM, source and toolchain checksums, and a signed package manifest. Create an
-archive that preserves the verified file modes:
+The output contains `relay`, the source-free installer assets, the versioned
+three-machine rehearsal archive, their checksums, exact Go/VCS metadata, a
+CycloneDX SBOM, source and toolchain checksums, and a signed package manifest.
+Create an archive that preserves the verified file modes:
 
     RELAY_RELEASE_DIR="$RELEASE_EVIDENCE_ROOT/relay-release-parent/release"
     RELAY_RELEASE_ARCHIVE="$RELEASE_EVIDENCE_ROOT/relay-release-package.tar"
@@ -122,17 +123,24 @@ archive that preserves the verified file modes:
       -cf "$RELAY_RELEASE_ARCHIVE" -C "$RELAY_RELEASE_DIR" .
     sha256sum "$RELAY_RELEASE_ARCHIVE"
 
-Publish two GitHub Release assets:
+Publish these GitHub Release assets from the verified release directory:
 
 - the standalone `$RELAY_RELEASE_DIR/relay` file with the asset name `relay`,
-  used by the normal installation path; and
+  used by the normal installation path;
+- `install-ceremony-tools.sh`, used to download, verify, and install both
+  ceremony binaries without a source checkout;
+- `install.env.example`, the installer's non-secret dotenv template;
+- `three-machine-rehearsal.tar.gz`, the standalone versioned rehearsal kit;
+- `checksums.sha256`, containing all four directly downloadable asset hashes;
+  and
 - `$RELAY_RELEASE_ARCHIVE`, used by independent auditors to verify the complete
   signed package.
 
-Publish the release tag, source commit, binary and archive SHA-256 values,
-tag-signer fingerprint, and build-package public key through the project's
-authenticated release channel. The binary SHA-256 announced there is what
-normal operators compare with their download.
+Publish the release tag, source commit, every value in `checksums.sha256`, the
+complete-package archive SHA-256, tag-signer fingerprint, and build-package
+public key through the project's authenticated release channel. Normal
+operators authenticate the installer, template, rehearsal kit when used, and
+both binaries against values obtained through that channel.
 
 A coordinated ceremony-tools release is usable only after proof-tool also
 publishes its approved signed tag and a standalone asset named
