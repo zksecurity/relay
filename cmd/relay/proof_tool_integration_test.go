@@ -20,6 +20,7 @@ import (
 //
 // Run the fast compatibility checks with:
 //
+//	(cd /path/to/proof-tool && bash scripts/bootstrap-vendor.sh)
 //	RELAY_PROOF_TOOL_DIR=/path/to/proof-tool go test ./cmd/relay \
 //	  -run TestProofToolCompatibility -v
 //
@@ -274,7 +275,8 @@ func testProofToolContributionCommands(t *testing.T, ceremonyBinary, fixtureRoot
 		"--coordinator-public-key-file", inspector.CoordinatorPublicKeyPath,
 		"--transcript-dir", ceremonyRoot, "--chain", chainPath,
 		"--chain-signature", chainSignature, "--candidate-dir", candidateDir,
-		"--coordinator-signing-key", coordinatorSigningKey, "--accepted-at", "2026-08-18T12:02:00Z")
+		"--coordinator-signing-key", coordinatorSigningKey,
+		"--accepted-at", defaultAcceptanceTimestamp(time.Now().Add(time.Second)))
 	accepted, err := inspector.Chain(
 		filepath.Join(ceremonyRoot, "phase1", "chain-0001.json"),
 		filepath.Join(ceremonyRoot, "phase1", "chain-0001.sig"),
@@ -300,7 +302,7 @@ func writeTestJSON(t *testing.T, path string, value any) {
 
 func buildProofProgram(t *testing.T, proofToolDir, output, packagePath string) {
 	t.Helper()
-	command := exec.Command("go", "build", "-mod=mod", "-o", output, packagePath)
+	command := exec.Command("go", "build", "-mod=vendor", "-o", output, packagePath)
 	command.Dir = proofToolDir
 	if combined, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("build proof-tool program %s: %v\n%s", packagePath, err, combined)
