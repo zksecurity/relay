@@ -55,18 +55,22 @@ or AWS credentials scoped to one identity's inbox prefix:
       --identity participant-03 --credential-ttl 72h \
       --minimum-upload-window 2h --out participant-03.grant.json
 
-The participant authenticates their local key once, then runs one command when
-the coordinator contacts them:
+The participant authenticates their local key once without receiving upload
+credentials:
 
-    relay enroll --storage relay-storage.json --grant participant-03.grant.json \
+    relay ceremony enroll --storage relay-storage.json \
       --phase phase1 --root /ceremony/public --ceremony /ceremony/public/ceremony.json \
       --ceremony-signature /ceremony/public/ceremony.sig \
       --coordinator-key /trusted/coordinator-public-key.hex --signing-key /secure/key \
-      --environment /secure/environment.json --candidate-parent /ceremony/candidates \
-      --out participant-03.relay.json
-    relay participate --config participant-03.relay.json
+      --environment /secure/environment.json --candidate-parent /ceremony/candidates
+    relay participant status
 
-`participate` refuses out of turn before computation. On success it runs the
+When that participant is next, the coordinator issues a temporary grant and
+the participant runs:
+
+    relay participant run --grant participant-03.grant.json
+
+`participant run` refuses out of turn before computation. On success it runs the
 contribution and erasure-attestation steps, rechecks the head, and uploads a
 manifest-last candidate. The coordinator then runs:
 
@@ -75,8 +79,9 @@ manifest-last candidate. The coordinator then runs:
       --root /ceremony/public --candidate-dir /ceremony/review/attempt \
       --coordinator-signing-key /secure/coordinator-key
 
-Other roles upload their already signed proof-tool outputs with
-`relay submit-evidence --grant FILE --dir DIR`; the coordinator discovers them
+Other roles upload their already signed proof-tool outputs with the relevant
+role command or the compatible `relay submit-evidence --grant FILE --dir DIR`;
+the coordinator discovers them
 with `relay coordinator evidence --storage FILE`. See the
 [coordinator runbook](COORDINATOR_RUNBOOK.md) for provider setup and ceremony
 operation, and the [role runbook](ROLE_RUNBOOK.md) for participant and evidence
@@ -140,11 +145,12 @@ Role-scoped commands discover position from the bucket (`--root --ceremony
 --bucket --endpoint` are always required; `--phase` defaults to `phase1`):
 
     relay coordinator publish --chain FILE --chain-signature FILE [--closed] [--verify]
-    relay participant status [--role ID]                  report ceremony position
-    relay witness watch [--interval D] [--once]           wait for a published closure
-    relay mirror sync                                     pull the authenticated transcript
+    relay participant status [--config FILE]              report your authenticated position
+    relay participant run [--config FILE] --grant FILE    contribute only when next
+    relay witness run [--interval D] [--once]             wait for a published closure
+    relay mirror run                                      pull the authenticated transcript
     relay mirror receipt --chain FILE ...                 draft mirror evidence
-    relay auditor sync                                    pull the authenticated transcript
+    relay auditor run                                     pull the authenticated transcript
 
 `advanced push` and `coordinator publish` upload what the chain names plus what
 it cannot name: the
@@ -158,11 +164,11 @@ trusting the upload response. It costs a full round trip of the transcript and
 is off by default. On `coordinator publish` it instead re-derives what a reader will ask
 for and confirms the bucket holds all of it.
 
-`advanced pull`, `mirror sync` and `auditor sync` refuse to overwrite an existing local file. If one is
+`advanced pull`, `mirror run` and `auditor run` refuse to overwrite an existing local file. If one is
 present it is hashed and compared, and a mismatch is an error rather than a
 silent replacement.
 
-`participant status` and `participate` refuse when it is not your turn. That refusal is the point:
+`participant status` and `participant run` refuse when it is not your turn. That refusal is the point:
 discovering you were early after a multi-hour replay is the expensive way to
 find out. Each machine also records the furthest index it has seen under
 `~/.relay` and refuses a pointer that has moved backwards. On first use for a
@@ -228,16 +234,17 @@ two operators, so running both is not redundant.
 
 ## Two things must still travel out of band
 
-`coordinator-public-key.hex` and the ceremony binary's hash. Everything else can
-cross untrusted transport, because tampering makes verification fail rather than
-succeed. Those two decide *whether* verification means anything, so this tool
-never fetches the coordinator key from the bucket: taking it from the same place
-as the artifacts it checks would prove only that the bucket agrees with itself.
+The coordinator public key and ceremony-kit archive hash must arrive through
+authenticated channels independent of ceremony storage. Everything else can
+cross untrusted transport, because tampering makes verification fail rather
+than succeed. Relay never fetches the coordinator key from the bucket: taking
+it from the same place as the artifacts it checks would prove only that the
+bucket agrees with itself.
 
 ## Requirements
 
-Operators need the AWS CLI and a trusted `mpc-ceremony` binary on `PATH`.
-Published-binary installation is documented in
+Operators need the AWS CLI and the authenticated coordinated ceremony kit.
+Source-free installation is documented in
 [docs/INSTALL.md](docs/INSTALL.md). Release maintainers and independent build
 auditors need Go 1.26.5 and use [docs/RELEASE.md](docs/RELEASE.md). Relay has no
 third-party Go dependencies; its production builder emits a signed,

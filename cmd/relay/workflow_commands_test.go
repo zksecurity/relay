@@ -3,8 +3,10 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/zksecurity/relay/internal/access"
 	"github.com/zksecurity/relay/internal/store"
 )
 
@@ -23,6 +25,26 @@ func TestCollectEvidenceRejectsSymlinksAndSecrets(t *testing.T) {
 	}
 	if _, err := collectEvidence([]string{"release-signing-key.hex"}, ""); err == nil {
 		t.Fatal("possible signing key accepted")
+	}
+}
+
+func TestParticipateV2ProfileRequiresTurnGrant(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "participant.json")
+	config := access.ParticipantConfig{
+		Schema: access.ParticipantConfigSchema, Phase: "phase1", Root: filepath.Join(dir, "ceremony"),
+		Ceremony: filepath.Join(dir, "ceremony.json"), CeremonySignature: filepath.Join(dir, "ceremony.sig"),
+		CoordinatorKey: filepath.Join(dir, "coordinator.hex"), CeremonyBinary: "mpc-ceremony",
+		SigningKey: filepath.Join(dir, "participant.hex"), Environment: filepath.Join(dir, "environment.json"),
+		CandidateParentDir: filepath.Join(dir, "candidates"), PublishedBaseURL: "https://ceremony.example",
+		PublishedBucket: "published",
+	}
+	if err := writeJSONNoReplace(configPath, config, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := runParticipate([]string{"--config", configPath})
+	if err == nil || !strings.Contains(err.Error(), "temporary upload grant") {
+		t.Fatalf("missing grant error = %v", err)
 	}
 }
 

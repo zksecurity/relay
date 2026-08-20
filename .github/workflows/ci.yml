@@ -39,10 +39,10 @@ jobs:
         run: |
           bash -n \
             scripts/build-relay-release.sh \
-            scripts/install-ceremony-tools.sh \
+            scripts/build-ceremony-kit.sh \
+            scripts/setup-ceremony-kit.sh \
             scripts/verify-relay-release.sh \
             scripts/verify-relay-reproducible.sh \
-            scripts/install.env.example \
             scripts/three-machine-rehearsal/*.sh \
             scripts/three-machine-rehearsal/machine-*/.env.example
 
@@ -73,11 +73,56 @@ jobs:
             cd "$RELEASE_DIR"
             sha256sum --check checksums.sha256
           )
-          test -x "$RELEASE_DIR/install-ceremony-tools.sh"
+          test -x "$RELEASE_DIR/setup-ceremony-kit.sh"
           cmp \
             <(git archive --format=tar --prefix=three-machine-rehearsal/ \
               "$GITHUB_SHA:scripts/three-machine-rehearsal" | tar -t) \
             <(tar -tzf "$RELEASE_DIR/three-machine-rehearsal.tar.gz")
+
+      - name: Build and exercise standalone ceremony kit
+        run: |
+          RELEASE_DIR="$RUNNER_TEMP/relay-rehearsal-parent/release"
+          RELAY_SHA256=$(sha256sum "$RELEASE_DIR/relay" | cut -d ' ' -f 1)
+          mkdir \
+            "$RUNNER_TEMP/ceremony-kit-parent" \
+            "$RUNNER_TEMP/ceremony-kit-install" \
+            "$RUNNER_TEMP/ceremony-kit-operator"
+          if scripts/build-ceremony-kit.sh \
+            --mode production \
+            --relay-release-dir "$RELEASE_DIR" \
+            --relay-repository zksecurity/relay \
+            --relay-tag invalid-production \
+            --relay-sha256 "$RELAY_SHA256" \
+            --mpc-binary "$RELEASE_DIR/relay" \
+            --mpc-repository Emurgo/proof-tool \
+            --mpc-tag invalid-production \
+            --mpc-sha256 "$RELAY_SHA256" \
+            --out-dir "$RUNNER_TEMP/ceremony-kit-parent/invalid-production"; then
+            echo "rehearsal Relay package was accepted as production" >&2
+            exit 1
+          fi
+          scripts/build-ceremony-kit.sh \
+            --mode rehearsal \
+            --relay-release-dir "$RELEASE_DIR" \
+            --relay-repository zksecurity/relay \
+            --relay-tag ci-rehearsal \
+            --relay-sha256 "$RELAY_SHA256" \
+            --mpc-binary "$RELEASE_DIR/relay" \
+            --mpc-repository zksecurity/proof-tool \
+            --mpc-tag ci-rehearsal \
+            --mpc-sha256 "$RELAY_SHA256" \
+            --include-rehearsal \
+            --out-dir "$RUNNER_TEMP/ceremony-kit-parent/ceremony-kit"
+          "$RUNNER_TEMP/ceremony-kit-parent/ceremony-kit/setup" verify
+          "$RUNNER_TEMP/ceremony-kit-parent/ceremony-kit/setup" \
+            --prefix "$RUNNER_TEMP/ceremony-kit-install" \
+            --machine 3 \
+            --rehearsal-root "$RUNNER_TEMP/ceremony-kit-operator"
+          test -x "$RUNNER_TEMP/ceremony-kit-install/relay"
+          test -x "$RUNNER_TEMP/ceremony-kit-install/mpc-ceremony"
+          test -f "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
+          grep -Fx "RELAY_TAG=ci-rehearsal" \
+            "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
 
       - name: Confirm no production signature exists
         run: |

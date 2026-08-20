@@ -17,10 +17,10 @@ are in [README.md](README.md).
 
 ## 1. Install and verify the tools
 
-Follow the published-binary path in [docs/INSTALL.md](docs/INSTALL.md). It gives
-exact instructions for downloading and hash-checking Relay and `mpc-ceremony`,
-then installing AWS CLI v2. The coordinator does not need Go or either
-project's build-signing private key.
+Follow [docs/INSTALL.md](docs/INSTALL.md). It gives exact instructions for
+downloading one coordinated ceremony kit, verifying its independently supplied
+hash, installing Relay and `mpc-ceremony`, and then installing AWS CLI v2. The
+coordinator does not need Go or either project's build-signing private key.
 
 Do not continue until all of these succeed and resolve to the reviewed paths:
 
@@ -29,13 +29,13 @@ Do not continue until all of these succeed and resolve to the reviewed paths:
     aws --version
     command -v relay mpc-ceremony aws
 
-Record the Relay and `mpc-ceremony` release tags and SHA-256 values, plus the AWS
-CLI version, in the coordinator log. Distribute these trust inputs independently
-of ceremony storage:
+Record the ceremony-kit tag and SHA-256, its pinned Relay and `mpc-ceremony`
+metadata, and the AWS CLI version in the coordinator log. Distribute these
+trust inputs independently of ceremony storage:
 
 - the coordinator public key;
-- both approved release tags; and
-- both approved binary digests.
+- the approved ceremony-kit tag; and
+- the ceremony-kit archive digest.
 
 ## 2. Prepare the ceremony
 
@@ -116,6 +116,12 @@ the public URL, confirms that the inbox is private, and removes the probe. For
 R2, the privacy check reads the inbox's `r2.dev` and custom-domain settings from
 Cloudflare's control-plane API.
 
+Before participant turns begin, send each participant `relay-storage.json`,
+the public ceremony material, and the coordinator public key through the agreed
+channels. The storage file contains configuration but no temporary credential.
+Each participant can enroll their local key and check the signed public position
+without inbox write access.
+
 ## 4. Run each participant turn
 
 Choose a TTL long enough for replay, contribution, erasure, and upload. Relay
@@ -129,17 +135,15 @@ will refuse to start expensive work unless the minimum window remains.
       --minimum-upload-window 2h \
       --out participant-03.grant.json
 
-Send the participant these items through the agreed private channel:
+Send the participant these items through the agreed private channel when their
+turn begins:
 
-- `relay-storage.json`;
 - their mode-`0600` grant file;
-- the coordinator public key and trusted binary hash through the independent
-  channels selected for those trust inputs; and
 - a link or copy of [ROLE_RUNBOOK.md](ROLE_RUNBOOK.md).
 
 The grant is a bearer credential limited to that participant's candidate
 prefix. Replace it immediately if it leaks. Contact the participant when their
-turn begins; `relay participate` independently rejects an out-of-turn attempt.
+turn begins; `relay participant run` independently rejects an out-of-turn attempt.
 
 List complete submissions:
 

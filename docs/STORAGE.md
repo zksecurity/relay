@@ -65,9 +65,9 @@ records non-secret paths, approved binary digests, and storage names in one
 private `.env` per machine. These files are a rehearsal convenience, not the
 production storage procedure.
 
-Machine 1 copies
-[its example](../scripts/three-machine-rehearsal/machine-1/.env.example) and
-sets the storage variables as follows:
+The verified ceremony kit's `setup --machine N` command creates the selected
+`.env`, prefilling all software release fields. Machine 1 then sets the storage
+variables as follows:
 
 | Variable | Meaning |
 |---|---|
@@ -85,9 +85,8 @@ sets the storage variables as follows:
 | `R2_ACCOUNT_ID` | R2 account ID; used only when `STORAGE_PROVIDER=r2` |
 | `R2_PARENT_ACCESS_KEY_ID` | Access-key ID for the inbox-limited parent token |
 
-Machines 2 and 3 copy their respective
-[Machine 2](../scripts/three-machine-rehearsal/machine-2/.env.example) and
-[Machine 3](../scripts/three-machine-rehearsal/machine-3/.env.example) examples.
+The setup command likewise creates the Machine 2 and Machine 3 files from their
+versioned templates.
 Their `PUBLISHED_READER_PROFILE` names an AWS CLI profile with read-only access
 to published ceremony objects. It is used by witness, mirror, and auditor
 commands. `STORAGE_ENDPOINT` must match Machine 1's endpoint, including an R2

@@ -28,6 +28,8 @@ func main() {
 	switch os.Args[1] {
 	case "coordinator":
 		err = runCoordinator(os.Args[2:])
+	case "ceremony":
+		err = runCeremony(os.Args[2:])
 	case "participant":
 		err = runParticipant(os.Args[2:])
 	case "witness":
@@ -36,6 +38,8 @@ func main() {
 		err = runMirror(os.Args[2:])
 	case "auditor":
 		err = runAuditor(os.Args[2:])
+	case "release":
+		err = runRelease(os.Args[2:])
 	case "advanced":
 		err = runAdvanced(os.Args[2:])
 	case "enroll":
@@ -71,16 +75,16 @@ func usage() {
   relay coordinator accept --storage FILE --candidate-key KEY [verification flags]
   relay coordinator evidence --storage FILE [--role ROLE]
   relay coordinator publish --chain FILE --chain-signature FILE [publish flags]
-  relay enroll --storage FILE --grant FILE --phase P --root DIR \
+  relay ceremony enroll --storage FILE --phase P --root DIR \
              --ceremony FILE --ceremony-signature FILE --coordinator-key FILE \
-             --signing-key FILE --environment FILE --candidate-parent DIR --out FILE
-  relay participate --config FILE
-  relay participant status [status flags]
-  relay witness watch [watch flags]
-  relay mirror sync [sync flags]
+             --signing-key FILE --environment FILE [--grant FILE] [--out FILE]
+  relay participant status [--config FILE | status flags]
+  relay participant run [--config FILE] --grant FILE
+  relay witness run [watch flags]
+  relay mirror run [sync flags]
   relay mirror receipt [receipt flags]
-  relay auditor sync [sync flags]
-  relay submit-evidence --grant FILE (--file FILE | --dir DIR)
+  relay auditor run [sync flags]
+  relay release run --grant FILE (--file FILE | --dir DIR)
 
 recovery and debugging:
   relay advanced push --chain FILE --chain-signature FILE --root DIR --ceremony FILE \
@@ -135,19 +139,25 @@ func runCoordinator(args []string) error {
 
 func runParticipant(args []string) error {
 	if len(args) == 0 {
-		return errors.New("participant requires status")
+		return errors.New("participant requires enroll, status, or run")
 	}
-	if args[0] == "status" {
-		return runStatus(args[1:])
+	switch args[0] {
+	case "enroll":
+		return runEnroll(args[1:])
+	case "status":
+		return runParticipantStatus(args[1:])
+	case "run":
+		return runParticipate(args[1:])
+	default:
+		return fmt.Errorf("unknown participant command %q", args[0])
 	}
-	return fmt.Errorf("unknown participant command %q", args[0])
 }
 
 func runWitness(args []string) error {
 	if len(args) == 0 {
-		return errors.New("witness requires watch")
+		return errors.New("witness requires run or watch")
 	}
-	if args[0] == "watch" {
+	if args[0] == "run" || args[0] == "watch" {
 		return runWatch(args[1:])
 	}
 	return fmt.Errorf("unknown witness command %q", args[0])
@@ -155,10 +165,10 @@ func runWitness(args []string) error {
 
 func runMirror(args []string) error {
 	if len(args) == 0 {
-		return errors.New("mirror requires sync or receipt")
+		return errors.New("mirror requires run, sync, or receipt")
 	}
 	switch args[0] {
-	case "sync":
+	case "run", "sync":
 		return runSync("mirror sync", args[1:])
 	case "receipt":
 		return runReceipt(args[1:])
@@ -169,12 +179,32 @@ func runMirror(args []string) error {
 
 func runAuditor(args []string) error {
 	if len(args) == 0 {
-		return errors.New("auditor requires sync")
+		return errors.New("auditor requires run or sync")
 	}
-	if args[0] == "sync" {
+	if args[0] == "run" || args[0] == "sync" {
 		return runSync("auditor sync", args[1:])
 	}
 	return fmt.Errorf("unknown auditor command %q", args[0])
+}
+
+func runCeremony(args []string) error {
+	if len(args) == 0 {
+		return errors.New("ceremony requires enroll")
+	}
+	if args[0] == "enroll" {
+		return runEnroll(args[1:])
+	}
+	return fmt.Errorf("unknown ceremony command %q", args[0])
+}
+
+func runRelease(args []string) error {
+	if len(args) == 0 {
+		return errors.New("release requires run or submit")
+	}
+	if args[0] == "run" || args[0] == "submit" {
+		return runReleaseEvidence(args[1:])
+	}
+	return fmt.Errorf("unknown release command %q", args[0])
 }
 
 func runAdvanced(args []string) error {

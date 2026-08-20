@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zksecurity/relay/internal/access"
 	"github.com/zksecurity/relay/internal/state"
 	"github.com/zksecurity/relay/internal/store"
 	"github.com/zksecurity/relay/internal/transcript"
@@ -232,6 +233,47 @@ func runStatus(args []string) error {
 	if err := checkRole(o); err != nil {
 		return err
 	}
+	return reportStatus(o)
+}
+
+func runParticipantStatus(args []string) error {
+	configured := len(args) == 0
+	for _, arg := range args {
+		if arg == "--config" || strings.HasPrefix(arg, "--config=") {
+			configured = true
+			break
+		}
+	}
+	if !configured {
+		return runStatus(args)
+	}
+	set := flag.NewFlagSet("participant status", flag.ContinueOnError)
+	var configPath string
+	set.StringVar(&configPath, "config", defaultParticipantConfigPath(), "local participant profile")
+	if err := set.Parse(args); err != nil {
+		return err
+	}
+	if configPath == "" {
+		return errors.New("--config is required because no default configuration directory is available")
+	}
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+	config, err := access.Decode(raw, access.ParticipantConfig.Validate)
+	if err != nil {
+		return err
+	}
+	o := participantRoleOptions(config, "")
+	participant, err := o.inspector().Participant(config.SigningKey)
+	if err != nil {
+		return err
+	}
+	o.role = participant.ParticipantID
+	return reportStatus(o)
+}
+
+func reportStatus(o roleOpts) error {
 	pos, err := resolvePosition(o)
 	if err != nil {
 		return err

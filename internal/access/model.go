@@ -15,11 +15,12 @@ import (
 )
 
 const (
-	StorageConfigSchema      = "relay-storage-config-v1"
-	GrantSchema              = "relay-role-grant-v1"
-	ParticipantConfigSchema  = "relay-participant-config-v1"
-	CandidateManifestSchema  = "relay-candidate-manifest-v1"
-	SubmissionManifestSchema = "relay-evidence-submission-v1"
+	StorageConfigSchema       = "relay-storage-config-v1"
+	GrantSchema               = "relay-role-grant-v1"
+	ParticipantConfigSchemaV1 = "relay-participant-config-v1"
+	ParticipantConfigSchema   = "relay-participant-config-v2"
+	CandidateManifestSchema   = "relay-candidate-manifest-v1"
+	SubmissionManifestSchema  = "relay-evidence-submission-v1"
 )
 
 const (
@@ -225,11 +226,12 @@ type ParticipantConfig struct {
 	CandidateParentDir string `json:"candidate_parent_dir"`
 	PublishedBaseURL   string `json:"published_base_url"`
 	PublishedBucket    string `json:"published_bucket"`
-	GrantPath          string `json:"grant_path"`
+	GrantPath          string `json:"grant_path,omitempty"`
 }
 
 func (c ParticipantConfig) Validate() error {
-	if c.Schema != ParticipantConfigSchema || (c.Phase != "phase1" && c.Phase != "phase2") {
+	if (c.Schema != ParticipantConfigSchemaV1 && c.Schema != ParticipantConfigSchema) ||
+		(c.Phase != "phase1" && c.Phase != "phase2") {
 		return errors.New("participant config has invalid schema or phase")
 	}
 	for name, value := range map[string]string{
@@ -237,11 +239,14 @@ func (c ParticipantConfig) Validate() error {
 		"coordinator_key": c.CoordinatorKey, "ceremony_binary": c.CeremonyBinary,
 		"signing_key": c.SigningKey, "environment": c.Environment,
 		"candidate_parent_dir": c.CandidateParentDir, "published_base_url": c.PublishedBaseURL,
-		"published_bucket": c.PublishedBucket, "grant_path": c.GrantPath,
+		"published_bucket": c.PublishedBucket,
 	} {
 		if value == "" {
 			return fmt.Errorf("participant config %s is required", name)
 		}
+	}
+	if c.Schema == ParticipantConfigSchemaV1 && c.GrantPath == "" {
+		return errors.New("participant config grant_path is required for v1")
 	}
 	base, err := url.Parse(c.PublishedBaseURL)
 	if err != nil || base.Scheme != "https" || base.Host == "" || base.RawQuery != "" || base.Fragment != "" {

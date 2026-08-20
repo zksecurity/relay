@@ -67,7 +67,7 @@ func runAcceptCandidate(args []string) error {
 	var phase1Seal, phase1SealSignature string
 	var verify bool
 	set.StringVar(&storagePath, "storage", "", "storage configuration")
-	set.StringVar(&candidateKey, "candidate-key", "", "candidate manifest key printed by relay participate")
+	set.StringVar(&candidateKey, "candidate-key", "", "candidate manifest key printed by relay participant run")
 	set.StringVar(&root, "root", "", "coordinator transcript root")
 	set.StringVar(&candidateDir, "candidate-dir", "", "fresh local directory for the downloaded candidate")
 	set.StringVar(&coordinatorSigningKey, "coordinator-signing-key", "", "coordinator Ed25519 private key")

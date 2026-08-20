@@ -105,10 +105,9 @@ build_outputs=(
   build-flags.txt
   checksums.sha256
   go-build-info.txt
-  install-ceremony-tools.sh
-  install.env.example
   relay
   sbom.cdx.json
+  setup-ceremony-kit.sh
   source-checksums.sha256
   source-commit.txt
   source-date-epoch.txt

@@ -38,10 +38,9 @@ var coreFiles = []string{
 	"build-mode.txt",
 	"checksums.sha256",
 	"go-build-info.txt",
-	"install-ceremony-tools.sh",
-	"install.env.example",
 	"relay",
 	"sbom.cdx.json",
+	"setup-ceremony-kit.sh",
 	"signed-tag-object.txt",
 	"signed-tag-signer-fingerprint.txt",
 	"signed-tag-status.txt",
@@ -55,8 +54,6 @@ var coreFiles = []string{
 }
 
 var downloadableFiles = []string{
-	"install-ceremony-tools.sh",
-	"install.env.example",
 	"relay",
 	"three-machine-rehearsal.tar.gz",
 }
@@ -424,7 +421,7 @@ func verifyPackage(opts verifyOptions) error {
 			return fmt.Errorf("release entry is not a regular file: %s", name)
 		}
 		wantMode := fs.FileMode(0o444)
-		if name == "relay" || name == "install-ceremony-tools.sh" {
+		if name == "relay" || name == "setup-ceremony-kit.sh" {
 			wantMode = 0o555
 		}
 		if runtime.GOOS != "windows" && info.Mode().Perm() != wantMode {

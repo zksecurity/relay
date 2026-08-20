@@ -21,17 +21,18 @@ Commands below are intentionally flush left for copying.
 
 ## One-time setup on each machine
 
-Download and verify the versioned `three-machine-rehearsal.tar.gz` release
-asset on all three machines by following Relay's installation guide. The
-archive is standalone and does not require a Relay source checkout. Install
-Bash, Python 3, and GNU coreutils in addition to the three programs checked
-below. On each machine, create its private `.env`:
+Download and verify the versioned ceremony kit on all three machines by
+following Relay's installation guide. Running `setup --machine N` installs both
+binaries, extracts this standalone directory, and creates the selected private
+`.env` with all release fields prefilled. No Relay source checkout is needed.
+Install Bash, Python 3, and GNU coreutils in addition to the three programs
+checked below.
 
 Machine 1:
 
 ```bash
 cd /path/to/three-machine-rehearsal
-cp machine-1/.env.example machine-1/.env
+test -f machine-1/.env
 chmod 0600 machine-1/.env
 ```
 
@@ -39,7 +40,7 @@ Machine 2:
 
 ```bash
 cd /path/to/three-machine-rehearsal
-cp machine-2/.env.example machine-2/.env
+test -f machine-2/.env
 chmod 0600 machine-2/.env
 ```
 
@@ -47,11 +48,12 @@ Machine 3:
 
 ```bash
 cd /path/to/three-machine-rehearsal
-cp machine-3/.env.example machine-3/.env
+test -f machine-3/.env
 chmod 0600 machine-3/.env
 ```
 
-Replace every placeholder in each `.env` before continuing.
+The setup command prints the resulting `.env` path. Replace its remaining
+ceremony, identity, storage, and local-path placeholders before continuing.
 
 Machine 1 retains the initialized transcript and coordinator key. Machines 2
 and 3 need local copies of:

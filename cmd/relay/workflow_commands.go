@@ -28,7 +28,7 @@ func runEnroll(args []string) error {
 	var storagePath, grantPath, phase, root, ceremony, ceremonySignature, coordinatorKey, ceremonyBinary string
 	var signingKey, environment, candidateParent, out string
 	set.StringVar(&storagePath, "storage", "", "storage configuration supplied by the coordinator")
-	set.StringVar(&grantPath, "grant", "", "temporary participant grant supplied by the coordinator")
+	set.StringVar(&grantPath, "grant", "", "optional temporary participant grant supplied by the coordinator")
 	set.StringVar(&phase, "phase", "", "phase1 or phase2")
 	set.StringVar(&root, "root", "", "local transcript root")
 	set.StringVar(&ceremony, "ceremony", "", "local signed ceremony definition")
@@ -38,23 +38,19 @@ func runEnroll(args []string) error {
 	set.StringVar(&signingKey, "signing-key", "", "participant Ed25519 private key")
 	set.StringVar(&environment, "environment", "", "canonical environment.json")
 	set.StringVar(&candidateParent, "candidate-parent", "", "directory in which a fresh candidate will be created")
-	set.StringVar(&out, "out", "", "fresh participant configuration file")
+	set.StringVar(&out, "out", defaultParticipantConfigPath(), "fresh participant configuration file")
 	if err := set.Parse(args); err != nil {
 		return err
 	}
-	if storagePath == "" || grantPath == "" || phase == "" || root == "" || ceremony == "" || ceremonySignature == "" || coordinatorKey == "" || signingKey == "" || environment == "" || candidateParent == "" || out == "" {
-		return errors.New("--storage, --grant, --phase, --root, --ceremony, --ceremony-signature, --coordinator-key, --signing-key, --environment, --candidate-parent and --out are required")
+	if candidateParent == "" && out != "" {
+		candidateParent = filepath.Join(filepath.Dir(out), "candidates")
+	}
+	if storagePath == "" || phase == "" || root == "" || ceremony == "" || ceremonySignature == "" || coordinatorKey == "" || signingKey == "" || environment == "" || candidateParent == "" || out == "" {
+		return errors.New("--storage, --phase, --root, --ceremony, --ceremony-signature, --coordinator-key, --signing-key and --environment are required; --candidate-parent and --out have local defaults")
 	}
 	storageConfig, err := loadStorageConfig(storagePath)
 	if err != nil {
 		return err
-	}
-	grant, err := loadGrant(grantPath)
-	if err != nil {
-		return err
-	}
-	if grant.Role != access.RoleParticipant || grant.CeremonyID != storageConfig.CeremonyID || grant.Provider != storageConfig.Provider || grant.InboxBucket != storageConfig.InboxBucket {
-		return errors.New("participant grant does not match the storage configuration")
 	}
 	inspector := transcript.Inspector{Executable: ceremonyBinary, CeremonyPath: ceremony,
 		CeremonySignaturePath: ceremonySignature, CoordinatorPublicKeyPath: coordinatorKey,
@@ -63,8 +59,19 @@ func runEnroll(args []string) error {
 	if err != nil {
 		return err
 	}
-	if participant.CeremonyID != storageConfig.CeremonyID || participant.ParticipantID != grant.IdentityID {
-		return errors.New("local participant key does not match the grant identity and ceremony")
+	if participant.CeremonyID != storageConfig.CeremonyID {
+		return errors.New("local participant key does not match the storage ceremony")
+	}
+	if grantPath != "" {
+		grant, err := loadGrant(grantPath)
+		if err != nil {
+			return err
+		}
+		if grant.Role != access.RoleParticipant || grant.CeremonyID != storageConfig.CeremonyID ||
+			grant.Provider != storageConfig.Provider || grant.InboxBucket != storageConfig.InboxBucket ||
+			grant.IdentityID != participant.ParticipantID {
+			return errors.New("participant grant does not match the storage configuration and local key")
+		}
 	}
 	slot := participant.Phase1Position
 	if phase == "phase2" {
@@ -86,23 +93,44 @@ func runEnroll(args []string) error {
 	if err := config.Validate(); err != nil {
 		return err
 	}
+	if err := os.MkdirAll(filepath.Dir(out), 0o700); err != nil {
+		return err
+	}
 	if err := writeJSONNoReplace(out, config, 0o600); err != nil {
 		return err
 	}
 	fmt.Printf("enrolled %s for %s at index %d\n", participant.ParticipantID, phase, *slot)
-	fmt.Printf("when the coordinator tells you to begin, run: relay participate --config %s\n", out)
+	fmt.Printf("saved local profile: %s\n", out)
+	if grantPath == "" {
+		fmt.Printf("check your turn: relay participant status --config %s\n", out)
+		fmt.Printf("when access is issued: relay participant run --config %s --grant GRANT.json\n", out)
+	} else {
+		fmt.Printf("when the coordinator tells you to begin, run: relay participant run --config %s\n", out)
+	}
 	return nil
+}
+
+func defaultParticipantConfigPath() string {
+	if configured := os.Getenv("RELAY_CONFIG"); configured != "" {
+		return configured
+	}
+	root, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(root, "relay", "participant.json")
 }
 
 func runParticipate(args []string) error {
 	set := flag.NewFlagSet("participate", flag.ContinueOnError)
-	var configPath string
-	set.StringVar(&configPath, "config", "", "participant configuration created by relay enroll")
+	var configPath, grantOverride string
+	set.StringVar(&configPath, "config", defaultParticipantConfigPath(), "participant configuration created by relay participant enroll")
+	set.StringVar(&grantOverride, "grant", "", "fresh temporary participant grant; overrides the profile grant")
 	if err := set.Parse(args); err != nil {
 		return err
 	}
 	if configPath == "" {
-		return errors.New("--config is required")
+		return errors.New("--config is required because no default configuration directory is available")
 	}
 	raw, err := os.ReadFile(configPath)
 	if err != nil {
@@ -112,7 +140,14 @@ func runParticipate(args []string) error {
 	if err != nil {
 		return err
 	}
-	grant, err := loadGrant(config.GrantPath)
+	grantPath := config.GrantPath
+	if grantOverride != "" {
+		grantPath = grantOverride
+	}
+	if grantPath == "" {
+		return errors.New("no temporary upload grant: pass --grant FILE when the coordinator tells you it is your turn")
+	}
+	grant, err := loadGrant(grantPath)
 	if err != nil {
 		return err
 	}
@@ -321,6 +356,14 @@ func (values *stringList) String() string         { return strings.Join(*values,
 func (values *stringList) Set(value string) error { *values = append(*values, value); return nil }
 
 func runSubmitEvidence(args []string) error {
+	return runSubmitEvidenceForRole(args, "")
+}
+
+func runReleaseEvidence(args []string) error {
+	return runSubmitEvidenceForRole(args, access.RoleRelease)
+}
+
+func runSubmitEvidenceForRole(args []string, expectedRole string) error {
 	set := flag.NewFlagSet("submit-evidence", flag.ContinueOnError)
 	var grantPath, directory string
 	var files stringList
@@ -338,7 +381,10 @@ func runSubmitEvidence(args []string) error {
 		return err
 	}
 	if grant.Role == access.RoleParticipant {
-		return errors.New("participant candidates must use relay participate")
+		return errors.New("participant candidates must use relay participant run")
+	}
+	if expectedRole != "" && grant.Role != expectedRole {
+		return fmt.Errorf("grant role is %s, want %s", grant.Role, expectedRole)
 	}
 	if err := grant.CheckUsable(time.Now()); err != nil {
 		return err

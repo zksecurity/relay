@@ -155,6 +155,29 @@ func TestProofToolCompatibility(t *testing.T) {
 	if _, err := access.Decode(configRaw, access.ParticipantConfig.Validate); err != nil {
 		t.Fatalf("generated participant config: %v", err)
 	}
+	grantFreeConfigPath := filepath.Join(root, "participant-grant-free.relay.json")
+	if err := runEnroll([]string{
+		"--storage", storagePath, "--phase", "phase1",
+		"--root", ceremonyRoot, "--ceremony", inspector.CeremonyPath,
+		"--ceremony-signature", inspector.CeremonySignaturePath,
+		"--coordinator-key", inspector.CoordinatorPublicKeyPath,
+		"--ceremony-binary", ceremonyBinary, "--signing-key", participantKey,
+		"--environment", filepath.Join(root, "environment.json"),
+		"--candidate-parent", filepath.Join(root, "grant-free-candidates"), "--out", grantFreeConfigPath,
+	}); err != nil {
+		t.Fatalf("grant-free Relay enrollment against proof-tool: %v", err)
+	}
+	grantFreeRaw, err := os.ReadFile(grantFreeConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grantFreeConfig, err := access.Decode(grantFreeRaw, access.ParticipantConfig.Validate)
+	if err != nil {
+		t.Fatalf("generated grant-free participant config: %v", err)
+	}
+	if grantFreeConfig.Schema != access.ParticipantConfigSchema || grantFreeConfig.GrantPath != "" {
+		t.Fatalf("grant-free profile schema/grant = %q/%q", grantFreeConfig.Schema, grantFreeConfig.GrantPath)
+	}
 
 	tamperedChain := filepath.Join(root, "tampered-chain.json")
 	rawChain, err := os.ReadFile(chainPath)

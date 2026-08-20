@@ -36,12 +36,12 @@ Record the outputs in your local operator log.
 Obtain these trust inputs independently of ceremony storage:
 
 - the coordinator public key;
-- the approved Relay release tag and expected binary hash; and
-- the approved proof-tool release tag and expected `mpc-ceremony` binary hash.
+- the approved ceremony-kit tag and archive hash.
 
-Verify both binary hashes before using them. Do not accept these trust inputs
-merely because they appeared in the same bucket as the artifacts they are meant
-to check.
+Verify the kit before installation. Its authenticated `release.json` pins the
+Relay and proof-tool repositories, tags, and binary hashes. Do not accept these
+trust inputs merely because they appeared in the same bucket as the artifacts
+they are meant to check.
 
 The coordinator will also provide the public ceremony material and, if your
 role uploads anything, a secret temporary grant. A grant is a bearer credential
@@ -60,12 +60,12 @@ Read-only role commands use these shared flags where applicable:
 
 ### Enroll once per phase
 
-The coordinator sends `relay-storage.json` and a grant naming your
-authenticated participant identity. Enroll with your local signing key:
+The coordinator sends `relay-storage.json` and the public ceremony material.
+Enroll with your local signing key before any temporary upload credential is
+issued:
 
-    relay enroll \
+    relay ceremony enroll \
       --storage relay-storage.json \
-      --grant participant-03.grant.json \
       --phase phase1 \
       --root /ceremony/public \
       --ceremony /ceremony/public/ceremony.json \
@@ -73,16 +73,22 @@ authenticated participant identity. Enroll with your local signing key:
       --coordinator-key /trusted/coordinator-public-key.hex \
       --signing-key /secure/participant-03.ed25519.private.hex \
       --environment /secure/participant-03.environment.json \
-      --candidate-parent /ceremony/candidates \
-      --out participant-03.relay.json
+      --candidate-parent /ceremony/candidates
 
 Enrollment asks proof-tool to match your key to the authenticated participant
 roster. It does not trust the key's filename or the coordinator's assertion
 about your identity.
 
+Check the signed public position without an upload credential:
+
+    relay participant status
+
 ### Participate when contacted
 
-    relay participate --config participant-03.relay.json
+After confirming it is the participant's turn, the coordinator supplies a
+short-lived scoped grant. Run:
+
+    relay participant run --grant participant-03.grant.json
 
 This is the only command required for the turn. Relay first checks the grant
 lifetime and public head. If it is not your turn, it exits before expensive
@@ -100,14 +106,14 @@ one-minute elapsed-time heartbeat while otherwise silent. Proof-tool replay
 counts and Relay transfer progress remain visible. A heartbeat is not a
 percentage or ETA.
 
-`relay participant status` is available as a diagnostic, but running it first
-is not required: `participate` performs the same out-of-turn check.
+Running status first is optional: `participant run` independently repeats the
+same out-of-turn check before expensive work.
 
 ## 4. Public witness
 
 Wait for a published closure:
 
-    relay witness watch --interval 60s <shared flags>
+    relay witness run --interval 60s <shared flags>
 
 Use `--once` to poll once and exit. After observing closure, independently
 confirm that its beacon round has not occurred and is at least the definition's
@@ -122,7 +128,7 @@ must name your signed public-witness enrollment.
 Synchronize the current authenticated chain prefix into an independently
 operated storage location:
 
-    relay mirror sync <shared flags>
+    relay mirror run <shared flags>
 
 Draft a receipt for the exact retained head:
 
@@ -158,8 +164,8 @@ not published or fetched.
 Synchronize both phases from independently checked mirrors, not the
 coordinator's local copy:
 
-    relay auditor sync --phase phase1 <shared flags>
-    relay auditor sync --phase phase2 <shared flags>
+    relay auditor run --phase phase1 <shared flags>
+    relay auditor run --phase phase2 <shared flags>
 
 Replay the ceremony with `mpc-ceremony audit`. Upload the resulting signed
 audit record using your auditor grant.

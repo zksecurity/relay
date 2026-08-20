@@ -13,6 +13,8 @@ func TestCommandNamespacesRejectMissingAndUnknownSubcommands(t *testing.T) {
 	}{
 		{"coordinator missing", runCoordinator, "coordinator requires"},
 		{"coordinator unknown", runCoordinator, "unknown coordinator command"},
+		{"ceremony missing", runCeremony, "ceremony requires"},
+		{"ceremony unknown", runCeremony, "unknown ceremony command"},
 		{"participant missing", runParticipant, "participant requires"},
 		{"participant unknown", runParticipant, "unknown participant command"},
 		{"witness missing", runWitness, "witness requires"},
@@ -21,6 +23,8 @@ func TestCommandNamespacesRejectMissingAndUnknownSubcommands(t *testing.T) {
 		{"mirror unknown", runMirror, "unknown mirror command"},
 		{"auditor missing", runAuditor, "auditor requires"},
 		{"auditor unknown", runAuditor, "unknown auditor command"},
+		{"release missing", runRelease, "release requires"},
+		{"release unknown", runRelease, "unknown release command"},
 		{"advanced missing", runAdvanced, "advanced requires"},
 		{"advanced unknown", runAdvanced, "unknown advanced command"},
 	}

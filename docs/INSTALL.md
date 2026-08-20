@@ -1,202 +1,153 @@
 # Installing ceremony tools
 
 This is the normal installation path for coordinators, participants, witnesses,
-mirrors, auditors, and release upload stations. It installs published production
-binaries; it does not build either project from source.
+mirrors, auditors, and release operators. It installs a coordinated Relay and
+`mpc-ceremony` kit; it does not require Go or either source repository.
 
 Release maintainers and independent build auditors use
 [RELEASE.md](RELEASE.md) instead.
 
-## Information to obtain first
+## Obtain two authenticated values
 
-Obtain these values through the ceremony's authenticated trust channel:
-
-- the approved Relay release tag and Linux/amd64 binary SHA-256;
-- the SHA-256 values of Relay's installer script and installer `.env`
-  template;
-- the approved proof-tool GitHub repository, release tag, and `mpc-ceremony`
-  Linux/amd64 binary SHA-256;
-- for a three-machine rehearsal, the rehearsal archive SHA-256; and
-- the expected AWS CLI major version, currently v2.
-
-The expected hashes must come from a channel independent of the binary
-downloads. A checksum copied from the same GitHub release as its binary detects
-download corruption, but it does not protect against a compromised release.
-
-## Download the verified installer
-
-Install `curl` and `sha256sum` through the operating system first. A source
-checkout is not required. Set the Relay tag and the two independently approved
-download hashes, then fetch the installer and its dotenv template:
+Obtain the approved ceremony-kit tag and Linux/amd64 archive SHA-256 through the
+ceremony's authenticated trust channel:
 
 ```bash
-: "${RELAY_TAG:?Set RELAY_TAG from the authenticated release announcement}"
-: "${RELAY_INSTALLER_SHA256:?Set the approved installer script SHA-256}"
-: "${RELAY_INSTALL_ENV_SHA256:?Set the approved installer env SHA-256}"
-DOWNLOAD_ROOT=$(mktemp -d /tmp/ceremony-tools-download.XXXXXXXX)
-
-curl --proto '=https' --tlsv1.2 --fail --location --show-error \
-  "https://github.com/zksecurity/relay/releases/download/$RELAY_TAG/install-ceremony-tools.sh" \
-  --output "$DOWNLOAD_ROOT/install-ceremony-tools.sh"
-curl --proto '=https' --tlsv1.2 --fail --location --show-error \
-  "https://github.com/zksecurity/relay/releases/download/$RELAY_TAG/install.env.example" \
-  --output "$DOWNLOAD_ROOT/install.env"
-
-printf '%s  %s\n' "$RELAY_INSTALLER_SHA256" \
-  "$DOWNLOAD_ROOT/install-ceremony-tools.sh" | sha256sum --check
-printf '%s  %s\n' "$RELAY_INSTALL_ENV_SHA256" \
-  "$DOWNLOAD_ROOT/install.env" | sha256sum --check
-chmod 0700 "$DOWNLOAD_ROOT/install-ceremony-tools.sh"
-chmod 0600 "$DOWNLOAD_ROOT/install.env"
+CEREMONY_KIT_TAG=REPLACE_WITH_APPROVED_KIT_TAG
+CEREMONY_KIT_SHA256=REPLACE_WITH_APPROVED_64_CHARACTER_SHA256
 ```
 
-Do not pipe a network response directly into Bash. Verifying the saved script
-before running it makes the code being executed an explicit authenticated
-input.
+The hash must come from a channel independent of the GitHub download. A hash
+copied from the same release page detects download corruption but does not
+protect against a compromised release account.
 
-## Choose the `.env` file
+The kit manifest records the independently approved Relay and proof-tool
+repositories, tags, and binary hashes. Operators do not enter those values
+again.
 
-For a general installation, edit the downloaded template and use it directly:
+## Download and verify the kit
+
+Install `curl`, `sha256sum`, and `tar` through the operating system, then run:
 
 ```bash
-INSTALL_ENV="$DOWNLOAD_ROOT/install.env"
-${EDITOR:-vi} "$INSTALL_ENV"
+: "${CEREMONY_KIT_TAG:?Set the authenticated ceremony-kit tag}"
+: "${CEREMONY_KIT_SHA256:?Set the authenticated ceremony-kit SHA-256}"
+DOWNLOAD_ROOT=$(mktemp -d /tmp/ceremony-kit-download.XXXXXXXX)
+
+curl --proto '=https' --tlsv1.2 --fail --location --show-error \
+  "https://github.com/zksecurity/relay/releases/download/$CEREMONY_KIT_TAG/ceremony-kit-linux-amd64.tar.gz" \
+  --output "$DOWNLOAD_ROOT/ceremony-kit-linux-amd64.tar.gz"
+printf '%s  %s\n' "$CEREMONY_KIT_SHA256" \
+  "$DOWNLOAD_ROOT/ceremony-kit-linux-amd64.tar.gz" | sha256sum --check
 ```
 
-For the scripted three-machine rehearsal, download the versioned archive and
-use its machine `.env` for both installation and later role commands. Replace
-`N` with `1`, `2`, or `3`, and select a persistent, access-controlled directory:
+Expected:
+
+```text
+/tmp/ceremony-kit-download.../ceremony-kit-linux-amd64.tar.gz: OK
+```
+
+Do not extract or execute a kit whose hash does not report `OK`.
+
+## Install the coordinated binaries
+
+Extract the verified archive into a persistent, access-controlled directory:
 
 ```bash
-: "${REHEARSAL_ARCHIVE_SHA256:?Set the approved rehearsal archive SHA-256}"
-curl --proto '=https' --tlsv1.2 --fail --location --show-error \
-  "https://github.com/zksecurity/relay/releases/download/$RELAY_TAG/three-machine-rehearsal.tar.gz" \
-  --output "$DOWNLOAD_ROOT/three-machine-rehearsal.tar.gz"
-printf '%s  %s\n' "$REHEARSAL_ARCHIVE_SHA256" \
-  "$DOWNLOAD_ROOT/three-machine-rehearsal.tar.gz" | sha256sum --check
-
 CEREMONY_TOOLS_ROOT="$HOME/ceremony-tools"
 mkdir -m 0700 -p "$CEREMONY_TOOLS_ROOT"
 chmod 0700 "$CEREMONY_TOOLS_ROOT"
-test ! -e "$CEREMONY_TOOLS_ROOT/three-machine-rehearsal"
-tar -xzf "$DOWNLOAD_ROOT/three-machine-rehearsal.tar.gz" \
+test ! -e "$CEREMONY_TOOLS_ROOT/ceremony-kit"
+tar --no-same-owner -xzf \
+  "$DOWNLOAD_ROOT/ceremony-kit-linux-amd64.tar.gz" \
   -C "$CEREMONY_TOOLS_ROOT"
-REHEARSAL_ROOT="$CEREMONY_TOOLS_ROOT/three-machine-rehearsal"
-cp "$REHEARSAL_ROOT/machine-N/.env.example" \
-  "$REHEARSAL_ROOT/machine-N/.env"
-chmod 0600 "$REHEARSAL_ROOT/machine-N/.env"
-INSTALL_ENV="$REHEARSAL_ROOT/machine-N/.env"
-${EDITOR:-vi} "$INSTALL_ENV"
+cd "$CEREMONY_TOOLS_ROOT/ceremony-kit"
+./setup verify
+./setup
 ```
 
-Fill these seven fields first:
-
-```text
-RELAY_TAG
-MPC_RELEASE_REPOSITORY
-MPC_TAG
-RELAY_SHA256
-MPC_SHA256
-RELAY_BIN
-MPC_BIN
-```
-
-The example installs into `/usr/local/bin`. Change the two absolute binary paths
-before installation if this machine uses another existing installation
-directory. Then run:
+`./setup verify` checks every internal file against the authenticated kit. The
+install command places the two pinned binaries in `/usr/local/bin`, using
+`sudo` only if necessary, and confirms both programs start. To use an existing
+user-writable directory instead:
 
 ```bash
-"$DOWNLOAD_ROOT/install-ceremony-tools.sh" "$INSTALL_ENV"
+mkdir -p "$HOME/.local/bin"
+./setup --prefix "$HOME/.local/bin"
 ```
 
-The installer reads only those seven dotenv assignments without executing the
-file as shell code. It rejects missing values, placeholders, duplicate fields,
-malformed tags, repositories, hashes, or destination paths. It downloads both
-binaries into a private temporary directory, verifies both SHA-256 values
-before installing either binary, installs them with mode `0755`, and checks that
-both installed programs start. It uses `sudo` only when the destination is not
-writable by the current user.
+No ceremony credentials, role keys, cloud secrets, or temporary grants belong
+in the kit.
 
-For an upstream production release, the authenticated announcement should name
-`Emurgo/proof-tool`. Before that release pipeline is merged upstream, a test
-announcement may explicitly name `zksecurity/proof-tool` and a prerelease tag.
-Never switch repositories merely because the announced asset is missing.
+## Three-machine rehearsal
 
-For example, a fork rehearsal announcement sets
-`MPC_RELEASE_REPOSITORY=zksecurity/proof-tool`; the final upstream production
-announcement sets `MPC_RELEASE_REPOSITORY=Emurgo/proof-tool`. These are explicit
-trust inputs, not installer defaults.
+An approved rehearsal kit also contains the versioned rehearsal scripts.
+Replace `N` with `1`, `2`, or `3`:
 
-If an approved release has not published these assets yet, stop and ask its
-maintainer to publish a reviewed release. Do not silently replace a production
-binary with `go run`, an unreviewed local build, or a binary from another
-channel.
+```bash
+cd "$CEREMONY_TOOLS_ROOT/ceremony-kit"
+./setup \
+  --machine N \
+  --rehearsal-root "$CEREMONY_TOOLS_ROOT"
+```
+
+This installs both binaries, extracts the standalone rehearsal, and creates:
+
+```text
+~/ceremony-tools/three-machine-rehearsal/machine-N/.env
+```
+
+The kit automatically fills the approved repositories, tags, binary hashes,
+and installed paths. Edit only the remaining ceremony, storage, identity, and
+local path placeholders:
+
+```bash
+REHEARSAL_ROOT="$CEREMONY_TOOLS_ROOT/three-machine-rehearsal"
+${EDITOR:-vi} "$REHEARSAL_ROOT/machine-N/.env"
+"$REHEARSAL_ROOT/00-check-machine.sh" \
+  "$REHEARSAL_ROOT/machine-N/.env"
+```
+
+The `.env` is a rehearsal convenience. Keep it at mode `0600`; never put cloud
+secret keys, temporary grants, R2 control-plane or parent tokens, ceremony
+private keys, or build-signing keys in it.
+
+## Production ceremonies
+
+A production kit contains only the coordinated binaries and release manifest;
+it does not contain rehearsal identities or scripts. After `./setup`, follow
+the coordinator or role runbook to enroll the local ceremony key. Enrollment
+is long-lived and does not require temporary upload credentials. The
+coordinator supplies a short-lived grant only when a role is authorized to
+write.
+
+For participants, the resulting flow is:
+
+```bash
+relay ceremony enroll [ceremony trust and local-key flags]
+relay participant status
+relay participant run --grant /secure/handoff/participant.grant.json
+```
+
+Relay authenticates the local key through `mpc-ceremony`, checks the signed
+published state, and rejects an out-of-turn participant before contribution
+work starts.
 
 ## Install AWS CLI v2
 
-Install `unzip` and `gpg` through the operating system first. Verify
-the AWS download using the signature procedure in the
-[official AWS CLI verification instructions](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html#install-linux-verify-signature),
-then install it. For Linux/amd64:
-
-    AWS_INSTALL_ROOT=$(mktemp -d /tmp/aws-cli-install.XXXXXXXX)
-    curl --fail --location \
-      https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip \
-      --output "$AWS_INSTALL_ROOT/awscliv2.zip"
-    curl --fail --location \
-      https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip.sig \
-      --output "$AWS_INSTALL_ROOT/awscliv2.zip.sig"
-
-After completing the documented GPG verification:
-
-    unzip -q "$AWS_INSTALL_ROOT/awscliv2.zip" -d "$AWS_INSTALL_ROOT"
-    sudo "$AWS_INSTALL_ROOT/aws/install" --update
-
-Do not configure a provider credential yet. The coordinator and each role
-receive different profiles or temporary grants later in their runbooks.
+The kit does not redistribute AWS CLI. Install `unzip` and `gpg`, follow the
+[official AWS CLI signature verification procedure](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html#install-linux-verify-signature),
+and install AWS CLI v2. Do not configure a provider credential until the
+coordinator assigns the machine's role-specific profile or temporary grant.
 
 ## Final verification
 
-Finish every installation with:
-
-    relay --help
-    mpc-ceremony help
-    aws --version
-    command -v relay mpc-ceremony aws
-
-Confirm that `aws --version` reports `aws-cli/2...` and that all commands resolve
-to the reviewed paths. Record the commands, release tags, and binary hashes in
-the local operator log. Do not begin a role handoff if anything differs from the
-approved values.
-
-## Record verified inputs for the tiny rehearsal
-
-This section applies only to the
-[scripted three-machine rehearsal](../scripts/three-machine-rehearsal/README.md).
-The production runbooks do not depend on these `.env` files.
-
-Install Bash, Python 3, and GNU coreutils on every rehearsal machine. Python is
-used only by the rehearsal helpers to read the tiny ceremony definition; it is
-not a Relay runtime dependency.
-
-If the machine `.env` was not used during installation, create it now from the
-appropriate machine example in the extracted archive and copy the seven
-verified installer fields into it. Confirm the recorded binary paths and
-hashes before filling its remaining ceremony-specific fields:
-
 ```bash
-command -v relay mpc-ceremony
-sha256sum "$(command -v relay)" "$(command -v mpc-ceremony)"
+relay --help
+mpc-ceremony help
+aws --version
+command -v relay mpc-ceremony aws
 ```
 
-The output must match `RELAY_BIN`, `MPC_BIN`, `RELAY_SHA256`, and `MPC_SHA256`
-already recorded in `.env`. Recording a digest there does not make it trusted:
-obtain the expected value through the authenticated release channel before
-installation. For a local test build without a published release, record its
-exact digest and clearly treat the run as a rehearsal rather than production
-evidence.
-
-Fill the remaining machine-specific paths, identities, and storage names, then
-run that machine's `00-check-machine.sh` command from the rehearsal guide. Do
-not store temporary grants, cloud secret keys, R2 control-plane or parent
-tokens, ceremony private keys, or build-signing private keys in `.env`.
+Confirm `aws --version` reports `aws-cli/2...` and that all commands resolve to
+the reviewed paths. Record the kit tag and archive hash in the operator log.

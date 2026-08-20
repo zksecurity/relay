@@ -110,7 +110,7 @@ Build the production package:
       --build-signing-key /offline/relay-build-signing-key \
       --out-dir "$RELEASE_EVIDENCE_ROOT/relay-release-parent/release"
 
-The output contains `relay`, the source-free installer assets, the versioned
+The output contains `relay`, the ceremony-kit setup component, the versioned
 three-machine rehearsal archive, their checksums, exact Go/VCS metadata, a
 CycloneDX SBOM, source and toolchain checksums, and a signed package manifest.
 Create an archive that preserves the verified file modes:
@@ -126,12 +126,9 @@ Create an archive that preserves the verified file modes:
 Publish these GitHub Release assets from the verified release directory:
 
 - the standalone `$RELAY_RELEASE_DIR/relay` file with the asset name `relay`,
-  used by the normal installation path;
-- `install-ceremony-tools.sh`, used to download, verify, and install both
-  ceremony binaries without a source checkout;
-- `install.env.example`, the installer's non-secret dotenv template;
+  used when assembling the coordinated ceremony kit;
 - `three-machine-rehearsal.tar.gz`, the standalone versioned rehearsal kit;
-- `checksums.sha256`, containing all four directly downloadable asset hashes;
+- `checksums.sha256`, containing the directly downloadable asset hashes;
   and
 - `$RELAY_RELEASE_ARCHIVE`, used by independent auditors to verify the complete
   signed package.
@@ -139,8 +136,9 @@ Publish these GitHub Release assets from the verified release directory:
 Publish the release tag, source commit, every value in `checksums.sha256`, the
 complete-package archive SHA-256, tag-signer fingerprint, and build-package
 public key through the project's authenticated release channel. Normal
-operators authenticate the installer, template, rehearsal kit when used, and
-both binaries against values obtained through that channel.
+auditors authenticate the Relay asset and rehearsal archive against values
+obtained through that channel. Normal operators use the coordinated ceremony
+kit assembled after both projects have independently published.
 
 A coordinated ceremony-tools release is usable only after proof-tool also
 publishes its approved signed tag and a standalone asset named
@@ -230,3 +228,60 @@ tag and reproducible-release procedure using
 `scripts/verify-mpc-ceremony-reproducible.sh`. The proof-tool release maintainer,
 not the ceremony coordinator or a participant, owns its build-signing private
 key.
+
+## Assemble the coordinated ceremony kit
+
+The kit is a convenience distribution assembled only after the Relay and
+proof-tool releases have been independently verified. It does not replace
+either project's signed release package or reproducibility evidence.
+
+Set the exact approved inputs:
+
+```bash
+: "${RELAY_TAG:?Set the approved Relay tag}"
+: "${RELAY_SHA256:?Set the approved Relay binary SHA-256}"
+: "${MPC_RELEASE_REPOSITORY:?Set the approved proof-tool OWNER/REPOSITORY}"
+: "${MPC_TAG:?Set the approved mpc-ceremony tag}"
+: "${MPC_SHA256:?Set the approved mpc-ceremony binary SHA-256}"
+: "${MPC_BINARY:?Set the verified local mpc-ceremony binary path}"
+KIT_PARENT="$RELEASE_EVIDENCE_ROOT/ceremony-kit-parent"
+mkdir "$KIT_PARENT"
+```
+
+For production, assemble only the two binaries and their release manifest:
+
+```bash
+scripts/build-ceremony-kit.sh \
+  --mode production \
+  --relay-release-dir "$RELAY_RELEASE_DIR" \
+  --relay-repository zksecurity/relay \
+  --relay-tag "$RELAY_TAG" \
+  --relay-sha256 "$RELAY_SHA256" \
+  --mpc-binary "$MPC_BINARY" \
+  --mpc-repository "$MPC_RELEASE_REPOSITORY" \
+  --mpc-tag "$MPC_TAG" \
+  --mpc-sha256 "$MPC_SHA256" \
+  --out-dir "$KIT_PARENT/ceremony-kit"
+```
+
+For an unsigned rehearsal, use `--mode rehearsal --include-rehearsal`. This
+adds the versioned three-machine scripts and lets `setup --machine N` create a
+prefilled local rehearsal `.env`.
+
+Create the reproducible downloadable archive:
+
+```bash
+KIT_SOURCE_DATE_EPOCH=$(<"$RELAY_RELEASE_DIR/source-date-epoch.txt")
+CEREMONY_KIT_ARCHIVE="$RELEASE_EVIDENCE_ROOT/ceremony-kit-linux-amd64.tar.gz"
+tar --sort=name --mtime="@$KIT_SOURCE_DATE_EPOCH" \
+  --owner=0 --group=0 --numeric-owner \
+  -cf - -C "$KIT_PARENT" ceremony-kit | \
+  gzip -n >"$CEREMONY_KIT_ARCHIVE"
+sha256sum "$CEREMONY_KIT_ARCHIVE"
+```
+
+Extract the archive into a fresh directory and run `ceremony-kit/setup verify`
+before publishing it. Publish the archive with the exact asset name
+`ceremony-kit-linux-amd64.tar.gz`. Announce only its tag and SHA-256 to normal
+operators through the independent authenticated channel; `release.json`
+inside the kit records all underlying repositories, tags, and hashes.

@@ -274,9 +274,8 @@ printf '%s\n' 'go test ./...: passed' >"$STAGING/test-status.txt"
 # the binary and are covered by the release manifest. The rehearsal archive
 # contains only the tracked rehearsal subtree; private .env files cannot enter
 # it. gzip -n removes the gzip header timestamp and original filename.
-install -m 0755 scripts/install-ceremony-tools.sh \
-  "$STAGING/install-ceremony-tools.sh"
-install -m 0644 scripts/install.env.example "$STAGING/install.env.example"
+install -m 0755 scripts/setup-ceremony-kit.sh \
+  "$STAGING/setup-ceremony-kit.sh"
 git archive \
   --format=tar \
   --mtime="@$SOURCE_DATE_EPOCH" \
@@ -301,8 +300,6 @@ git archive \
 (
   cd "$STAGING"
   sha256sum \
-    install-ceremony-tools.sh \
-    install.env.example \
     relay \
     three-machine-rehearsal.tar.gz >checksums.sha256
 )
@@ -337,7 +334,9 @@ if [[ "$MODE" == "production" ]]; then
 fi
 
 chmod 0444 "$STAGING"/*
-chmod 0555 "$STAGING/relay" "$STAGING/install-ceremony-tools.sh"
+chmod 0555 \
+  "$STAGING/relay" \
+  "$STAGING/setup-ceremony-kit.sh"
 touch -d "@$SOURCE_DATE_EPOCH" "$STAGING"/*
 
 verify_args=(

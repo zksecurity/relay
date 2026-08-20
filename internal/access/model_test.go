@@ -77,3 +77,21 @@ func TestDecodeRejectsDuplicateFields(t *testing.T) {
 		t.Fatalf("duplicate field error = %v", err)
 	}
 }
+
+func TestParticipantConfigV2DefersTemporaryGrant(t *testing.T) {
+	config := ParticipantConfig{
+		Schema: ParticipantConfigSchema, Phase: "phase1", Root: "/ceremony",
+		Ceremony: "/ceremony/ceremony.json", CeremonySignature: "/ceremony/ceremony.sig",
+		CoordinatorKey: "/trusted/coordinator.hex", CeremonyBinary: "/usr/local/bin/mpc-ceremony",
+		SigningKey: "/keys/participant.hex", Environment: "/config/environment.json",
+		CandidateParentDir: "/work/candidates", PublishedBaseURL: "https://ceremony.example",
+		PublishedBucket: "published",
+	}
+	if err := config.Validate(); err != nil {
+		t.Fatalf("v2 profile without temporary grant: %v", err)
+	}
+	config.Schema = ParticipantConfigSchemaV1
+	if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "grant_path") {
+		t.Fatalf("v1 profile without grant error = %v", err)
+	}
+}
