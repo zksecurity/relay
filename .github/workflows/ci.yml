@@ -72,7 +72,7 @@ jobs:
 
       - name: Verify toolchain
         run: |
-          test "$(go env GOVERSION)" = go1.26.5
+          test "$(go env GOVERSION)" = go1.26.6
           test "$(go env GOHOSTOS)" = linux
           test "$(go env GOHOSTARCH)" = amd64
 

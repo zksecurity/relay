@@ -29,7 +29,7 @@ import (
 const (
 	manifestSchema      = "relay-build-package/v1"
 	expectedModulePath  = "github.com/zksecurity/relay"
-	productionGoVersion = "go1.26.5"
+	productionGoVersion = "go1.26.6"
 	buildFlags          = "-trimpath -buildvcs=true -ldflags=-buildid="
 )
 
