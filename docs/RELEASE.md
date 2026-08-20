@@ -236,7 +236,7 @@ acceptance path:
     RELAY_PROOF_TOOL_DIR="$RELEASE_EVIDENCE_ROOT/proof-tool-source" \
     RELAY_PROOF_TOOL_FULL=1 \
       go test ./cmd/relay -run '^TestProofToolCompatibility$' -count=1 \
-        -timeout 30m -v
+        -timeout 55m -v
 
 For a production proof-tool release, follow its repository's approved signed
 tag and reproducible-release procedure using
