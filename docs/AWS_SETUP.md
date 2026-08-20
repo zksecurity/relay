@@ -116,16 +116,33 @@ GRANT_ROLE_ARN=arn:aws:iam::123456789012:role/relay-ceremony-inbox-grant
 GRANT_ROLE_MAX_TTL=1h
 ```
 
-Copy those values into Machine 1's `.env` for the three-machine rehearsal.
-They contain names and configuration, not secret credentials. Do not send the
-AWS profile or its local credential files to role machines.
+The `.env` is generated outside the immutable downloaded kit when the
+coordinator runs `./setup --machine 1`. Its default absolute path is:
+
+```text
+~/ceremony-tools/three-machine-rehearsal/machine-1/.env
+```
+
+Open it with:
+
+```bash
+MACHINE1_ENV="$HOME/ceremony-tools/three-machine-rehearsal/machine-1/.env"
+test -f "$MACHINE1_ENV"
+${EDITOR:-vi} "$MACHINE1_ENV"
+```
+
+Copy the generated storage block into the matching fields in that file. The
+values contain names and configuration, not secret credentials. Leave
+`STORAGE_ENDPOINT=` empty for AWS; Relay derives the standard endpoint from
+`AWS_REGION`. Do not send the AWS profile or its local credential files to
+role machines.
 
 ## 4. Run Relay's preflight
 
 First check the complete Machine 1 configuration:
 
 ```bash
-REHEARSAL_ROOT=/home/REPLACE_WITH_USER/ceremony-tools/three-machine-rehearsal
+REHEARSAL_ROOT="$HOME/ceremony-tools/three-machine-rehearsal"
 "$REHEARSAL_ROOT/00-check-machine.sh" "$REHEARSAL_ROOT/machine-1/.env"
 ```
 
