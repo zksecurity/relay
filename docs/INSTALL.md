@@ -63,24 +63,21 @@ tar --no-same-owner -xzf \
   -C "$CEREMONY_TOOLS_ROOT"
 cd "$CEREMONY_TOOLS_ROOT/ceremony-kit"
 ./setup verify
-./setup
 ```
 
 `./setup verify` checks every internal file against the authenticated kit. The
-install command places the two pinned binaries in `/usr/local/bin`, using
-`sudo` only if necessary, and confirms both programs start. To use an existing
-user-writable directory instead:
+remaining setup flags can be combined, so choose the single command for this
+machine below. Setup places the two pinned binaries in `/usr/local/bin`, using
+`sudo` only if necessary, and confirms both programs start.
+
+For a production participant or another machine that needs only the binaries:
 
 ```bash
-mkdir -p "$HOME/.local/bin"
-./setup --prefix "$HOME/.local/bin"
+./setup
 ```
 
-No ceremony credentials, role keys, cloud secrets, or temporary grants belong
-in the kit.
-
-Coordinators can extract the authenticated provider guides and setup scripts
-without a source checkout:
+For a coordinator, install the binaries and extract the authenticated provider
+guides and setup scripts in one invocation:
 
 ```bash
 ./setup --storage-setup-root "$CEREMONY_TOOLS_ROOT"
@@ -90,10 +87,32 @@ cd "$CEREMONY_TOOLS_ROOT/storage-setup"
 Then follow `docs/AWS_SETUP.md` or `docs/R2_SETUP.md`. The extracted scripts
 and guides are covered by the ceremony-kit checksum.
 
+To install the binaries in an existing user-writable directory instead, add
+`--prefix` to the selected command. For example:
+
+```bash
+mkdir -p "$HOME/.local/bin"
+./setup --prefix "$HOME/.local/bin"
+```
+
+No ceremony credentials, role keys, cloud secrets, or temporary grants belong
+in the kit.
+
 ## Three-machine rehearsal
 
-An approved rehearsal kit also contains the versioned rehearsal scripts.
-Replace `N` with `1`, `2`, or `3`:
+An approved rehearsal kit also contains the versioned rehearsal scripts. On
+the coordinator's Machine 1, install everything with one command:
+
+```bash
+cd "$CEREMONY_TOOLS_ROOT/ceremony-kit"
+./setup \
+  --machine 1 \
+  --rehearsal-root "$CEREMONY_TOOLS_ROOT" \
+  --storage-setup-root "$CEREMONY_TOOLS_ROOT"
+```
+
+On Machines 2 and 3, replace `N` with `2` or `3` and omit the coordinator-only
+storage setup:
 
 ```bash
 cd "$CEREMONY_TOOLS_ROOT/ceremony-kit"
