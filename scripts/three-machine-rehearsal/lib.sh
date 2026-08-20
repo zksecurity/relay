@@ -13,6 +13,11 @@ die() {
 load_rehearsal_config() {
   [[ $# -eq 1 ]] || die "usage: $0 CONFIG [arguments...]"
   local config=$1
+  case "$config" in
+    machine-N/.env | */machine-N/.env)
+      die "N is a placeholder; replace machine-N with machine-1, machine-2, or machine-3"
+      ;;
+  esac
   [[ -f "$config" && ! -L "$config" ]] || die "config must be a regular non-symlink file: $config"
   # The operator owns this file. It contains shell assignments so paths can
   # refer to one another without duplicating machine-specific roots.
@@ -35,7 +40,16 @@ require_common() {
   [[ "$WORK_ROOT" == /* && "$WORK_ROOT" != / ]] || die "WORK_ROOT must be a specific absolute directory"
   [[ -x "$RELAY_BIN" ]] || die "Relay binary is not executable: $RELAY_BIN"
   [[ -x "$MPC_BIN" ]] || die "mpc-ceremony binary is not executable: $MPC_BIN"
-  [[ -f "$CEREMONY_ROOT/ceremony.json" ]] || die "ceremony.json is absent"
+  if [[ ! -f "$CEREMONY_ROOT/ceremony.json" ]]; then
+    case "$REHEARSAL_CONFIG" in
+      */machine-1/.env)
+        die "ceremony.json is absent; run $SCRIPT_ROOT/00-coordinator-initialize.sh $REHEARSAL_CONFIG first"
+        ;;
+      *)
+        die "ceremony.json is absent; wait for the coordinator's authenticated ceremony handoff before checking this machine"
+        ;;
+    esac
+  fi
   [[ -f "$CEREMONY_ROOT/ceremony.sig" ]] || die "ceremony.sig is absent"
   [[ -f "$TRUSTED_COORDINATOR_KEY" ]] || die "trusted coordinator key is absent"
 }

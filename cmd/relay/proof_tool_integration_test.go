@@ -46,6 +46,28 @@ func TestProofToolCompatibility(t *testing.T) {
 	buildProofProgram(t, proofToolDir, workflowHelper, "./internal/mpcceremony/testdata/workflowhelper")
 	buildProofProgram(t, proofToolDir, operationalHelper, "./scripts/mpc-rehearsal-operational-evidence")
 
+	downloadableRoot := filepath.Join(root, "downloadable-rehearsal")
+	runProofCommand(t, proofToolDir, ceremonyBinary,
+		"rehearsal", "init",
+		"--created-at", "2026-08-20T06:00:00Z",
+		"--out-dir", downloadableRoot)
+	downloadableInspector := transcript.Inspector{
+		Executable:               ceremonyBinary,
+		CeremonyPath:             filepath.Join(downloadableRoot, "public", "ceremony.json"),
+		CeremonySignaturePath:    filepath.Join(downloadableRoot, "public", "ceremony.sig"),
+		CoordinatorPublicKeyPath: filepath.Join(downloadableRoot, "public", "coordinator-public-key.hex"),
+		TranscriptRoot:           filepath.Join(downloadableRoot, "public"),
+	}
+	downloadableDefinition, err := downloadableInspector.Definition()
+	if err != nil {
+		t.Fatalf("Relay inspection of downloadable tiny rehearsal: %v", err)
+	}
+	if len(downloadableDefinition.Phase1Participants) != 3 ||
+		downloadableDefinition.Phase1Participants[0] != "participant-01" ||
+		downloadableDefinition.Phase1Participants[2] != "participant-03" {
+		t.Fatalf("downloadable rehearsal definition = %#v", downloadableDefinition)
+	}
+
 	workflowRoot := filepath.Join(root, "workflow")
 	runProofCommand(t, proofToolDir, workflowHelper, workflowRoot, operationalHelper)
 	ceremonyRoot := filepath.Join(workflowRoot, "ceremony")

@@ -197,5 +197,12 @@ chmod 0600 "$config"
 printf 'Prepared Machine %s configuration:\n  %s\n' "$MACHINE" "$config"
 printf 'Prepared Machine %s work root:\n  %s/work/machine-%s\n' \
   "$MACHINE" "$REHEARSAL_ROOT" "$MACHINE"
-printf 'Review the remaining machine-specific fields, then run:\n'
+printf 'Review the remaining machine-specific fields first.\n'
+if [[ "$MACHINE" == 1 ]]; then
+  printf 'Then initialize the tiny rehearsal:\n'
+  printf '  %s/00-coordinator-initialize.sh %s\n' "$destination" "$config"
+else
+  printf 'Then wait for the coordinator ceremony handoff.\n'
+fi
+printf 'Run the machine check only after the required ceremony files are staged:\n'
 printf '  %s/00-check-machine.sh %s\n' "$destination" "$config"

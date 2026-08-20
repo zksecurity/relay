@@ -73,7 +73,7 @@ else
   fi
 fi
 
-for command_name in git go gzip install sha256sum realpath mktemp grep sed xargs; do
+for command_name in git go gzip install sha256sum realpath mktemp grep sed tar xargs; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "FAIL: required command is missing: $command_name" >&2
     exit 1
@@ -272,16 +272,29 @@ printf '%s\n' 'go test ./...: passed' >"$STAGING/test-status.txt"
 
 # These operator-facing assets are derived from the same exact source commit as
 # the binary and are covered by the release manifest. The rehearsal archive
-# contains only the tracked rehearsal subtree; private .env files cannot enter
-# it. gzip -n removes the gzip header timestamp and original filename.
+# contains the tracked rehearsal subtree plus authenticated copies of the
+# installation and provider guides; private .env files cannot enter it. gzip -n
+# removes the gzip header timestamp and original filename.
 install -m 0755 scripts/setup-ceremony-kit.sh \
   "$STAGING/setup-ceremony-kit.sh"
+REHEARSAL_TAR="$CANONICAL_ROOT/three-machine-rehearsal.tar"
+REHEARSAL_GUIDES_TAR="$CANONICAL_ROOT/three-machine-rehearsal-guides.tar"
 git archive \
   --format=tar \
   --mtime="@$SOURCE_DATE_EPOCH" \
   --prefix=three-machine-rehearsal/ \
-  "$SOURCE_COMMIT:scripts/three-machine-rehearsal" |
-  gzip -n >"$STAGING/three-machine-rehearsal.tar.gz"
+  "$SOURCE_COMMIT:scripts/three-machine-rehearsal" >"$REHEARSAL_TAR"
+git archive \
+  --format=tar \
+  --mtime="@$SOURCE_DATE_EPOCH" \
+  --prefix=three-machine-rehearsal/ \
+  "$SOURCE_COMMIT" \
+  docs/INSTALL.md \
+  docs/AWS_SETUP.md \
+  docs/R2_SETUP.md \
+  docs/STORAGE.md >"$REHEARSAL_GUIDES_TAR"
+tar --concatenate --file="$REHEARSAL_TAR" "$REHEARSAL_GUIDES_TAR"
+gzip -n -c "$REHEARSAL_TAR" >"$STAGING/three-machine-rehearsal.tar.gz"
 git archive \
   --format=tar \
   --mtime="@$SOURCE_DATE_EPOCH" \

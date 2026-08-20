@@ -146,10 +146,20 @@ func runSync(commandName string, args []string) error {
 	}
 	fmt.Printf("%d fetched, %d already held, %s at index %d\n", got, have, o.phase, pos.accepted)
 	fmt.Println()
-	fmt.Println("draft a receipt for the exact accepted chain prefix you now hold:")
-	fmt.Printf("  relay mirror receipt --chain %s --chain-signature %s --index %d --location <uri> --stored-at %s\n",
-		pos.chainPath, pos.chain.ChainSignaturePath, pos.accepted, time.Now().UTC().Format(time.RFC3339))
+	fmt.Print(syncNextStep(commandName, pos.chainPath, pos.chain.ChainSignaturePath,
+		pos.accepted, time.Now().UTC().Format(time.RFC3339)))
 	return nil
+}
+
+func syncNextStep(commandName, chainPath, chainSignaturePath string, index int, storedAt string) string {
+	if strings.HasPrefix(commandName, "auditor") {
+		return "authenticated transcript synchronized and ready for independent audit.\n"
+	}
+	return fmt.Sprintf(
+		"draft a receipt for the exact accepted chain prefix you now hold:\n"+
+			"  relay mirror receipt --chain %s --chain-signature %s --index %d --location <uri> --stored-at %s\n",
+		chainPath, chainSignaturePath, index, storedAt,
+	)
 }
 
 // pointerSummary is used by tests and by status to describe a pointer without

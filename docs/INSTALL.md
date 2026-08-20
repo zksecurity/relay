@@ -140,11 +140,38 @@ The kit automatically fills the approved repositories, tags, binary hashes,
 installed paths, and `WORK_ROOT=$REHEARSAL_ROOT/work/machine-N`. Ceremony,
 configuration, key, trust, run, and storage-config paths derive from that work
 root. On Machine 1, the provider setup script can also populate every storage
-field automatically. Review the resulting file, then run the machine check:
+field automatically.
+
+First, review the generated configuration. Replace `N` with this machine's
+number:
 
 ```bash
 REHEARSAL_ROOT="$CEREMONY_TOOLS_ROOT/three-machine-rehearsal"
 ${EDITOR:-vi} "$REHEARSAL_ROOT/machine-N/.env"
+```
+
+On Machine 1, initialize the signed three-participant tiny rehearsal. This
+single command uses the authenticated `mpc-ceremony` binary from the kit; no
+proof-tool checkout or Go installation is required:
+
+```bash
+"$REHEARSAL_ROOT/00-coordinator-initialize.sh" \
+  "$REHEARSAL_ROOT/machine-1/.env"
+```
+
+The command creates fresh same-host rehearsal identities, canonical config,
+and the signed `rehearsal-tiny-v1` ceremony under Machine 1's work root. Its
+keys and transcript are functional test fixtures and must never be treated as
+production or independence evidence.
+
+Machines 2 and 3 do not run the initializer. They wait for the coordinator to
+stage the authenticated ceremony definition, signature, trusted coordinator
+key, environment file, and only the private role keys assigned to that machine,
+as described in the rehearsal guide.
+
+After those prerequisites exist on the selected machine, run:
+
+```bash
 "$REHEARSAL_ROOT/00-check-machine.sh" \
   "$REHEARSAL_ROOT/machine-N/.env"
 ```
