@@ -161,6 +161,13 @@ head. It downloads into a fresh review directory and invokes
 the new head. Inbox submissions remain available for review or provider
 lifecycle cleanup.
 
+By default Relay records `accepted_at` from the coordinator clock after the
+candidate download, preserving subsecond precision so it is strictly later
+than the participant's signed `destroyed_at`. Keep participant and coordinator
+clocks synchronized. Use `--accepted-at RFC3339` only for a controlled replay;
+the explicit value must still be strictly later than the signed erasure and
+the preceding accepted record.
+
 Repeat for every participant and phase.
 
 ## 5. Publish lifecycle changes
