@@ -59,6 +59,9 @@ or AWS credentials scoped to one identity's inbox prefix:
 
 The shown lifetime is an R2 example. AWS grant roles allow at most 12 hours,
 and an AWS SSO/assumed-role issuer is limited by role chaining to one hour.
+For R2, Relay signs the temporary session credential locally on the trusted
+coordinator with an inbox-only parent Secret Access Key. The participant
+receives only the expiring, prefix-scoped grant—not the parent credential.
 
 The participant creates a validated, grant-free production profile under one
 ceremony home. Relay authenticates the local key and ensures the local ceremony

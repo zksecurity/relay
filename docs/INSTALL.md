@@ -92,6 +92,11 @@ and guides are covered by the ceremony-kit checksum. Do not run this command
 separately for a three-machine rehearsal; its Machine 1 command below already
 performs the same extraction.
 
+The recommended R2 guide uses a Wrangler browser login to discover the
+Cloudflare account and zone and update the coordinator's configuration. It
+also documents an IPv4 SSH callback tunnel for servers where `wrangler login
+--device` receives HTTP 403.
+
 To install the binaries in an existing user-writable directory instead, add
 `--prefix` to whichever single setup command you select. For example, a
 non-rehearsal installation can use:

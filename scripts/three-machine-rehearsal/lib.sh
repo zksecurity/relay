@@ -258,15 +258,32 @@ read_r2_parent_token_if_needed() {
   if [[ "${STORAGE_PROVIDER:-}" != r2 ]]; then
     return
   fi
+  if [[ -n "${RELAY_R2_PARENT_SECRET_ACCESS_KEY:-}" || -n "${R2_PARENT_SECRET_FILE:-}" ]]; then
+    if [[ -z "${RELAY_R2_PARENT_SECRET_ACCESS_KEY:-}" ]]; then
+      RELAY_R2_PARENT_SECRET_ACCESS_KEY=$(read_rehearsal_secret_file \
+        "$R2_PARENT_SECRET_FILE" "R2 parent Secret Access Key file")
+    fi
+    [[ "$RELAY_R2_PARENT_SECRET_ACCESS_KEY" =~ ^[0-9a-f]{64}$ ]] ||
+      die "R2 parent Secret Access Key must be 64 lowercase hexadecimal characters"
+    export RELAY_R2_PARENT_SECRET_ACCESS_KEY
+    return
+  fi
   if [[ -z "${RELAY_R2_PARENT_TOKEN:-}" ]]; then
-    read -rsp 'R2 parent API token: ' RELAY_R2_PARENT_TOKEN
-    printf '\n'
+    if [[ -n "${R2_PARENT_TOKEN_FILE:-}" ]]; then
+      RELAY_R2_PARENT_TOKEN=$(read_rehearsal_secret_file \
+        "$R2_PARENT_TOKEN_FILE" "R2 parent token file")
+    else
+      read -rsp 'R2 parent API token: ' RELAY_R2_PARENT_TOKEN
+      printf '\n'
+    fi
+    [[ "$RELAY_R2_PARENT_TOKEN" =~ ^[A-Za-z0-9._-]+$ ]] ||
+      die "R2 parent token contains unexpected characters"
     export RELAY_R2_PARENT_TOKEN
   fi
 }
 
 clear_r2_parent_token() {
-  unset RELAY_R2_PARENT_TOKEN || true
+  unset RELAY_R2_PARENT_SECRET_ACCESS_KEY RELAY_R2_PARENT_TOKEN || true
 }
 
 read_r2_control_token_if_needed() {
@@ -274,12 +291,57 @@ read_r2_control_token_if_needed() {
     return
   fi
   if [[ -z "${RELAY_R2_CONTROL_TOKEN:-}" ]]; then
-    read -rsp 'Cloudflare R2 control-plane bearer token (Admin Read only): ' RELAY_R2_CONTROL_TOKEN
-    printf '\n'
+    if [[ -n "${R2_CONTROL_TOKEN_FILE:-}" ]]; then
+      RELAY_R2_CONTROL_TOKEN=$(read_rehearsal_secret_file \
+        "$R2_CONTROL_TOKEN_FILE" "R2 control token file")
+    elif [[ -n "${R2_CONTROL_WRANGLER_BIN:-}" ]]; then
+      [[ "$R2_CONTROL_WRANGLER_BIN" == /* ]] ||
+        die "R2_CONTROL_WRANGLER_BIN must be an absolute path"
+      local wrangler_real
+      wrangler_real=$(realpath -e -- "$R2_CONTROL_WRANGLER_BIN") ||
+        die "R2_CONTROL_WRANGLER_BIN does not resolve: $R2_CONTROL_WRANGLER_BIN"
+      [[ -f "$wrangler_real" && -x "$wrangler_real" && ! -L "$wrangler_real" ]] ||
+        die "R2_CONTROL_WRANGLER_BIN must resolve to a non-symlink executable"
+      local wrangler_auth
+      wrangler_auth=$("$wrangler_real" auth token --json) ||
+        die "Wrangler could not refresh the R2 control-plane token; log in again"
+      RELAY_R2_CONTROL_TOKEN=$(jq -er \
+        'select(.type == "oauth") | .token' <<<"$wrangler_auth") ||
+        die "Wrangler is not using OAuth; unset CLOUDFLARE_API_TOKEN and log in again"
+      unset wrangler_auth
+    else
+      read -rsp 'Cloudflare R2 control-plane bearer token (Admin Read only): ' RELAY_R2_CONTROL_TOKEN
+      printf '\n'
+    fi
+    [[ "$RELAY_R2_CONTROL_TOKEN" =~ ^[A-Za-z0-9._-]+$ ]] ||
+      die "R2 control-plane token contains unexpected characters"
     export RELAY_R2_CONTROL_TOKEN
   fi
 }
 
 clear_r2_control_token() {
   unset RELAY_R2_CONTROL_TOKEN || true
+}
+
+read_rehearsal_secret_file() {
+  [[ $# -eq 2 ]] || die "internal secret-file usage error"
+  local path=$1
+  local label=$2
+  local value
+  local -a lines
+  [[ "$path" == /* ]] || die "$label must use an absolute path"
+  [[ -f "$path" && ! -L "$path" ]] ||
+    die "$label must be a regular non-symlink file: $path"
+  [[ "$(stat -c '%a' -- "$path")" == 600 ]] ||
+    die "$label must have mode 0600: $path"
+  [[ "$(stat -c '%u' -- "$path")" == "$EUID" ]] ||
+    die "$label must be owned by the current user: $path"
+  [[ "$(stat -c '%h' -- "$path")" == 1 ]] ||
+    die "$label must not have hard links: $path"
+  mapfile -t lines <"$path"
+  [[ ${#lines[@]} -eq 1 && -n "${lines[0]}" ]] ||
+    die "$label must contain exactly one non-empty line"
+  value=${lines[0]}
+  [[ "$value" =~ ^[A-Za-z0-9._-]+$ ]] || die "$label contains unexpected characters"
+  printf '%s' "$value"
 }

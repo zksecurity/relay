@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -10,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +28,7 @@ import (
 
 const (
 	r2ParentTokenEnvironment  = "RELAY_R2_PARENT_TOKEN"
+	r2ParentSecretEnvironment = "RELAY_R2_PARENT_SECRET_ACCESS_KEY"
 	r2ControlTokenEnvironment = "RELAY_R2_CONTROL_TOKEN"
 )
 
@@ -284,9 +289,18 @@ func issueR2(config access.StorageConfig, prefix string, ttl time.Duration, now 
 	if ttl > 168*time.Hour {
 		return access.SessionCredentials{}, time.Time{}, errors.New("R2 --credential-ttl must not exceed 168h")
 	}
+	if secret := os.Getenv(r2ParentSecretEnvironment); secret != "" {
+		if err := os.Unsetenv(r2ParentSecretEnvironment); err != nil {
+			return access.SessionCredentials{}, time.Time{}, fmt.Errorf("clear %s before issuing credentials: %w", r2ParentSecretEnvironment, err)
+		}
+		return issueR2Locally(config, prefix, ttl, now, secret)
+	}
 	token := os.Getenv(r2ParentTokenEnvironment)
 	if token == "" {
-		return access.SessionCredentials{}, time.Time{}, fmt.Errorf("%s is required", r2ParentTokenEnvironment)
+		return access.SessionCredentials{}, time.Time{}, fmt.Errorf("%s or %s is required", r2ParentSecretEnvironment, r2ParentTokenEnvironment)
+	}
+	if err := os.Unsetenv(r2ParentTokenEnvironment); err != nil {
+		return access.SessionCredentials{}, time.Time{}, fmt.Errorf("clear %s before issuing credentials: %w", r2ParentTokenEnvironment, err)
 	}
 	body, err := json.Marshal(map[string]any{
 		"bucket": config.InboxBucket, "parentAccessKeyId": config.ParentAccessKeyID,
@@ -338,6 +352,60 @@ func issueR2(config access.StorageConfig, prefix string, ttl time.Duration, now 
 		SessionToken: decoded.Result.SessionToken,
 	}
 	return credentials, now.Add(ttl), credentials.Validate()
+}
+
+func issueR2Locally(config access.StorageConfig, prefix string, ttl time.Duration, now time.Time, secret string) (access.SessionCredentials, time.Time, error) {
+	decodedSecret, err := hex.DecodeString(secret)
+	if err != nil || len(decodedSecret) != sha256.Size || secret != strings.ToLower(secret) {
+		return access.SessionCredentials{}, time.Time{}, fmt.Errorf("%s must be 64 lowercase hexadecimal characters", r2ParentSecretEnvironment)
+	}
+	endpoint, err := url.Parse(config.Endpoint)
+	if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" {
+		return access.SessionCredentials{}, time.Time{}, errors.New("R2 endpoint must be an HTTPS origin")
+	}
+	expires := now.Add(ttl)
+	header, err := json.Marshal(struct {
+		Algorithm string `json:"alg"`
+		Type      string `json:"typ"`
+	}{Algorithm: "HS256", Type: "JWT"})
+	if err != nil {
+		return access.SessionCredentials{}, time.Time{}, err
+	}
+	type r2Paths struct {
+		PrefixPaths []string `json:"prefixPaths"`
+		ObjectPaths []string `json:"objectPaths"`
+	}
+	claims, err := json.Marshal(struct {
+		Bucket    string  `json:"bucket"`
+		Scope     string  `json:"scope"`
+		Paths     r2Paths `json:"paths"`
+		Subject   string  `json:"sub"`
+		Issuer    string  `json:"iss"`
+		Audience  string  `json:"aud"`
+		IssuedAt  int64   `json:"iat"`
+		ExpiresAt int64   `json:"exp"`
+	}{
+		Bucket: config.InboxBucket, Scope: "object-read-write",
+		Paths:   r2Paths{PrefixPaths: []string{prefix}, ObjectPaths: []string{}},
+		Subject: config.AccountID, Issuer: config.ParentAccessKeyID,
+		Audience: endpoint.Host, IssuedAt: now.Unix(), ExpiresAt: expires.Unix(),
+	})
+	if err != nil {
+		return access.SessionCredentials{}, time.Time{}, err
+	}
+	encodedHeader := base64.RawURLEncoding.EncodeToString(header)
+	encodedClaims := base64.RawURLEncoding.EncodeToString(claims)
+	unsigned := encodedHeader + "." + encodedClaims
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(unsigned))
+	jws := unsigned + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	temporarySecret := sha256.Sum256([]byte(jws))
+	credentials := access.SessionCredentials{
+		AccessKeyID:     config.ParentAccessKeyID,
+		SecretAccessKey: hex.EncodeToString(temporarySecret[:]),
+		SessionToken:    base64.StdEncoding.EncodeToString([]byte("jwt/" + jws)),
+	}
+	return credentials, expires, credentials.Validate()
 }
 
 func issueAWS(config access.StorageConfig, identity, prefix string, ttl time.Duration) (access.SessionCredentials, time.Time, error) {

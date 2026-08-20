@@ -50,10 +50,11 @@ Before `configure-storage`:
    the published bucket and list, read, write, and delete in the inbox. Deletes
    are needed only for disposable preflight probes.
 5. Configure a provider-specific temporary-credential issuer limited to the
-   inbox. For R2, also create a separate Cloudflare API bearer token with the
-   account-level `Workers R2 Storage Read` permission so Relay can verify the
-   inbox's public-domain settings. Never distribute either credential to a
-   ceremony role.
+   inbox. For an R2 rehearsal, the guided setup can refresh the coordinator's
+   current Wrangler OAuth token to verify the inbox's public-domain settings.
+   The explicit production path instead uses a separate token with
+   account-level `Workers R2 Storage Read`. Never distribute either credential
+   to a ceremony role.
 6. Decide the explicit credential TTL and minimum upload window for each role.
    Include replay, contribution, erasure, and upload time. Synchronize clocks.
 7. From another machine, confirm that the public URL works anonymously, the
@@ -108,6 +109,10 @@ variables as follows:
 | `GRANT_ROLE_MAX_TTL` | Maximum session duration configured on that role |
 | `R2_ACCOUNT_ID` | R2 account ID; used only when `STORAGE_PROVIDER=r2` |
 | `R2_PARENT_ACCESS_KEY_ID` | Access-key ID for the inbox-limited parent token |
+| `R2_PARENT_SECRET_FILE` | Protected local file containing the inbox-parent Secret Access Key used for local temporary-credential signing |
+| `R2_PARENT_TOKEN_FILE` | Protected local file containing the inbox-parent API token; compatibility fallback for hosted issuance |
+| `R2_CONTROL_TOKEN_FILE` | Optional protected control-token file for the explicit production path |
+| `R2_CONTROL_WRANGLER_BIN` | Absolute Wrangler executable used to refresh the rehearsal control token |
 
 The setup command likewise creates the Machine 2 and Machine 3 files from their
 versioned templates. Witness, mirror, auditor, and participant reads use the
@@ -117,18 +122,19 @@ long-lived reader profile is needed. Role machines do not receive the
 coordinator profile or inbox issuer credential.
 
 Keep each `.env` at mode `0600`. Do not put temporary role grants, AWS secret
-access keys, `RELAY_R2_CONTROL_TOKEN`, `RELAY_R2_PARENT_TOKEN`, ceremony signing
-keys, or build-signing keys in it. Configure named AWS profiles outside the
-repository. The R2 configure script prompts for the control-plane token, and
-grant scripts prompt for the parent token, without echoing either one. Evidence
-writers use their separately issued, prefix-scoped grants; they never receive
-general write access to either bucket.
+access keys, `RELAY_R2_CONTROL_TOKEN`, `RELAY_R2_PARENT_TOKEN`,
+`RELAY_R2_PARENT_SECRET_ACCESS_KEY`, ceremony signing keys, or build-signing
+keys in it. Configure named AWS profiles outside the repository. The
+recommended R2 setup stores only protected credential-file paths and the
+Wrangler executable path in the `.env`; it never stores credential values.
+Evidence writers use their separately issued, prefix-scoped grants; they never
+receive general write access to either bucket.
 
 ## Cloudflare R2
 
 Use [R2_SETUP.md](R2_SETUP.md) to create both buckets, attach the published
 custom domain, configure the coordinator profile, validate the parent and
-control-plane tokens, and print the rehearsal `.env` values.
+control-plane credentials, and update the rehearsal `.env` automatically.
 
 The S3 endpoint is:
 
@@ -138,13 +144,13 @@ For production, map an ordinary HTTPS hostname controlled by the coordinator,
 such as `https://ceremony.example.org`, to the published bucket. Cloudflare's
 generated `r2.dev` URL is rate-limited and intended for development.
 
-Create a Cloudflare API bearer token with the account-level `Workers R2 Storage
-Read` permission, called R2 Admin Read only in the R2 token UI. Supply the token
-value—not an S3 secret access key—only while running `configure-storage`
-through `RELAY_R2_CONTROL_TOKEN`. Cloudflare does not support bucket-scoped
-configuration read; the token can list buckets, view their configuration, and
-read objects throughout the R2 account. Use a dedicated ceremony R2 account if
-that read scope is too broad.
+For a rehearsal, `configure-storage` refreshes the Wrangler OAuth token only
+for its one-time inbox privacy check; later grants and uploads do not require
+Wrangler. Its value is never written to the Machine 1 `.env`. For production
+or a restricted environment, create a Cloudflare API bearer token with
+account-level `Workers R2 Storage Read` and store it in a protected file.
+Cloudflare does not support bucket-scoped configuration read; use a dedicated
+ceremony R2 account if that scope is too broad.
 
 Relay queries Cloudflare's control-plane API and refuses the configuration if
 `r2.dev` is enabled or if any custom domain is attached to the inbox. An
@@ -152,9 +158,17 @@ anonymous request to the account S3 endpoint cannot perform this check because
 R2 public buckets are exposed through separate domains.
 
 Create a parent R2 API token limited to the private inbox bucket and no broader
-than the access it delegates. Record its access-key ID. Supply the parent token
-through `RELAY_R2_PARENT_TOKEN` or a secret manager, never a command-line flag
-or shell history. Revoking it revokes all credentials derived from it.
+than the access it delegates. The guided setup writes its API token and Secret
+Access Key to separate mode-`0600` coordinator-owned files and puts only their
+paths and the non-secret Access Key ID in Machine 1's `.env`. Relay normally
+signs a short-lived JWT locally with the Secret Access Key and scopes it to one
+identity prefix. The API token remains a compatibility fallback for hosted
+issuance. Production may use an equivalent secret manager. Revoking the parent
+token revokes all credentials derived from it.
+
+The grant contains standard temporary S3 credentials, including a session
+token. Treat it as a bearer secret until it expires. Never transfer the parent
+Secret Access Key to a role machine.
 
 R2 grants must not exceed `168h`.
 

@@ -85,6 +85,30 @@ about 31 minutes with the default witness buffers, before human handoff time.
 This timing says nothing about production: the real circuit and contribution
 replay can take hours, and transcript upload time grows with its size.
 
+### Short R2 validation
+
+If the goal is only to prove that the R2 integration works, choose one of these
+explicit stopping points:
+
+- Stop after step 1 for a storage-only check. Relay has exercised coordinator
+  writes, reads and deletes, the anonymous published origin, the private inbox,
+  and the inbox control-plane privacy check.
+- Stop after step 14 for an end-to-end ceremony transport check. Relay has also
+  exercised three locally signed, identity-prefix-scoped temporary grants;
+  participant uploads; coordinator candidate downloads and verification;
+  accepted publication; closure publication; and anonymous witness reads from
+  two role-machine views.
+
+Step 15 begins the timed beacon and is not needed for either R2 check. If it is
+already waiting, interrupting it before the target round is reached leaves the
+published phase closed with no beacon recorded. Continuing past step 15 is
+needed to test phase 2, beacon publication, mirror/auditor synchronization, and
+role-evidence uploads.
+
+The second stopping point was successfully exercised against real Cloudflare
+R2 on 2026-08-20 with the tiny circuit. The public phase 1 head was closed at
+index 3 after all three candidate uploads were accepted.
+
 ## One-time setup on each machine
 
 Download and verify the versioned ceremony kit on all three machines by
@@ -233,17 +257,42 @@ its non-secret storage fields; `STORAGE_ENDPOINT=` intentionally remains
 empty. All secret credential values remain outside the file. Provider scripts
 still print the resulting non-secret block for the operator log.
 
+For R2, authenticate Wrangler and create the short-lived token manager described
+in the provider guide, then pass the generated Machine 1 file to the wrapper:
+
+```bash
+TOKEN_MANAGER_FILE="$HOME/.config/relay/cloudflare-token-manager"
+"$STORAGE_SETUP_ROOT/scripts/storage-setup/setup-r2-wrangler.sh" \
+  --token-manager-file "$TOKEN_MANAGER_FILE" \
+  --machine-env "$E"
+```
+
+The wrapper discovers the authenticated account and active Cloudflare zones,
+generates the bucket names, provisions the resources, stores the inbox-parent
+API token and Secret Access Key in separate protected local files, and
+atomically populates the non-secret Machine 1 fields. Relay prefers the Secret
+Access Key to sign temporary credentials locally. With no active zone it uses
+a rate-limited, rehearsal-only `r2.dev` origin for the published bucket while
+keeping the inbox private.
+Cloudflare requires one account token to be created in its dashboard with
+**Account > Account API Tokens > Edit**. The wrapper uses that short-lived
+token to create the two differently scoped R2 credentials automatically. Revoke
+the token manager and remove its local file as soon as setup succeeds. Without
+it, the wrapper falls back to prompting for two manually created R2
+credentials.
+
 ```bash
 "$S/01-coordinator-configure-storage.sh" "$E"
 ```
 
-For R2, the script prompts without echo for a Cloudflare API bearer token with
-the account-level `Workers R2 Storage Read` permission, called R2 Admin Read
-only in the R2 token UI. Cloudflare does not offer bucket-scoped configuration
-read, so use a dedicated rehearsal account if necessary. Relay uses the token
-only to confirm that the inbox has neither public `r2.dev` access nor an
-attached custom domain; the script removes it from the environment immediately
-afterward.
+For the recommended R2 rehearsal path, step 1 refreshes the current Wrangler
+OAuth token only long enough to confirm that the inbox has neither public
+`r2.dev` access nor an attached custom domain. Later grant and upload steps do
+not require Wrangler. The OAuth value is not stored in the rehearsal `.env`.
+The explicit-token production path instead uses a protected control-token file
+with account-level `Workers R2 Storage Read`; Cloudflare does not offer
+bucket-scoped configuration read, so use a dedicated ceremony account if that
+scope is unacceptable.
 
 For AWS, the guided setup uses one profile for both coordinator and issuer
 operations, so Machine 1 sets both profile fields to the same name. Relay also

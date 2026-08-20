@@ -90,6 +90,9 @@ jobs:
             'FAIL: N is a placeholder; replace machine-N with machine-1, machine-2, or machine-3' \
             "$placeholder_error"
 
+      - name: Test Wrangler-backed R2 setup
+        run: scripts/storage-setup/test-setup-r2.sh
+
       - name: Test interrupted beacon wait is restartable
         run: |
           set -euo pipefail
@@ -194,6 +197,8 @@ jobs:
             storage-setup/scripts/storage-setup/setup-aws.sh
           tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
             storage-setup/scripts/storage-setup/setup-r2.sh
+          tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
+            storage-setup/scripts/storage-setup/setup-r2-wrangler.sh
           tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
             storage-setup/docs/AWS_SETUP.md
           tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
