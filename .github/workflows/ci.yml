@@ -172,7 +172,7 @@ jobs:
           test -f "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
           grep -Fx "RELAY_TAG=ci-rehearsal" \
             "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
-          grep -Fx "WORK_ROOT=/absolute/path/to/machine-3-work" \
+          grep -Fx "WORK_ROOT=$RUNNER_TEMP/ceremony-kit-operator/work/machine-3" \
             "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
           grep -Fx 'CEREMONY_ROOT=$WORK_ROOT/public' \
             "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"

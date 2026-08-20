@@ -58,7 +58,8 @@ the credential lifetime warning below before choosing the identity type.
 From a reviewed Relay checkout or extracted storage-setup bundle, run:
 
 ```bash
-scripts/storage-setup/setup-aws.sh
+MACHINE1_ENV="$HOME/ceremony-tools/three-machine-rehearsal/machine-1/.env"
+scripts/storage-setup/setup-aws.sh --machine-env "$MACHINE1_ENV"
 ```
 
 The script asks for:
@@ -76,7 +77,10 @@ relay-ceremony-123456789012-inbox
 ```
 
 Review the displayed plan and type `yes` to proceed. CloudFront deployment
-commonly takes several minutes.
+commonly takes several minutes. The script validates the generated Machine 1
+file before provisioning and again immediately before atomically updating its
+non-secret storage fields. If the standard Machine 1 path already exists, an
+interactive run also detects it automatically when `--machine-env` is omitted.
 
 ## Non-interactive setup
 
@@ -98,7 +102,7 @@ The script is safe to rerun with the same values. It reuses the named buckets,
 OAC, distribution, and grant role; validates the delivery configuration; and
 reapplies their security settings.
 
-## 3. Copy the generated values
+## 3. Confirm the generated values
 
 On success, the script prints a block like:
 
@@ -123,19 +127,20 @@ coordinator runs `./setup --machine 1`. Its default absolute path is:
 ~/ceremony-tools/three-machine-rehearsal/machine-1/.env
 ```
 
-Open it with:
+The command above updates it automatically. Confirm the exact assignments with:
 
 ```bash
 MACHINE1_ENV="$HOME/ceremony-tools/three-machine-rehearsal/machine-1/.env"
 test -f "$MACHINE1_ENV"
-${EDITOR:-vi} "$MACHINE1_ENV"
+grep -E '^(STORAGE_PROVIDER|PUBLISHED_BUCKET|PUBLISHED_BASE_URL|INBOX_BUCKET|STORAGE_ENDPOINT|COORDINATOR_PROFILE|AWS_REGION|ISSUER_PROFILE|GRANT_ROLE_NAME|GRANT_ROLE_ARN|GRANT_ROLE_MAX_TTL)=' \
+  "$MACHINE1_ENV"
 ```
 
-Copy the generated storage block into the matching fields in that file. The
-values contain names and configuration, not secret credentials. Leave
-`STORAGE_ENDPOINT=` empty for AWS; Relay derives the standard endpoint from
-`AWS_REGION`. Do not send the AWS profile or its local credential files to
-role machines.
+The values contain names and configuration, not secret credentials.
+`STORAGE_ENDPOINT=` remains empty for AWS because Relay derives the standard
+endpoint from `AWS_REGION`. Do not send the AWS profile or its local credential
+files to role machines. Without `--machine-env`, the script only prints the
+same block; this remains useful for production and custom layouts.
 
 ## 4. Run Relay's preflight
 

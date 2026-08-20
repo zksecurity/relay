@@ -128,9 +128,10 @@ This installs both binaries, extracts the standalone rehearsal, and creates:
 ```
 
 The kit automatically fills the approved repositories, tags, binary hashes,
-and installed paths. Set the one absolute `WORK_ROOT`, then edit the remaining
-Machine 1 storage selections or role profile name. Ceremony, configuration,
-key, trust, run, and storage-config paths derive from `WORK_ROOT`:
+installed paths, and `WORK_ROOT=$REHEARSAL_ROOT/work/machine-N`. Ceremony,
+configuration, key, trust, run, and storage-config paths derive from that work
+root. On Machine 1, the provider setup script can also populate every storage
+field automatically. Review the resulting file, then run the machine check:
 
 ```bash
 REHEARSAL_ROOT="$CEREMONY_TOOLS_ROOT/three-machine-rehearsal"

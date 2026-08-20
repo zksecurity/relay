@@ -7,17 +7,39 @@ die() {
   exit 1
 }
 
-[[ $# -le 1 ]] || die "usage: $0 [AWS_CONFIG]"
-if [[ "${1:-}" == -h || "${1:-}" == --help ]]; then
-  printf 'usage: %s [AWS_CONFIG]\n\n' "$0"
-  printf 'Without a config file, interactively creates or updates Relay AWS storage.\n'
-  printf 'With a config file, reads the variables documented in aws.env.example.\n'
-  exit 0
-fi
+config=
+machine_env=
+machine_env_explicit=no
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --machine-env)
+      [[ $# -ge 2 ]] || die "--machine-env requires an absolute file path"
+      machine_env=$2
+      machine_env_explicit=yes
+      shift 2
+      ;;
+    -h | --help)
+      printf 'usage: %s [--machine-env FILE] [AWS_CONFIG]\n\n' "$0"
+      printf 'Without a config file, interactively creates or updates Relay AWS storage.\n'
+      printf 'With a config file, reads the variables documented in aws.env.example.\n'
+      printf 'When selected, --machine-env atomically writes the non-secret rehearsal values.\n'
+      exit 0
+      ;;
+    -*) die "unknown option: $1" ;;
+    *)
+      [[ -z "$config" ]] || die "usage: $0 [--machine-env FILE] [AWS_CONFIG]"
+      config=$1
+      shift
+      ;;
+  esac
+done
+
 command -v aws >/dev/null 2>&1 || die "AWS CLI v2 is required"
 command -v jq >/dev/null 2>&1 || die "jq is required"
+for command_name in grep realpath stat; do
+  command -v "$command_name" >/dev/null 2>&1 || die "$command_name is required"
+done
 
-config=${1:-}
 interactive=no
 if [[ -n "$config" ]]; then
   [[ -f "$config" && ! -L "$config" ]] || die "config must be a regular non-symlink file: $config"
@@ -35,6 +57,13 @@ else
   GRANT_ROLE_MAX_TTL=${GRANT_ROLE_MAX_TTL:-1h}
 fi
 
+if [[ "$interactive" == yes && "$machine_env_explicit" == no && -n "${HOME:-}" ]]; then
+  default_machine_env="$HOME/ceremony-tools/three-machine-rehearsal/machine-1/.env"
+  if [[ -e "$default_machine_env" || -L "$default_machine_env" ]]; then
+    machine_env=$default_machine_env
+  fi
+fi
+
 AWS_PROFILE=${AWS_PROFILE:-}
 RESOURCE_PREFIX=${RESOURCE_PREFIX:-relay-ceremony}
 AWS_REGION=${AWS_REGION:-}
@@ -43,6 +72,48 @@ INBOX_BUCKET=${INBOX_BUCKET:-}
 GRANT_ROLE_NAME=${GRANT_ROLE_NAME:-}
 GRANT_ROLE_MAX_TTL=${GRANT_ROLE_MAX_TTL:-1h}
 CONFIRM_CREATE=${CONFIRM_CREATE:-}
+
+storage_env_fields=(
+  STORAGE_PROVIDER
+  PUBLISHED_BUCKET
+  PUBLISHED_BASE_URL
+  INBOX_BUCKET
+  STORAGE_ENDPOINT
+  COORDINATOR_PROFILE
+  AWS_REGION
+  ISSUER_PROFILE
+  GRANT_ROLE_NAME
+  GRANT_ROLE_ARN
+  GRANT_ROLE_MAX_TTL
+)
+
+validate_machine_env() {
+  [[ -n "$machine_env" ]] || return 0
+  [[ "$machine_env" == /* ]] || die "--machine-env must be an absolute path"
+  [[ -f "$machine_env" && ! -L "$machine_env" ]] ||
+    die "machine env must be a regular non-symlink file: $machine_env"
+  [[ "$(stat -c '%a' -- "$machine_env")" == 600 ]] ||
+    die "machine env must have mode 0600: $machine_env"
+  [[ "$(stat -c '%u' -- "$machine_env")" == "$EUID" ]] ||
+    die "machine env must be owned by the current user: $machine_env"
+  [[ "$(stat -c '%h' -- "$machine_env")" == 1 ]] ||
+    die "machine env must not have hard links: $machine_env"
+
+  local machine_env_parent
+  machine_env_parent=$(realpath -e -- "$(dirname -- "$machine_env")")
+  [[ -d "$machine_env_parent" && ! -L "$machine_env_parent" && -w "$machine_env_parent" ]] ||
+    die "machine env parent must be a writable real directory"
+  machine_env="$machine_env_parent/$(basename -- "$machine_env")"
+
+  local field count
+  for field in "${storage_env_fields[@]}"; do
+    count=$(grep -c "^${field}=" "$machine_env" || true)
+    [[ "$count" == 1 ]] ||
+      die "machine env must contain exactly one $field assignment: $machine_env"
+  done
+}
+
+validate_machine_env
 
 [[ -n "$AWS_PROFILE" ]] || die "AWS_PROFILE is required"
 [[ "$AWS_PROFILE" =~ ^[A-Za-z0-9_.-]+$ ]] || die "AWS profile name is malformed: $AWS_PROFILE"
@@ -101,7 +172,12 @@ printf '  profile/principal: %s (%s)\n' "$AWS_PROFILE" "$aws_principal_arn"
 printf '  account/region:    %s / %s\n' "$setup_account" "$AWS_REGION"
 printf '  published bucket:  %s\n' "$PUBLISHED_BUCKET"
 printf '  inbox bucket:      %s\n' "$INBOX_BUCKET"
-printf '  temporary role:    %s (maximum %s)\n\n' "$GRANT_ROLE_NAME" "$GRANT_ROLE_MAX_TTL"
+printf '  temporary role:    %s (maximum %s)\n' "$GRANT_ROLE_NAME" "$GRANT_ROLE_MAX_TTL"
+if [[ -n "$machine_env" ]]; then
+  printf '  update rehearsal:  %s\n\n' "$machine_env"
+else
+  printf '  update rehearsal:  no (print values only)\n\n'
+fi
 
 if [[ "$interactive" == yes ]]; then
   read -rp 'Type yes to create or update these resources: ' CONFIRM_CREATE
@@ -238,6 +314,8 @@ else
   distribution_domain=$(aws --profile "$AWS_PROFILE" cloudfront get-distribution \
     --id "$distribution_id" --query Distribution.DomainName --output text)
 fi
+[[ "$distribution_domain" =~ ^[a-z0-9.-]+\.cloudfront\.(net|cn)$ ]] ||
+  die "CloudFront returned a malformed distribution domain: $distribution_domain"
 
 distribution_config=$(aws --profile "$AWS_PROFILE" cloudfront get-distribution-config \
   --id "$distribution_id")
@@ -339,7 +417,63 @@ aws --profile "$AWS_PROFILE" iam put-role-policy \
 printf 'Waiting for CloudFront distribution %s to deploy; this can take several minutes.\n' "$distribution_id"
 aws --profile "$AWS_PROFILE" cloudfront wait distribution-deployed --id "$distribution_id"
 
-printf '\nAWS storage is ready. Copy these non-secret values into machine-1/.env:\n\n'
+update_machine_env() {
+  [[ -n "$machine_env" ]] || return 0
+  validate_machine_env
+  local machine_env_parent machine_env_tmp
+  machine_env_parent=$(dirname -- "$machine_env")
+  machine_env_tmp=$(mktemp "$machine_env_parent/.relay-machine-env.partial.XXXXXXXX")
+  if ! {
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      case "$line" in
+        STORAGE_PROVIDER=*) printf 'STORAGE_PROVIDER=aws\n' ;;
+        PUBLISHED_BUCKET=*) printf 'PUBLISHED_BUCKET=%s\n' "$PUBLISHED_BUCKET" ;;
+        PUBLISHED_BASE_URL=*) printf 'PUBLISHED_BASE_URL=https://%s\n' "$distribution_domain" ;;
+        INBOX_BUCKET=*) printf 'INBOX_BUCKET=%s\n' "$INBOX_BUCKET" ;;
+        STORAGE_ENDPOINT=*) printf 'STORAGE_ENDPOINT=\n' ;;
+        COORDINATOR_PROFILE=*) printf 'COORDINATOR_PROFILE=%s\n' "$AWS_PROFILE" ;;
+        AWS_REGION=*) printf 'AWS_REGION=%s\n' "$AWS_REGION" ;;
+        ISSUER_PROFILE=*) printf 'ISSUER_PROFILE=%s\n' "$AWS_PROFILE" ;;
+        GRANT_ROLE_NAME=*) printf 'GRANT_ROLE_NAME=%s\n' "$GRANT_ROLE_NAME" ;;
+        GRANT_ROLE_ARN=*) printf 'GRANT_ROLE_ARN=%s\n' "$grant_role_arn" ;;
+        GRANT_ROLE_MAX_TTL=*) printf 'GRANT_ROLE_MAX_TTL=%s\n' "$GRANT_ROLE_MAX_TTL" ;;
+        *) printf '%s\n' "$line" ;;
+      esac
+    done <"$machine_env" >"$machine_env_tmp"
+  }; then
+    rm -f -- "$machine_env_tmp"
+    die "could not prepare the machine env update"
+  fi
+  if ! chmod 0600 "$machine_env_tmp" || ! mv -- "$machine_env_tmp" "$machine_env"; then
+    rm -f -- "$machine_env_tmp"
+    die "could not atomically update the machine env"
+  fi
+
+  local expected
+  for expected in \
+    'STORAGE_PROVIDER=aws' \
+    "PUBLISHED_BUCKET=$PUBLISHED_BUCKET" \
+    "PUBLISHED_BASE_URL=https://$distribution_domain" \
+    "INBOX_BUCKET=$INBOX_BUCKET" \
+    'STORAGE_ENDPOINT=' \
+    "COORDINATOR_PROFILE=$AWS_PROFILE" \
+    "AWS_REGION=$AWS_REGION" \
+    "ISSUER_PROFILE=$AWS_PROFILE" \
+    "GRANT_ROLE_NAME=$GRANT_ROLE_NAME" \
+    "GRANT_ROLE_ARN=$grant_role_arn" \
+    "GRANT_ROLE_MAX_TTL=$GRANT_ROLE_MAX_TTL"; do
+    grep -Fxq "$expected" "$machine_env" ||
+      die "machine env update verification failed: $expected"
+  done
+}
+
+update_machine_env
+
+if [[ -n "$machine_env" ]]; then
+  printf '\nAWS storage is ready. Updated these non-secret values in:\n  %s\n\n' "$machine_env"
+else
+  printf '\nAWS storage is ready. Rehearsal env update was not selected; values follow:\n\n'
+fi
 printf 'STORAGE_PROVIDER=aws\n'
 printf 'PUBLISHED_BUCKET=%s\n' "$PUBLISHED_BUCKET"
 printf 'PUBLISHED_BASE_URL=https://%s\n' "$distribution_domain"

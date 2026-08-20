@@ -123,12 +123,18 @@ If the storage does not exist yet, run the provider setup first:
 - [AWS setup](../../docs/AWS_SETUP.md)
 - [Cloudflare R2 setup](../../docs/R2_SETUP.md)
 
-Each setup script prints the values to copy into the generated Machine 1 file,
-which defaults to
-`$HOME/ceremony-tools/three-machine-rehearsal/machine-1/.env`. This file is
-outside the immutable downloaded `ceremony-kit` directory. Leave
-`STORAGE_ENDPOINT=` empty for AWS. All secret token values remain outside the
-file.
+For AWS, pass the generated Machine 1 file to the setup command:
+
+```bash
+scripts/storage-setup/setup-aws.sh --machine-env "$E"
+```
+
+The default file is
+`$HOME/ceremony-tools/three-machine-rehearsal/machine-1/.env`, outside the
+immutable downloaded `ceremony-kit` directory. AWS setup atomically populates
+its non-secret storage fields; `STORAGE_ENDPOINT=` intentionally remains
+empty. All secret credential values remain outside the file. Provider scripts
+still print the resulting non-secret block for the operator log.
 
 ```bash
 "$S/01-coordinator-configure-storage.sh" "$E"

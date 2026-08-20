@@ -189,10 +189,13 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     MPC_SHA256=*) printf 'MPC_SHA256=%s\n' "$MPC_SHA256" ;;
     RELAY_BIN=*) printf 'RELAY_BIN=%s/relay\n' "$PREFIX" ;;
     MPC_BIN=*) printf 'MPC_BIN=%s/mpc-ceremony\n' "$PREFIX" ;;
+    WORK_ROOT=*) printf 'WORK_ROOT=%s/work/machine-%s\n' "$REHEARSAL_ROOT" "$MACHINE" ;;
     *) printf '%s\n' "$line" ;;
   esac
 done <"$example" >"$config"
 chmod 0600 "$config"
 printf 'Prepared Machine %s configuration:\n  %s\n' "$MACHINE" "$config"
-printf 'Set WORK_ROOT and the remaining machine-specific fields, then run:\n'
+printf 'Prepared Machine %s work root:\n  %s/work/machine-%s\n' \
+  "$MACHINE" "$REHEARSAL_ROOT" "$MACHINE"
+printf 'Review the remaining machine-specific fields, then run:\n'
 printf '  %s/00-check-machine.sh %s\n' "$destination" "$config"
