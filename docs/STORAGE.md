@@ -99,10 +99,10 @@ variables as follows:
 | `PUBLISHED_BASE_URL` | Anonymous HTTPS base URL for published objects |
 | `INBOX_BUCKET` | Private inbox bucket name |
 | `STORAGE_ENDPOINT` | R2 account endpoint; for AWS it is derived from the selected profile's region |
-| `COORDINATOR_PROFILE` | AWS CLI profile with coordinator bucket access |
+| `COORDINATOR_PROFILE` | AWS CLI profile with coordinator bucket access; the guided AWS setup uses the same profile for both runtime fields |
 | `REHEARSAL_WITNESS_BUFFER_SECONDS` | Tiny-rehearsal witness observation buffer |
 | `AWS_REGION` | Optional AWS region override; normally read from `COORDINATOR_PROFILE` |
-| `ISSUER_PROFILE` | AWS CLI profile allowed to assume the inbox grant role |
+| `ISSUER_PROFILE` | AWS CLI profile allowed to assume the inbox grant role; normally equal to `COORDINATOR_PROFILE` in the simplified setup |
 | `GRANT_ROLE_NAME` | IAM role name; AWS account ID is read with `sts get-caller-identity` |
 | `GRANT_ROLE_ARN` | Optional full role-ARN override |
 | `GRANT_ROLE_MAX_TTL` | Maximum session duration configured on that role |

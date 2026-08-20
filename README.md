@@ -57,6 +57,9 @@ or AWS credentials scoped to one identity's inbox prefix:
       --identity participant-03 --credential-ttl 72h \
       --minimum-upload-window 2h --out participant-03.grant.json
 
+The shown lifetime is an R2 example. AWS grant roles allow at most 12 hours,
+and an AWS SSO/assumed-role issuer is limited by role chaining to one hour.
+
 The participant creates a validated, grant-free production profile under one
 ceremony home. Relay authenticates the local key and ensures the local ceremony
 matches `relay-storage.json`:

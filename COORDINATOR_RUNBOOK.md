@@ -103,6 +103,9 @@ only to a grant command's process:
 
 For AWS:
 
+The guided path in [docs/AWS_SETUP.md](docs/AWS_SETUP.md) provisions storage
+with one AWS profile and prints every value used below.
+
     relay coordinator configure-storage \
       --home "$CEREMONY_HOME" \
       --provider aws \
@@ -110,10 +113,10 @@ For AWS:
       --published-bucket <published-bucket> \
       --published-base-url https://d111111abcdef8.cloudfront.net \
       --inbox-bucket <private-inbox-bucket> \
-      --profile aws-coordinator \
-      --issuer-profile aws-grant-issuer \
-      --grant-role-arn arn:aws:iam::<account-id>:role/relay-inbox-grant \
-      --grant-role-max-ttl 12h \
+      --profile relay-ceremony \
+      --issuer-profile relay-ceremony \
+      --grant-role-arn arn:aws:iam::<account-id>:role/relay-ceremony-inbox-grant \
+      --grant-role-max-ttl 1h \
       --coordinator-key /trusted/coordinator-public-key.hex
 
 With `--home`, Relay reads `public/ceremony.json` and `public/ceremony.sig` and
@@ -139,12 +142,26 @@ without inbox write access.
 Choose a TTL long enough for replay, contribution, erasure, and upload. Relay
 will refuse to start expensive work unless the minimum window remains.
 
+For R2, a typical starting point is:
+
+    CREDENTIAL_TTL=72h
+    MINIMUM_UPLOAD_WINDOW=2h
+
+For AWS with a direct IAM issuer, the role maximum is 12 hours:
+
+    CREDENTIAL_TTL=12h
+    MINIMUM_UPLOAD_WINDOW=2h
+
+An AWS SSO/assumed-role issuer is limited to one hour by role chaining. Use it
+only when the full operation fits comfortably inside that window, such as the
+included rehearsal (`1h` credential, `15m` minimum).
+
     relay coordinator grant \
       --storage "$STORAGE_CONFIG" \
       --role participant \
       --identity participant-03 \
-      --credential-ttl 72h \
-      --minimum-upload-window 2h \
+      --credential-ttl "$CREDENTIAL_TTL" \
+      --minimum-upload-window "$MINIMUM_UPLOAD_WINDOW" \
       --out participant-03.grant.json
 
 Send the participant these items through the agreed private channel when their
@@ -210,8 +227,8 @@ authenticate the identity's signed enrollment:
       --storage "$STORAGE_CONFIG" \
       --role witness \
       --identity witness-01 \
-      --credential-ttl 24h \
-      --minimum-upload-window 2h \
+      --credential-ttl "$CREDENTIAL_TTL" \
+      --minimum-upload-window "$MINIMUM_UPLOAD_WINDOW" \
       --enrollment operations/enrollments/witness-01.json \
       --enrollment-signature operations/enrollments/witness-01.sig \
       --out witness-01.grant.json

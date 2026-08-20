@@ -1,125 +1,126 @@
 # AWS storage setup
 
 This guide creates the AWS resources required by Relay and prints the exact
-non-secret values for the coordinator's rehearsal `.env`. The same resources
-can be passed to `relay coordinator configure-storage` in production.
+non-secret values for the coordinator's `.env`. The default setup uses one AWS
+CLI profile for provisioning, coordinator storage access, and temporary grant
+issuance.
 
 The setup creates:
 
-- a private, versioned S3 published bucket;
-- a private, versioned S3 inbox bucket;
+- a private, encrypted, versioned S3 published bucket;
+- a private, encrypted, versioned S3 inbox bucket;
 - a CloudFront distribution with Origin Access Control (OAC) for anonymous
   reads from the published bucket only;
 - no-cache delivery by default, with managed optimized caching for `blob/*`;
-- an IAM role from which Relay derives temporary, prefix-scoped inbox grants;
-- least-privilege inline policies on existing coordinator and issuer
-  principals.
+- an IAM role from which Relay derives temporary, prefix-scoped inbox grants.
 
-The script never creates access keys and never deletes cloud resources. It can
-incur AWS charges. Use a dedicated AWS account for a rehearsal when possible.
+The script never creates access keys, edits the selected profile's permission
+set, or deletes cloud resources. It can incur AWS charges. Use a dedicated AWS
+account for a rehearsal when possible.
 
-## 1. Install prerequisites
+## 1. Prepare one AWS profile
 
-Install and authenticate AWS CLI v2 as described in [INSTALL.md](INSTALL.md),
-and install `jq` through the operating system. Confirm:
-
-```bash
-aws --version
-jq --version
-```
-
-## 2. Prepare three existing AWS profiles
-
-Create or select these profiles before running the script:
-
-1. A short-lived provisioning profile allowed to create and configure S3
-   buckets, CloudFront distributions/OACs, and IAM roles and inline policies.
-2. A coordinator runtime profile. Its IAM user or role will receive read,
-   write, list, and preflight-delete access to both buckets.
-3. An issuer runtime profile. Its IAM user or role will receive only permission
-   to assume Relay's inbox-grant role.
-
-Use your organization's normal authentication system. For example, AWS IAM
-Identity Center profiles are configured with:
+Install AWS CLI v2 as described in [INSTALL.md](INSTALL.md), and install `jq`
+through the operating system. Then create or select one short-lived profile.
+For AWS IAM Identity Center:
 
 ```bash
-aws configure sso --profile relay-provisioning
-aws configure sso --profile relay-coordinator
-aws configure sso --profile relay-issuer
+aws configure sso --profile relay-ceremony
+aws sso login --profile relay-ceremony
+aws --profile relay-ceremony sts get-caller-identity
 ```
 
-Verify each profile and make sure all three report the intended account:
+You do not need to create three AWS portal users or three local profiles. The
+profile must have permission to create and configure the S3, CloudFront, and
+IAM resources listed above, and to operate the resulting buckets. Ask the AWS
+administrator responsible for the account to assign those permissions through
+the organization's normal process.
+
+In IAM Identity Center, this means one account assignment with one permission
+set. If you already have a suitable administrator role, no portal change is
+needed. `aws configure sso` only creates a local name for that existing portal
+assignment. When prompted, use any memorable SSO session name (for example
+`relay`), enter the start URL and SSO region supplied by your administrator,
+select the ceremony account and role, and keep `relay-ceremony` as the CLI
+profile name.
+
+Using one profile is simpler, but it gives one identity all coordinator and
+grant-issuer privileges. Protect that profile and prefer short-lived SSO
+sessions. Organizations requiring stricter separation can still configure
+Relay manually with different `--profile` and `--issuer-profile` values.
+
+An SSO profile is suitable for the included rehearsal, whose grants require
+only a 15-minute minimum upload window. For multi-hour production work, read
+the credential lifetime warning below before choosing the identity type.
+
+## 2. Run the guided setup
+
+From a reviewed Relay checkout or extracted storage-setup bundle, run:
 
 ```bash
-aws --profile relay-provisioning sts get-caller-identity
-aws --profile relay-coordinator sts get-caller-identity
-aws --profile relay-issuer sts get-caller-identity
+scripts/storage-setup/setup-aws.sh
 ```
 
-The setup config needs the stable IAM user or role ARN behind the coordinator
-and issuer profiles. Do not use an `arn:aws:sts::...:assumed-role/...` session
-ARN. An administrator can obtain the underlying role ARN from IAM or IAM
-Identity Center. It looks like:
+The script asks for:
+
+- the AWS profile, defaulting to `relay-ceremony`;
+- a resource prefix, defaulting to `relay-ceremony`;
+- the maximum temporary credential lifetime, defaulting to `1h`.
+
+It reads the region, AWS account ID, and stable IAM role or user ARN through
+AWS CLI. It derives globally unique bucket names by adding the account ID:
 
 ```text
-arn:aws:iam::123456789012:role/relay-coordinator
+relay-ceremony-123456789012-published
+relay-ceremony-123456789012-inbox
 ```
 
-If the issuer profile itself assumes another IAM role, AWS role chaining caps
-the grants it creates at one hour. Use a direct identity when the ceremony
-requires a longer upload window.
+Review the displayed plan and type `yes` to proceed. CloudFront deployment
+commonly takes several minutes.
 
-## 3. Fill the setup configuration
+## Non-interactive setup
 
-From a reviewed Relay checkout or verified operator bundle:
+For a repeatable production run, copy the small configuration template:
 
 ```bash
 cp scripts/storage-setup/aws.env.example /secure/relay-aws.env
 chmod 0600 /secure/relay-aws.env
 ${EDITOR:-vi} /secure/relay-aws.env
-```
-
-Choose globally unique, ceremony-specific bucket names. Set the provisioning
-and runtime profile names, stable runtime principal ARNs, AWS region, grant
-role name, and maximum grant TTL. The role maximum must be `1h` through `12h`.
-
-Review the selected account and names carefully. The script is intentionally
-not a cleanup tool, and S3 bucket names are global.
-
-## 4. Run the setup
-
-```bash
 scripts/storage-setup/setup-aws.sh /secure/relay-aws.env | tee /secure/relay-aws-result.txt
 ```
 
-The script is safe to rerun with the same configuration. It reuses the named
-buckets, OAC, distribution, and grant role, validates the existing delivery
-configuration, and reapplies bucket and IAM security settings. It may update
-the named role's trust policy and the Relay inline policies on the coordinator
-and issuer, which is why the config requires `CONFIRM_CREATE=yes`.
+Usually only `AWS_PROFILE` needs changing. `AWS_REGION` is read from that
+profile, and resource names are derived automatically. Set the optional region
+or name fields only to override those defaults. `CONFIRM_CREATE=yes` is the
+non-interactive acknowledgement.
 
-CloudFront deployment commonly takes several minutes. The script waits until
-AWS reports that the distribution is deployed, then prints a block like:
+The script is safe to rerun with the same values. It reuses the named buckets,
+OAC, distribution, and grant role; validates the delivery configuration; and
+reapplies their security settings.
+
+## 3. Copy the generated values
+
+On success, the script prints a block like:
 
 ```bash
 STORAGE_PROVIDER=aws
-PUBLISHED_BUCKET=example-ceremony-published
+PUBLISHED_BUCKET=relay-ceremony-123456789012-published
 PUBLISHED_BASE_URL=https://d111111abcdef8.cloudfront.net
-INBOX_BUCKET=example-ceremony-inbox
+INBOX_BUCKET=relay-ceremony-123456789012-inbox
 STORAGE_ENDPOINT=
-COORDINATOR_PROFILE=relay-coordinator
+COORDINATOR_PROFILE=relay-ceremony
 AWS_REGION=us-east-1
-ISSUER_PROFILE=relay-issuer
-GRANT_ROLE_NAME=relay-inbox-grant
-GRANT_ROLE_ARN=arn:aws:iam::123456789012:role/relay-inbox-grant
+ISSUER_PROFILE=relay-ceremony
+GRANT_ROLE_NAME=relay-ceremony-inbox-grant
+GRANT_ROLE_ARN=arn:aws:iam::123456789012:role/relay-ceremony-inbox-grant
 GRANT_ROLE_MAX_TTL=1h
 ```
 
-These values are not credentials. Copy them into Machine 1's `.env` for the
-three-machine rehearsal. Do not copy the setup profile into the rehearsal
-file, and do not send either runtime profile to role machines.
+Copy those values into Machine 1's `.env` for the three-machine rehearsal.
+They contain names and configuration, not secret credentials. Do not send the
+AWS profile or its local credential files to role machines.
 
-## 5. Run Relay's preflight
+## 4. Run Relay's preflight
 
 First check the complete Machine 1 configuration:
 
@@ -139,17 +140,30 @@ Relay writes and reads a disposable probe through both the authenticated S3
 path and anonymous CloudFront URL. It also confirms that the inbox probe is not
 anonymously readable and removes both probes.
 
-## Production notes
+## Credential lifetime warning
 
-- Use organization-managed short-lived profiles rather than permanent IAM user
+AWS limits a session created by role chaining to one hour. IAM Identity Center
+and other assumed-role profiles therefore cannot issue a Relay upload session
+longer than one hour, even if `GRANT_ROLE_MAX_TTL` is configured above `1h`.
+The setup script rejects that impossible combination. Keep the default `1h`
+for the included rehearsal.
+
+If a production ceremony requires a participant upload window longer than one
+hour, one-profile setup requires a direct IAM user profile, whose credential
+storage and rotation must be approved by the AWS administrator. The safer
+alternative is a separate issuer design or R2. Relay checks the remaining
+credential lifetime before starting expensive work.
+
+## Production checklist
+
+- Use organization-managed short-lived authentication instead of permanent
   access keys.
-- Review the generated bucket, trust, and identity policies independently
-  before a production ceremony.
+- Review the generated bucket and trust policies independently.
 - Enable CloudTrail data events or equivalent object-access logging according
   to the ceremony's audit policy.
-- S3 versioning is enabled, but versioning is not immutable retention. Use the
-  independent Object Lock mirror described in [STORAGE.md](STORAGE.md) when the
-  ceremony requires retention that administrators cannot silently shorten.
+- S3 versioning is not immutable retention. Use the independent Object Lock
+  mirror described in [STORAGE.md](STORAGE.md) when administrators must not be
+  able to silently shorten retention.
 - The default CloudFront behavior does not cache mutable `state/*`; the
   `blob/*` behavior uses AWS's managed optimized cache policy.
 

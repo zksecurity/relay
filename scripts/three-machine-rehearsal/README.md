@@ -138,10 +138,13 @@ only to confirm that the inbox has neither public `r2.dev` access nor an
 attached custom domain; the script removes it from the environment immediately
 afterward.
 
-For AWS, Machine 1 explicitly selects the coordinator and issuer profiles,
-both bucket names, the published HTTPS origin, and the grant role name. The
-wrapper reads the region and account ID through the selected AWS CLI profiles,
-then derives the regional S3 endpoint and full role ARN. It prints the resolved
+For AWS, the guided setup uses one profile for both coordinator and issuer
+operations, so Machine 1 sets both profile fields to the same name. Relay also
+supports separate coordinator and issuer profiles when an organization needs
+stricter privilege separation. Machine 1 also records both bucket names, the
+published HTTPS origin, and the grant role name. The wrapper reads the region
+and account ID through the selected AWS CLI profile, then derives the regional
+S3 endpoint and full role ARN. It prints the resolved
 values before Relay performs its disposable storage probes. It never lists
 buckets or CloudFront distributions and never guesses which resources to use.
 After configuration, later coordinator steps reload those resolved values from
