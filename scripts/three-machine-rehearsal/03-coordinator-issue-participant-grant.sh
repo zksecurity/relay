@@ -25,8 +25,8 @@ trap clear_r2_parent_token EXIT
   --storage "$STORAGE_CONFIG" \
   --role participant \
   --identity "$participant_id" \
-  --credential-ttl 1h \
-  --minimum-upload-window 15m \
+  --credential-ttl "${PARTICIPANT_GRANT_TTL:-1h}" \
+  --minimum-upload-window "${PARTICIPANT_GRANT_MIN_UPLOAD_WINDOW:-15m}" \
   --out "$out"
 
 chmod 0600 "$out"
