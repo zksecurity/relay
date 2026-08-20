@@ -132,11 +132,7 @@ func runParticipate(args []string) error {
 	if configPath == "" {
 		return errors.New("--config is required because no default configuration directory is available")
 	}
-	raw, err := os.ReadFile(configPath)
-	if err != nil {
-		return err
-	}
-	config, err := access.Decode(raw, access.ParticipantConfig.Validate)
+	config, configuredIdentity, err := loadParticipantProfile(configPath)
 	if err != nil {
 		return err
 	}
@@ -161,6 +157,9 @@ func runParticipate(args []string) error {
 	participant, err := o.inspector().Participant(config.SigningKey)
 	if err != nil {
 		return err
+	}
+	if configuredIdentity != "" && participant.ParticipantID != configuredIdentity {
+		return errors.New("configured participant identity does not match the local signing key")
 	}
 	if participant.CeremonyID != grant.CeremonyID || participant.ParticipantID != grant.IdentityID {
 		return errors.New("local participant key does not match the grant")
@@ -365,8 +364,9 @@ func runReleaseEvidence(args []string) error {
 
 func runSubmitEvidenceForRole(args []string, expectedRole string) error {
 	set := flag.NewFlagSet("submit-evidence", flag.ContinueOnError)
-	var grantPath, directory string
+	var configPath, grantPath, directory string
 	var files stringList
+	set.StringVar(&configPath, "config", "", "optional validated role configuration")
 	set.StringVar(&grantPath, "grant", "", "temporary role grant")
 	set.Var(&files, "file", "regular evidence file (repeatable)")
 	set.StringVar(&directory, "dir", "", "evidence directory; symlinks are rejected")
@@ -385,6 +385,15 @@ func runSubmitEvidenceForRole(args []string, expectedRole string) error {
 	}
 	if expectedRole != "" && grant.Role != expectedRole {
 		return fmt.Errorf("grant role is %s, want %s", grant.Role, expectedRole)
+	}
+	if configPath != "" {
+		config, err := loadRoleConfig(configPath, expectedRole)
+		if err != nil {
+			return err
+		}
+		if config.Role != grant.Role || config.IdentityID != grant.IdentityID || config.CeremonyID != grant.CeremonyID {
+			return errors.New("temporary grant does not match the configured role, identity, and ceremony")
+		}
 	}
 	if err := grant.CheckUsable(time.Now()); err != nil {
 		return err

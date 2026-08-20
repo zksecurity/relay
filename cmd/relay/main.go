@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/zksecurity/relay/internal/access"
 	"github.com/zksecurity/relay/internal/store"
 	"github.com/zksecurity/relay/internal/transcript"
 )
@@ -72,19 +73,25 @@ func usage() {
   relay coordinator grant --storage FILE --role ROLE --identity ID \
              --credential-ttl D --minimum-upload-window D --out FILE
   relay coordinator candidates --storage FILE [--phase P]
-  relay coordinator accept --storage FILE --candidate-key KEY [verification flags]
+  relay coordinator accept --storage FILE --candidate-key KEY \
+             --coordinator-signing-key FILE [verification flags]
   relay coordinator evidence --storage FILE [--role ROLE]
-  relay coordinator publish --chain FILE --chain-signature FILE [publish flags]
+  relay coordinator publish --storage FILE --chain FILE --chain-signature FILE [publish flags]
   relay ceremony enroll --storage FILE --phase P --root DIR \
              --ceremony FILE --ceremony-signature FILE --coordinator-key FILE \
              --signing-key FILE --environment FILE [--grant FILE] [--out FILE]
+  relay ceremony init-config --home DIR --role ROLE --coordinator-key FILE \
+             [--storage FILE] [role authentication flags] [--out FILE]
   relay participant status [--config FILE | status flags]
   relay participant run [--config FILE] --grant FILE
-  relay witness run [watch flags]
-  relay mirror run [sync flags]
-  relay mirror receipt [receipt flags]
-  relay auditor run [sync flags]
-  relay release run --grant FILE (--file FILE | --dir DIR)
+  relay witness run --config FILE [--interval D] [--once]
+  relay witness submit --config FILE --grant FILE (--file FILE | --dir DIR)
+  relay mirror run --config FILE
+  relay mirror receipt --config FILE [receipt flags]
+  relay mirror submit --config FILE --grant FILE (--file FILE | --dir DIR)
+  relay auditor run --config FILE
+  relay auditor submit --config FILE --grant FILE (--file FILE | --dir DIR)
+  relay release run --config FILE --grant FILE (--file FILE | --dir DIR)
 
 recovery and debugging:
   relay advanced push --chain FILE --chain-signature FILE --root DIR --ceremony FILE \
@@ -155,10 +162,13 @@ func runParticipant(args []string) error {
 
 func runWitness(args []string) error {
 	if len(args) == 0 {
-		return errors.New("witness requires run or watch")
+		return errors.New("witness requires run, watch, or submit")
 	}
 	if args[0] == "run" || args[0] == "watch" {
 		return runWatch(args[1:])
+	}
+	if args[0] == "submit" {
+		return runSubmitEvidenceForRole(args[1:], access.RoleWitness)
 	}
 	return fmt.Errorf("unknown witness command %q", args[0])
 }
@@ -172,6 +182,8 @@ func runMirror(args []string) error {
 		return runSync("mirror sync", args[1:])
 	case "receipt":
 		return runReceipt(args[1:])
+	case "submit":
+		return runSubmitEvidenceForRole(args[1:], access.RoleMirror)
 	default:
 		return fmt.Errorf("unknown mirror command %q", args[0])
 	}
@@ -179,20 +191,26 @@ func runMirror(args []string) error {
 
 func runAuditor(args []string) error {
 	if len(args) == 0 {
-		return errors.New("auditor requires run or sync")
+		return errors.New("auditor requires run, sync, or submit")
 	}
 	if args[0] == "run" || args[0] == "sync" {
 		return runSync("auditor sync", args[1:])
+	}
+	if args[0] == "submit" {
+		return runSubmitEvidenceForRole(args[1:], access.RoleAuditor)
 	}
 	return fmt.Errorf("unknown auditor command %q", args[0])
 }
 
 func runCeremony(args []string) error {
 	if len(args) == 0 {
-		return errors.New("ceremony requires enroll")
+		return errors.New("ceremony requires enroll or init-config")
 	}
-	if args[0] == "enroll" {
+	switch args[0] {
+	case "enroll":
 		return runEnroll(args[1:])
+	case "init-config":
+		return runInitRoleConfig(args[1:])
 	}
 	return fmt.Errorf("unknown ceremony command %q", args[0])
 }
@@ -448,7 +466,9 @@ func runReceipt(args []string) error {
 		location       string
 		storedAt       string
 		out            string
+		configPath     string
 	)
+	set.StringVar(&configPath, "config", "", "validated mirror role configuration")
 	set.StringVar(&chainPath, "chain", "", "path to the coordinator-signed chain document")
 	set.StringVar(&chainSignature, "chain-signature", "", "path to the chain's detached signature")
 	set.StringVar(&root, "root", "", "transcript root directory")
@@ -462,6 +482,17 @@ func runReceipt(args []string) error {
 	set.StringVar(&out, "out", "", "write the draft here instead of stdout")
 	if err := set.Parse(args); err != nil {
 		return err
+	}
+	if configPath != "" {
+		config, err := loadRoleConfig(configPath, access.RoleMirror)
+		if err != nil {
+			return err
+		}
+		root = config.Root
+		ceremony = config.Ceremony
+		ceremonySig = config.CeremonySignature
+		coordinatorKey = config.CoordinatorKey
+		ceremonyBinary = config.CeremonyBinary
 	}
 	if chainPath == "" || chainSignature == "" || root == "" || ceremony == "" ||
 		ceremonySig == "" || coordinatorKey == "" || index < 1 || location == "" || storedAt == "" {

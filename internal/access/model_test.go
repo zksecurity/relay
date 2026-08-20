@@ -95,3 +95,33 @@ func TestParticipantConfigV2DefersTemporaryGrant(t *testing.T) {
 		t.Fatalf("v1 profile without grant error = %v", err)
 	}
 }
+
+func TestRoleConfigSeparatesPersistentPathsFromTemporaryAccess(t *testing.T) {
+	participant := RoleConfig{
+		Schema: RoleConfigSchema, Role: RoleParticipant, IdentityID: "participant-01",
+		Phase: "phase1", CeremonyID: testCeremony, CeremonyHome: "/ceremonies/example",
+		Root: "/ceremonies/example/public", Ceremony: "/ceremonies/example/public/ceremony.json",
+		CeremonySignature: "/ceremonies/example/public/ceremony.sig",
+		CoordinatorKey:    "/trusted/coordinator.hex", CeremonyBinary: "/usr/local/bin/mpc-ceremony",
+		SigningKey: "/secure/participant-01.hex", Environment: "/secure/environment.json",
+		RunRoot: "/ceremonies/example/run", StorageConfig: "/ceremonies/example/config/relay-storage.json",
+		PublishedBaseURL: "https://ceremony.example", PublishedBucket: "published",
+	}
+	if err := participant.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	witness := participant
+	witness.Role = RoleWitness
+	witness.IdentityID = "witness-01"
+	witness.SigningKey = ""
+	witness.Environment = ""
+	witness.Enrollment = "/trusted/witness-01.json"
+	witness.EnrollmentSignature = "/trusted/witness-01.sig"
+	if err := witness.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	witness.SigningKey = "/secure/witness-01.hex"
+	if err := witness.Validate(); err == nil || !strings.Contains(err.Error(), "must not retain") {
+		t.Fatalf("non-participant retained signing key error = %v", err)
+	}
+}

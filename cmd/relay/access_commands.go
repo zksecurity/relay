@@ -30,7 +30,8 @@ const (
 func runConfigureStorage(args []string) error {
 	set := flag.NewFlagSet("coordinator configure-storage", flag.ContinueOnError)
 	var config access.StorageConfig
-	var out string
+	var home, out string
+	set.StringVar(&home, "home", "", "optional absolute ceremony home for public/ and config/ defaults")
 	set.StringVar(&config.Provider, "provider", "", "r2 or aws")
 	set.StringVar(&config.AccountID, "account-id", "", "Cloudflare account ID (R2)")
 	set.StringVar(&config.ParentAccessKeyID, "parent-access-key-id", "", "R2 parent token access-key ID")
@@ -51,8 +52,22 @@ func runConfigureStorage(args []string) error {
 	if err := set.Parse(args); err != nil {
 		return err
 	}
+	if home != "" {
+		if !filepath.IsAbs(home) || filepath.Clean(home) != home {
+			return errors.New("--home must be an absolute clean path")
+		}
+		if config.CeremonyPath == "" {
+			config.CeremonyPath = filepath.Join(home, "public", "ceremony.json")
+		}
+		if config.CeremonySignature == "" {
+			config.CeremonySignature = filepath.Join(home, "public", "ceremony.sig")
+		}
+		if out == "" {
+			out = filepath.Join(home, "config", "relay-storage.json")
+		}
+	}
 	if out == "" {
-		return errors.New("--out is required")
+		return errors.New("--out is required unless --home supplies its config/ default")
 	}
 	if config.Provider == "r2" && config.Region == "" {
 		config.Region = "auto"
@@ -246,17 +261,13 @@ func authenticateGrantIdentity(config access.StorageConfig, role, identity, enro
 	if inspection.CeremonyID != config.CeremonyID || inspection.Identity.ID != identity {
 		return errors.New("enrollment does not match the configured ceremony and requested identity")
 	}
-	want := map[string]string{
-		access.RoleWitness: "public-witness", access.RoleMirror: "mirror-operator",
-		access.RoleAuditor: "auditor", access.RoleRelease: "release-signer",
-	}
 	if role == access.RoleDecision {
 		if inspection.Role != "coordinator" && inspection.Role != "auditor" && inspection.Role != "release-signer" {
 			return fmt.Errorf("enrollment role %q cannot sign a production decision", inspection.Role)
 		}
 		return nil
 	}
-	if expected, ok := want[role]; !ok || inspection.Role != expected {
+	if expected, ok := ceremonyEnrollmentRole(role); !ok || inspection.Role != expected {
 		return fmt.Errorf("enrollment role %q does not authorize relay role %q", inspection.Role, role)
 	}
 	return nil

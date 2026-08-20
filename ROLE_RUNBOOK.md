@@ -43,37 +43,41 @@ Relay and proof-tool repositories, tags, and binary hashes. Do not accept these
 trust inputs merely because they appeared in the same bucket as the artifacts
 they are meant to check.
 
-The coordinator will also provide the public ceremony material and, if your
-role uploads anything, a secret temporary grant. A grant is a bearer credential
-limited to your identity's inbox prefix. Store it with mode `0600`, never paste
-it into chat or logs, and request a replacement immediately if it leaks.
+The coordinator also provides `relay-storage.json`, the public ceremony
+material, and each non-participant role's signed enrollment record. Stage them
+under one absolute ceremony home:
 
-Read-only role commands use these shared flags where applicable:
+    CEREMONY_HOME=/var/lib/mpc-ceremonies/CEREMONY_ID
+    install -d -m 0700 "$CEREMONY_HOME/public" "$CEREMONY_HOME/config" "$CEREMONY_HOME/run"
+    install -m 0600 relay-storage.json "$CEREMONY_HOME/config/relay-storage.json"
+    # Place ceremony.json and ceremony.sig under "$CEREMONY_HOME/public".
 
-    --root DIR --ceremony FILE --ceremony-signature FILE \
-    --coordinator-key FILE --bucket NAME --endpoint URL --profile PROFILE
+Keep the independently obtained coordinator public key and private signing keys
+at their separately approved absolute paths. A deterministic local path does
+not authenticate a trust anchor.
 
-`--phase` defaults to `phase1`. `--ceremony-binary` defaults to
-`mpc-ceremony`; pin an explicit trusted path if `PATH` is not trusted.
+If your role uploads anything, the coordinator later supplies a secret
+temporary grant. A grant is a bearer credential limited to your identity's
+inbox prefix. Store it with mode `0600`, never paste it into chat or logs, and
+request a replacement immediately if it leaks. Grants and cloud secrets never
+belong in the persistent role config.
 
 ## 3. Participant
 
-### Enroll once per phase
+### Initialize once per phase
 
-The coordinator sends `relay-storage.json` and the public ceremony material.
-Enroll with your local signing key before any temporary upload credential is
-issued:
+Create a validated production profile with your local signing key before any
+temporary upload credential is issued:
 
-    relay ceremony enroll \
-      --storage relay-storage.json \
+    relay ceremony init-config \
+      --home "$CEREMONY_HOME" \
+      --role participant \
       --phase phase1 \
-      --root /ceremony/public \
-      --ceremony /ceremony/public/ceremony.json \
-      --ceremony-signature /ceremony/public/ceremony.sig \
       --coordinator-key /trusted/coordinator-public-key.hex \
       --signing-key /secure/participant-03.ed25519.private.hex \
-      --environment /secure/participant-03.environment.json \
-      --candidate-parent /ceremony/candidates
+      --environment /secure/participant-03.environment.json
+
+    ROLE_CONFIG="$CEREMONY_HOME/config/participant-phase1.json"
 
 Enrollment asks proof-tool to match your key to the authenticated participant
 roster. It does not trust the key's filename or the coordinator's assertion
@@ -81,14 +85,15 @@ about your identity.
 
 Check the signed public position without an upload credential:
 
-    relay participant status
+    relay participant status --config "$ROLE_CONFIG"
 
 ### Participate when contacted
 
 After confirming it is the participant's turn, the coordinator supplies a
 short-lived scoped grant. Run:
 
-    relay participant run --grant participant-03.grant.json
+    relay participant run --config "$ROLE_CONFIG" \
+      --grant participant-03.grant.json
 
 This is the only command required for the turn. Relay first checks the grant
 lifetime and public head. If it is not your turn, it exits before expensive
@@ -111,9 +116,18 @@ same out-of-turn check before expensive work.
 
 ## 4. Public witness
 
+Initialize the profile using the signed public-witness enrollment:
+
+    relay ceremony init-config \
+      --home "$CEREMONY_HOME" --role witness --phase phase1 \
+      --coordinator-key /trusted/coordinator-public-key.hex \
+      --enrollment /trusted/witness-01.json \
+      --enrollment-signature /trusted/witness-01.sig
+    ROLE_CONFIG="$CEREMONY_HOME/config/witness-phase1.json"
+
 Wait for a published closure:
 
-    relay witness run --interval 60s <shared flags>
+    relay witness run --config "$ROLE_CONFIG" --interval 60s
 
 Use `--once` to poll once and exit. After observing closure, independently
 confirm that its beacon round has not occurred and is at least the definition's
@@ -125,15 +139,18 @@ must name your signed public-witness enrollment.
 
 ## 5. Mirror operator
 
+Initialize `mirror-phase1.json` as above with `--role mirror` and the signed
+mirror enrollment, then set `ROLE_CONFIG` to that path.
+
 Synchronize the current authenticated chain prefix into an independently
 operated storage location:
 
-    relay mirror run <shared flags>
+    relay mirror run --config "$ROLE_CONFIG"
 
 Draft a receipt for the exact retained head:
 
     relay mirror receipt \
-      --root <transcript-root> \
+      --config "$ROLE_CONFIG" \
       --chain <chain> \
       --chain-signature <chain-signature> \
       --index 3 \
@@ -161,11 +178,14 @@ not published or fetched.
 
 ## 6. Auditor
 
+Initialize one authenticated auditor profile per phase using `--role auditor`
+and the signed auditor enrollment.
+
 Synchronize both phases from independently checked mirrors, not the
 coordinator's local copy:
 
-    relay auditor run --phase phase1 <shared flags>
-    relay auditor run --phase phase2 <shared flags>
+    relay auditor run --config "$CEREMONY_HOME/config/auditor-phase1.json"
+    relay auditor run --config "$CEREMONY_HOME/config/auditor-phase2.json"
 
 Replay the ceremony with `mpc-ceremony audit`. Upload the resulting signed
 audit record using your auditor grant.
@@ -177,6 +197,15 @@ Review and sign the proof-tool output there, then move only the signed output
 to a separate online upload station. Give the scoped release or decision grant
 to that station and submit the evidence from it.
 
+On the release upload station, initialize a `release-phase1.json` profile with
+`--role release` and the authenticated release-signer enrollment. It contains
+no release signing key. Submit with:
+
+    relay release run \
+      --config "$CEREMONY_HOME/config/release-phase1.json" \
+      --grant release-signer.grant.json \
+      --dir ./signed-release-output
+
 A storage upload proves only possession of the scoped grant. The release bundle
 or production decision is authoritative only after proof-tool verifies its
 record and ceremony signatures.
@@ -186,16 +215,26 @@ record and ceremony signatures.
 Witnesses, mirrors, auditors, release upload stations, and decision signers all
 use the same transport command after producing signed proof-tool output:
 
-    relay submit-evidence \
+    relay witness submit \
+      --config "$ROLE_CONFIG" \
       --grant witness-01.grant.json \
       --dir ./signed-witness-output
 
 or:
 
-    relay submit-evidence \
+    relay auditor submit \
+      --config "$ROLE_CONFIG" \
       --grant auditor-01.grant.json \
       --file audit.json \
       --file audit.sig
+
+Production-decision evidence retains the generic compatibility command because
+one decision grant may be authorized by a coordinator, auditor, or release
+signer enrollment rather than one fixed Relay role profile:
+
+    relay submit-evidence \
+      --grant decision-signer.grant.json \
+      --dir ./signed-decision-output
 
 Relay rejects symlinks, non-regular files, duplicate names, and filenames that
 look like private keys, credentials, or grants. It uploads `manifest.json`

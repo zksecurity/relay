@@ -79,6 +79,17 @@ mkdir -p "$HOME/.local/bin"
 No ceremony credentials, role keys, cloud secrets, or temporary grants belong
 in the kit.
 
+Coordinators can extract the authenticated provider guides and setup scripts
+without a source checkout:
+
+```bash
+./setup --storage-setup-root "$CEREMONY_TOOLS_ROOT"
+cd "$CEREMONY_TOOLS_ROOT/storage-setup"
+```
+
+Then follow `docs/AWS_SETUP.md` or `docs/R2_SETUP.md`. The extracted scripts
+and guides are covered by the ceremony-kit checksum.
+
 ## Three-machine rehearsal
 
 An approved rehearsal kit also contains the versioned rehearsal scripts.
@@ -98,8 +109,9 @@ This installs both binaries, extracts the standalone rehearsal, and creates:
 ```
 
 The kit automatically fills the approved repositories, tags, binary hashes,
-and installed paths. Edit only the remaining ceremony, storage, identity, and
-local path placeholders:
+and installed paths. Set the one absolute `WORK_ROOT`, then edit the remaining
+Machine 1 storage selections or role profile name. Ceremony, configuration,
+key, trust, run, and storage-config paths derive from `WORK_ROOT`:
 
 ```bash
 REHEARSAL_ROOT="$CEREMONY_TOOLS_ROOT/three-machine-rehearsal"
@@ -115,30 +127,68 @@ private keys, or build-signing keys in it.
 ## Production ceremonies
 
 A production kit contains only the coordinated binaries and release manifest;
-it does not contain rehearsal identities or scripts. After `./setup`, follow
-the coordinator or role runbook to enroll the local ceremony key. Enrollment
-is long-lived and does not require temporary upload credentials. The
-coordinator supplies a short-lived grant only when a role is authorized to
-write.
+it does not contain rehearsal identities or scripts. Production uses validated
+JSON profiles, not a shell `.env`. Choose one absolute ceremony home and stage
+the public ceremony material under `public/`, the coordinator-supplied
+`relay-storage.json` under `config/`, and mutable outputs under `run/`:
+
+```text
+/var/lib/mpc-ceremonies/CEREMONY_ID/
+├── public/
+│   ├── ceremony.json
+│   └── ceremony.sig
+├── config/
+│   └── relay-storage.json
+└── run/
+```
+
+The independently authenticated coordinator public key and private signing
+keys may live outside this tree. Pass their absolute paths explicitly. Initialize
+one role profile after staging the authenticated material:
+
+```bash
+CEREMONY_HOME=/var/lib/mpc-ceremonies/CEREMONY_ID
+relay ceremony init-config \
+  --home "$CEREMONY_HOME" \
+  --role participant \
+  --phase phase1 \
+  --coordinator-key /trusted/coordinator-public-key.hex \
+  --signing-key /secure/participant.ed25519.private.hex \
+  --environment /secure/environment.json
+```
+
+For a witness, mirror, auditor, or release operator, replace the participant
+key flags with that identity's authenticated `--enrollment` and
+`--enrollment-signature`. Relay verifies the local ceremony, storage ceremony,
+and role identity before writing the mode-`0600` profile. It stores paths only:
+no key bytes, cloud secrets, or temporary grant is written to it. Enrollment is
+long-lived and does not require temporary upload credentials. The coordinator
+supplies a short-lived grant only when a role is authorized to write.
 
 For participants, the resulting flow is:
 
 ```bash
-relay ceremony enroll [ceremony trust and local-key flags]
-relay participant status
-relay participant run --grant /secure/handoff/participant.grant.json
+ROLE_CONFIG="$CEREMONY_HOME/config/participant-phase1.json"
+relay participant status --config "$ROLE_CONFIG"
+relay participant run --config "$ROLE_CONFIG" \
+  --grant /secure/handoff/participant.grant.json
 ```
 
 Relay authenticates the local key through `mpc-ceremony`, checks the signed
 published state, and rejects an out-of-turn participant before contribution
 work starts.
 
-## Install AWS CLI v2
+## Install storage setup prerequisites
 
 The kit does not redistribute AWS CLI. Install `unzip` and `gpg`, follow the
 [official AWS CLI signature verification procedure](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html#install-linux-verify-signature),
-and install AWS CLI v2. Do not configure a provider credential until the
-coordinator assigns the machine's role-specific profile or temporary grant.
+and install AWS CLI v2. Coordinators running the provider setup scripts also
+need `jq` and `curl` from the operating system. Do not configure a provider
+credential until the coordinator assigns the machine's role-specific profile
+or temporary grant.
+
+Create storage using [AWS_SETUP.md](AWS_SETUP.md) or [R2_SETUP.md](R2_SETUP.md)
+before running `relay coordinator configure-storage`.
 
 ## Final verification
 

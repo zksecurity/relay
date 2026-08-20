@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zksecurity/relay/internal/access"
 	"github.com/zksecurity/relay/internal/state"
 	"github.com/zksecurity/relay/internal/store"
 	"github.com/zksecurity/relay/internal/transcript"
@@ -23,16 +24,30 @@ import (
 func runWatch(args []string) error {
 	var o roleOpts
 	set := flag.NewFlagSet("witness watch", flag.ContinueOnError)
-	registerRole(set, &o)
 	var interval time.Duration
 	var once bool
+	var configPath string
+	configured := hasNamedFlag(args, "config")
+	if configured {
+		set.StringVar(&configPath, "config", "", "validated witness role configuration")
+	} else {
+		registerRole(set, &o)
+	}
 	set.DurationVar(&interval, "interval", 60*time.Second, "poll interval")
 	set.BoolVar(&once, "once", false, "check a single time and exit")
 	if err := set.Parse(args); err != nil {
 		return err
 	}
-	if err := checkRole(o); err != nil {
-		return err
+	if configured {
+		config, err := loadRoleConfig(configPath, access.RoleWitness)
+		if err != nil {
+			return err
+		}
+		o = configuredRoleOptions(config)
+	} else {
+		if err := checkRole(o); err != nil {
+			return err
+		}
 	}
 
 	for {
@@ -61,9 +76,29 @@ func runWatch(args []string) error {
 // runSync fetches everything the transcript names for a mirror or auditor to
 // keep. Unlike participation it does not care whose turn it is.
 func runSync(commandName string, args []string) error {
-	o, err := bindRole(flag.NewFlagSet(commandName, flag.ContinueOnError), args)
-	if err != nil {
-		return err
+	var o roleOpts
+	if hasNamedFlag(args, "config") {
+		set := flag.NewFlagSet(commandName, flag.ContinueOnError)
+		var configPath string
+		set.StringVar(&configPath, "config", "", "validated role configuration")
+		if err := set.Parse(args); err != nil {
+			return err
+		}
+		expectedRole := access.RoleMirror
+		if strings.HasPrefix(commandName, "auditor") {
+			expectedRole = access.RoleAuditor
+		}
+		config, err := loadRoleConfig(configPath, expectedRole)
+		if err != nil {
+			return err
+		}
+		o = configuredRoleOptions(config)
+	} else {
+		var err error
+		o, err = bindRole(flag.NewFlagSet(commandName, flag.ContinueOnError), args)
+		if err != nil {
+			return err
+		}
 	}
 	pos, err := resolvePosition(o)
 	if err != nil {

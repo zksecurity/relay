@@ -52,8 +52,26 @@ test -f machine-3/.env
 chmod 0600 machine-3/.env
 ```
 
-The setup command prints the resulting `.env` path. Replace its remaining
-ceremony, identity, storage, and local-path placeholders before continuing.
+The setup command prints the resulting `.env` path. Set its one `WORK_ROOT` to
+an absolute, access-controlled directory. All ceremony, configuration, key,
+trust, run, and storage-config paths are derived from it. Stage files using
+this layout:
+
+```text
+WORK_ROOT/
+├── public/                    ceremony.json, ceremony.sig, transcript files
+├── config/                    environment.json and local public configuration
+├── keys/                      only the private role keys assigned to this machine
+├── trust/
+│   ├── coordinator-public-key.hex
+│   └── relay-storage.json     Machines 2 and 3 after coordinator handoff
+└── run/                       fresh Relay outputs
+```
+
+Machine 1 writes `run/relay-storage.json` instead. Its coordinator public key
+must still be copied into `trust/` through the independent trust channel; a
+deterministic destination does not authenticate the bytes. Never copy all
+rehearsal private keys to Machines 2 or 3.
 
 Machine 1 retains the initialized transcript and coordinator key. Machines 2
 and 3 need local copies of:
@@ -100,6 +118,14 @@ machine.
 
 ### 1. Machine 1: configure storage
 
+If the storage does not exist yet, run the provider setup first:
+
+- [AWS setup](../../docs/AWS_SETUP.md)
+- [Cloudflare R2 setup](../../docs/R2_SETUP.md)
+
+Each setup script prints the values to copy into `machine-1/.env` and leaves
+all secret token values outside that file.
+
 ```bash
 "$S/01-coordinator-configure-storage.sh" "$E"
 ```
@@ -112,9 +138,20 @@ only to confirm that the inbox has neither public `r2.dev` access nor an
 attached custom domain; the script removes it from the environment immediately
 afterward.
 
-Privately copy the resulting `relay-storage.json` to the `STORAGE_CONFIG` path
-configured in the `.env` files on Machines 2 and 3. It contains no temporary
-role credential, but do not use the public ceremony bucket as the handoff.
+For AWS, Machine 1 explicitly selects the coordinator and issuer profiles,
+both bucket names, the published HTTPS origin, and the grant role name. The
+wrapper reads the region and account ID through the selected AWS CLI profiles,
+then derives the regional S3 endpoint and full role ARN. It prints the resolved
+values before Relay performs its disposable storage probes. It never lists
+buckets or CloudFront distributions and never guesses which resources to use.
+After configuration, later coordinator steps reload those resolved values from
+`run/relay-storage.json` instead of repeating AWS discovery.
+
+Privately copy the resulting `relay-storage.json` to `trust/relay-storage.json`
+under `WORK_ROOT` on Machines 2 and 3. It contains no temporary role credential,
+but do not use the public ceremony bucket as the handoff. Role machines read
+the published bucket and anonymous HTTPS origin from this file rather than
+repeating them in their `.env`; no long-lived reader profile is needed.
 
 ### 2. Machine 1: publish the initial Phase 1 head
 

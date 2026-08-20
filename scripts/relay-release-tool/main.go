@@ -48,6 +48,7 @@ var coreFiles = []string{
 	"source-checksums.sha256",
 	"source-commit.txt",
 	"source-date-epoch.txt",
+	"storage-setup.tar.gz",
 	"test-status.txt",
 	"three-machine-rehearsal.tar.gz",
 	"toolchain-checksums.sha256",
@@ -55,6 +56,7 @@ var coreFiles = []string{
 
 var downloadableFiles = []string{
 	"relay",
+	"storage-setup.tar.gz",
 	"three-machine-rehearsal.tar.gz",
 }
 

@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/zksecurity/relay/internal/store"
 )
 
 func TestCommandNamespacesRejectMissingAndUnknownSubcommands(t *testing.T) {
@@ -39,5 +41,20 @@ func TestCommandNamespacesRejectMissingAndUnknownSubcommands(t *testing.T) {
 				t.Fatalf("error = %v, want text %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestRoleRoutingAllowsAuthenticatedConfigOrExplicitEndpoint(t *testing.T) {
+	base := roleOpts{
+		root: "/ceremony", definition: "/ceremony/ceremony.json",
+		definitionSig: "/ceremony/ceremony.sig", coordinatorKey: "/trusted/coordinator.hex",
+		phase: "phase1", client: store.Client{Bucket: "published"},
+	}
+	if err := checkRole(base); err == nil || !strings.Contains(err.Error(), "--endpoint") {
+		t.Fatalf("missing routing error = %v", err)
+	}
+	base.client.PublicBaseURL = "https://ceremony.example"
+	if err := checkRole(base); err != nil {
+		t.Fatalf("public HTTPS role routing rejected: %v", err)
 	}
 }

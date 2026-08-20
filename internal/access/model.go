@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/url"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -19,6 +20,7 @@ const (
 	GrantSchema               = "relay-role-grant-v1"
 	ParticipantConfigSchemaV1 = "relay-participant-config-v1"
 	ParticipantConfigSchema   = "relay-participant-config-v2"
+	RoleConfigSchema          = "relay-role-config-v1"
 	CandidateManifestSchema   = "relay-candidate-manifest-v1"
 	SubmissionManifestSchema  = "relay-evidence-submission-v1"
 )
@@ -227,6 +229,84 @@ type ParticipantConfig struct {
 	PublishedBaseURL   string `json:"published_base_url"`
 	PublishedBucket    string `json:"published_bucket"`
 	GrantPath          string `json:"grant_path,omitempty"`
+}
+
+// RoleConfig is the persistent, non-secret production profile for one
+// ceremony role. It records paths to trust and key material but never embeds
+// private key bytes, cloud credentials, or temporary upload grants.
+type RoleConfig struct {
+	Schema              string `json:"schema"`
+	Role                string `json:"role"`
+	IdentityID          string `json:"identity_id"`
+	Phase               string `json:"phase"`
+	CeremonyID          string `json:"ceremony_id"`
+	CeremonyHome        string `json:"ceremony_home"`
+	Root                string `json:"root"`
+	Ceremony            string `json:"ceremony"`
+	CeremonySignature   string `json:"ceremony_signature"`
+	CoordinatorKey      string `json:"coordinator_key"`
+	CeremonyBinary      string `json:"ceremony_binary"`
+	SigningKey          string `json:"signing_key,omitempty"`
+	Environment         string `json:"environment,omitempty"`
+	Enrollment          string `json:"enrollment,omitempty"`
+	EnrollmentSignature string `json:"enrollment_signature,omitempty"`
+	RunRoot             string `json:"run_root"`
+	StorageConfig       string `json:"storage_config"`
+	PublishedBaseURL    string `json:"published_base_url"`
+	PublishedBucket     string `json:"published_bucket"`
+}
+
+func (c RoleConfig) Validate() error {
+	if c.Schema != RoleConfigSchema {
+		return fmt.Errorf("role config schema %q, want %q", c.Schema, RoleConfigSchema)
+	}
+	if c.Role != RoleParticipant && c.Role != RoleWitness && c.Role != RoleMirror &&
+		c.Role != RoleAuditor && c.Role != RoleRelease {
+		return fmt.Errorf("unsupported configured role %q", c.Role)
+	}
+	if !validComponent(c.IdentityID) || !validHashID(c.CeremonyID) ||
+		(c.Phase != "phase1" && c.Phase != "phase2") {
+		return errors.New("role config has an invalid identity, ceremony, or phase")
+	}
+	for name, value := range map[string]string{
+		"ceremony_home": c.CeremonyHome, "root": c.Root, "ceremony": c.Ceremony,
+		"ceremony_signature": c.CeremonySignature, "coordinator_key": c.CoordinatorKey,
+		"run_root": c.RunRoot, "storage_config": c.StorageConfig,
+	} {
+		if value == "" || !filepath.IsAbs(value) || filepath.Clean(value) != value {
+			return fmt.Errorf("role config %s must be an absolute clean path", name)
+		}
+	}
+	if c.CeremonyBinary == "" {
+		return errors.New("role config ceremony_binary is required")
+	}
+	if c.Role == RoleParticipant {
+		if c.SigningKey == "" || c.Environment == "" ||
+			!filepath.IsAbs(c.SigningKey) || filepath.Clean(c.SigningKey) != c.SigningKey ||
+			!filepath.IsAbs(c.Environment) || filepath.Clean(c.Environment) != c.Environment {
+			return errors.New("participant role config requires absolute signing_key and environment paths")
+		}
+		if c.Enrollment != "" || c.EnrollmentSignature != "" {
+			return errors.New("participant role config must not contain operational enrollment paths")
+		}
+	} else {
+		if c.Enrollment == "" || c.EnrollmentSignature == "" ||
+			!filepath.IsAbs(c.Enrollment) || filepath.Clean(c.Enrollment) != c.Enrollment ||
+			!filepath.IsAbs(c.EnrollmentSignature) || filepath.Clean(c.EnrollmentSignature) != c.EnrollmentSignature {
+			return errors.New("non-participant role config requires absolute enrollment paths")
+		}
+		if c.SigningKey != "" || c.Environment != "" {
+			return errors.New("non-participant role config must not retain signing-key or environment paths")
+		}
+	}
+	base, err := url.Parse(c.PublishedBaseURL)
+	if err != nil || base.Scheme != "https" || base.Host == "" || base.RawQuery != "" || base.Fragment != "" {
+		return errors.New("role config published_base_url must be an HTTPS origin")
+	}
+	if c.PublishedBucket == "" {
+		return errors.New("role config published_bucket is required")
+	}
+	return nil
 }
 
 func (c ParticipantConfig) Validate() error {

@@ -41,10 +41,46 @@ jobs:
             scripts/build-relay-release.sh \
             scripts/build-ceremony-kit.sh \
             scripts/setup-ceremony-kit.sh \
+            scripts/storage-setup/*.sh \
             scripts/verify-relay-release.sh \
             scripts/verify-relay-reproducible.sh \
             scripts/three-machine-rehearsal/*.sh \
             scripts/three-machine-rehearsal/machine-*/.env.example
+
+      - name: Test rehearsal configuration defaults
+        run: |
+          set -euo pipefail
+          source scripts/three-machine-rehearsal/lib.sh
+          REHEARSAL_CONFIG=ci.env
+          STORAGE_PROVIDER=aws
+          COORDINATOR_PROFILE=coordinator
+          ISSUER_PROFILE=issuer
+          GRANT_ROLE_NAME=relay-inbox-grant
+          AWS_REGION=
+          STORAGE_ENDPOINT=
+          GRANT_ROLE_ARN=
+          aws() {
+            if [[ " $* " == *' configure get region '* ]]; then
+              printf '%s\n' us-east-1
+            elif [[ " $* " == *' sts get-caller-identity '* ]]; then
+              printf '%s\n' 123456789012
+            else
+              return 1
+            fi
+          }
+          hydrate_coordinator_storage_settings
+          test "$AWS_REGION" = us-east-1
+          test "$STORAGE_ENDPOINT" = https://s3.us-east-1.amazonaws.com
+          test "$GRANT_ROLE_ARN" = arn:aws:iam::123456789012:role/relay-inbox-grant
+          for env_file in scripts/three-machine-rehearsal/machine-{1,2,3}/.env.example; do
+            (
+              source "$env_file"
+              test "$CEREMONY_ROOT" = "$WORK_ROOT/public"
+              test "$CONFIG_ROOT" = "$WORK_ROOT/config"
+              test "$KEYS_ROOT" = "$WORK_ROOT/keys"
+              test "$RUN_ROOT" = "$WORK_ROOT/run"
+            )
+          done
 
       - name: Test
         run: go test ./...
@@ -78,6 +114,14 @@ jobs:
             <(git archive --format=tar --prefix=three-machine-rehearsal/ \
               "$GITHUB_SHA:scripts/three-machine-rehearsal" | tar -t) \
             <(tar -tzf "$RELEASE_DIR/three-machine-rehearsal.tar.gz")
+          tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
+            storage-setup/scripts/storage-setup/setup-aws.sh
+          tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
+            storage-setup/scripts/storage-setup/setup-r2.sh
+          tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
+            storage-setup/docs/AWS_SETUP.md
+          tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
+            storage-setup/docs/R2_SETUP.md
 
       - name: Build and exercise standalone ceremony kit
         run: |
@@ -116,12 +160,25 @@ jobs:
           "$RUNNER_TEMP/ceremony-kit-parent/ceremony-kit/setup" verify
           "$RUNNER_TEMP/ceremony-kit-parent/ceremony-kit/setup" \
             --prefix "$RUNNER_TEMP/ceremony-kit-install" \
+            --storage-setup-root "$RUNNER_TEMP/ceremony-kit-operator" \
             --machine 3 \
             --rehearsal-root "$RUNNER_TEMP/ceremony-kit-operator"
           test -x "$RUNNER_TEMP/ceremony-kit-install/relay"
           test -x "$RUNNER_TEMP/ceremony-kit-install/mpc-ceremony"
+          test -x "$RUNNER_TEMP/ceremony-kit-operator/storage-setup/scripts/storage-setup/setup-aws.sh"
+          test -x "$RUNNER_TEMP/ceremony-kit-operator/storage-setup/scripts/storage-setup/setup-r2.sh"
+          test -f "$RUNNER_TEMP/ceremony-kit-operator/storage-setup/docs/AWS_SETUP.md"
+          test -f "$RUNNER_TEMP/ceremony-kit-operator/storage-setup/docs/R2_SETUP.md"
           test -f "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
           grep -Fx "RELAY_TAG=ci-rehearsal" \
+            "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
+          grep -Fx "WORK_ROOT=/absolute/path/to/machine-3-work" \
+            "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
+          grep -Fx 'CEREMONY_ROOT=$WORK_ROOT/public' \
+            "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
+          ! grep -q '^PUBLISHED_BUCKET=' \
+            "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
+          ! grep -q '^PUBLISHED_READER_PROFILE=' \
             "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
 
       - name: Confirm no production signature exists

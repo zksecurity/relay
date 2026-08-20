@@ -53,6 +53,7 @@ tag_pattern='^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$'
 [[ -d "$RELAY_RELEASE_DIR" && ! -L "$RELAY_RELEASE_DIR" ]] || die "Relay release directory is unsafe"
 [[ -f "$RELAY_RELEASE_DIR/relay" && ! -L "$RELAY_RELEASE_DIR/relay" ]] || die "Relay release binary is missing"
 [[ -f "$RELAY_RELEASE_DIR/setup-ceremony-kit.sh" && ! -L "$RELAY_RELEASE_DIR/setup-ceremony-kit.sh" ]] || die "Relay release setup script is missing"
+[[ -f "$RELAY_RELEASE_DIR/storage-setup.tar.gz" && ! -L "$RELAY_RELEASE_DIR/storage-setup.tar.gz" ]] || die "Relay storage setup archive is missing"
 [[ -f "$RELAY_RELEASE_DIR/build-mode.txt" && ! -L "$RELAY_RELEASE_DIR/build-mode.txt" ]] || die "Relay release mode record is missing"
 [[ "$(<"$RELAY_RELEASE_DIR/build-mode.txt")" == "$MODE" ]] || die "Relay release mode does not match kit mode"
 if [[ "$MODE" == production ]]; then
@@ -92,6 +93,7 @@ trap cleanup EXIT
 install -m 0755 "$RELAY_RELEASE_DIR/setup-ceremony-kit.sh" "$staging/setup"
 install -m 0755 "$RELAY_RELEASE_DIR/relay" "$staging/relay"
 install -m 0755 "$MPC_BINARY" "$staging/mpc-ceremony"
+install -m 0644 "$RELAY_RELEASE_DIR/storage-setup.tar.gz" "$staging/storage-setup.tar.gz"
 
 REHEARSAL_SHA=none
 if [[ "$INCLUDE_REHEARSAL" == yes ]]; then
@@ -117,7 +119,7 @@ printf '{\n  "schema": "ceremony-kit-v1",\n  "mode": "%s",\n  "relay": {\n    "r
 
 (
   cd "$staging"
-  checksum_files=(mpc-ceremony relay release.env release.json setup)
+  checksum_files=(mpc-ceremony relay release.env release.json setup storage-setup.tar.gz)
   [[ "$INCLUDE_REHEARSAL" == yes ]] && checksum_files+=(three-machine-rehearsal.tar.gz)
   LC_ALL=C sha256sum "${checksum_files[@]}" >checksums.sha256
 )

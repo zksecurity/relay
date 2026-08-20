@@ -111,6 +111,7 @@ build_outputs=(
   source-checksums.sha256
   source-commit.txt
   source-date-epoch.txt
+  storage-setup.tar.gz
   test-status.txt
   three-machine-rehearsal.tar.gz
   toolchain-checksums.sha256

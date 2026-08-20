@@ -28,10 +28,11 @@ require_var() {
 
 require_common() {
   local name
-  for name in RELAY_BIN MPC_BIN CEREMONY_ROOT CONFIG_ROOT KEYS_ROOT RUN_ROOT \
-    TRUSTED_COORDINATOR_KEY STORAGE_CONFIG PUBLISHED_BUCKET STORAGE_ENDPOINT; do
+  for name in RELAY_BIN MPC_BIN WORK_ROOT CEREMONY_ROOT CONFIG_ROOT KEYS_ROOT RUN_ROOT \
+    TRUSTED_COORDINATOR_KEY STORAGE_CONFIG; do
     require_var "$name"
   done
+  [[ "$WORK_ROOT" == /* && "$WORK_ROOT" != / ]] || die "WORK_ROOT must be a specific absolute directory"
   [[ -x "$RELAY_BIN" ]] || die "Relay binary is not executable: $RELAY_BIN"
   [[ -x "$MPC_BIN" ]] || die "mpc-ceremony binary is not executable: $MPC_BIN"
   [[ -f "$CEREMONY_ROOT/ceremony.json" ]] || die "ceremony.json is absent"
@@ -41,13 +42,108 @@ require_common() {
 
 require_coordinator() {
   require_common
-  require_var COORDINATOR_PROFILE
+  hydrate_coordinator_storage_settings
+  local name
+  for name in COORDINATOR_PROFILE PUBLISHED_BUCKET STORAGE_ENDPOINT; do
+    require_var "$name"
+  done
   [[ -f "$KEYS_ROOT/coordinator.ed25519.private.hex" ]] || die "coordinator private key is absent"
+}
+
+hydrate_coordinator_storage_settings() {
+  if [[ -n "${STORAGE_CONFIG:-}" && -f "$STORAGE_CONFIG" && ! -L "$STORAGE_CONFIG" ]]; then
+    local -a configured
+    mapfile -t configured < <(python3 - "$STORAGE_CONFIG" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    config = json.load(handle)
+for name in (
+    "provider", "published_bucket", "published_base_url", "inbox_bucket",
+    "endpoint", "region", "coordinator_profile", "issuer_profile",
+    "grant_role_arn", "grant_role_max_ttl",
+):
+    print(config.get(name, ""))
+PY
+    )
+    [[ ${#configured[@]} -eq 10 ]] || die "could not read coordinator storage settings"
+    STORAGE_PROVIDER=${configured[0]}
+    PUBLISHED_BUCKET=${configured[1]}
+    PUBLISHED_BASE_URL=${configured[2]}
+    INBOX_BUCKET=${configured[3]}
+    STORAGE_ENDPOINT=${configured[4]}
+    AWS_REGION=${configured[5]}
+    COORDINATOR_PROFILE=${configured[6]}
+    ISSUER_PROFILE=${configured[7]}
+    GRANT_ROLE_ARN=${configured[8]}
+    GRANT_ROLE_MAX_TTL=${configured[9]}
+    if [[ "$STORAGE_PROVIDER" == aws && -z "$STORAGE_ENDPOINT" ]]; then
+      if [[ "$AWS_REGION" == cn-* ]]; then
+        STORAGE_ENDPOINT="https://s3.$AWS_REGION.amazonaws.com.cn"
+      else
+        STORAGE_ENDPOINT="https://s3.$AWS_REGION.amazonaws.com"
+      fi
+    fi
+    return
+  fi
+  require_var STORAGE_PROVIDER
+  case "$STORAGE_PROVIDER" in
+    aws)
+      require_var COORDINATOR_PROFILE
+      require_var ISSUER_PROFILE
+      command -v aws >/dev/null 2>&1 || die "AWS CLI is required for AWS storage"
+      if [[ -z "${AWS_REGION:-}" ]]; then
+        AWS_REGION=$(aws --profile "$COORDINATOR_PROFILE" configure get region 2>/dev/null || true)
+      fi
+      [[ "$AWS_REGION" =~ ^[a-z]{2}(-[a-z0-9]+)+-[0-9]+$ ]] ||
+        die "AWS region is absent from profile $COORDINATOR_PROFILE; set AWS_REGION explicitly"
+      if [[ -z "${STORAGE_ENDPOINT:-}" ]]; then
+        if [[ "$AWS_REGION" == cn-* ]]; then
+          STORAGE_ENDPOINT="https://s3.$AWS_REGION.amazonaws.com.cn"
+        else
+          STORAGE_ENDPOINT="https://s3.$AWS_REGION.amazonaws.com"
+        fi
+      fi
+      if [[ -z "${GRANT_ROLE_ARN:-}" ]]; then
+        require_var GRANT_ROLE_NAME
+        [[ "$GRANT_ROLE_NAME" =~ ^[A-Za-z0-9+=,.@_-]{1,64}$ ]] || die "GRANT_ROLE_NAME is invalid"
+        local account_id
+        account_id=$(aws --profile "$ISSUER_PROFILE" --region "$AWS_REGION" \
+          sts get-caller-identity --query Account --output text)
+        [[ "$account_id" =~ ^[0-9]{12}$ ]] || die "AWS CLI returned an invalid account ID"
+        GRANT_ROLE_ARN="arn:aws:iam::$account_id:role/$GRANT_ROLE_NAME"
+      fi
+      ;;
+    r2)
+      require_var STORAGE_ENDPOINT
+      ;;
+    *) die "STORAGE_PROVIDER must be aws or r2" ;;
+  esac
 }
 
 require_reader() {
   require_common
-  require_var PUBLISHED_READER_PROFILE
+  [[ -f "$STORAGE_CONFIG" && ! -L "$STORAGE_CONFIG" ]] ||
+    die "storage configuration is absent or unsafe: $STORAGE_CONFIG"
+  local -a storage_fields
+  mapfile -t storage_fields < <(python3 - "$STORAGE_CONFIG" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    config = json.load(handle)
+bucket = config.get("published_bucket", "")
+base_url = config.get("published_base_url", "")
+print(bucket)
+print(base_url)
+PY
+  )
+  [[ ${#storage_fields[@]} -eq 2 ]] || die "could not read published storage settings"
+  PUBLISHED_BUCKET=${storage_fields[0]}
+  PUBLISHED_BASE_URL=${storage_fields[1]}
+  [[ -n "$PUBLISHED_BUCKET" && "$PUBLISHED_BASE_URL" == https://* ]] ||
+    die "storage configuration has no published bucket or HTTPS origin"
 }
 
 verify_binary_hashes() {

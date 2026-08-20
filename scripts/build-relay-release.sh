@@ -282,6 +282,16 @@ git archive \
   --prefix=three-machine-rehearsal/ \
   "$SOURCE_COMMIT:scripts/three-machine-rehearsal" |
   gzip -n >"$STAGING/three-machine-rehearsal.tar.gz"
+git archive \
+  --format=tar \
+  --mtime="@$SOURCE_DATE_EPOCH" \
+  --prefix=storage-setup/ \
+  "$SOURCE_COMMIT" \
+  scripts/storage-setup \
+  docs/AWS_SETUP.md \
+  docs/R2_SETUP.md \
+  docs/STORAGE.md |
+  gzip -n >"$STAGING/storage-setup.tar.gz"
 
 (
   cd "$STAGING"
@@ -301,6 +311,7 @@ git archive \
   cd "$STAGING"
   sha256sum \
     relay \
+    storage-setup.tar.gz \
     three-machine-rehearsal.tar.gz >checksums.sha256
 )
 printf '%s\n' '-trimpath -buildvcs=true -ldflags=-buildid=' >"$STAGING/build-flags.txt"

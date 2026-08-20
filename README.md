@@ -9,6 +9,8 @@ Operating procedures are split by audience:
 - [Coordinator runbook](COORDINATOR_RUNBOOK.md)
 - [Participant and other role runbook](ROLE_RUNBOOK.md)
 - [Three-machine tiny rehearsal scripts](scripts/three-machine-rehearsal/README.md)
+- [AWS storage setup](docs/AWS_SETUP.md)
+- [Cloudflare R2 storage setup](docs/R2_SETUP.md)
 
 ## What it is not
 
@@ -55,20 +57,20 @@ or AWS credentials scoped to one identity's inbox prefix:
       --identity participant-03 --credential-ttl 72h \
       --minimum-upload-window 2h --out participant-03.grant.json
 
-The participant authenticates their local key once without receiving upload
-credentials:
+The participant creates a validated, grant-free production profile under one
+ceremony home. Relay authenticates the local key and ensures the local ceremony
+matches `relay-storage.json`:
 
-    relay ceremony enroll --storage relay-storage.json \
-      --phase phase1 --root /ceremony/public --ceremony /ceremony/public/ceremony.json \
-      --ceremony-signature /ceremony/public/ceremony.sig \
-      --coordinator-key /trusted/coordinator-public-key.hex --signing-key /secure/key \
-      --environment /secure/environment.json --candidate-parent /ceremony/candidates
-    relay participant status
+    relay ceremony init-config --home /ceremony --role participant --phase phase1 \
+      --coordinator-key /trusted/coordinator-public-key.hex \
+      --signing-key /secure/key --environment /secure/environment.json
+    relay participant status --config /ceremony/config/participant-phase1.json
 
 When that participant is next, the coordinator issues a temporary grant and
 the participant runs:
 
-    relay participant run --grant participant-03.grant.json
+    relay participant run --config /ceremony/config/participant-phase1.json \
+      --grant participant-03.grant.json
 
 `participant run` refuses out of turn before computation. On success it runs the
 contribution and erasure-attestation steps, rechecks the head, and uploads a
@@ -76,7 +78,6 @@ manifest-last candidate. The coordinator then runs:
 
     relay coordinator candidates --storage relay-storage.json
     relay coordinator accept --storage relay-storage.json --candidate-key KEY \
-      --root /ceremony/public --candidate-dir /ceremony/review/attempt \
       --coordinator-signing-key /secure/coordinator-key
 
 Other roles upload their already signed proof-tool outputs with the relevant
@@ -141,16 +142,22 @@ All commands that inspect ceremony documents also require:
 `--ceremony-binary` defaults to `mpc-ceremony`; set it to an explicitly trusted
 binary path when `PATH` is not part of the operator's trust setup.
 
-Role-scoped commands discover position from the bucket (`--root --ceremony
---bucket --endpoint` are always required; `--phase` defaults to `phase1`):
+Role-scoped commands normally consume a validated config created by `relay
+ceremony init-config`. The raw transport flags remain available for recovery
+and compatibility:
 
     relay coordinator publish --chain FILE --chain-signature FILE [--closed] [--verify]
     relay participant status [--config FILE]              report your authenticated position
     relay participant run [--config FILE] --grant FILE    contribute only when next
-    relay witness run [--interval D] [--once]             wait for a published closure
-    relay mirror run                                      pull the authenticated transcript
-    relay mirror receipt --chain FILE ...                 draft mirror evidence
-    relay auditor run                                     pull the authenticated transcript
+    relay witness run --config FILE [--interval D] [--once]  wait for a published closure
+    relay mirror run --config FILE                           pull the authenticated transcript
+    relay mirror receipt --config FILE --chain FILE ...      draft mirror evidence
+    relay auditor run --config FILE                          pull the authenticated transcript
+    relay witness|mirror|auditor submit --config FILE --grant FILE ...
+    relay release run --config FILE --grant FILE ...
+
+The production role config stores only validated ceremony metadata and paths.
+It never stores private key bytes, cloud credentials, or temporary grants.
 
 `advanced push` and `coordinator publish` upload what the chain names plus what
 it cannot name: the

@@ -4,6 +4,11 @@ This reference describes the infrastructure that must exist before running
 `relay coordinator configure-storage`. The ceremony procedure is in the
 [coordinator runbook](../COORDINATOR_RUNBOOK.md).
 
+For complete provider provisioning instructions and setup scripts, use:
+
+- [AWS S3, CloudFront, and IAM setup](AWS_SETUP.md)
+- [Cloudflare R2 setup](R2_SETUP.md)
+
 ## Storage model
 
 Use two buckets on the same S3-compatible endpoint:
@@ -58,6 +63,23 @@ Create signed proof-of-possession enrollment records for every non-participant
 identity that will receive a grant. Relay authenticates them before granting
 witness, mirror, auditor, release, or decision access.
 
+## Production configuration files
+
+Production does not use the rehearsal shell `.env`. The coordinator's
+validated configuration is `CEREMONY_HOME/config/relay-storage.json`, produced
+by `relay coordinator configure-storage --home CEREMONY_HOME`. Each participant,
+witness, mirror, auditor, or release upload station creates its own mode-`0600`
+role profile with `relay ceremony init-config` after receiving that storage
+file and staging the signed public ceremony.
+
+The role profile copies only the published bucket name and HTTPS origin needed
+for anonymous reads. It records absolute paths to the independently obtained
+coordinator key, participant key, or operational enrollment, but embeds none of
+their bytes. Temporary grants and provider credentials are never persistent
+profile fields. Every role command reloads and validates the referenced
+`relay-storage.json` and refuses a profile whose ceremony, bucket, or public
+origin differs.
+
 ## Three-machine rehearsal `.env` mapping
 
 The [scripted three-machine rehearsal](../scripts/three-machine-rehearsal/README.md)
@@ -71,27 +93,27 @@ variables as follows:
 
 | Variable | Meaning |
 |---|---|
+| `WORK_ROOT` | Single absolute machine work root; all rehearsal data paths derive from it |
 | `STORAGE_PROVIDER` | `aws` for AWS S3 or `r2` for Cloudflare R2 |
 | `PUBLISHED_BUCKET` | Published bucket name |
 | `PUBLISHED_BASE_URL` | Anonymous HTTPS base URL for published objects |
 | `INBOX_BUCKET` | Private inbox bucket name |
-| `STORAGE_ENDPOINT` | S3-compatible endpoint URL, such as `https://s3.us-east-1.amazonaws.com` for AWS or the account endpoint for R2 |
+| `STORAGE_ENDPOINT` | R2 account endpoint; for AWS it is derived from the selected profile's region |
 | `COORDINATOR_PROFILE` | AWS CLI profile with coordinator bucket access |
 | `REHEARSAL_WITNESS_BUFFER_SECONDS` | Tiny-rehearsal witness observation buffer |
-| `AWS_REGION` | AWS region; used only when `STORAGE_PROVIDER=aws` |
+| `AWS_REGION` | Optional AWS region override; normally read from `COORDINATOR_PROFILE` |
 | `ISSUER_PROFILE` | AWS CLI profile allowed to assume the inbox grant role |
-| `GRANT_ROLE_ARN` | IAM role Relay assumes for scoped inbox grants |
+| `GRANT_ROLE_NAME` | IAM role name; AWS account ID is read with `sts get-caller-identity` |
+| `GRANT_ROLE_ARN` | Optional full role-ARN override |
 | `GRANT_ROLE_MAX_TTL` | Maximum session duration configured on that role |
 | `R2_ACCOUNT_ID` | R2 account ID; used only when `STORAGE_PROVIDER=r2` |
 | `R2_PARENT_ACCESS_KEY_ID` | Access-key ID for the inbox-limited parent token |
 
 The setup command likewise creates the Machine 2 and Machine 3 files from their
-versioned templates.
-Their `PUBLISHED_READER_PROFILE` names an AWS CLI profile with read-only access
-to published ceremony objects. It is used by witness, mirror, and auditor
-commands. `STORAGE_ENDPOINT` must match Machine 1's endpoint, including an R2
-endpoint when applicable. Participants download published inputs through the
-`PUBLISHED_BASE_URL` embedded in `relay-storage.json`; they do not receive the
+versioned templates. Witness, mirror, auditor, and participant reads use the
+anonymous HTTPS origin recorded in the handed-off `relay-storage.json`; bucket
+and origin settings are not repeated in the role-machine `.env`, and no
+long-lived reader profile is needed. Role machines do not receive the
 coordinator profile or inbox issuer credential.
 
 Keep each `.env` at mode `0600`. Do not put temporary role grants, AWS secret
@@ -103,6 +125,10 @@ writers use their separately issued, prefix-scoped grants; they never receive
 general write access to either bucket.
 
 ## Cloudflare R2
+
+Use [R2_SETUP.md](R2_SETUP.md) to create both buckets, attach the published
+custom domain, configure the coordinator profile, validate the parent and
+control-plane tokens, and print the rehearsal `.env` values.
 
 The S3 endpoint is:
 
@@ -133,6 +159,10 @@ or shell history. Revoking it revokes all credentials derived from it.
 R2 grants must not exceed `168h`.
 
 ## AWS S3
+
+Use [AWS_SETUP.md](AWS_SETUP.md) to create both buckets, CloudFront OAC and
+distribution, the scoped grant role, runtime policies, and print the rehearsal
+`.env` values.
 
 Keep both buckets private. Put CloudFront in front of the published bucket and
 use Origin Access Control so only CloudFront can read the S3 origin. A generated

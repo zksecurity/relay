@@ -39,6 +39,12 @@ trust inputs independently of ceremony storage:
 
 ## 2. Prepare the ceremony
 
+Choose one absolute ceremony home and initialize proof-tool's public output
+under its `public/` directory:
+
+    CEREMONY_HOME=/var/lib/mpc-ceremonies/CEREMONY_ID
+    install -d -m 0700 "$CEREMONY_HOME/public" "$CEREMONY_HOME/config" "$CEREMONY_HOME/run"
+
 Run `mpc-ceremony init`, then confirm that `ceremony.json` contains the intended
 coordinator, participant order, at least two auditors, and a distinct release
 signer. Keep the coordinator signing key protected.
@@ -55,9 +61,13 @@ the published bucket. The inbox must never be public. Give the coordinator a
 runtime credential for both buckets and configure the provider-specific
 temporary-credential issuer.
 
-Complete the provider setup in [docs/STORAGE.md](docs/STORAGE.md) before
-continuing. It covers IAM permissions, caching, credential limits, and
-preflight checks.
+Complete one provider guide before continuing:
+
+- [AWS S3, CloudFront, and IAM setup](docs/AWS_SETUP.md)
+- [Cloudflare R2 setup](docs/R2_SETUP.md)
+
+[docs/STORAGE.md](docs/STORAGE.md) is the shared security and storage-layout
+reference. The provider scripts print the exact non-secret values used below.
 
 For R2:
 
@@ -65,6 +75,7 @@ For R2:
     export RELAY_R2_CONTROL_TOKEN
     printf '\n'
     relay coordinator configure-storage \
+      --home "$CEREMONY_HOME" \
       --provider r2 \
       --account-id <cloudflare-account-id> \
       --parent-access-key-id <parent-access-key-id> \
@@ -73,10 +84,7 @@ For R2:
       --published-base-url https://ceremony.example.org \
       --inbox-bucket <private-inbox-bucket> \
       --profile r2-coordinator \
-      --ceremony ceremony.json \
-      --ceremony-signature ceremony.sig \
-      --coordinator-key coordinator-public-key.hex \
-      --out relay-storage.json
+      --coordinator-key /trusted/coordinator-public-key.hex
     unset RELAY_R2_CONTROL_TOKEN
 
 The control-plane credential is a Cloudflare API bearer token with the
@@ -96,6 +104,7 @@ only to a grant command's process:
 For AWS:
 
     relay coordinator configure-storage \
+      --home "$CEREMONY_HOME" \
       --provider aws \
       --region us-east-1 \
       --published-bucket <published-bucket> \
@@ -105,10 +114,13 @@ For AWS:
       --issuer-profile aws-grant-issuer \
       --grant-role-arn arn:aws:iam::<account-id>:role/relay-inbox-grant \
       --grant-role-max-ttl 12h \
-      --ceremony ceremony.json \
-      --ceremony-signature ceremony.sig \
-      --coordinator-key coordinator-public-key.hex \
-      --out relay-storage.json
+      --coordinator-key /trusted/coordinator-public-key.hex
+
+With `--home`, Relay reads `public/ceremony.json` and `public/ceremony.sig` and
+writes `config/relay-storage.json`. The coordinator trust key stays explicit;
+Relay never derives or downloads it.
+
+    STORAGE_CONFIG="$CEREMONY_HOME/config/relay-storage.json"
 
 `configure-storage` authenticates the ceremony, checks coordinator access,
 writes and re-reads a disposable published probe, reads it anonymously through
@@ -128,7 +140,7 @@ Choose a TTL long enough for replay, contribution, erasure, and upload. Relay
 will refuse to start expensive work unless the minimum window remains.
 
     relay coordinator grant \
-      --storage relay-storage.json \
+      --storage "$STORAGE_CONFIG" \
       --role participant \
       --identity participant-03 \
       --credential-ttl 72h \
@@ -147,15 +159,13 @@ turn begins; `relay participant run` independently rejects an out-of-turn attemp
 
 List complete submissions:
 
-    relay coordinator candidates --storage relay-storage.json --phase phase1
+    relay coordinator candidates --storage "$STORAGE_CONFIG" --phase phase1
 
 Review, verify, and publish the selected candidate:
 
     relay coordinator accept \
-      --storage relay-storage.json \
+      --storage "$STORAGE_CONFIG" \
       --candidate-key candidates/<ceremony-id>/participant-03/phase1/0003/<attempt>/manifest.json \
-      --root /ceremony/public \
-      --candidate-dir /ceremony/review/participant-03-<attempt> \
       --coordinator-signing-key /secure/coordinator.ed25519.private.hex \
       --verify-publish
 
@@ -169,28 +179,23 @@ Repeat for every participant and phase.
 
 ## 5. Publish lifecycle changes
 
-Commands that inspect ceremony documents share these flags where applicable:
-
-    --root DIR --ceremony FILE --ceremony-signature FILE \
-    --coordinator-key FILE --bucket NAME --endpoint URL --profile PROFILE
-
-`--phase` defaults to `phase1`. `--ceremony-binary` defaults to
-`mpc-ceremony`; pin an explicit trusted path if `PATH` is not trusted.
+Coordinator publication reads ceremony paths, the trust key, provider routing,
+bucket, and profile from `STORAGE_CONFIG`. `--phase` defaults to `phase1`.
 
 After closure, beacon, seal, or another coordinator-signed chain update:
 
     relay coordinator publish \
+      --storage "$STORAGE_CONFIG" \
       --chain /ceremony/public/phase1/chain-0003.json \
-      --chain-signature /ceremony/public/phase1/chain-0003.sig \
-      <shared flags>
+      --chain-signature /ceremony/public/phase1/chain-0003.sig
 
 For a closed phase:
 
     relay coordinator publish \
+      --storage "$STORAGE_CONFIG" \
       --chain <final-chain> \
       --chain-signature <final-chain-signature> \
-      --closed \
-      <shared flags>
+      --closed
 
 Relay uploads every referenced artifact before moving the public pointer. The
 `--closed` marker tells public witnesses that a closure is ready to observe.
@@ -202,7 +207,7 @@ receive access only to their own inbox prefix. Every non-participant grant must
 authenticate the identity's signed enrollment:
 
     relay coordinator grant \
-      --storage relay-storage.json \
+      --storage "$STORAGE_CONFIG" \
       --role witness \
       --identity witness-01 \
       --credential-ttl 24h \
@@ -224,7 +229,7 @@ for production-decision signatures.
 
 List complete submissions, optionally filtering by role:
 
-    relay coordinator evidence --storage relay-storage.json [--role witness]
+    relay coordinator evidence --storage "$STORAGE_CONFIG" [--role witness]
 
 Each submission manifest is intake metadata, not proof. Before publishing or
 relying on evidence:

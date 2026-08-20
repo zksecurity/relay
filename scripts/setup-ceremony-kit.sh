@@ -8,7 +8,7 @@ die() {
 }
 
 usage() {
-  die "usage: $0 [verify] [--prefix DIR] [--machine 1|2|3 --rehearsal-root DIR]"
+  die "usage: $0 [verify] [--prefix DIR] [--storage-setup-root DIR] [--machine 1|2|3 --rehearsal-root DIR]"
 }
 
 KIT_ROOT=$(cd "$(dirname "$0")" && pwd)
@@ -16,6 +16,7 @@ ACTION=install
 PREFIX=/usr/local/bin
 MACHINE=
 REHEARSAL_ROOT=${HOME:+$HOME/ceremony-tools}
+STORAGE_SETUP_ROOT=
 
 if [[ ${1:-} == verify ]]; then
   ACTION=verify
@@ -38,8 +39,13 @@ while [[ $# -gt 0 ]]; do
       REHEARSAL_ROOT=$2
       shift 2
       ;;
+    --storage-setup-root)
+      [[ $# -ge 2 ]] || usage
+      STORAGE_SETUP_ROOT=$2
+      shift 2
+      ;;
     -h | --help)
-      printf 'usage: %s [verify] [--prefix DIR] [--machine 1|2|3 --rehearsal-root DIR]\n' "$0"
+      printf 'usage: %s [verify] [--prefix DIR] [--storage-setup-root DIR] [--machine 1|2|3 --rehearsal-root DIR]\n' "$0"
       exit 0
       ;;
     *) usage ;;
@@ -47,6 +53,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ "$PREFIX" == /* ]] || die "--prefix must be an absolute directory"
+[[ -z "$STORAGE_SETUP_ROOT" || "$STORAGE_SETUP_ROOT" == /* ]] ||
+  die "--storage-setup-root must be an absolute directory"
 if [[ -n "$MACHINE" ]]; then
   [[ "$MACHINE" == 1 || "$MACHINE" == 2 || "$MACHINE" == 3 ]] ||
     die "--machine must be 1, 2, or 3"
@@ -57,7 +65,7 @@ for command_name in install sha256sum; do
   command -v "$command_name" >/dev/null 2>&1 || die "required command is missing: $command_name"
 done
 
-for name in checksums.sha256 release.env release.json relay mpc-ceremony setup; do
+for name in checksums.sha256 release.env release.json relay mpc-ceremony setup storage-setup.tar.gz; do
   path="$KIT_ROOT/$name"
   [[ -f "$path" && ! -L "$path" ]] || die "kit entry is missing or unsafe: $name"
 done
@@ -141,6 +149,22 @@ install_one "$KIT_ROOT/mpc-ceremony" "$PREFIX/mpc-ceremony"
 "$PREFIX/mpc-ceremony" help >/dev/null 2>&1 || die "installed mpc-ceremony binary did not start"
 printf 'Installed Relay and mpc-ceremony in %s\n' "$PREFIX"
 
+if [[ -n "$STORAGE_SETUP_ROOT" ]]; then
+  command -v tar >/dev/null 2>&1 || die "tar is required for storage setup extraction"
+  storage_destination="$STORAGE_SETUP_ROOT/storage-setup"
+  [[ ! -e "$storage_destination" && ! -L "$storage_destination" ]] ||
+    die "storage setup directory already exists: $storage_destination"
+  if [[ -e "$STORAGE_SETUP_ROOT" || -L "$STORAGE_SETUP_ROOT" ]]; then
+    [[ -d "$STORAGE_SETUP_ROOT" && ! -L "$STORAGE_SETUP_ROOT" ]] ||
+      die "storage setup root must be a real directory"
+  else
+    mkdir -p "$STORAGE_SETUP_ROOT"
+  fi
+  chmod 0700 "$STORAGE_SETUP_ROOT"
+  tar -xzf "$KIT_ROOT/storage-setup.tar.gz" -C "$STORAGE_SETUP_ROOT"
+  printf 'Prepared provider storage setup:\n  %s\n' "$storage_destination"
+fi
+
 [[ -n "$MACHINE" ]] || exit 0
 command -v tar >/dev/null 2>&1 || die "tar is required for rehearsal setup"
 destination="$REHEARSAL_ROOT/three-machine-rehearsal"
@@ -170,5 +194,5 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 done <"$example" >"$config"
 chmod 0600 "$config"
 printf 'Prepared Machine %s configuration:\n  %s\n' "$MACHINE" "$config"
-printf 'Fill the remaining ceremony and storage fields, then run:\n'
+printf 'Set WORK_ROOT and the remaining machine-specific fields, then run:\n'
 printf '  %s/00-check-machine.sh %s\n' "$destination" "$config"

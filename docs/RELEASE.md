@@ -110,8 +110,9 @@ Build the production package:
       --build-signing-key /offline/relay-build-signing-key \
       --out-dir "$RELEASE_EVIDENCE_ROOT/relay-release-parent/release"
 
-The output contains `relay`, the ceremony-kit setup component, the versioned
-three-machine rehearsal archive, their checksums, exact Go/VCS metadata, a
+The output contains `relay`, the ceremony-kit setup component, the provider
+storage setup archive, the versioned three-machine rehearsal archive, their
+checksums, exact Go/VCS metadata, a
 CycloneDX SBOM, source and toolchain checksums, and a signed package manifest.
 Create an archive that preserves the verified file modes:
 
@@ -127,6 +128,8 @@ Publish these GitHub Release assets from the verified release directory:
 
 - the standalone `$RELAY_RELEASE_DIR/relay` file with the asset name `relay`,
   used when assembling the coordinated ceremony kit;
+- `storage-setup.tar.gz`, containing the versioned AWS and R2 provisioning
+  guides and scripts;
 - `three-machine-rehearsal.tar.gz`, the standalone versioned rehearsal kit;
 - `checksums.sha256`, containing the directly downloadable asset hashes;
   and
