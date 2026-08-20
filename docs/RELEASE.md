@@ -249,7 +249,9 @@ key.
 
 The kit is a convenience distribution assembled only after the Relay and
 proof-tool releases have been independently verified. It does not replace
-either project's signed release package or reproducibility evidence.
+either project's signed release package or reproducibility evidence. Neither
+repository release is gated on a commit from the other repository. Compatibility
+is a property of the exact released binary pair selected for this kit.
 
 Set the exact approved inputs:
 
@@ -263,6 +265,21 @@ Set the exact approved inputs:
 KIT_PARENT="$RELEASE_EVIDENCE_ROOT/ceremony-kit-parent"
 mkdir "$KIT_PARENT"
 ```
+
+The kit builder runs `scripts/verify-ceremony-kit-compatibility.sh` before it
+packages anything. The verifier authenticates both supplied hashes, initializes
+a fresh signed tiny rehearsal with the supplied `mpc-ceremony`, and has the
+supplied Relay create participant profiles for both phases from the ceremony
+CLI's authenticated projections. It performs no storage or network operation.
+On success, the kit includes `compatibility.json`, binding the test name to the
+two binary hashes; `setup verify` checks that binding.
+
+Maintainers may exercise a proposed pair before offline assembly with the
+manual `Ceremony kit binary compatibility` GitHub Actions workflow. Supply the
+two approved repositories, tags, and independently authenticated binary hashes.
+The workflow contains no default commit pin and prints the resulting evidence
+and its hash in the job summary. This hosted preview does not replace the
+independent release verification or the gate rerun by the kit builder.
 
 For production, assemble only the two binaries and their release manifest:
 
@@ -297,7 +314,8 @@ sha256sum "$CEREMONY_KIT_ARCHIVE"
 ```
 
 Extract the archive into a fresh directory and run `ceremony-kit/setup verify`
-before publishing it. Publish the archive with the exact asset name
+before publishing it. Retain `compatibility.json` and the verifier output with
+the coordinated release evidence. Publish the archive with the exact asset name
 `ceremony-kit-linux-amd64.tar.gz`. Announce only its tag and SHA-256 to normal
 operators through the independent authenticated channel; `release.json`
 inside the kit records all underlying repositories, tags, and hashes.

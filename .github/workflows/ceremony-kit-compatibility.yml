@@ -1,0 +1,112 @@
+name: Ceremony kit binary compatibility
+
+on:
+  workflow_dispatch:
+    inputs:
+      relay_repository:
+        description: Approved Relay OWNER/REPOSITORY
+        required: true
+        default: zksecurity/relay
+        type: string
+      relay_tag:
+        description: Approved Relay release tag
+        required: true
+        type: string
+      relay_sha256:
+        description: Approved Relay binary SHA-256
+        required: true
+        type: string
+      mpc_repository:
+        description: Approved proof-tool OWNER/REPOSITORY
+        required: true
+        default: Emurgo/proof-tool
+        type: string
+      mpc_tag:
+        description: Approved mpc-ceremony release tag
+        required: true
+        type: string
+      mpc_sha256:
+        description: Approved mpc-ceremony binary SHA-256
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ceremony-kit-compatibility-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  verify-released-binaries:
+    name: Verify exact released binary pair
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RELAY_REPOSITORY: ${{ inputs.relay_repository }}
+      RELAY_TAG: ${{ inputs.relay_tag }}
+      RELAY_SHA256: ${{ inputs.relay_sha256 }}
+      MPC_REPOSITORY: ${{ inputs.mpc_repository }}
+      MPC_TAG: ${{ inputs.mpc_tag }}
+      MPC_SHA256: ${{ inputs.mpc_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate authenticated release inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          repository_pattern='^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$'
+          tag_pattern='^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$'
+          [[ "$RELAY_REPOSITORY" =~ $repository_pattern ]]
+          [[ "$MPC_REPOSITORY" =~ $repository_pattern ]]
+          [[ "$RELAY_TAG" =~ $tag_pattern ]]
+          [[ "$MPC_TAG" =~ $tag_pattern ]]
+          [[ "$RELAY_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$MPC_SHA256" =~ ^[0-9a-f]{64}$ ]]
+
+      - name: Download and authenticate released binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/ceremony-kit-inputs"
+          curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
+            "https://github.com/$RELAY_REPOSITORY/releases/download/$RELAY_TAG/relay" \
+            --output "$RUNNER_TEMP/ceremony-kit-inputs/relay"
+          curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
+            "https://github.com/$MPC_REPOSITORY/releases/download/$MPC_TAG/mpc-ceremony" \
+            --output "$RUNNER_TEMP/ceremony-kit-inputs/mpc-ceremony"
+          printf '%s  %s\n' "$RELAY_SHA256" "$RUNNER_TEMP/ceremony-kit-inputs/relay" | \
+            sha256sum --check --strict
+          printf '%s  %s\n' "$MPC_SHA256" "$RUNNER_TEMP/ceremony-kit-inputs/mpc-ceremony" | \
+            sha256sum --check --strict
+          chmod 0755 \
+            "$RUNNER_TEMP/ceremony-kit-inputs/relay" \
+            "$RUNNER_TEMP/ceremony-kit-inputs/mpc-ceremony"
+
+      - name: Exercise the released CLI boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/ceremony-kit-evidence"
+          scripts/verify-ceremony-kit-compatibility.sh \
+            --relay-binary "$RUNNER_TEMP/ceremony-kit-inputs/relay" \
+            --relay-sha256 "$RELAY_SHA256" \
+            --mpc-binary "$RUNNER_TEMP/ceremony-kit-inputs/mpc-ceremony" \
+            --mpc-sha256 "$MPC_SHA256" \
+            --evidence-out "$RUNNER_TEMP/ceremony-kit-evidence/compatibility.json"
+          evidence_sha256=$(sha256sum \
+            "$RUNNER_TEMP/ceremony-kit-evidence/compatibility.json")
+          {
+            printf '## Ceremony-kit compatibility passed\n\n'
+            printf -- '- Relay: `%s@%s` (`%s`)\n' \
+              "$RELAY_REPOSITORY" "$RELAY_TAG" "$RELAY_SHA256"
+            printf -- '- mpc-ceremony: `%s@%s` (`%s`)\n' \
+              "$MPC_REPOSITORY" "$MPC_TAG" "$MPC_SHA256"
+            printf -- '- Evidence SHA-256: `%s`\n\n' "${evidence_sha256%% *}"
+            printf '```json\n'
+            cat "$RUNNER_TEMP/ceremony-kit-evidence/compatibility.json"
+            printf '```\n'
+          } >>"$GITHUB_STEP_SUMMARY"
