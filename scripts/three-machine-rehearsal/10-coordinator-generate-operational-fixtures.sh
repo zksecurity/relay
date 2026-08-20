@@ -17,9 +17,24 @@ require_fresh_path "$CEREMONY_ROOT/operational"
 
 helper="$RUN_ROOT/mpc-rehearsal-operational-evidence"
 require_fresh_path "$helper"
+
+# This optional step builds mpc-rehearsal-operational-evidence from the pinned
+# proof-tool checkout, so it needs a Go toolchain even though the ceremony
+# binaries themselves are prebuilt. `go` is often not on a non-login PATH
+# (e.g. installed under ~/.local/go/bin), so resolve it explicitly and fail
+# with a clear message rather than a bare "go: command not found".
+go_bin="${GO_BIN:-$(command -v go || true)}"
+if [[ -z "$go_bin" ]]; then
+  for candidate in "$HOME/.local/go/bin/go" /usr/local/go/bin/go /snap/bin/go; do
+    [[ -x "$candidate" ]] && { go_bin="$candidate"; break; }
+  done
+fi
+[[ -n "$go_bin" && -x "$go_bin" ]] ||
+  die "Go toolchain not found for the optional operational-evidence step; install Go or set GO_BIN=/path/to/go"
+
 (
   cd "$PROOF_TOOL_ROOT"
-  CGO_ENABLED=0 go build \
+  CGO_ENABLED=0 "$go_bin" build \
     -trimpath \
     -buildvcs=false \
     -o "$helper" \
