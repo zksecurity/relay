@@ -205,51 +205,30 @@ Then rebuild without access to the build-signing private key:
 Retain the verification output and reproduced package with the release audit
 evidence.
 
-## Build and audit `mpc-ceremony`
+## Verify the independent `mpc-ceremony` release
 
-The proof-tool repository owns its release process. For a local rehearsal, an
-exact clean checkout can build the CLI directly:
+The proof-tool repository owns the `mpc-ceremony` release process. Obtain the
+standalone binary and complete verification package from the approved
+proof-tool release. Authenticate its repository, signed tag, and published
+hashes through the release trust channel, then follow proof-tool's
+`docs/mpc-ceremony-release.md` and reproducible-release procedure. The
+proof-tool release maintainer, not the ceremony coordinator or a participant,
+owns its build-signing private key.
 
-    : "${PROOF_TOOL_COMMIT:?Set PROOF_TOOL_COMMIT to the approved full commit ID}"
-    printf '%s\n' "$PROOF_TOOL_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
-    git clone https://github.com/Emurgo/proof-tool.git \
-      "$RELEASE_EVIDENCE_ROOT/proof-tool-source"
-    git -C "$RELEASE_EVIDENCE_ROOT/proof-tool-source" \
-      checkout --detach "$PROOF_TOOL_COMMIT"
-    (
-      cd "$RELEASE_EVIDENCE_ROOT/proof-tool-source"
-      bash scripts/bootstrap-vendor.sh
-      CGO_ENABLED=0 go build -mod=vendor -trimpath -buildvcs=true \
-        -o "$RELEASE_EVIDENCE_ROOT/mpc-ceremony" ./cmd/mpc-ceremony
-    )
-
-Never use `go run` for `mpc-ceremony`; the program requires VCS metadata that
-`go run` omits. Do not replace the vendored build above with `-mod=mod`:
-proof-tool's reviewed gnark changes are applied by `bootstrap-vendor.sh` and
-must be present in the tested binary.
-
-Before approving a coordinated release, exercise Relay against that exact
-proof-tool checkout, including the production-sized contribution and
-acceptance path:
-
-    cd /path/to/relay
-    RELAY_PROOF_TOOL_DIR="$RELEASE_EVIDENCE_ROOT/proof-tool-source" \
-    RELAY_PROOF_TOOL_FULL=1 \
-      go test ./cmd/relay -run '^TestProofToolCompatibility$' -count=1 \
-        -timeout 55m -v
-
-For a production proof-tool release, follow its repository's approved signed
-tag and reproducible-release procedure using
-`scripts/build-mpc-ceremony-release.sh` and
-`scripts/verify-mpc-ceremony-reproducible.sh`. The proof-tool release maintainer,
-not the ceremony coordinator or a participant, owns its build-signing private
-key.
+Retain the verification output with the release audit evidence and set
+`MPC_BINARY` below to that verified binary. Record its approved repository,
+tag, and SHA-256 independently; do not select or pin a proof-tool source commit
+in Relay's release process. Relay's source-coupled proof-tool integration test
+is a developer diagnostic, not a coordinated-release gate. Compatibility is
+tested from the exact released binaries during ceremony-kit assembly.
 
 ## Assemble the coordinated ceremony kit
 
 The kit is a convenience distribution assembled only after the Relay and
 proof-tool releases have been independently verified. It does not replace
-either project's signed release package or reproducibility evidence.
+either project's signed release package or reproducibility evidence. Neither
+repository release is gated on a commit from the other repository. Compatibility
+is a property of the exact released binary pair selected for this kit.
 
 Set the exact approved inputs:
 
@@ -263,6 +242,24 @@ Set the exact approved inputs:
 KIT_PARENT="$RELEASE_EVIDENCE_ROOT/ceremony-kit-parent"
 mkdir "$KIT_PARENT"
 ```
+
+The kit builder runs `scripts/verify-ceremony-kit-compatibility.sh` before it
+packages anything. The verifier authenticates both supplied hashes, initializes
+a fresh signed tiny rehearsal with the supplied `mpc-ceremony`, and has the
+supplied Relay create participant profiles for both phases from authenticated
+definition and participant projections. Relay then uses its operational
+contribution, erasure, and candidate-verification command builders to produce
+and accept the first tiny phase 1 contribution, after which it authenticates
+the resulting chain projection. It performs no storage or network operation.
+On success, the kit includes `compatibility.json`, binding the test name to the
+two binary hashes; `setup verify` checks that binding.
+
+Maintainers may exercise a proposed pair before offline assembly with the
+manual `Ceremony kit binary compatibility` GitHub Actions workflow. Supply the
+two approved repositories, tags, and independently authenticated binary hashes.
+The workflow contains no default commit pin and prints the resulting evidence
+and its hash in the job summary. This hosted preview does not replace the
+independent release verification or the gate rerun by the kit builder.
 
 For production, assemble only the two binaries and their release manifest:
 
@@ -297,7 +294,8 @@ sha256sum "$CEREMONY_KIT_ARCHIVE"
 ```
 
 Extract the archive into a fresh directory and run `ceremony-kit/setup verify`
-before publishing it. Publish the archive with the exact asset name
+before publishing it. Retain `compatibility.json` and the verifier output with
+the coordinated release evidence. Publish the archive with the exact asset name
 `ceremony-kit-linux-amd64.tar.gz`. Announce only its tag and SHA-256 to normal
 operators through the independent authenticated channel; `release.json`
 inside the kit records all underlying repositories, tags, and hashes.

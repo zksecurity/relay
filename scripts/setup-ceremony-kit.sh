@@ -65,7 +65,7 @@ for command_name in install sha256sum; do
   command -v "$command_name" >/dev/null 2>&1 || die "required command is missing: $command_name"
 done
 
-for name in checksums.sha256 release.env release.json relay mpc-ceremony setup storage-setup.tar.gz; do
+for name in checksums.sha256 compatibility.json release.env release.json relay mpc-ceremony setup storage-setup.tar.gz; do
   path="$KIT_ROOT/$name"
   [[ -f "$path" && ! -L "$path" ]] || die "kit entry is missing or unsafe: $name"
 done
@@ -120,6 +120,11 @@ expected_json=$(printf '{\n  "schema": "ceremony-kit-v1",\n  "mode": "%s",\n  "r
   "$KIT_MODE" "$RELAY_REPOSITORY" "$RELAY_TAG" "$RELAY_SHA256" \
   "$MPC_RELEASE_REPOSITORY" "$MPC_TAG" "$MPC_SHA256" "$REHEARSAL_ARCHIVE_SHA256")
 [[ "$(<"$KIT_ROOT/release.json")" == "$expected_json" ]] || die "release.json does not match release.env"
+
+expected_compatibility=$(printf '{\n  "schema": "ceremony-kit-compatibility-v1",\n  "test": "tiny-rehearsal-phase1-contribution-v1",\n  "relay_sha256": "%s",\n  "mpc_ceremony_sha256": "%s"\n}' \
+  "$RELAY_SHA256" "$MPC_SHA256")
+[[ "$(<"$KIT_ROOT/compatibility.json")" == "$expected_compatibility" ]] ||
+  die "compatibility.json does not match the kit binaries"
 
 printf 'Verified %s ceremony kit:\n' "$KIT_MODE"
 printf '  Relay:        %s@%s (%s)\n' "$RELAY_REPOSITORY" "$RELAY_TAG" "$RELAY_SHA256"

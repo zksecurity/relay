@@ -23,7 +23,11 @@ protect against a compromised release account.
 
 The kit manifest records the independently approved Relay and proof-tool
 repositories, tags, and binary hashes. Operators do not enter those values
-again.
+again. The kit also contains `compatibility.json`, produced by running those
+exact binaries together through participant configuration, a real tiny phase 1
+contribution, erasure attestation, coordinator acceptance, and accepted-chain
+inspection during kit assembly. Neither source repository pins a commit from
+the other.
 
 ## Download and verify the kit
 
@@ -65,8 +69,11 @@ cd "$CEREMONY_TOOLS_ROOT/ceremony-kit"
 ./setup verify
 ```
 
-`./setup verify` checks every internal file against the authenticated kit. Stop
-here and choose exactly one of the two setup paths below. Do not run the
+`./setup verify` checks every internal file against the authenticated kit and
+confirms that `compatibility.json` names the hashes of the included binaries.
+The release maintainer runs the compatibility exercise; operators do not need
+either source checkout or to rerun it. Stop here and choose exactly one of the
+two setup paths below. Do not run the
 production or non-rehearsal setup commands before the three-machine rehearsal
 setup. Every setup path installs the two pinned binaries in `/usr/local/bin`,
 using `sudo` only if necessary, and confirms both programs start.

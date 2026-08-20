@@ -339,6 +339,10 @@ func mustSchedule(pos position, phase string) []string {
 // confirming the coordinator public key and binary hash arrived over a trusted
 // channel, and that happens once at setup rather than per contribution.
 func runNext(o roleOpts, pos position) error {
+	return runNextAt(o, pos, time.Now())
+}
+
+func runNextAt(o roleOpts, pos position, contributedAt time.Time) error {
 	command := []string{
 		o.ceremonyExecutable(), o.phase, "contribute",
 		"--ceremony", o.definition,
@@ -350,7 +354,7 @@ func runNext(o roleOpts, pos position) error {
 		"--participant-id", o.role,
 		"--participant-signing-key", o.signingKey,
 		"--environment", o.envPath,
-		"--contributed-at", time.Now().UTC().Format(time.RFC3339),
+		"--contributed-at", contributedAt.UTC().Format(time.RFC3339),
 		"--out-dir", o.outDir,
 	}
 

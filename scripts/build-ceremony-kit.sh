@@ -2,6 +2,8 @@
 set -euo pipefail
 umask 077
 
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+
 die() {
   printf 'FAIL: %s\n' "$*" >&2
   exit 1
@@ -44,6 +46,7 @@ done
   -n "$MPC_BINARY" && -n "$MPC_REPOSITORY" && -n "$MPC_TAG" && -n "$MPC_SHA256" && -n "$OUT_DIR" ]] || usage
 [[ "$MODE" == rehearsal || "$INCLUDE_REHEARSAL" == no ]] || die "production kits cannot include rehearsal scripts"
 [[ "$INCLUDE_REHEARSAL" == no || "$MODE" == rehearsal ]] || die "--include-rehearsal requires rehearsal mode"
+[[ "$MODE" == production || "$INCLUDE_REHEARSAL" == yes ]] || die "rehearsal kits require --include-rehearsal"
 
 repository_pattern='^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$'
 tag_pattern='^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$'
@@ -95,6 +98,13 @@ install -m 0755 "$RELAY_RELEASE_DIR/relay" "$staging/relay"
 install -m 0755 "$MPC_BINARY" "$staging/mpc-ceremony"
 install -m 0644 "$RELAY_RELEASE_DIR/storage-setup.tar.gz" "$staging/storage-setup.tar.gz"
 
+"$SCRIPT_DIR/verify-ceremony-kit-compatibility.sh" \
+  --relay-binary "$staging/relay" \
+  --relay-sha256 "$RELAY_SHA256" \
+  --mpc-binary "$staging/mpc-ceremony" \
+  --mpc-sha256 "$MPC_SHA256" \
+  --evidence-out "$staging/compatibility.json"
+
 REHEARSAL_SHA=none
 if [[ "$INCLUDE_REHEARSAL" == yes ]]; then
   install -m 0644 "$RELAY_RELEASE_DIR/three-machine-rehearsal.tar.gz" "$staging/three-machine-rehearsal.tar.gz"
@@ -119,7 +129,7 @@ printf '{\n  "schema": "ceremony-kit-v1",\n  "mode": "%s",\n  "relay": {\n    "r
 
 (
   cd "$staging"
-  checksum_files=(mpc-ceremony relay release.env release.json setup storage-setup.tar.gz)
+  checksum_files=(compatibility.json mpc-ceremony relay release.env release.json setup storage-setup.tar.gz)
   [[ "$INCLUDE_REHEARSAL" == yes ]] && checksum_files+=(three-machine-rehearsal.tar.gz)
   LC_ALL=C sha256sum "${checksum_files[@]}" >checksums.sha256
 )

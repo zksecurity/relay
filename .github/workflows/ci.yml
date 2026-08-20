@@ -82,6 +82,7 @@ jobs:
             scripts/build-relay-release.sh \
             scripts/build-ceremony-kit.sh \
             scripts/setup-ceremony-kit.sh \
+            scripts/verify-ceremony-kit-compatibility.sh \
             scripts/storage-setup/*.sh \
             scripts/verify-relay-release.sh \
             scripts/verify-relay-reproducible.sh \
@@ -270,7 +271,18 @@ jobs:
           mkdir \
             "$RUNNER_TEMP/ceremony-kit-parent" \
             "$RUNNER_TEMP/ceremony-kit-install" \
-            "$RUNNER_TEMP/ceremony-kit-operator"
+            "$RUNNER_TEMP/ceremony-kit-operator" \
+            "$RUNNER_TEMP/incompatible-evidence"
+          if scripts/verify-ceremony-kit-compatibility.sh \
+            --relay-binary "$RELEASE_DIR/relay" \
+            --relay-sha256 "$RELAY_SHA256" \
+            --mpc-binary "$RELEASE_DIR/relay" \
+            --mpc-sha256 "$RELAY_SHA256" \
+            --evidence-out "$RUNNER_TEMP/incompatible-evidence/compatibility.json" \
+            >/dev/null 2>&1; then
+            echo "Relay was accepted as an mpc-ceremony binary" >&2
+            exit 1
+          fi
           if scripts/build-ceremony-kit.sh \
             --mode production \
             --relay-release-dir "$RELEASE_DIR" \
@@ -291,10 +303,10 @@ jobs:
             --relay-repository zksecurity/relay \
             --relay-tag ci-rehearsal \
             --relay-sha256 "$RELAY_SHA256" \
-            --mpc-binary "$RELEASE_DIR/relay" \
+            --mpc-binary scripts/testdata/mpc-ceremony-compatibility-stub.sh \
             --mpc-repository zksecurity/proof-tool \
             --mpc-tag ci-rehearsal \
-            --mpc-sha256 "$RELAY_SHA256" \
+            --mpc-sha256 "$(sha256sum scripts/testdata/mpc-ceremony-compatibility-stub.sh | cut -d ' ' -f 1)" \
             --include-rehearsal \
             --out-dir "$RUNNER_TEMP/ceremony-kit-parent/ceremony-kit"
           KIT_SOURCE_DATE_EPOCH=$(<"$RELEASE_DIR/source-date-epoch.txt")
@@ -306,6 +318,7 @@ jobs:
           tar -tzf "$CEREMONY_KIT_ARCHIVE" >"$RUNNER_TEMP/ceremony-kit-contents.txt"
           grep -Fx 'ceremony-kit/' "$RUNNER_TEMP/ceremony-kit-contents.txt"
           grep -Fx 'ceremony-kit/setup' "$RUNNER_TEMP/ceremony-kit-contents.txt"
+          grep -Fx 'ceremony-kit/compatibility.json' "$RUNNER_TEMP/ceremony-kit-contents.txt"
           ! grep -Fx './setup' "$RUNNER_TEMP/ceremony-kit-contents.txt"
           mkdir "$RUNNER_TEMP/ceremony-kit-extracted"
           tar --no-same-owner -xzf "$CEREMONY_KIT_ARCHIVE" \

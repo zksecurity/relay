@@ -116,7 +116,8 @@ func runAcceptCandidate(args []string) error {
 		root: root, definition: config.CeremonyPath, definitionSig: config.CeremonySignature,
 		coordinatorKey: config.CoordinatorPublicKey, ceremonyBinary: config.CeremonyBinary,
 		phase: manifest.Phase, role: manifest.ParticipantID,
-		client: store.Client{Bucket: config.PublishedBucket, PublicBaseURL: config.PublishedBaseURL},
+		client:     store.Client{Bucket: config.PublishedBucket, PublicBaseURL: config.PublishedBaseURL},
+		phase1Seal: phase1Seal, phase1SealSig: phase1SealSignature,
 	}
 	pos, err := resolvePosition(o)
 	if err != nil {
@@ -170,20 +171,10 @@ func runAcceptCandidate(args []string) error {
 	if acceptedAt == "" {
 		acceptedAt = defaultAcceptanceTimestamp(time.Now())
 	}
-	command := []string{manifest.Phase, "verify", "--ceremony", config.CeremonyPath,
-		"--ceremony-signature", config.CeremonySignature, "--coordinator-public-key-file", config.CoordinatorPublicKey,
-		"--transcript-dir", root, "--chain", pos.chainPath, "--chain-signature", pos.chain.ChainSignaturePath,
-		"--candidate-dir", candidateDir, "--coordinator-signing-key", coordinatorSigningKey, "--accepted-at", acceptedAt}
-	if manifest.Phase == "phase2" {
-		if phase1Seal == "" {
-			phase1Seal = filepath.Join(root, "phase1", "sealed", "seal.json")
-		}
-		if phase1SealSignature == "" {
-			phase1SealSignature = filepath.Join(root, "phase1", "sealed", "seal.sig")
-		}
-		command = append(command, "--phase1-seal", phase1Seal, "--phase1-seal-signature", phase1SealSignature)
-	}
-	cmd := exec.Command(config.CeremonyBinary, command...)
+	cmd := candidateVerificationCommand(
+		o, pos.chainPath, pos.chain.ChainSignaturePath, candidateDir,
+		coordinatorSigningKey, acceptedAt,
+	)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := runWithProgress("verifying contribution candidate", cmd.Run); err != nil {
 		return err
@@ -209,6 +200,33 @@ func runAcceptCandidate(args []string) error {
 
 func defaultAcceptanceTimestamp(now time.Time) string {
 	return now.UTC().Format(time.RFC3339Nano)
+}
+
+// candidateVerificationCommand is shared by the coordinator acceptance path
+// and the source-free release-pair gate. Keeping the argv construction here
+// prevents the release gate from testing a second approximation of Relay's
+// mpc-ceremony interface.
+func candidateVerificationCommand(
+	o roleOpts,
+	chainPath, chainSignaturePath, candidateDir, coordinatorSigningKey, acceptedAt string,
+) *exec.Cmd {
+	command := []string{o.phase, "verify", "--ceremony", o.definition,
+		"--ceremony-signature", o.definitionSig, "--coordinator-public-key-file", o.coordinatorKey,
+		"--transcript-dir", o.root, "--chain", chainPath, "--chain-signature", chainSignaturePath,
+		"--candidate-dir", candidateDir, "--coordinator-signing-key", coordinatorSigningKey,
+		"--accepted-at", acceptedAt}
+	if o.phase == "phase2" {
+		phase1Seal := o.phase1Seal
+		phase1SealSignature := o.phase1SealSig
+		if phase1Seal == "" {
+			phase1Seal = filepath.Join(o.root, "phase1", "sealed", "seal.json")
+		}
+		if phase1SealSignature == "" {
+			phase1SealSignature = filepath.Join(o.root, "phase1", "sealed", "seal.sig")
+		}
+		command = append(command, "--phase1-seal", phase1Seal, "--phase1-seal-signature", phase1SealSignature)
+	}
+	return exec.Command(o.ceremonyExecutable(), command...)
 }
 
 func runEvidenceInbox(args []string) error {
