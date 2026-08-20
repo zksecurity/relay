@@ -596,12 +596,12 @@ parent_hash=$(printf '%s' "$parent_token" | sha256sum)
 [[ "$parent_secret" == "${parent_hash%% *}" ]] ||
   die "the inbox parent API token and Secret Access Key do not match"
 if ! AWS_ACCESS_KEY_ID="$R2_PARENT_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$parent_secret" \
-  AWS_SESSION_TOKEN= aws --endpoint-url "$endpoint" --region auto \
+  AWS_SESSION_TOKEN='' aws --endpoint-url "$endpoint" --region auto \
   s3api list-objects-v2 --bucket "$INBOX_BUCKET" --max-items 1 >/dev/null 2>&1; then
   die "the inbox parent credential cannot read the private inbox"
 fi
 if AWS_ACCESS_KEY_ID="$R2_PARENT_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$parent_secret" \
-  AWS_SESSION_TOKEN= aws --endpoint-url "$endpoint" --region auto \
+  AWS_SESSION_TOKEN='' aws --endpoint-url "$endpoint" --region auto \
   s3api list-objects-v2 --bucket "$PUBLISHED_BUCKET" --max-items 1 >/dev/null 2>&1; then
   die "the inbox parent credential is not limited to the private inbox"
 fi

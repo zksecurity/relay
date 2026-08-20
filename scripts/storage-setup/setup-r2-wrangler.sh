@@ -136,7 +136,7 @@ else
   printf 'Then, inside that SSH session, run:\n' >&2
   printf '  %s login --browser=false --callback-host 127.0.0.1 --callback-port 8976\n\n' "$wrangler_bin" >&2
   printf 'Open the printed URL in your laptop browser. This callback flow also avoids\n' >&2
-  printf 'the HTTP 403 that some server IPs receive from `wrangler login --device`.\n' >&2
+  printf 'the HTTP 403 that some server IPs receive from wrangler login --device.\n' >&2
     die "complete Wrangler login, then rerun this command"
   fi
   jq -e '.loggedIn == true and .authType == "OAuth Token"' \
@@ -240,7 +240,7 @@ else
   [[ -n "${HOME:-}" ]] || die "HOME or XDG_CONFIG_HOME is required for the secure token directory"
   secret_root="$HOME/.config/relay/$RESOURCE_PREFIX-r2"
 fi
-mkdir -m 0700 -p "$secret_root"
+mkdir -p "$secret_root"
 chmod 0700 "$secret_root"
 parent_token_file="$secret_root/inbox-parent-api-token"
 

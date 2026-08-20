@@ -30,7 +30,8 @@ if [[ -e "$work_parent" || -L "$work_parent" ]]; then
   [[ -d "$work_parent" && ! -L "$work_parent" && -w "$work_parent" ]] ||
     die "WORK_ROOT parent must be a writable real directory: $work_parent"
 else
-  mkdir -m 0700 -p "$work_parent"
+  mkdir -p "$work_parent"
+  chmod 0700 "$work_parent"
 fi
 chmod 0700 "$work_parent"
 

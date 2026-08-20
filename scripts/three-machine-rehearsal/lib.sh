@@ -85,12 +85,16 @@ PY
     STORAGE_PROVIDER=${configured[0]}
     PUBLISHED_BUCKET=${configured[1]}
     PUBLISHED_BASE_URL=${configured[2]}
+    # These values are consumed by the coordinator scripts that source this
+    # library, even though ShellCheck cannot see across that boundary.
+    # shellcheck disable=SC2034
     INBOX_BUCKET=${configured[3]}
     STORAGE_ENDPOINT=${configured[4]}
     AWS_REGION=${configured[5]}
     COORDINATOR_PROFILE=${configured[6]}
     ISSUER_PROFILE=${configured[7]}
     GRANT_ROLE_ARN=${configured[8]}
+    # shellcheck disable=SC2034
     GRANT_ROLE_MAX_TTL=${configured[9]}
     if [[ "$STORAGE_PROVIDER" == aws && -z "$STORAGE_ENDPOINT" ]]; then
       if [[ "$AWS_REGION" == cn-* ]]; then

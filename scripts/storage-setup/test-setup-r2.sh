@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# The single-quoted strings below deliberately generate mock scripts without
+# expanding their variables in this parent process. The negated greps are
+# assertions whose statuses are consumed directly by set -e.
+# shellcheck disable=SC2016,SC2251
 set -euo pipefail
 umask 077
 
