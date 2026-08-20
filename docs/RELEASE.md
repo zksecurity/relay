@@ -205,45 +205,22 @@ Then rebuild without access to the build-signing private key:
 Retain the verification output and reproduced package with the release audit
 evidence.
 
-## Build and audit `mpc-ceremony`
+## Verify the independent `mpc-ceremony` release
 
-The proof-tool repository owns its release process. For a local rehearsal, an
-exact clean checkout can build the CLI directly:
+The proof-tool repository owns the `mpc-ceremony` release process. Obtain the
+standalone binary and complete verification package from the approved
+proof-tool release. Authenticate its repository, signed tag, and published
+hashes through the release trust channel, then follow proof-tool's
+`docs/mpc-ceremony-release.md` and reproducible-release procedure. The
+proof-tool release maintainer, not the ceremony coordinator or a participant,
+owns its build-signing private key.
 
-    : "${PROOF_TOOL_COMMIT:?Set PROOF_TOOL_COMMIT to the approved full commit ID}"
-    printf '%s\n' "$PROOF_TOOL_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
-    git clone https://github.com/Emurgo/proof-tool.git \
-      "$RELEASE_EVIDENCE_ROOT/proof-tool-source"
-    git -C "$RELEASE_EVIDENCE_ROOT/proof-tool-source" \
-      checkout --detach "$PROOF_TOOL_COMMIT"
-    (
-      cd "$RELEASE_EVIDENCE_ROOT/proof-tool-source"
-      bash scripts/bootstrap-vendor.sh
-      CGO_ENABLED=0 go build -mod=vendor -trimpath -buildvcs=true \
-        -o "$RELEASE_EVIDENCE_ROOT/mpc-ceremony" ./cmd/mpc-ceremony
-    )
-
-Never use `go run` for `mpc-ceremony`; the program requires VCS metadata that
-`go run` omits. Do not replace the vendored build above with `-mod=mod`:
-proof-tool's reviewed gnark changes are applied by `bootstrap-vendor.sh` and
-must be present in the tested binary.
-
-Before approving a coordinated release, exercise Relay against that exact
-proof-tool checkout, including the production-sized contribution and
-acceptance path:
-
-    cd /path/to/relay
-    RELAY_PROOF_TOOL_DIR="$RELEASE_EVIDENCE_ROOT/proof-tool-source" \
-    RELAY_PROOF_TOOL_FULL=1 \
-      go test ./cmd/relay -run '^TestProofToolCompatibility$' -count=1 \
-        -timeout 55m -v
-
-For a production proof-tool release, follow its repository's approved signed
-tag and reproducible-release procedure using
-`scripts/build-mpc-ceremony-release.sh` and
-`scripts/verify-mpc-ceremony-reproducible.sh`. The proof-tool release maintainer,
-not the ceremony coordinator or a participant, owns its build-signing private
-key.
+Retain the verification output with the release audit evidence and set
+`MPC_BINARY` below to that verified binary. Record its approved repository,
+tag, and SHA-256 independently; do not select or pin a proof-tool source commit
+in Relay's release process. Relay's source-coupled proof-tool integration test
+is a developer diagnostic, not a coordinated-release gate. Compatibility is
+tested from the exact released binaries during ceremony-kit assembly.
 
 ## Assemble the coordinated ceremony kit
 
