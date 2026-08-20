@@ -39,10 +39,108 @@ jobs:
         run: |
           bash -n \
             scripts/build-relay-release.sh \
+            scripts/build-ceremony-kit.sh \
+            scripts/setup-ceremony-kit.sh \
+            scripts/storage-setup/*.sh \
             scripts/verify-relay-release.sh \
             scripts/verify-relay-reproducible.sh \
             scripts/three-machine-rehearsal/*.sh \
             scripts/three-machine-rehearsal/machine-*/.env.example
+
+      - name: Test rehearsal configuration defaults
+        run: |
+          set -euo pipefail
+          source scripts/three-machine-rehearsal/lib.sh
+          REHEARSAL_CONFIG=ci.env
+          STORAGE_PROVIDER=aws
+          COORDINATOR_PROFILE=coordinator
+          ISSUER_PROFILE=issuer
+          GRANT_ROLE_NAME=relay-inbox-grant
+          AWS_REGION=
+          STORAGE_ENDPOINT=
+          GRANT_ROLE_ARN=
+          aws() {
+            if [[ " $* " == *' configure get region '* ]]; then
+              printf '%s\n' us-east-1
+            elif [[ " $* " == *' sts get-caller-identity '* ]]; then
+              printf '%s\n' 123456789012
+            else
+              return 1
+            fi
+          }
+          hydrate_coordinator_storage_settings
+          test "$AWS_REGION" = us-east-1
+          test "$STORAGE_ENDPOINT" = https://s3.us-east-1.amazonaws.com
+          test "$GRANT_ROLE_ARN" = arn:aws:iam::123456789012:role/relay-inbox-grant
+          for env_file in scripts/three-machine-rehearsal/machine-{1,2,3}/.env.example; do
+            (
+              source "$env_file"
+              test "$CEREMONY_ROOT" = "$WORK_ROOT/public"
+              test "$CONFIG_ROOT" = "$WORK_ROOT/config"
+              test "$KEYS_ROOT" = "$WORK_ROOT/keys"
+              test "$RUN_ROOT" = "$WORK_ROOT/run"
+            )
+          done
+          placeholder_error="$RUNNER_TEMP/machine-placeholder-error.txt"
+          if (load_rehearsal_config /tmp/machine-N/.env) 2>"$placeholder_error"; then
+            echo "literal machine-N placeholder was accepted" >&2
+            exit 1
+          fi
+          grep -Fx \
+            'FAIL: N is a placeholder; replace machine-N with machine-1, machine-2, or machine-3' \
+            "$placeholder_error"
+
+      - name: Test Wrangler-backed R2 setup
+        run: scripts/storage-setup/test-setup-r2.sh
+
+      - name: Test interrupted beacon wait is restartable
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/beacon-restart"
+          work="$root/work"
+          mkdir -m 0700 -p \
+            "$root/bin" \
+            "$work/public/phase1/closure" \
+            "$work/keys" \
+            "$work/trust"
+          install -m 0755 /bin/true "$root/bin/relay"
+          install -m 0755 /bin/true "$root/bin/mpc-ceremony"
+          relay_sha=$(sha256sum "$root/bin/relay" | cut -d ' ' -f 1)
+          mpc_sha=$(sha256sum "$root/bin/mpc-ceremony" | cut -d ' ' -f 1)
+          not_before=$(date -u -d '+10 minutes' +%Y-%m-%dT%H:%M:%SZ)
+          printf '{}\n' >"$work/public/ceremony.json"
+          printf 'signature\n' >"$work/public/ceremony.sig"
+          printf 'coordinator\n' >"$work/keys/coordinator.ed25519.private.hex"
+          printf 'coordinator\n' >"$work/trust/coordinator-public-key.hex"
+          printf 'signature\n' >"$work/public/phase1/closure/record.sig"
+          printf '{"beacon_round":1,"beacon_not_before":"%s"}\n' "$not_before" \
+            >"$work/public/phase1/closure/record.json"
+          printf '%s\n' \
+            '{"provider":"aws","published_bucket":"test-published","published_base_url":"https://example.invalid","inbox_bucket":"test-inbox","endpoint":"https://s3.us-east-1.amazonaws.com","region":"us-east-1","coordinator_profile":"test-coordinator","issuer_profile":"test-issuer","grant_role_arn":"arn:aws:iam::123456789012:role/test","grant_role_max_ttl":"1h"}' \
+            >"$work/storage.json"
+          printf '%s\n' \
+            "RELAY_BIN=$root/bin/relay" \
+            "MPC_BIN=$root/bin/mpc-ceremony" \
+            "RELAY_SHA256=$relay_sha" \
+            "MPC_SHA256=$mpc_sha" \
+            "WORK_ROOT=$work" \
+            "CEREMONY_ROOT=$work/public" \
+            "CONFIG_ROOT=$work/config" \
+            "KEYS_ROOT=$work/keys" \
+            "RUN_ROOT=$work/run" \
+            "TRUSTED_COORDINATOR_KEY=$work/trust/coordinator-public-key.hex" \
+            "STORAGE_CONFIG=$work/storage.json" \
+            >"$root/machine-1.env"
+          chmod 0600 "$root/machine-1.env"
+          for attempt in 1 2; do
+            set +e
+            timeout 1 scripts/three-machine-rehearsal/08-coordinator-record-beacon.sh \
+              "$root/machine-1.env" phase1
+            status=$?
+            set -e
+            test "$status" -eq 124
+            test ! -e "$work/run/phase1-relays"
+          done
 
       - name: Test
         run: go test ./...
@@ -63,6 +161,122 @@ jobs:
             --tag-signer-fingerprint none \
             --trusted-build-public-key-file none \
             "$RUNNER_TEMP/relay-rehearsal-parent/release"
+
+      - name: Verify source-free operator assets
+        run: |
+          RELEASE_DIR="$RUNNER_TEMP/relay-rehearsal-parent/release"
+          (
+            cd "$RELEASE_DIR"
+            sha256sum --check checksums.sha256
+          )
+          test -x "$RELEASE_DIR/setup-ceremony-kit.sh"
+          {
+            git archive --format=tar --prefix=three-machine-rehearsal/ \
+              "$GITHUB_SHA:scripts/three-machine-rehearsal" | tar -t
+            git archive --format=tar --prefix=three-machine-rehearsal/ \
+              "$GITHUB_SHA" \
+              docs/INSTALL.md \
+              docs/AWS_SETUP.md \
+              docs/R2_SETUP.md \
+              docs/STORAGE.md | tar -t
+          } >"$RUNNER_TEMP/expected-rehearsal-assets.txt"
+          tar -tzf "$RELEASE_DIR/three-machine-rehearsal.tar.gz" \
+            >"$RUNNER_TEMP/actual-rehearsal-assets.txt"
+          cmp \
+            "$RUNNER_TEMP/expected-rehearsal-assets.txt" \
+            "$RUNNER_TEMP/actual-rehearsal-assets.txt"
+          tar -tzf "$RELEASE_DIR/three-machine-rehearsal.tar.gz" | grep -Fx \
+            three-machine-rehearsal/00-coordinator-initialize.sh
+          tar -tzf "$RELEASE_DIR/three-machine-rehearsal.tar.gz" | grep -Fx \
+            three-machine-rehearsal/docs/INSTALL.md
+          tar -tzf "$RELEASE_DIR/three-machine-rehearsal.tar.gz" | grep -Fx \
+            three-machine-rehearsal/docs/AWS_SETUP.md
+          tar -tzf "$RELEASE_DIR/three-machine-rehearsal.tar.gz" | grep -Fx \
+            three-machine-rehearsal/docs/R2_SETUP.md
+          tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
+            storage-setup/scripts/storage-setup/setup-aws.sh
+          tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
+            storage-setup/scripts/storage-setup/setup-r2.sh
+          tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
+            storage-setup/scripts/storage-setup/setup-r2-wrangler.sh
+          tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
+            storage-setup/docs/AWS_SETUP.md
+          tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
+            storage-setup/docs/R2_SETUP.md
+
+      - name: Build and exercise standalone ceremony kit
+        run: |
+          RELEASE_DIR="$RUNNER_TEMP/relay-rehearsal-parent/release"
+          RELAY_SHA256=$(sha256sum "$RELEASE_DIR/relay" | cut -d ' ' -f 1)
+          mkdir \
+            "$RUNNER_TEMP/ceremony-kit-parent" \
+            "$RUNNER_TEMP/ceremony-kit-install" \
+            "$RUNNER_TEMP/ceremony-kit-operator"
+          if scripts/build-ceremony-kit.sh \
+            --mode production \
+            --relay-release-dir "$RELEASE_DIR" \
+            --relay-repository zksecurity/relay \
+            --relay-tag invalid-production \
+            --relay-sha256 "$RELAY_SHA256" \
+            --mpc-binary "$RELEASE_DIR/relay" \
+            --mpc-repository Emurgo/proof-tool \
+            --mpc-tag invalid-production \
+            --mpc-sha256 "$RELAY_SHA256" \
+            --out-dir "$RUNNER_TEMP/ceremony-kit-parent/invalid-production"; then
+            echo "rehearsal Relay package was accepted as production" >&2
+            exit 1
+          fi
+          scripts/build-ceremony-kit.sh \
+            --mode rehearsal \
+            --relay-release-dir "$RELEASE_DIR" \
+            --relay-repository zksecurity/relay \
+            --relay-tag ci-rehearsal \
+            --relay-sha256 "$RELAY_SHA256" \
+            --mpc-binary "$RELEASE_DIR/relay" \
+            --mpc-repository zksecurity/proof-tool \
+            --mpc-tag ci-rehearsal \
+            --mpc-sha256 "$RELAY_SHA256" \
+            --include-rehearsal \
+            --out-dir "$RUNNER_TEMP/ceremony-kit-parent/ceremony-kit"
+          KIT_SOURCE_DATE_EPOCH=$(<"$RELEASE_DIR/source-date-epoch.txt")
+          CEREMONY_KIT_ARCHIVE="$RUNNER_TEMP/ceremony-kit-linux-amd64.tar.gz"
+          tar --sort=name --mtime="@$KIT_SOURCE_DATE_EPOCH" \
+            --owner=0 --group=0 --numeric-owner \
+            -cf - -C "$RUNNER_TEMP/ceremony-kit-parent" ceremony-kit | \
+            gzip -n >"$CEREMONY_KIT_ARCHIVE"
+          tar -tzf "$CEREMONY_KIT_ARCHIVE" >"$RUNNER_TEMP/ceremony-kit-contents.txt"
+          grep -Fx 'ceremony-kit/' "$RUNNER_TEMP/ceremony-kit-contents.txt"
+          grep -Fx 'ceremony-kit/setup' "$RUNNER_TEMP/ceremony-kit-contents.txt"
+          ! grep -Fx './setup' "$RUNNER_TEMP/ceremony-kit-contents.txt"
+          mkdir "$RUNNER_TEMP/ceremony-kit-extracted"
+          tar --no-same-owner -xzf "$CEREMONY_KIT_ARCHIVE" \
+            -C "$RUNNER_TEMP/ceremony-kit-extracted"
+          "$RUNNER_TEMP/ceremony-kit-extracted/ceremony-kit/setup" verify
+          "$RUNNER_TEMP/ceremony-kit-parent/ceremony-kit/setup" verify
+          "$RUNNER_TEMP/ceremony-kit-parent/ceremony-kit/setup" \
+            --prefix "$RUNNER_TEMP/ceremony-kit-install" \
+            --storage-setup-root "$RUNNER_TEMP/ceremony-kit-operator" \
+            --machine 3 \
+            --rehearsal-root "$RUNNER_TEMP/ceremony-kit-operator"
+          test -x "$RUNNER_TEMP/ceremony-kit-install/relay"
+          test -x "$RUNNER_TEMP/ceremony-kit-install/mpc-ceremony"
+          test -x "$RUNNER_TEMP/ceremony-kit-operator/storage-setup/scripts/storage-setup/setup-aws.sh"
+          test -x "$RUNNER_TEMP/ceremony-kit-operator/storage-setup/scripts/storage-setup/setup-r2.sh"
+          test -f "$RUNNER_TEMP/ceremony-kit-operator/storage-setup/docs/AWS_SETUP.md"
+          test -f "$RUNNER_TEMP/ceremony-kit-operator/storage-setup/docs/R2_SETUP.md"
+          test -f "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
+          test -x \
+            "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/00-coordinator-initialize.sh"
+          grep -Fx "RELAY_TAG=ci-rehearsal" \
+            "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
+          grep -Fx "WORK_ROOT=$RUNNER_TEMP/ceremony-kit-operator/work/machine-3" \
+            "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
+          grep -Fx 'CEREMONY_ROOT=$WORK_ROOT/public' \
+            "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
+          ! grep -q '^PUBLISHED_BUCKET=' \
+            "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
+          ! grep -q '^PUBLISHED_READER_PROFILE=' \
+            "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
 
       - name: Confirm no production signature exists
         run: |

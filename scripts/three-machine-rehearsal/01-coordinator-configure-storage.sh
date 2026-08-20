@@ -22,6 +22,12 @@ case "$STORAGE_PROVIDER" in
     require_var ISSUER_PROFILE
     require_var GRANT_ROLE_ARN
     require_var GRANT_ROLE_MAX_TTL
+    printf 'Resolved AWS rehearsal storage:\n'
+    printf '  region:          %s\n' "$AWS_REGION"
+    printf '  endpoint:        %s\n' "$STORAGE_ENDPOINT"
+    printf '  published:       %s\n' "$PUBLISHED_BUCKET"
+    printf '  private inbox:   %s\n' "$INBOX_BUCKET"
+    printf '  grant role:      %s\n' "$GRANT_ROLE_ARN"
     "$RELAY_BIN" coordinator configure-storage \
       --provider aws \
       --region "$AWS_REGION" \

@@ -46,6 +46,28 @@ func TestProofToolCompatibility(t *testing.T) {
 	buildProofProgram(t, proofToolDir, workflowHelper, "./internal/mpcceremony/testdata/workflowhelper")
 	buildProofProgram(t, proofToolDir, operationalHelper, "./scripts/mpc-rehearsal-operational-evidence")
 
+	downloadableRoot := filepath.Join(root, "downloadable-rehearsal")
+	runProofCommand(t, proofToolDir, ceremonyBinary,
+		"rehearsal", "init",
+		"--created-at", "2026-08-20T06:00:00Z",
+		"--out-dir", downloadableRoot)
+	downloadableInspector := transcript.Inspector{
+		Executable:               ceremonyBinary,
+		CeremonyPath:             filepath.Join(downloadableRoot, "public", "ceremony.json"),
+		CeremonySignaturePath:    filepath.Join(downloadableRoot, "public", "ceremony.sig"),
+		CoordinatorPublicKeyPath: filepath.Join(downloadableRoot, "public", "coordinator-public-key.hex"),
+		TranscriptRoot:           filepath.Join(downloadableRoot, "public"),
+	}
+	downloadableDefinition, err := downloadableInspector.Definition()
+	if err != nil {
+		t.Fatalf("Relay inspection of downloadable tiny rehearsal: %v", err)
+	}
+	if len(downloadableDefinition.Phase1Participants) != 3 ||
+		downloadableDefinition.Phase1Participants[0] != "participant-01" ||
+		downloadableDefinition.Phase1Participants[2] != "participant-03" {
+		t.Fatalf("downloadable rehearsal definition = %#v", downloadableDefinition)
+	}
+
 	workflowRoot := filepath.Join(root, "workflow")
 	runProofCommand(t, proofToolDir, workflowHelper, workflowRoot, operationalHelper)
 	ceremonyRoot := filepath.Join(workflowRoot, "ceremony")
@@ -118,6 +140,52 @@ func TestProofToolCompatibility(t *testing.T) {
 	if err := writeJSONNoReplace(storagePath, storage, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	productionHome := filepath.Join(root, "production-home")
+	publicRoot := filepath.Join(productionHome, "public")
+	if err := os.MkdirAll(publicRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"ceremony.json", "ceremony.sig"} {
+		raw, err := os.ReadFile(filepath.Join(ceremonyRoot, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(publicRoot, name), raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	environmentPath := filepath.Join(root, "environment.json")
+	if err := os.WriteFile(environmentPath, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := runInitRoleConfig([]string{
+		"--home", productionHome, "--role", access.RoleParticipant, "--phase", "phase1",
+		"--storage", storagePath, "--coordinator-key", inspector.CoordinatorPublicKeyPath,
+		"--ceremony-binary", ceremonyBinary, "--signing-key", participantKey,
+		"--environment", environmentPath,
+	}); err != nil {
+		t.Fatalf("participant production role config: %v", err)
+	}
+	participantRolePath := filepath.Join(productionHome, "config", "participant-phase1.json")
+	participantRole, err := loadRoleConfig(participantRolePath, access.RoleParticipant)
+	if err != nil || participantRole.IdentityID != "participant-01" {
+		t.Fatalf("load participant production role config = %#v, %v", participantRole, err)
+	}
+	witnessRecord := filepath.Join(enrollmentRoot, "witness-01.json")
+	witnessSignature := filepath.Join(enrollmentRoot, "witness-01.sig")
+	if err := runInitRoleConfig([]string{
+		"--home", productionHome, "--role", access.RoleWitness, "--phase", "phase1",
+		"--storage", storagePath, "--coordinator-key", inspector.CoordinatorPublicKeyPath,
+		"--ceremony-binary", ceremonyBinary, "--enrollment", witnessRecord,
+		"--enrollment-signature", witnessSignature,
+	}); err != nil {
+		t.Fatalf("witness production role config: %v", err)
+	}
+	witnessRolePath := filepath.Join(productionHome, "config", "witness-phase1.json")
+	witnessRole, err := loadRoleConfig(witnessRolePath, access.RoleWitness)
+	if err != nil || witnessRole.IdentityID != "witness-01" || witnessRole.SigningKey != "" {
+		t.Fatalf("load witness production role config = %#v, %v", witnessRole, err)
+	}
 	prefix, err := access.Prefix(definition.CeremonyID, access.RoleParticipant, "participant-01")
 	if err != nil {
 		t.Fatal(err)
@@ -143,7 +211,7 @@ func TestProofToolCompatibility(t *testing.T) {
 		"--ceremony-signature", inspector.CeremonySignaturePath,
 		"--coordinator-key", inspector.CoordinatorPublicKeyPath,
 		"--ceremony-binary", ceremonyBinary, "--signing-key", participantKey,
-		"--environment", filepath.Join(root, "environment.json"),
+		"--environment", environmentPath,
 		"--candidate-parent", filepath.Join(root, "candidates"), "--out", participantConfigPath,
 	}); err != nil {
 		t.Fatalf("Relay enroll against proof-tool: %v", err)
@@ -154,6 +222,29 @@ func TestProofToolCompatibility(t *testing.T) {
 	}
 	if _, err := access.Decode(configRaw, access.ParticipantConfig.Validate); err != nil {
 		t.Fatalf("generated participant config: %v", err)
+	}
+	grantFreeConfigPath := filepath.Join(root, "participant-grant-free.relay.json")
+	if err := runEnroll([]string{
+		"--storage", storagePath, "--phase", "phase1",
+		"--root", ceremonyRoot, "--ceremony", inspector.CeremonyPath,
+		"--ceremony-signature", inspector.CeremonySignaturePath,
+		"--coordinator-key", inspector.CoordinatorPublicKeyPath,
+		"--ceremony-binary", ceremonyBinary, "--signing-key", participantKey,
+		"--environment", environmentPath,
+		"--candidate-parent", filepath.Join(root, "grant-free-candidates"), "--out", grantFreeConfigPath,
+	}); err != nil {
+		t.Fatalf("grant-free Relay enrollment against proof-tool: %v", err)
+	}
+	grantFreeRaw, err := os.ReadFile(grantFreeConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grantFreeConfig, err := access.Decode(grantFreeRaw, access.ParticipantConfig.Validate)
+	if err != nil {
+		t.Fatalf("generated grant-free participant config: %v", err)
+	}
+	if grantFreeConfig.Schema != access.ParticipantConfigSchema || grantFreeConfig.GrantPath != "" {
+		t.Fatalf("grant-free profile schema/grant = %q/%q", grantFreeConfig.Schema, grantFreeConfig.GrantPath)
 	}
 
 	tamperedChain := filepath.Join(root, "tampered-chain.json")

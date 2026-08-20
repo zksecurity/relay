@@ -45,6 +45,7 @@ func registerRole(set *flag.FlagSet, o *roleOpts) {
 	set.StringVar(&o.phase, "phase", "phase1", "phase1 or phase2")
 	set.StringVar(&o.client.Bucket, "bucket", "", "bucket name")
 	set.StringVar(&o.client.Endpoint, "endpoint", "", "S3-compatible endpoint URL")
+	set.StringVar(&o.client.PublicBaseURL, "public-base-url", "", "anonymous HTTPS origin for published objects")
 	set.StringVar(&o.client.Profile, "profile", "default", "AWS CLI profile holding the credentials")
 }
 
@@ -52,11 +53,14 @@ func checkRole(o roleOpts) error {
 	for name, value := range map[string]string{
 		"--root": o.root, "--ceremony": o.definition,
 		"--ceremony-signature": o.definitionSig, "--coordinator-key": o.coordinatorKey,
-		"--bucket": o.client.Bucket, "--endpoint": o.client.Endpoint,
+		"--bucket": o.client.Bucket,
 	} {
 		if value == "" {
 			return fmt.Errorf("%s is required", name)
 		}
+	}
+	if o.client.Endpoint == "" && o.client.Region == "" && o.client.PublicBaseURL == "" {
+		return errors.New("--endpoint is required for raw role flags; validated configs supply provider routing")
 	}
 	if o.phase != "phase1" && o.phase != "phase2" {
 		return fmt.Errorf("--phase %q must be phase1 or phase2", o.phase)
@@ -232,6 +236,46 @@ func runStatus(args []string) error {
 	if err := checkRole(o); err != nil {
 		return err
 	}
+	return reportStatus(o)
+}
+
+func runParticipantStatus(args []string) error {
+	configured := len(args) == 0
+	for _, arg := range args {
+		if arg == "--config" || strings.HasPrefix(arg, "--config=") {
+			configured = true
+			break
+		}
+	}
+	if !configured {
+		return runStatus(args)
+	}
+	set := flag.NewFlagSet("participant status", flag.ContinueOnError)
+	var configPath string
+	set.StringVar(&configPath, "config", defaultParticipantConfigPath(), "local participant profile")
+	if err := set.Parse(args); err != nil {
+		return err
+	}
+	if configPath == "" {
+		return errors.New("--config is required because no default configuration directory is available")
+	}
+	config, configuredIdentity, err := loadParticipantProfile(configPath)
+	if err != nil {
+		return err
+	}
+	o := participantRoleOptions(config, "")
+	participant, err := o.inspector().Participant(config.SigningKey)
+	if err != nil {
+		return err
+	}
+	if configuredIdentity != "" && participant.ParticipantID != configuredIdentity {
+		return errors.New("configured participant identity does not match the local signing key")
+	}
+	o.role = participant.ParticipantID
+	return reportStatus(o)
+}
+
+func reportStatus(o roleOpts) error {
 	pos, err := resolvePosition(o)
 	if err != nil {
 		return err
@@ -354,9 +398,10 @@ func runPublish(args []string) error {
 	var o roleOpts
 	set := flag.NewFlagSet("coordinator publish", flag.ContinueOnError)
 	registerRole(set, &o)
-	var chainPath string
+	var storagePath, chainPath string
 	var chainSignaturePath string
 	var closed bool
+	set.StringVar(&storagePath, "storage", "", "validated coordinator storage configuration")
 	set.StringVar(&chainPath, "chain", "", "chain document to publish as the new head")
 	set.StringVar(&chainSignaturePath, "chain-signature", "", "detached signature for the chain head")
 	set.BoolVar(&closed, "closed", false, "mark the phase as closed")
@@ -365,6 +410,18 @@ func runPublish(args []string) error {
 		"after publishing, re-derive the expected file set and confirm the bucket holds all of it")
 	if err := set.Parse(args); err != nil {
 		return err
+	}
+	if storagePath != "" {
+		config, err := loadStorageConfig(storagePath)
+		if err != nil {
+			return err
+		}
+		o.root = filepath.Dir(config.CeremonyPath)
+		o.definition = config.CeremonyPath
+		o.definitionSig = config.CeremonySignature
+		o.coordinatorKey = config.CoordinatorPublicKey
+		o.ceremonyBinary = config.CeremonyBinary
+		o.client = coordinatorClient(config, config.PublishedBucket)
 	}
 	if err := checkRole(o); err != nil {
 		return err

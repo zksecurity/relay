@@ -18,8 +18,6 @@ closure_signature="$CEREMONY_ROOT/$phase/closure/record.sig"
 [[ -f "$closure" && -f "$closure_signature" ]] || die "$phase closure is absent"
 
 relay_dir="$RUN_ROOT/$phase-relays"
-require_fresh_path "$relay_dir"
-mkdir -m 0700 "$relay_dir"
 
 readarray -t beacon_fields < <(python3 - "$closure" <<'PY'
 import json
@@ -45,6 +43,12 @@ while true; do
   printf 'waiting for %s Quicknet round %s: %s seconds remain\n' "$phase" "$round" "$remaining"
   sleep 15
 done
+
+# Do not create the output directory before the wait. If an operator closes the
+# terminal during the signed witness window, the same command can be restarted
+# without having to remove a stale directory first.
+require_fresh_path "$relay_dir"
+mkdir -m 0700 "$relay_dir"
 
 chain_hash=52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971
 url1="https://api.drand.sh/$chain_hash/public/$round"

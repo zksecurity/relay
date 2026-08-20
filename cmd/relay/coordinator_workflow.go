@@ -67,7 +67,7 @@ func runAcceptCandidate(args []string) error {
 	var phase1Seal, phase1SealSignature string
 	var verify bool
 	set.StringVar(&storagePath, "storage", "", "storage configuration")
-	set.StringVar(&candidateKey, "candidate-key", "", "candidate manifest key printed by relay participate")
+	set.StringVar(&candidateKey, "candidate-key", "", "candidate manifest key printed by relay participant run")
 	set.StringVar(&root, "root", "", "coordinator transcript root")
 	set.StringVar(&candidateDir, "candidate-dir", "", "fresh local directory for the downloaded candidate")
 	set.StringVar(&coordinatorSigningKey, "coordinator-signing-key", "", "coordinator Ed25519 private key")
@@ -78,8 +78,8 @@ func runAcceptCandidate(args []string) error {
 	if err := set.Parse(args); err != nil {
 		return err
 	}
-	if storagePath == "" || candidateKey == "" || root == "" || candidateDir == "" || coordinatorSigningKey == "" {
-		return errors.New("--storage, --candidate-key, --root, --candidate-dir and --coordinator-signing-key are required")
+	if storagePath == "" || candidateKey == "" || coordinatorSigningKey == "" {
+		return errors.New("--storage, --candidate-key and --coordinator-signing-key are required; --root and --candidate-dir have ceremony-home defaults")
 	}
 	if acceptedAt == "" {
 		acceptedAt = time.Now().UTC().Format(time.RFC3339)
@@ -94,6 +94,9 @@ func runAcceptCandidate(args []string) error {
 	if err != nil {
 		return err
 	}
+	if root == "" {
+		root = filepath.Dir(config.CeremonyPath)
+	}
 	manifest, err := downloadCandidateManifest(config, candidateKey)
 	if err != nil {
 		return err
@@ -105,6 +108,10 @@ func runAcceptCandidate(args []string) error {
 	expectedKey := prefix + manifest.Phase + "/" + fmt.Sprintf("%04d", manifest.Index) + "/" + manifest.AttemptID + "/manifest.json"
 	if candidateKey != expectedKey {
 		return fmt.Errorf("candidate manifest is at %q, want %q", candidateKey, expectedKey)
+	}
+	if candidateDir == "" {
+		candidateDir = filepath.Join(filepath.Dir(root), "run", "review",
+			manifest.Phase+"-"+manifest.ParticipantID+"-"+manifest.AttemptID)
 	}
 	o := roleOpts{
 		root: root, definition: config.CeremonyPath, definitionSig: config.CeremonySignature,

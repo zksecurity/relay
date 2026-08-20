@@ -29,5 +29,4 @@ chmod 0700 "$view_root"
   --ceremony-binary "$MPC_BIN" \
   --phase "$phase" \
   --bucket "$PUBLISHED_BUCKET" \
-  --endpoint "$STORAGE_ENDPOINT" \
-  --profile "$PUBLISHED_READER_PROFILE"
+  --public-base-url "$PUBLISHED_BASE_URL"

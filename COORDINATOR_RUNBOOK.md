@@ -17,10 +17,10 @@ are in [README.md](README.md).
 
 ## 1. Install and verify the tools
 
-Follow the published-binary path in [docs/INSTALL.md](docs/INSTALL.md). It gives
-exact instructions for downloading and hash-checking Relay and `mpc-ceremony`,
-then installing AWS CLI v2. The coordinator does not need Go or either
-project's build-signing private key.
+Follow [docs/INSTALL.md](docs/INSTALL.md). It gives exact instructions for
+downloading one coordinated ceremony kit, verifying its independently supplied
+hash, installing Relay and `mpc-ceremony`, and then installing AWS CLI v2. The
+coordinator does not need Go or either project's build-signing private key.
 
 Do not continue until all of these succeed and resolve to the reviewed paths:
 
@@ -29,15 +29,21 @@ Do not continue until all of these succeed and resolve to the reviewed paths:
     aws --version
     command -v relay mpc-ceremony aws
 
-Record the Relay and `mpc-ceremony` release tags and SHA-256 values, plus the AWS
-CLI version, in the coordinator log. Distribute these trust inputs independently
-of ceremony storage:
+Record the ceremony-kit tag and SHA-256, its pinned Relay and `mpc-ceremony`
+metadata, and the AWS CLI version in the coordinator log. Distribute these
+trust inputs independently of ceremony storage:
 
 - the coordinator public key;
-- both approved release tags; and
-- both approved binary digests.
+- the approved ceremony-kit tag; and
+- the ceremony-kit archive digest.
 
 ## 2. Prepare the ceremony
+
+Choose one absolute ceremony home and initialize proof-tool's public output
+under its `public/` directory:
+
+    CEREMONY_HOME=/var/lib/mpc-ceremonies/CEREMONY_ID
+    install -d -m 0700 "$CEREMONY_HOME/public" "$CEREMONY_HOME/config" "$CEREMONY_HOME/run"
 
 Run `mpc-ceremony init`, then confirm that `ceremony.json` contains the intended
 coordinator, participant order, at least two auditors, and a distinct release
@@ -55,9 +61,13 @@ the published bucket. The inbox must never be public. Give the coordinator a
 runtime credential for both buckets and configure the provider-specific
 temporary-credential issuer.
 
-Complete the provider setup in [docs/STORAGE.md](docs/STORAGE.md) before
-continuing. It covers IAM permissions, caching, credential limits, and
-preflight checks.
+Complete one provider guide before continuing:
+
+- [AWS S3, CloudFront, and IAM setup](docs/AWS_SETUP.md)
+- [Cloudflare R2 setup](docs/R2_SETUP.md)
+
+[docs/STORAGE.md](docs/STORAGE.md) is the shared security and storage-layout
+reference. The provider scripts print the exact non-secret values used below.
 
 For R2:
 
@@ -65,6 +75,7 @@ For R2:
     export RELAY_R2_CONTROL_TOKEN
     printf '\n'
     relay coordinator configure-storage \
+      --home "$CEREMONY_HOME" \
       --provider r2 \
       --account-id <cloudflare-account-id> \
       --parent-access-key-id <parent-access-key-id> \
@@ -73,10 +84,7 @@ For R2:
       --published-base-url https://ceremony.example.org \
       --inbox-bucket <private-inbox-bucket> \
       --profile r2-coordinator \
-      --ceremony ceremony.json \
-      --ceremony-signature ceremony.sig \
-      --coordinator-key coordinator-public-key.hex \
-      --out relay-storage.json
+      --coordinator-key /trusted/coordinator-public-key.hex
     unset RELAY_R2_CONTROL_TOKEN
 
 The control-plane credential is a Cloudflare API bearer token with the
@@ -95,20 +103,27 @@ only to a grant command's process:
 
 For AWS:
 
+The guided path in [docs/AWS_SETUP.md](docs/AWS_SETUP.md) provisions storage
+with one AWS profile and prints every value used below.
+
     relay coordinator configure-storage \
+      --home "$CEREMONY_HOME" \
       --provider aws \
       --region us-east-1 \
       --published-bucket <published-bucket> \
       --published-base-url https://d111111abcdef8.cloudfront.net \
       --inbox-bucket <private-inbox-bucket> \
-      --profile aws-coordinator \
-      --issuer-profile aws-grant-issuer \
-      --grant-role-arn arn:aws:iam::<account-id>:role/relay-inbox-grant \
-      --grant-role-max-ttl 12h \
-      --ceremony ceremony.json \
-      --ceremony-signature ceremony.sig \
-      --coordinator-key coordinator-public-key.hex \
-      --out relay-storage.json
+      --profile relay-ceremony \
+      --issuer-profile relay-ceremony \
+      --grant-role-arn arn:aws:iam::<account-id>:role/relay-ceremony-inbox-grant \
+      --grant-role-max-ttl 1h \
+      --coordinator-key /trusted/coordinator-public-key.hex
+
+With `--home`, Relay reads `public/ceremony.json` and `public/ceremony.sig` and
+writes `config/relay-storage.json`. The coordinator trust key stays explicit;
+Relay never derives or downloads it.
+
+    STORAGE_CONFIG="$CEREMONY_HOME/config/relay-storage.json"
 
 `configure-storage` authenticates the ceremony, checks coordinator access,
 writes and re-reads a disposable published probe, reads it anonymously through
@@ -116,42 +131,58 @@ the public URL, confirms that the inbox is private, and removes the probe. For
 R2, the privacy check reads the inbox's `r2.dev` and custom-domain settings from
 Cloudflare's control-plane API.
 
+Before participant turns begin, send each participant `relay-storage.json`,
+the public ceremony material, and the coordinator public key through the agreed
+channels. The storage file contains configuration but no temporary credential.
+Each participant can enroll their local key and check the signed public position
+without inbox write access.
+
 ## 4. Run each participant turn
 
 Choose a TTL long enough for replay, contribution, erasure, and upload. Relay
 will refuse to start expensive work unless the minimum window remains.
 
+For R2, a typical starting point is:
+
+    CREDENTIAL_TTL=72h
+    MINIMUM_UPLOAD_WINDOW=2h
+
+For AWS with a direct IAM issuer, the role maximum is 12 hours:
+
+    CREDENTIAL_TTL=12h
+    MINIMUM_UPLOAD_WINDOW=2h
+
+An AWS SSO/assumed-role issuer is limited to one hour by role chaining. Use it
+only when the full operation fits comfortably inside that window, such as the
+included rehearsal (`1h` credential, `15m` minimum).
+
     relay coordinator grant \
-      --storage relay-storage.json \
+      --storage "$STORAGE_CONFIG" \
       --role participant \
       --identity participant-03 \
-      --credential-ttl 72h \
-      --minimum-upload-window 2h \
+      --credential-ttl "$CREDENTIAL_TTL" \
+      --minimum-upload-window "$MINIMUM_UPLOAD_WINDOW" \
       --out participant-03.grant.json
 
-Send the participant these items through the agreed private channel:
+Send the participant these items through the agreed private channel when their
+turn begins:
 
-- `relay-storage.json`;
 - their mode-`0600` grant file;
-- the coordinator public key and trusted binary hash through the independent
-  channels selected for those trust inputs; and
 - a link or copy of [ROLE_RUNBOOK.md](ROLE_RUNBOOK.md).
 
 The grant is a bearer credential limited to that participant's candidate
 prefix. Replace it immediately if it leaks. Contact the participant when their
-turn begins; `relay participate` independently rejects an out-of-turn attempt.
+turn begins; `relay participant run` independently rejects an out-of-turn attempt.
 
 List complete submissions:
 
-    relay coordinator candidates --storage relay-storage.json --phase phase1
+    relay coordinator candidates --storage "$STORAGE_CONFIG" --phase phase1
 
 Review, verify, and publish the selected candidate:
 
     relay coordinator accept \
-      --storage relay-storage.json \
+      --storage "$STORAGE_CONFIG" \
       --candidate-key candidates/<ceremony-id>/participant-03/phase1/0003/<attempt>/manifest.json \
-      --root /ceremony/public \
-      --candidate-dir /ceremony/review/participant-03-<attempt> \
       --coordinator-signing-key /secure/coordinator.ed25519.private.hex \
       --verify-publish
 
@@ -165,28 +196,23 @@ Repeat for every participant and phase.
 
 ## 5. Publish lifecycle changes
 
-Commands that inspect ceremony documents share these flags where applicable:
-
-    --root DIR --ceremony FILE --ceremony-signature FILE \
-    --coordinator-key FILE --bucket NAME --endpoint URL --profile PROFILE
-
-`--phase` defaults to `phase1`. `--ceremony-binary` defaults to
-`mpc-ceremony`; pin an explicit trusted path if `PATH` is not trusted.
+Coordinator publication reads ceremony paths, the trust key, provider routing,
+bucket, and profile from `STORAGE_CONFIG`. `--phase` defaults to `phase1`.
 
 After closure, beacon, seal, or another coordinator-signed chain update:
 
     relay coordinator publish \
+      --storage "$STORAGE_CONFIG" \
       --chain /ceremony/public/phase1/chain-0003.json \
-      --chain-signature /ceremony/public/phase1/chain-0003.sig \
-      <shared flags>
+      --chain-signature /ceremony/public/phase1/chain-0003.sig
 
 For a closed phase:
 
     relay coordinator publish \
+      --storage "$STORAGE_CONFIG" \
       --chain <final-chain> \
       --chain-signature <final-chain-signature> \
-      --closed \
-      <shared flags>
+      --closed
 
 Relay uploads every referenced artifact before moving the public pointer. The
 `--closed` marker tells public witnesses that a closure is ready to observe.
@@ -198,11 +224,11 @@ receive access only to their own inbox prefix. Every non-participant grant must
 authenticate the identity's signed enrollment:
 
     relay coordinator grant \
-      --storage relay-storage.json \
+      --storage "$STORAGE_CONFIG" \
       --role witness \
       --identity witness-01 \
-      --credential-ttl 24h \
-      --minimum-upload-window 2h \
+      --credential-ttl "$CREDENTIAL_TTL" \
+      --minimum-upload-window "$MINIMUM_UPLOAD_WINDOW" \
       --enrollment operations/enrollments/witness-01.json \
       --enrollment-signature operations/enrollments/witness-01.sig \
       --out witness-01.grant.json
@@ -220,7 +246,7 @@ for production-decision signatures.
 
 List complete submissions, optionally filtering by role:
 
-    relay coordinator evidence --storage relay-storage.json [--role witness]
+    relay coordinator evidence --storage "$STORAGE_CONFIG" [--role witness]
 
 Each submission manifest is intake metadata, not proof. Before publishing or
 relying on evidence:
