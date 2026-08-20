@@ -121,7 +121,7 @@ expected_json=$(printf '{\n  "schema": "ceremony-kit-v1",\n  "mode": "%s",\n  "r
   "$MPC_RELEASE_REPOSITORY" "$MPC_TAG" "$MPC_SHA256" "$REHEARSAL_ARCHIVE_SHA256")
 [[ "$(<"$KIT_ROOT/release.json")" == "$expected_json" ]] || die "release.json does not match release.env"
 
-expected_compatibility=$(printf '{\n  "schema": "ceremony-kit-compatibility-v1",\n  "test": "tiny-rehearsal-participant-config-v1",\n  "relay_sha256": "%s",\n  "mpc_ceremony_sha256": "%s"\n}' \
+expected_compatibility=$(printf '{\n  "schema": "ceremony-kit-compatibility-v1",\n  "test": "tiny-rehearsal-phase1-contribution-v1",\n  "relay_sha256": "%s",\n  "mpc_ceremony_sha256": "%s"\n}' \
   "$RELAY_SHA256" "$MPC_SHA256")
 [[ "$(<"$KIT_ROOT/compatibility.json")" == "$expected_compatibility" ]] ||
   die "compatibility.json does not match the kit binaries"

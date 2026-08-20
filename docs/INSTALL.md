@@ -24,8 +24,10 @@ protect against a compromised release account.
 The kit manifest records the independently approved Relay and proof-tool
 repositories, tags, and binary hashes. Operators do not enter those values
 again. The kit also contains `compatibility.json`, produced by running those
-exact binaries together against the tiny signed rehearsal interface during kit
-assembly. Neither source repository pins a commit from the other.
+exact binaries together through participant configuration, a real tiny phase 1
+contribution, erasure attestation, coordinator acceptance, and accepted-chain
+inspection during kit assembly. Neither source repository pins a commit from
+the other.
 
 ## Download and verify the kit
 

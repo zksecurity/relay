@@ -246,8 +246,11 @@ mkdir "$KIT_PARENT"
 The kit builder runs `scripts/verify-ceremony-kit-compatibility.sh` before it
 packages anything. The verifier authenticates both supplied hashes, initializes
 a fresh signed tiny rehearsal with the supplied `mpc-ceremony`, and has the
-supplied Relay create participant profiles for both phases from the ceremony
-CLI's authenticated projections. It performs no storage or network operation.
+supplied Relay create participant profiles for both phases from authenticated
+definition and participant projections. Relay then uses its operational
+contribution, erasure, and candidate-verification command builders to produce
+and accept the first tiny phase 1 contribution, after which it authenticates
+the resulting chain projection. It performs no storage or network operation.
 On success, the kit includes `compatibility.json`, binding the test name to the
 two binary hashes; `setup verify` checks that binding.
 

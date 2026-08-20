@@ -234,6 +234,8 @@ func runAdvanced(args []string) error {
 		return runPush(args[1:])
 	case "pull":
 		return runPull(args[1:])
+	case "verify-ceremony-pair":
+		return runVerifyCeremonyPair(args[1:])
 	default:
 		return fmt.Errorf("unknown advanced command %q", args[0])
 	}

@@ -79,7 +79,10 @@ for path in \
   "$rehearsal/public/ceremony.json" \
   "$rehearsal/public/ceremony.sig" \
   "$rehearsal/public/coordinator-public-key.hex" \
+  "$rehearsal/public/phase1/chain-0000.json" \
+  "$rehearsal/public/phase1/chain-0000.sig" \
   "$rehearsal/config/environment.json" \
+  "$rehearsal/keys/coordinator.ed25519.private.hex" \
   "$rehearsal/keys/participant-01.ed25519.private.hex"; do
   [[ -f "$path" && ! -L "$path" ]] || die "rehearsal initializer output is absent or unsafe: $path"
 done
@@ -129,9 +132,13 @@ for phase in phase1 phase2; do
     die "Relay emitted an unexpected participant phase"
 done
 
+HOME="$work_root/home" "$relay" advanced verify-ceremony-pair \
+  --home "$rehearsal" \
+  --ceremony-binary "$mpc" >/dev/null
+
 (
   set -o noclobber
-  printf '{\n  "schema": "ceremony-kit-compatibility-v1",\n  "test": "tiny-rehearsal-participant-config-v1",\n  "relay_sha256": "%s",\n  "mpc_ceremony_sha256": "%s"\n}\n' \
+  printf '{\n  "schema": "ceremony-kit-compatibility-v1",\n  "test": "tiny-rehearsal-phase1-contribution-v1",\n  "relay_sha256": "%s",\n  "mpc_ceremony_sha256": "%s"\n}\n' \
     "$RELAY_SHA256" "$MPC_SHA256" >"$EVIDENCE_OUT"
 )
 chmod 0444 "$EVIDENCE_OUT"

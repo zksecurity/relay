@@ -301,10 +301,14 @@ func confirmErasure() error {
 }
 
 func runErasure(o roleOpts) error {
+	return runErasureAt(o, time.Now())
+}
+
+func runErasureAt(o roleOpts, destroyedAt time.Time) error {
 	argv := []string{o.phase, "attest-erasure", "--ceremony", o.definition,
 		"--ceremony-signature", o.definitionSig, "--coordinator-public-key-file", o.coordinatorKey,
 		"--participant-id", o.role, "--participant-signing-key", o.signingKey,
-		"--candidate-dir", o.outDir, "--destroyed-at", time.Now().UTC().Format(time.RFC3339)}
+		"--candidate-dir", o.outDir, "--destroyed-at", destroyedAt.UTC().Format(time.RFC3339)}
 	cmd := exec.Command(o.ceremonyExecutable(), argv...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return runWithProgress("creating erasure attestation", cmd.Run)
