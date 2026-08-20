@@ -2,7 +2,11 @@
 
 This is the normal installation path for coordinators, participants, witnesses,
 mirrors, auditors, and release operators. It installs a coordinated Relay and
-`mpc-ceremony` kit; it does not require Go or either source repository.
+`mpc-ceremony` kit; it does not require Go or either source repository. The one
+exception is the rehearsal's optional evidence-upload transport test (steps
+33-42), whose fixture generator is built from proof-tool source on Machine 1
+and therefore needs a Go toolchain and a proof-tool checkout at the approved
+tag; every required rehearsal step runs from the kit alone.
 
 Release maintainers and independent build auditors use
 [RELEASE.md](RELEASE.md) instead.
