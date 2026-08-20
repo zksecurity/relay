@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -288,8 +289,12 @@ func fetchForContribution(o roleOpts, pos position) error {
 }
 
 func confirmErasure() error {
-	fmt.Fprintln(os.Stderr, "Contribution complete. Destroy the contribution environment now.")
-	fmt.Fprint(os.Stderr, "After it is destroyed, type DESTROYED and press Enter: ")
+	// The prompt goes to stdout so that a logged or tee'd transcript of the
+	// run contains it: operators and automation watch that transcript, and a
+	// prompt that only ever reaches the terminal's stderr is invisible to
+	// both after the fact.
+	fmt.Println("Contribution complete. Destroy the contribution environment now.")
+	fmt.Print("After it is destroyed, type DESTROYED and press Enter: ")
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil && len(line) == 0 {
 		return err
@@ -300,8 +305,40 @@ func confirmErasure() error {
 	return nil
 }
 
+// erasureTimestamp returns a destroyed_at that proof-tool will accept:
+// strictly after the candidate's contributed_at at whole-second resolution.
+// Timestamps are stamped in whole seconds, so a contribution that completes
+// and is confirmed within the same second would otherwise be rejected with
+// "destroyed_at must be strictly after contributed_at". Waiting out the
+// remainder of that second preserves the strict ordering rule instead of
+// weakening it.
+func erasureTimestamp(candidateDir string, now time.Time) time.Time {
+	raw, err := os.ReadFile(filepath.Join(candidateDir, "attestation.json"))
+	if err != nil {
+		return now
+	}
+	var attestation struct {
+		ContributedAt string `json:"contributed_at"`
+	}
+	if json.Unmarshal(raw, &attestation) != nil {
+		return now
+	}
+	contributed, err := time.Parse(time.RFC3339, attestation.ContributedAt)
+	if err != nil {
+		return now
+	}
+	if !now.Truncate(time.Second).After(contributed.Truncate(time.Second)) {
+		wait := contributed.Truncate(time.Second).Add(time.Second).Sub(now)
+		if wait > 0 && wait <= 2*time.Second {
+			time.Sleep(wait)
+		}
+		return contributed.Truncate(time.Second).Add(time.Second)
+	}
+	return now
+}
+
 func runErasure(o roleOpts) error {
-	return runErasureAt(o, time.Now())
+	return runErasureAt(o, erasureTimestamp(o.outDir, time.Now().UTC()))
 }
 
 func runErasureAt(o roleOpts, destroyedAt time.Time) error {

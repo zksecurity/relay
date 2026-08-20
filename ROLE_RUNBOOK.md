@@ -129,7 +129,9 @@ Wait for a published closure:
 
     relay witness run --config "$ROLE_CONFIG" --interval 60s
 
-Use `--once` to poll once and exit. After observing closure, independently
+Use `--once` to poll once and exit; it exits non-zero when no closure has
+been published yet, so a single check that observed nothing is never mistaken
+for an observation. After observing closure, independently
 confirm that its beacon round has not occurred and is at least the definition's
 witness lead away. Relay cannot make that real-world timing claim for you.
 

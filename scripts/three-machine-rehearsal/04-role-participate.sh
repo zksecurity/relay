@@ -31,6 +31,29 @@ require_fresh_path "$manifest_key_file"
 mkdir -p "$participant_root" "$candidate_parent"
 chmod 0700 "$participant_root" "$candidate_parent"
 
+# A failed turn must stay recoverable without knowledge of the run-root
+# layout: archive this attempt's outputs so the fresh-path checks above pass
+# on retry, and nothing is deleted. The archive keeps the local candidate;
+# nothing in it has been published.
+archive_failed_attempt() {
+  local status=$?
+  [[ $status -eq 0 ]] && return 0
+  local archive
+  archive="$RUN_ROOT/failed/$phase-$participant_id-$(date -u +%Y%m%dT%H%M%SZ)"
+  mkdir -p "$archive"
+  chmod 0700 "$RUN_ROOT/failed" "$archive"
+  local path
+  for path in "$participant_config" "$participate_log" "$manifest_key_file" \
+    "$candidate_parent" "$participant_root"; do
+    [[ -e "$path" ]] && mv "$path" "$archive/" 2>/dev/null
+  done
+  printf '\nAttempt failed (exit %d); its outputs were archived to:\n%s\n' \
+    "$status" "$archive" >&2
+  printf 'Rerun this script to retry. Nothing was deleted.\n' >&2
+  return "$status"
+}
+trap archive_failed_attempt EXIT
+
 "$RELAY_BIN" enroll \
   --storage "$STORAGE_CONFIG" \
   --grant "$grant" \

@@ -67,7 +67,11 @@ func runWatch(args []string) error {
 		}
 		fmt.Printf("%s open, %d accepted, waiting on %s\n", o.phase, pos.accepted, pos.nextID)
 		if once {
-			return nil
+			// A single check that observed nothing must not look like a
+			// successful observation: the caller's next step is preparing a
+			// signed witness receipt, and scripts gate their "saw the
+			// closure" reporting on this exit status.
+			return fmt.Errorf("no closure observed: %s is still open", o.phase)
 		}
 		time.Sleep(interval)
 	}
