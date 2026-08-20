@@ -19,6 +19,28 @@ operational-evidence helper uses those centralized fixture keys again.
 
 Commands below are intentionally flush left for copying.
 
+## From this rehearsal to a fully distributed ceremony
+
+This rehearsal deliberately co-locates roles and takes two shortcuts so the
+whole flow runs quickly on three hosts. A real ceremony where every role is a
+separate, independently operated machine drops those shortcuts. The numbered
+scripts still apply — each already takes the identity as an argument — but three
+things change. The [coordinator runbook](../../COORDINATOR_RUNBOOK.md) and
+[role runbook](../../ROLE_RUNBOOK.md) are the authority for the distributed
+procedure; this table maps each rehearsal shortcut to what replaces it.
+
+| Rehearsal shortcut | Fully distributed replacement |
+|---|---|
+| **Central key generation.** `00-coordinator-initialize.sh` mints every fixture keypair on Machine 1 and hands each role its private key. | Each role generates its **own** keypair on its own machine and never shares the private key. Only its public key and a signed enrollment record reach the coordinator, which authenticates them into the roster. |
+| **Central operational evidence (steps 33–41).** The coordinator generates the witness and mirror receipts centrally with `10-coordinator-generate-operational-fixtures.sh` using the centralized fixture keys; the role machines only re-upload them. | Each witness, mirror, and auditor **produces and signs its own record** on its own machine — `mpc-ceremony ops prepare-public-witness-receipt`, `relay mirror receipt` → `mpc-ceremony ops prepare-mirror-receipt`, and `mpc-ceremony audit` — then submits it. Steps 33–41 do not model independent evidence; they exercise only the upload transport. |
+| **Role co-location.** Machines 2 and 3 each hold five role keys under one `KEYS_ROOT`. | Each machine holds a **single** role key with its own `.env` and single-key `KEYS_ROOT`. Because the scripts take the identity as an argument (for example `04-role-participate.sh "$E" phase1 participant-01`), the three-machine split here is illustrative, not required — the same scripts drive one role per machine. |
+
+Because of the first two rows, a passing run here shows that the orchestration
+and transport work end to end; it is **not** evidence of independent
+contribution, witnessing, mirroring, or auditing. Only a run where each role
+holds and uses its own key on its own machine, per the runbooks above, produces
+that.
+
 ## Before you begin
 
 This README is Machine 1's master process guide. Complete the coordinated-tool
