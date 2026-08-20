@@ -45,7 +45,19 @@ Before `configure-storage`:
    policy, website endpoint, CDN behavior, or public hostname to the inbox.
 3. Configure a public HTTPS URL for the published bucket. Disable caching, or
    use a deliberately short TTL, for mutable `state/*`. Cache immutable
-   `blob/*` indefinitely.
+   `blob/*` indefinitely. The stale-pointer failure mode is why `state/*` must
+   never be cached: `state/<id>/<phase>/head.json` is a mutable pointer at a
+   fixed key, and a CDN that serves a stale copy leaves participants seeing
+   "not your turn" and witnesses missing the closure window while nothing
+   reports an error. Verify freshness once per origin before a ceremony:
+   write a probe object under `state/`, read it through the public URL,
+   overwrite it, and confirm the very next read returns the new bytes. As
+   measured on 2026-08-20, both guided setups are already safe by
+   construction — CloudFront provisioned with the `CachingDisabled` managed
+   policy and Cloudflare's `r2.dev` origin do not cache at all — which also
+   means neither offloads `blob/*`; enabling `blob/*` caching is a pure
+   optimization, and any change to caching requires re-running the probe
+   check for `state/*`.
 4. Create a coordinator runtime credential that can read, write, and delete in
    the published bucket and list, read, write, and delete in the inbox. Deletes
    are needed only for disposable preflight probes.
@@ -143,6 +155,18 @@ The S3 endpoint is:
 For production, map an ordinary HTTPS hostname controlled by the coordinator,
 such as `https://ceremony.example.org`, to the published bucket. Cloudflare's
 generated `r2.dev` URL is rate-limited and intended for development.
+
+The custom domain is an availability and longevity requirement, not an
+integrity one: every published artifact is content-addressed and verified
+against proof-tool signatures, so no URL can forge anything — it can only
+fail to serve. What the coordinator-controlled hostname buys is immunity to
+`r2.dev` rate limits during timed windows (each participant pulls the full
+prefix and each auditor pulls the whole transcript), and a stable public
+location for the transcript that survives bucket or provider moves for as
+long as audits reference it. A rehearsal on `r2.dev` is fine. Note that a
+custom domain routes through the zone's cache configuration while `r2.dev`
+does not cache at all, so switching to one requires re-running the `state/*`
+freshness check from the common prerequisites.
 
 For a rehearsal, `configure-storage` refreshes the Wrangler OAuth token only
 for its one-time inbox privacy check; later grants and uploads do not require

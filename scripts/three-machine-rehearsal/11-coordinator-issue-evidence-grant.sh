@@ -29,8 +29,8 @@ trap clear_r2_parent_token EXIT
   --storage "$STORAGE_CONFIG" \
   --role "$role" \
   --identity "$identity" \
-  --credential-ttl 1h \
-  --minimum-upload-window 15m \
+  --credential-ttl "${EVIDENCE_GRANT_TTL:-1h}" \
+  --minimum-upload-window "${EVIDENCE_GRANT_MIN_UPLOAD_WINDOW:-15m}" \
   --enrollment "$enrollment" \
   --enrollment-signature "$enrollment_signature" \
   --out "$out"
