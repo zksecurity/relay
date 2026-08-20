@@ -575,6 +575,13 @@ This section uses proof-tool's centralized same-host rehearsal helper. It tests
 Relay's enrollment authentication and scoped uploads, but it does not convert
 the three-machine run into independent witness or mirror evidence.
 
+Unlike every step above, this section is not kit-only: step 33 builds the
+fixture helper from proof-tool source on Machine 1, so it additionally needs a
+Go toolchain (`go` on `PATH`, or `GO_BIN`) and `PROOF_TOOL_ROOT` in Machine 1's
+`.env` pointing at a proof-tool checkout at the approved `MPC_TAG` commit. The
+rehearsal is complete without this section; skip steps 33-42 on machines that
+install only the kit.
+
 ### 33. Machine 1: generate and verify operational fixtures
 
 ```bash
