@@ -357,6 +357,15 @@ Privately copy the grant to Machine 2 with mode `0600`.
 The script prints the path of a manifest-key file. Copy that small file to
 Machine 1 as `/secure/handoff/phase1-participant-01.manifest-key.txt`.
 
+If a participant finishes computation but its upload is interrupted, the
+script archives the completed candidate and prints a five-argument recovery
+command. Machine 1 issues a replacement grant for the same phase and identity
+using a fresh grant filename. Run the printed command on the participant
+machine with that new grant and archived candidate directory. Relay verifies
+the saved candidate and unchanged public head, then continues the same upload
+without recomputing. The replacement grant's minimum remaining time only needs
+to cover verification and upload.
+
 ### 5. Machine 1: accept participant-01
 
 ```bash

@@ -182,20 +182,27 @@ func isAccessDenied(err error) bool {
 
 func runGrant(args []string) error {
 	set := flag.NewFlagSet("coordinator grant", flag.ContinueOnError)
-	var storagePath, role, identity, ttlText, minimumText, enrollment, enrollmentSignature, out string
+	var storagePath, role, identity, ttlText, minimumText, legacyMinimumText, enrollment, enrollmentSignature, out string
 	set.StringVar(&storagePath, "storage", "", "storage configuration from configure-storage")
 	set.StringVar(&role, "role", "", "participant, witness, mirror, auditor, release, or decision")
 	set.StringVar(&identity, "identity", "", "authenticated ceremony or enrollment identity")
 	set.StringVar(&ttlText, "credential-ttl", "", "required temporary credential lifetime")
-	set.StringVar(&minimumText, "minimum-upload-window", "", "required remaining lifetime before work begins")
+	set.StringVar(&minimumText, "minimum-remaining", "", "required credential lifetime remaining before work begins")
+	set.StringVar(&legacyMinimumText, "minimum-upload-window", "", "deprecated alias for --minimum-remaining")
 	set.StringVar(&enrollment, "enrollment", "", "signed operational enrollment for non-participant roles")
 	set.StringVar(&enrollmentSignature, "enrollment-signature", "", "detached enrollment signature")
 	set.StringVar(&out, "out", "", "fresh secret grant file")
 	if err := set.Parse(args); err != nil {
 		return err
 	}
+	if minimumText != "" && legacyMinimumText != "" {
+		return errors.New("pass only one of --minimum-remaining or deprecated --minimum-upload-window")
+	}
+	if minimumText == "" {
+		minimumText = legacyMinimumText
+	}
 	if storagePath == "" || role == "" || identity == "" || ttlText == "" || minimumText == "" || out == "" {
-		return errors.New("--storage, --role, --identity, --credential-ttl, --minimum-upload-window and --out are required")
+		return errors.New("--storage, --role, --identity, --credential-ttl, --minimum-remaining and --out are required")
 	}
 	config, err := loadStorageConfig(storagePath)
 	if err != nil {
@@ -207,7 +214,7 @@ func runGrant(args []string) error {
 	}
 	minimum, err := time.ParseDuration(minimumText)
 	if err != nil || minimum <= 0 || minimum > ttl {
-		return errors.New("--minimum-upload-window must be positive and no greater than --credential-ttl")
+		return errors.New("--minimum-remaining must be positive and no greater than --credential-ttl")
 	}
 	prefix, err := access.Prefix(config.CeremonyID, role, identity)
 	if err != nil {

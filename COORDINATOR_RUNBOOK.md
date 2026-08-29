@@ -45,9 +45,36 @@ under its `public/` directory:
     CEREMONY_HOME=/var/lib/mpc-ceremonies/CEREMONY_ID
     install -d -m 0700 "$CEREMONY_HOME/public" "$CEREMONY_HOME/config" "$CEREMONY_HOME/run"
 
+Before initialization, have every participant, auditor, and the release signer
+generate its own Ed25519 keypair on its own machine. Collect only each role's
+public identity: its identity ID, key ID, public key, public-key fingerprint,
+and agreed display name. Authenticate the fingerprint with that role through
+the ceremony's agreed independent channel before adding it to the input roster.
+Never ask for or accept a role's private key.
+
+Check that identity IDs, key IDs, and public keys are unique across the
+coordinator, participants, auditors, and release signer. The ceremony
+definition freezes those identities, the participant order, and the auditor
+and release roles. Retain the authenticated submissions in the coordinator
+record so the roster can be reviewed independently.
+
 Run `mpc-ceremony init`, then confirm that `ceremony.json` contains the intended
 coordinator, participant order, at least two auditors, and a distinct release
-signer. Keep the coordinator signing key protected.
+signer. Return the signed public ceremony material to those roles and require
+each one to verify its own identity, public-key fingerprint, and position or
+role before the ceremony starts. Keep the coordinator signing key protected.
+
+Public witnesses and mirror operators are enrolled after the ceremony
+definition is signed because their proof-of-possession records bind to that
+exact definition. Collect each signed enrollment record and detached signature,
+authenticate its public-key fingerprint with the role, and retain both for
+later evidence grants. Auditors, release upload stations, and decision signers
+likewise require an authenticated enrollment when Relay grants their
+non-participant upload prefix. An upload-only station uses the enrollment of
+the signing identity whose output it transports; it does not receive that
+identity's private key. Participants do not send their private keys or need a
+separate Relay enrollment record: Relay matches their local private key to the
+participant identity already frozen in the signed roster.
 
 Relay requires a proof-tool version that supports read-only inspection of
 definitions, chains, participants, and operational enrollments, plus the
@@ -140,17 +167,19 @@ without inbox write access.
 ## 4. Run each participant turn
 
 Choose a TTL long enough for replay, contribution, erasure, and upload. Relay
-will refuse to start expensive work unless the minimum window remains.
+will refuse to start expensive work unless the minimum window remains. For an
+initial turn, `MINIMUM_REMAINING` must cover the whole operation, not only the
+final upload.
 
 For R2, a typical starting point is:
 
     CREDENTIAL_TTL=72h
-    MINIMUM_UPLOAD_WINDOW=2h
+    MINIMUM_REMAINING=2h
 
 For AWS with a direct IAM issuer, the role maximum is 12 hours:
 
     CREDENTIAL_TTL=12h
-    MINIMUM_UPLOAD_WINDOW=2h
+    MINIMUM_REMAINING=2h
 
 An AWS SSO/assumed-role issuer is limited to one hour by role chaining. Use it
 only when the full operation fits comfortably inside that window, such as the
@@ -161,7 +190,7 @@ included rehearsal (`1h` credential, `15m` minimum).
       --role participant \
       --identity participant-03 \
       --credential-ttl "$CREDENTIAL_TTL" \
-      --minimum-upload-window "$MINIMUM_UPLOAD_WINDOW" \
+      --minimum-remaining "$MINIMUM_REMAINING" \
       --out participant-03.grant.json
 
 Send the participant these items through the agreed private channel when their
@@ -173,6 +202,15 @@ turn begins:
 The grant is a bearer credential limited to that participant's candidate
 prefix. Replace it immediately if it leaks. Contact the participant when their
 turn begins; `relay participant run` independently rejects an out-of-turn attempt.
+
+If computation finishes but the credential or network fails during upload,
+issue another grant for the same participant using a fresh output filename.
+The replacement grant does not change signed ceremony state. Its
+`--minimum-remaining` value only needs to cover local integrity checks and the
+remaining upload, although a conservative buffer is recommended. The
+participant resumes the saved attempt with `--resume-candidate`; do not ask
+them to repeat the contribution unless Relay reports that the authenticated
+public head advanced or that local/remote bytes conflict.
 
 List complete submissions:
 
@@ -235,7 +273,7 @@ authenticate the identity's signed enrollment:
       --role witness \
       --identity witness-01 \
       --credential-ttl "$CREDENTIAL_TTL" \
-      --minimum-upload-window "$MINIMUM_UPLOAD_WINDOW" \
+      --minimum-remaining "$MINIMUM_REMAINING" \
       --enrollment operations/enrollments/witness-01.json \
       --enrollment-signature operations/enrollments/witness-01.sig \
       --out witness-01.grant.json
@@ -271,6 +309,9 @@ last. Never treat possession of a storage credential as a ceremony signature.
 
 - Replace a grant that is expired or below its minimum remaining window. R2
   grants may not exceed `168h`; AWS grants must fit the configured STS limits.
+- A replacement participant grant can resume an interrupted upload from the
+  completed local candidate. It cannot revive a candidate built from an older
+  authenticated head.
 - Relay records the highest public index seen under `~/.relay` and refuses a
   pointer that moves backward. Investigate a rollback warning; do not tell a
   role to delete local state to bypass it.
