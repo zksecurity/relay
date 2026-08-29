@@ -5,11 +5,13 @@ SCRIPT_ROOT=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=lib.sh
 source "$SCRIPT_ROOT/lib.sh"
 
-[[ $# -eq 4 ]] || die "usage: $0 ROLE_CONFIG phase1|phase2 PARTICIPANT GRANT_FILE"
-load_rehearsal_config "$1"
+[[ $# -eq 4 || $# -eq 5 ]] || die "usage: $0 ROLE_CONFIG phase1|phase2 PARTICIPANT GRANT_FILE [RESUME_CANDIDATE_DIR]"
+rehearsal_config=$1
+load_rehearsal_config "$rehearsal_config"
 phase=$2
 participant_id=$3
 grant=$4
+resume_candidate=${5:-}
 require_common
 verify_binary_hashes
 ensure_run_directories
@@ -18,6 +20,11 @@ participant_is_valid "$participant_id"
 [[ -f "$grant" && ! -L "$grant" ]] || die "grant is absent or unsafe: $grant"
 [[ -f "$KEYS_ROOT/${participant_id}.ed25519.private.hex" ]] || die "participant key is absent"
 [[ -f "$CONFIG_ROOT/environment.json" ]] || die "environment.json is absent"
+if [[ -n "$resume_candidate" ]]; then
+  [[ -d "$resume_candidate" && ! -L "$resume_candidate" ]] || die "resume candidate must be a non-symlink directory: $resume_candidate"
+  [[ -f "$resume_candidate/.relay-upload-manifest.json" && ! -L "$resume_candidate/.relay-upload-manifest.json" ]] || \
+    die "resume candidate lacks Relay upload metadata: $resume_candidate"
+fi
 
 participant_root="$RUN_ROOT/participants/$phase/$participant_id/transcript"
 candidate_parent="$RUN_ROOT/candidates/$phase/$participant_id"
@@ -33,8 +40,9 @@ chmod 0700 "$participant_root" "$candidate_parent"
 
 # A failed turn must stay recoverable without knowledge of the run-root
 # layout: archive this attempt's outputs so the fresh-path checks above pass
-# on retry, and nothing is deleted. The archive keeps the local candidate;
-# nothing in it has been published.
+# on retry, and nothing is deleted. The archive keeps the local candidate.
+# A partial upload may contain some objects, but it is not a complete inbox
+# submission because Relay always publishes manifest.json last.
 archive_failed_attempt() {
   local status=$?
   [[ $status -eq 0 ]] && return 0
@@ -49,7 +57,21 @@ archive_failed_attempt() {
   done
   printf '\nAttempt failed (exit %d); its outputs were archived to:\n%s\n' \
     "$status" "$archive" >&2
-  printf 'Rerun this script to retry. Nothing was deleted.\n' >&2
+  local saved_candidate=$resume_candidate
+  if [[ -z "$saved_candidate" ]]; then
+    local -a saved_manifests=()
+    mapfile -t saved_manifests < <(find "$archive" -type f -name '.relay-upload-manifest.json' -print 2>/dev/null)
+    if [[ ${#saved_manifests[@]} -eq 1 ]]; then
+      saved_candidate=$(dirname "${saved_manifests[0]}")
+    fi
+  fi
+  if [[ -n "$saved_candidate" ]]; then
+    printf 'After receiving a replacement grant, resume without recomputing:\n' >&2
+    printf '  %q %q %q %q NEW_GRANT_FILE %q\n' \
+      "$0" "$rehearsal_config" "$phase" "$participant_id" "$saved_candidate" >&2
+  else
+    printf 'Rerun this script to retry. Nothing was deleted.\n' >&2
+  fi
   return "$status"
 }
 trap archive_failed_attempt EXIT
@@ -68,10 +90,15 @@ trap archive_failed_attempt EXIT
   --candidate-parent "$candidate_parent" \
   --out "$participant_config"
 
-printf '\nAfter contribution, destroy the rehearsal environment as planned.\n'
-printf 'Wait at least one second before typing DESTROYED.\n\n'
+participate_args=(--config "$participant_config")
+if [[ -n "$resume_candidate" ]]; then
+  participate_args+=(--resume-candidate "$resume_candidate")
+else
+  printf '\nAfter contribution, destroy the rehearsal environment as planned.\n'
+  printf 'Wait at least one second before typing DESTROYED.\n\n'
+fi
 
-"$RELAY_BIN" participate --config "$participant_config" | tee "$participate_log"
+"$RELAY_BIN" participate "${participate_args[@]}" | tee "$participate_log"
 
 mapfile -t manifest_keys < <(sed -n 's/^manifest: //p' "$participate_log")
 [[ ${#manifest_keys[@]} -eq 1 && -n "${manifest_keys[0]}" ]] || die "participate did not print exactly one manifest key"

@@ -31,6 +31,31 @@ Do not continue until these commands resolve to the reviewed paths and versions:
 
 Record the outputs in your local operator log.
 
+### Register your public identity
+
+If you are a participant or a role that signs ceremony evidence, generate your
+Ed25519 keypair on your own machine. Keep the private key local; never send it
+to the coordinator or another role. An upload-only release or decision station
+does not generate or receive the offline signer's private key.
+
+Before ceremony initialization, each participant, auditor, and release signer
+sends the coordinator its public identity through the ceremony's agreed
+authenticated channel: identity ID, key ID, public key, public-key fingerprint,
+and agreed display name. Independently confirm the fingerprint with the
+coordinator. After initialization, verify that the signed `ceremony.json`
+contains your exact identity and the intended participant position or role.
+Stop if it does not.
+
+Public witnesses and mirror operators instead create a signed
+proof-of-possession enrollment after receiving the signed ceremony definition;
+the enrollment is bound to that ceremony. Send the enrollment record and its
+detached signature to the coordinator, but retain the private key. Auditors,
+release signers, and decision-signing identities also provide their signed
+enrollment when their output requires a non-participant Relay upload grant. An
+upload-only station uses that authenticated enrollment without receiving the
+signing key. A participant does not need a separate Relay enrollment record:
+Relay matches its local key to the participant identity in the signed roster.
+
 ## 2. Receive and verify the handoff
 
 Obtain these trust inputs independently of ceremony storage:
@@ -113,6 +138,10 @@ percentage or ETA.
 
 Running status first is optional: `participant run` independently repeats the
 same out-of-turn check before expensive work.
+
+The grant's minimum remaining window must cover the whole operation when
+starting a new contribution: transcript download, computation, erasure, and
+upload. It is not merely an estimate for the final upload.
 
 ## 4. Public witness
 
@@ -250,6 +279,19 @@ verification before using the evidence.
 
 - If a grant is expired or below its minimum remaining window, stop and request
   a replacement before beginning expensive work.
+- If computation and erasure completed but upload was interrupted, keep the
+  candidate directory printed by Relay. After receiving a replacement grant,
+  resume without recomputing:
+
+      relay participant run --config "$ROLE_CONFIG" \
+        --grant participant-03.grant-02.json \
+        --resume-candidate /absolute/path/printed/by/relay
+
+  For a resume grant, the minimum remaining window needs to cover the local
+  checks and remaining upload. Relay verifies the saved files, confirms that
+  the authenticated head is unchanged, verifies the exact bytes of previously
+  uploaded objects, and uploads `manifest.json` last. It rejects stale or
+  conflicting candidates.
 - If Relay says it is not your turn, do not retry the contribution manually.
   Wait for the coordinator and a new public head.
 - If the public head changes during a contribution, Relay keeps the candidate

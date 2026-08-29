@@ -55,7 +55,7 @@ or AWS credentials scoped to one identity's inbox prefix:
     relay coordinator configure-storage ... --out relay-storage.json
     relay coordinator grant --storage relay-storage.json --role participant \
       --identity participant-03 --credential-ttl 72h \
-      --minimum-upload-window 2h --out participant-03.grant.json
+      --minimum-remaining 2h --out participant-03.grant.json
 
 The shown lifetime is an R2 example. AWS grant roles allow at most 12 hours,
 and an AWS SSO/assumed-role issuer is limited by role chaining to one hour.
@@ -79,8 +79,19 @@ the participant runs:
       --grant participant-03.grant.json
 
 `participant run` refuses out of turn before computation. On success it runs the
-contribution and erasure-attestation steps, rechecks the head, and uploads a
-manifest-last candidate. The coordinator then runs:
+contribution and erasure-attestation steps, records local resume metadata,
+rechecks the head, and uploads a manifest-last candidate. If credentials or the
+network fail during upload, obtain a replacement grant and reuse the completed
+candidate without recomputing:
+
+    relay participant run --config /ceremony/config/participant-phase1.json \
+      --grant participant-03.grant-02.json \
+      --resume-candidate /ceremony/run/candidates/phase1-0003-ATTEMPT
+
+Relay verifies every saved file, confirms that the authenticated public head
+has not advanced, and downloads any already uploaded object to verify its exact
+digest before continuing. The candidate manifest remains the final upload. The
+coordinator then runs:
 
     relay coordinator candidates --storage relay-storage.json
     relay coordinator accept --storage relay-storage.json --candidate-key KEY \
@@ -154,7 +165,8 @@ and compatibility:
 
     relay coordinator publish --chain FILE --chain-signature FILE [--closed] [--verify]
     relay participant status [--config FILE]              report your authenticated position
-    relay participant run [--config FILE] --grant FILE    contribute only when next
+    relay participant run [--config FILE] --grant FILE [--resume-candidate DIR]
+                                                        contribute or resume an upload
     relay witness run --config FILE [--interval D] [--once]  wait for a published closure
     relay mirror run --config FILE                           pull the authenticated transcript
     relay mirror receipt --config FILE --chain FILE ...      draft mirror evidence

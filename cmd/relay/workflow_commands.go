@@ -24,6 +24,13 @@ var candidateFileNames = []string{
 	"contribution.bin", "attestation.json", "attestation.sig", "erasure.json", "erasure.sig",
 }
 
+const localCandidateManifestName = ".relay-upload-manifest.json"
+
+type candidateObjectStore interface {
+	PutNoReplace(key, localPath string) error
+	Get(key, localPath string) error
+}
+
 func runEnroll(args []string) error {
 	set := flag.NewFlagSet("enroll", flag.ContinueOnError)
 	var storagePath, grantPath, phase, root, ceremony, ceremonySignature, coordinatorKey, ceremonyBinary string
@@ -124,9 +131,10 @@ func defaultParticipantConfigPath() string {
 
 func runParticipate(args []string) error {
 	set := flag.NewFlagSet("participate", flag.ContinueOnError)
-	var configPath, grantOverride string
+	var configPath, grantOverride, resumeCandidate string
 	set.StringVar(&configPath, "config", defaultParticipantConfigPath(), "participant configuration created by relay participant enroll")
 	set.StringVar(&grantOverride, "grant", "", "fresh temporary participant grant; overrides the profile grant")
+	set.StringVar(&resumeCandidate, "resume-candidate", "", "completed local candidate directory whose interrupted upload should resume")
 	if err := set.Parse(args); err != nil {
 		return err
 	}
@@ -179,6 +187,9 @@ func runParticipate(args []string) error {
 		}
 		return fmt.Errorf("not your turn: you are index %d, %d accepted, waiting on %s", slot, pos.accepted, pos.nextID)
 	}
+	if resumeCandidate != "" {
+		return resumeCandidateUpload(config, grant, pos, resumeCandidate)
+	}
 	if err := runWithProgress("downloading authenticated transcript", func() error {
 		return fetchForContribution(o, pos)
 	}); err != nil {
@@ -198,46 +209,138 @@ func runParticipate(args []string) error {
 	if err := runErasure(o); err != nil {
 		return err
 	}
-	if err := grant.CheckUnexpired(time.Now()); err != nil {
-		return err
-	}
-	latest, err := resolvePosition(o)
+	manifest, err := prepareCandidateManifest(o.outDir, grant, config.Phase, pos, attempt)
 	if err != nil {
 		return err
 	}
+	localManifest := filepath.Join(o.outDir, localCandidateManifestName)
+	if err := writeJSONNoReplace(localManifest, manifest, 0o600); err != nil {
+		return fmt.Errorf("save resumable candidate metadata: %w", err)
+	}
+	if err := grant.CheckUnexpired(time.Now()); err != nil {
+		return fmt.Errorf("%w; completed candidate remains at %s", err, o.outDir)
+	}
+	latest, err := resolvePosition(o)
+	if err != nil {
+		return fmt.Errorf("recheck published head; completed candidate remains at %s and can be resumed after the state is reachable: %w", o.outDir, err)
+	}
 	if latest.nextID != pos.nextID || latest.nextIndex != pos.nextIndex || latest.pointer.Chain.SHA256 != pos.pointer.Chain.SHA256 {
-		return errors.New("published chain advanced while the contribution was running; candidate was not uploaded")
+		return fmt.Errorf("published chain advanced while the contribution was running; candidate at %s was not uploaded and cannot be resumed against the new head", o.outDir)
 	}
-	prefix := grant.Prefix + config.Phase + "/" + fmt.Sprintf("%04d", pos.nextIndex) + "/" + attempt + "/"
-	manifest := access.CandidateManifest{
-		Schema: access.CandidateManifestSchema, CeremonyID: grant.CeremonyID, Phase: config.Phase,
-		Index: pos.nextIndex, ParticipantID: grant.IdentityID, ParentChainSHA256: pos.pointer.Chain.SHA256,
-		AttemptID: attempt, CompletedAt: time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
-	}
-	client := grantClient(grant)
-	manifestKey := prefix + "manifest.json"
-	if err := runWithProgress("uploading contribution candidate", func() error {
-		for _, name := range candidateFileNames {
-			local := filepath.Join(o.outDir, name)
-			ref, err := regularFileRef(local, name)
-			if err != nil {
-				return err
-			}
-			manifest.Files = append(manifest.Files, ref)
-			fmt.Fprintf(os.Stderr, "  uploading %s (%s)\n", name, formatBytes(ref.Size))
-			if err := putFresh(client, prefix+name, local); err != nil {
-				return err
-			}
-		}
-		if err := manifest.Validate(); err != nil {
-			return err
-		}
-		return uploadJSONLast(client, manifestKey, manifest)
-	}); err != nil {
-		return err
+	manifestKey, err := uploadCandidate(grantClient(grant), grant.Prefix, o.outDir, localManifest, manifest)
+	if err != nil {
+		return fmt.Errorf("upload interrupted; completed candidate remains at %s and can be resumed with a fresh grant: %w", o.outDir, err)
 	}
 	fmt.Printf("candidate submitted for coordinator review\nmanifest: %s\n", manifestKey)
 	return nil
+}
+
+func prepareCandidateManifest(candidateDir string, grant access.Grant, phase string, pos position, attempt string) (access.CandidateManifest, error) {
+	manifest := access.CandidateManifest{
+		Schema: access.CandidateManifestSchema, CeremonyID: grant.CeremonyID, Phase: phase,
+		Index: pos.nextIndex, ParticipantID: grant.IdentityID, ParentChainSHA256: pos.pointer.Chain.SHA256,
+		AttemptID: attempt, CompletedAt: time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
+	}
+	for _, name := range candidateFileNames {
+		ref, err := regularFileRef(filepath.Join(candidateDir, name), name)
+		if err != nil {
+			return access.CandidateManifest{}, err
+		}
+		manifest.Files = append(manifest.Files, ref)
+	}
+	if err := manifest.Validate(); err != nil {
+		return access.CandidateManifest{}, err
+	}
+	return manifest, nil
+}
+
+func resumeCandidateUpload(config access.ParticipantConfig, grant access.Grant, pos position, candidateDir string) error {
+	info, err := os.Lstat(candidateDir)
+	if err != nil {
+		return fmt.Errorf("load resumable candidate: %w", err)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("--resume-candidate must be a non-symlink directory")
+	}
+	localManifest := filepath.Join(candidateDir, localCandidateManifestName)
+	raw, err := os.ReadFile(localManifest)
+	if err != nil {
+		return fmt.Errorf("load resumable candidate metadata: %w", err)
+	}
+	manifest, err := access.Decode(raw, access.CandidateManifest.Validate)
+	if err != nil {
+		return fmt.Errorf("validate resumable candidate metadata: %w", err)
+	}
+	if err := validateResumableCandidate(manifest, config, grant, pos); err != nil {
+		return err
+	}
+	if err := verifyLocalCandidate(candidateDir, manifest); err != nil {
+		return err
+	}
+	manifestKey, err := uploadCandidate(grantClient(grant), grant.Prefix, candidateDir, localManifest, manifest)
+	if err != nil {
+		return fmt.Errorf("upload interrupted again; completed candidate remains at %s: %w", candidateDir, err)
+	}
+	fmt.Printf("candidate upload resumed without recomputing the contribution\nmanifest: %s\n", manifestKey)
+	return nil
+}
+
+func verifyLocalCandidate(candidateDir string, manifest access.CandidateManifest) error {
+	refs := make(map[string]access.FileRef, len(manifest.Files))
+	for _, ref := range manifest.Files {
+		refs[ref.Name] = ref
+	}
+	for _, name := range candidateFileNames {
+		got, err := regularFileRef(filepath.Join(candidateDir, name), name)
+		if err != nil {
+			return fmt.Errorf("verify saved candidate %s: %w", name, err)
+		}
+		want := refs[name]
+		if got.SHA256 != want.SHA256 || got.Size != want.Size {
+			return fmt.Errorf("saved candidate %s no longer matches its recorded digest", name)
+		}
+	}
+	return nil
+}
+
+func validateResumableCandidate(manifest access.CandidateManifest, config access.ParticipantConfig, grant access.Grant, pos position) error {
+	if manifest.CeremonyID != grant.CeremonyID || manifest.Phase != config.Phase ||
+		manifest.ParticipantID != grant.IdentityID {
+		return errors.New("saved candidate does not match the grant, participant, ceremony, and phase")
+	}
+	if manifest.Index != pos.nextIndex || manifest.ParentChainSHA256 != pos.pointer.Chain.SHA256 {
+		return errors.New("saved candidate was built from a different ceremony head and cannot be resumed")
+	}
+	return nil
+}
+
+func uploadCandidate(client candidateObjectStore, grantPrefix, candidateDir, localManifest string, manifest access.CandidateManifest) (string, error) {
+	prefix := grantPrefix + manifest.Phase + "/" + fmt.Sprintf("%04d", manifest.Index) + "/" + manifest.AttemptID + "/"
+	manifestKey := prefix + "manifest.json"
+	if err := runWithProgress("uploading contribution candidate", func() error {
+		for _, ref := range manifest.Files {
+			local := filepath.Join(candidateDir, ref.Name)
+			got, err := regularFileRef(local, ref.Name)
+			if err != nil {
+				return err
+			}
+			if got.SHA256 != ref.SHA256 || got.Size != ref.Size {
+				return fmt.Errorf("saved candidate %s no longer matches its recorded digest", ref.Name)
+			}
+			fmt.Fprintf(os.Stderr, "  uploading %s (%s)\n", ref.Name, formatBytes(ref.Size))
+			if err := putFreshOrVerify(client, prefix+ref.Name, local, ref); err != nil {
+				return err
+			}
+		}
+		manifestRef, err := regularFileRef(localManifest, "manifest.json")
+		if err != nil {
+			return err
+		}
+		return putFreshOrVerify(client, manifestKey, localManifest, manifestRef)
+	}); err != nil {
+		return "", err
+	}
+	return manifestKey, nil
 }
 
 func participantRoleOptions(config access.ParticipantConfig, identity string) roleOpts {
@@ -374,6 +477,38 @@ func putFresh(client store.Client, key, local string) error {
 	if err != nil {
 		return fmt.Errorf("upload %s: %w", key, err)
 	}
+	return nil
+}
+
+// putFreshOrVerify makes an interrupted candidate upload idempotent without
+// weakening create-only storage. An existing object is accepted only after it
+// is downloaded with the replacement grant and shown to contain the exact
+// bytes recorded in the local candidate manifest.
+func putFreshOrVerify(client candidateObjectStore, key, local string, want access.FileRef) error {
+	err := client.PutNoReplace(key, local)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, store.ErrExists) {
+		return fmt.Errorf("upload %s: %w", key, err)
+	}
+	temp, tempErr := os.MkdirTemp("", "relay-resume-object-")
+	if tempErr != nil {
+		return tempErr
+	}
+	defer os.RemoveAll(temp)
+	downloaded := filepath.Join(temp, "object")
+	if err := client.Get(key, downloaded); err != nil {
+		return fmt.Errorf("verify existing upload %s: %w", key, err)
+	}
+	got, err := regularFileRef(downloaded, want.Name)
+	if err != nil {
+		return err
+	}
+	if got.SHA256 != want.SHA256 || got.Size != want.Size {
+		return fmt.Errorf("existing submission object conflicts with the saved candidate: %s", key)
+	}
+	fmt.Fprintf(os.Stderr, "  verified existing %s\n", want.Name)
 	return nil
 }
 

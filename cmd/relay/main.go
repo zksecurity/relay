@@ -71,7 +71,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `usage:
   relay coordinator configure-storage [provider and ceremony flags] --out FILE
   relay coordinator grant --storage FILE --role ROLE --identity ID \
-             --credential-ttl D --minimum-upload-window D --out FILE
+             --credential-ttl D --minimum-remaining D --out FILE
   relay coordinator candidates --storage FILE [--phase P]
   relay coordinator accept --storage FILE --candidate-key KEY \
              --coordinator-signing-key FILE [verification flags]
@@ -83,7 +83,7 @@ func usage() {
   relay ceremony init-config --home DIR --role ROLE --coordinator-key FILE \
              [--storage FILE] [role authentication flags] [--out FILE]
   relay participant status [--config FILE | status flags]
-  relay participant run [--config FILE] --grant FILE
+  relay participant run [--config FILE] --grant FILE [--resume-candidate DIR]
   relay witness run --config FILE [--interval D] [--once]
   relay witness submit --config FILE --grant FILE (--file FILE | --dir DIR)
   relay mirror run --config FILE

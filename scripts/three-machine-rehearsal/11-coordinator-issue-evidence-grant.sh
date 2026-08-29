@@ -30,7 +30,7 @@ trap clear_r2_parent_token EXIT
   --role "$role" \
   --identity "$identity" \
   --credential-ttl "${EVIDENCE_GRANT_TTL:-1h}" \
-  --minimum-upload-window "${EVIDENCE_GRANT_MIN_UPLOAD_WINDOW:-15m}" \
+  --minimum-remaining "${EVIDENCE_GRANT_MINIMUM_REMAINING:-${EVIDENCE_GRANT_MIN_UPLOAD_WINDOW:-15m}}" \
   --enrollment "$enrollment" \
   --enrollment-signature "$enrollment_signature" \
   --out "$out"
