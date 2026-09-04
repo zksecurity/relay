@@ -1,12 +1,108 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
+
+func TestSetupVerifyWritesConsumableToolIdentityReceipt(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("ceremony kit targets Linux and requires GNU realpath")
+	}
+	root := t.TempDir()
+	kit := filepath.Join(root, "kit")
+	if err := os.Mkdir(kit, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	repositoryRoot := filepath.Clean(filepath.Join("..", ".."))
+	setupBytes, err := os.ReadFile(filepath.Join(repositoryRoot, "scripts", "setup-ceremony-kit.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixtureFile(t, filepath.Join(kit, "setup"), setupBytes, 0o755)
+	writeFixtureFile(t, filepath.Join(kit, "relay"), []byte("#!/bin/sh\nexit 0\n"), 0o755)
+	writeFixtureFile(t, filepath.Join(kit, "mpc-ceremony"), []byte("#!/bin/sh\nexit 0\n# proof\n"), 0o755)
+	writeFixtureFile(t, filepath.Join(kit, "storage-setup.tar.gz"), []byte("test storage archive"), 0o644)
+	relayHash := fileSHA256ForTest(t, filepath.Join(kit, "relay"))
+	mpcHash := fileSHA256ForTest(t, filepath.Join(kit, "mpc-ceremony"))
+	releaseEnv := fmt.Sprintf(
+		"KIT_SCHEMA=ceremony-kit-v1\n"+
+			"KIT_MODE=production\n"+
+			"RELAY_REPOSITORY=zksecurity/relay\n"+
+			"RELAY_TAG=v1.2.3\n"+
+			"RELAY_SHA256=%s\n"+
+			"MPC_RELEASE_REPOSITORY=Emurgo/proof-tool\n"+
+			"MPC_TAG=v4.5.6\n"+
+			"MPC_SHA256=%s\n"+
+			"REHEARSAL_ARCHIVE_SHA256=none\n",
+		relayHash,
+		mpcHash,
+	)
+	writeFixtureFile(t, filepath.Join(kit, "release.env"), []byte(releaseEnv), 0o644)
+	releaseJSON := fmt.Sprintf(
+		"{\n  \"schema\": \"ceremony-kit-v1\",\n  \"mode\": \"production\",\n"+
+			"  \"relay\": {\n    \"repository\": \"zksecurity/relay\",\n    \"tag\": \"v1.2.3\",\n    \"sha256\": \"%s\"\n  },\n"+
+			"  \"mpc_ceremony\": {\n    \"repository\": \"Emurgo/proof-tool\",\n    \"tag\": \"v4.5.6\",\n    \"sha256\": \"%s\"\n  },\n"+
+			"  \"rehearsal_archive_sha256\": \"none\"\n}\n",
+		relayHash,
+		mpcHash,
+	)
+	writeFixtureFile(t, filepath.Join(kit, "release.json"), []byte(releaseJSON), 0o644)
+	compatibility := fmt.Sprintf(
+		"{\n  \"schema\": \"ceremony-kit-compatibility-v1\",\n  \"test\": \"tiny-rehearsal-phase1-contribution-v1\",\n"+
+			"  \"relay_sha256\": \"%s\",\n  \"mpc_ceremony_sha256\": \"%s\"\n}\n",
+		relayHash,
+		mpcHash,
+	)
+	writeFixtureFile(t, filepath.Join(kit, "compatibility.json"), []byte(compatibility), 0o644)
+
+	checksumNames := []string{
+		"compatibility.json", "mpc-ceremony", "relay", "release.env",
+		"release.json", "setup", "storage-setup.tar.gz",
+	}
+	var checksums strings.Builder
+	for _, name := range checksumNames {
+		fmt.Fprintf(&checksums, "%s  %s\n", fileSHA256ForTest(t, filepath.Join(kit, name)), name)
+	}
+	writeFixtureFile(t, filepath.Join(kit, "checksums.sha256"), []byte(checksums.String()), 0o644)
+
+	receiptPath := filepath.Join(root, "tool-identity-receipt.env")
+	command := exec.Command(filepath.Join(kit, "setup"), "verify", "--receipt-out", receiptPath)
+	command.Dir = kit
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("setup verify: %v\n%s", err, output)
+	}
+	receipt, err := loadToolIdentityReceipt(receiptPath)
+	if err != nil {
+		t.Fatalf("load setup receipt: %v", err)
+	}
+	if receipt.Relay.ReleaseID != "zksecurity/relay@v1.2.3" ||
+		receipt.MPCCeremony.ReleaseID != "Emurgo/proof-tool@v4.5.6" ||
+		receipt.Relay.SHA256 != relayHash || receipt.MPCCeremony.SHA256 != mpcHash {
+		t.Fatalf("setup receipt = %+v", receipt)
+	}
+	for _, want := range []string{toolIdentityReceiptSchema, receipt.Relay.ReleaseID, receipt.MPCCeremony.ReleaseID, receiptPath} {
+		if !strings.Contains(string(output), want) {
+			t.Errorf("setup output does not contain %q:\n%s", want, output)
+		}
+	}
+	if info, err := os.Stat(receiptPath); err != nil || info.Mode().Perm() != 0o444 {
+		t.Fatalf("receipt mode = %v, %v; want 0444", info, err)
+	}
+	secondCommand := exec.Command(filepath.Join(kit, "setup"), "verify", "--receipt-out", receiptPath)
+	secondCommand.Dir = kit
+	if secondOutput, err := secondCommand.CombinedOutput(); err == nil || !strings.Contains(string(secondOutput), "receipt output already exists") {
+		t.Fatalf("setup replaced receipt: error=%v output=%s", err, secondOutput)
+	}
+}
 
 func TestVerifyToolIdentitiesAuthenticatesResolvedExecutables(t *testing.T) {
 	root := t.TempDir()
@@ -127,4 +223,21 @@ func writeTestToolIdentityReceipt(t *testing.T, path, mode, mpcPath string) {
 	if err := os.WriteFile(path, []byte(receipt), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeFixtureFile(t *testing.T, path string, content []byte, mode os.FileMode) {
+	t.Helper()
+	if err := os.WriteFile(path, content, mode); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func fileSHA256ForTest(t *testing.T, path string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(content)
+	return hex.EncodeToString(digest[:])
 }
