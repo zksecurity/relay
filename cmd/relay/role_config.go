@@ -16,7 +16,7 @@ import (
 
 func runInitRoleConfig(args []string) error {
 	set := flag.NewFlagSet("ceremony init-config", flag.ContinueOnError)
-	var home, role, identity, phase, storagePath, coordinatorKey, ceremonyBinary string
+	var home, role, identity, phase, storagePath, coordinatorKey, ceremonyBinary, toolIdentityReceiptPath string
 	var signingKey, environment, enrollment, enrollmentSignature, out string
 	set.StringVar(&home, "home", "", "absolute ceremony home containing public/, config/, and run/")
 	set.StringVar(&role, "role", "", "participant, witness, mirror, auditor, or release")
@@ -25,6 +25,7 @@ func runInitRoleConfig(args []string) error {
 	set.StringVar(&storagePath, "storage", "", "coordinator-supplied relay-storage.json (default HOME/config/relay-storage.json)")
 	set.StringVar(&coordinatorKey, "coordinator-key", "", "absolute path to the independently obtained coordinator public key")
 	set.StringVar(&ceremonyBinary, "ceremony-binary", "mpc-ceremony", "trusted ceremony executable")
+	set.StringVar(&toolIdentityReceiptPath, "tool-identity-receipt", "", "absolute path to the receipt emitted by authenticated kit setup")
 	set.StringVar(&signingKey, "signing-key", "", "participant-only absolute private-key path")
 	set.StringVar(&environment, "environment", "", "participant-only absolute environment.json path")
 	set.StringVar(&enrollment, "enrollment", "", "non-participant signed enrollment record")
@@ -33,8 +34,8 @@ func runInitRoleConfig(args []string) error {
 	if err := set.Parse(args); err != nil {
 		return err
 	}
-	if home == "" || role == "" || coordinatorKey == "" {
-		return errors.New("--home, --role and --coordinator-key are required")
+	if home == "" || role == "" || coordinatorKey == "" || toolIdentityReceiptPath == "" {
+		return errors.New("--home, --role, --coordinator-key and --tool-identity-receipt are required")
 	}
 	if role != access.RoleParticipant {
 		if _, ok := ceremonyEnrollmentRole(role); !ok {
@@ -55,11 +56,17 @@ func runInitRoleConfig(args []string) error {
 	}
 	for name, value := range map[string]string{
 		"--storage": storagePath, "--coordinator-key": coordinatorKey, "--out": out,
+		"--tool-identity-receipt": toolIdentityReceiptPath,
 	} {
 		if !filepath.IsAbs(value) || filepath.Clean(value) != value {
 			return fmt.Errorf("%s must be an absolute clean path", name)
 		}
 	}
+	verifiedTools, err := verifyToolIdentities(toolIdentityReceiptPath, ceremonyBinary)
+	if err != nil {
+		return fmt.Errorf("verify approved tool identities: %w", err)
+	}
+	ceremonyBinary = verifiedTools.MPCCeremonyPath
 	storageConfig, err := loadStorageConfig(storagePath)
 	if err != nil {
 		return fmt.Errorf("load storage config: %w", err)
@@ -84,6 +91,13 @@ func runInitRoleConfig(args []string) error {
 	}
 	if definition.CeremonyID != storageConfig.CeremonyID {
 		return errors.New("local ceremony does not match relay-storage.json")
+	}
+	if definition.Mode != verifiedTools.Receipt.KitMode {
+		return fmt.Errorf(
+			"authenticated ceremony mode %q does not match approved %s kit",
+			definition.Mode,
+			verifiedTools.Receipt.KitMode,
+		)
 	}
 	var participantAssignment transcript.ParticipantInspection
 	if role == access.RoleParticipant {
@@ -144,6 +158,7 @@ func runInitRoleConfig(args []string) error {
 	if err := writeJSONNoReplace(out, config, 0o600); err != nil {
 		return err
 	}
+	fmt.Print(formatToolIdentityVerification(verifiedTools))
 	if role == access.RoleParticipant {
 		fmt.Print(formatParticipantAssignment(definition, participantAssignment, phase, out))
 	} else {

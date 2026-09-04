@@ -11,6 +11,7 @@ Operating procedures are split by audience:
 - [Ceremony command recipes](CEREMONY_COMMANDS.md)
 - [Participant and other role runbook](ROLE_RUNBOOK.md)
 - [Participant lifecycle checklist](PARTICIPANT_CHECKLIST.md)
+- [Ceremony identity key-generation guide](PARTICIPANT_KEY_GENERATION.md)
 - [Participant per-phase turn checklist](PARTICIPANT_TURN_CHECKLIST.md)
 - [Participant contribution isolation design](docs/PARTICIPANT_ISOLATION_DESIGN.md)
   (proposed; not a production procedure)
@@ -75,6 +76,7 @@ matches `relay-storage.json`:
 
     relay ceremony init-config --home /ceremony --role participant --phase phase1 \
       --coordinator-key /trusted/coordinator-public-key.hex \
+      --tool-identity-receipt /trusted/tool-identity-receipt.env \
       --signing-key /secure/key --environment /secure/environment.json
     relay participant status --config /ceremony/config/participant-phase1.json
 

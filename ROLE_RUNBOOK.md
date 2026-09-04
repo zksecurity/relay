@@ -29,29 +29,30 @@ and installing published `relay` and `mpc-ceremony` binaries. Release
 maintainers and independent build auditors use
 [docs/RELEASE.md](docs/RELEASE.md); ceremony roles do not need Go.
 
-Do not continue until these commands resolve to the reviewed paths and versions:
-
-    relay --help
-    mpc-ceremony help
-    aws --version
-    command -v relay mpc-ceremony aws
-
-Record the outputs in your local operator log.
+During installation, run `./setup verify --receipt-out /trusted/tool-identity-receipt.env`.
+Setup authenticates the complete kit and
+emits a secret-free receipt containing resolved binary paths, versions, release
+identifiers, compatibility evidence, and hashes. Every `init-config` command
+below consumes that receipt, independently hashes the running Relay and
+`mpc-ceremony` executables, and prints the resolved identities it accepted.
+Stop if either hash or the ceremony mode differs.
 
 ### Register your public identity
 
-If you are a participant or a role that signs ceremony evidence, generate your
-Ed25519 keypair on your own machine. Keep the private key local; never send it
-to the coordinator or another role. An upload-only release or decision station
-does not generate or receive the offline signer's private key.
+If you are a participant or a role that signs ceremony evidence, follow the
+[ceremony identity key-generation guide](PARTICIPANT_KEY_GENERATION.md) on your
+own machine. The approved `mpc-ceremony identity generate` command creates the
+proof-tool-compatible private seed, public identity, fingerprint, and key ID.
+Keep the private key local; never send it to the coordinator or another role.
+An upload-only release or decision station does not generate or receive the
+offline signer's private key.
 
 Before ceremony initialization, each participant, auditor, and release signer
-sends the coordinator its public identity through the ceremony's agreed
-authenticated channel: identity ID, key ID, public key, public-key fingerprint,
-and agreed display name. Independently confirm the fingerprint with the
-coordinator. After initialization, verify that the signed `ceremony.json`
-contains your exact identity and the intended participant position or role.
-Stop if it does not.
+sends the coordinator the generated public identity JSON through the ceremony's
+agreed authenticated channel. After initialization, `init-config` asks
+proof-tool to match the local key to the signed `ceremony.json`; review the
+authenticated mode and assignment it prints and stop if those human-facing
+terms differ from what you agreed to.
 
 Public witnesses and mirror operators instead create a signed
 proof-of-possession enrollment after receiving the signed ceremony definition;
@@ -106,6 +107,7 @@ temporary upload credential is issued:
       --role participant \
       --phase phase1 \
       --coordinator-key /trusted/coordinator-public-key.hex \
+      --tool-identity-receipt /trusted/tool-identity-receipt.env \
       --signing-key /secure/participant-03.ed25519.private.hex \
       --environment /secure/participant-03.environment.json
 
@@ -160,6 +162,7 @@ Initialize the profile using the signed public-witness enrollment:
     relay ceremony init-config \
       --home "$CEREMONY_HOME" --role witness --phase phase1 \
       --coordinator-key /trusted/coordinator-public-key.hex \
+      --tool-identity-receipt /trusted/tool-identity-receipt.env \
       --enrollment /trusted/witness-01.json \
       --enrollment-signature /trusted/witness-01.sig
     ROLE_CONFIG="$CEREMONY_HOME/config/witness-phase1.json"

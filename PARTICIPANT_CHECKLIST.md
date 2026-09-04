@@ -8,6 +8,8 @@
 > differ from this checklist.
 > Exact Relay recipes and their success output are in
 > [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md).
+> Generate the role key with
+> [PARTICIPANT_KEY_GENERATION.md](PARTICIPANT_KEY_GENERATION.md).
 
 ## How to use this checklist
 
@@ -66,7 +68,10 @@ grant contents, or cloud secrets in this checklist.
 
 ## 1. Establish your ceremony identity
 
-- [ ] **HUMAN** Generate your Ed25519 keypair on your own trusted machine.
+- [ ] **HUMAN** Follow the authenticated
+      [key-generation guide](PARTICIPANT_KEY_GENERATION.md) on your own trusted
+      machine. The command automatically creates the key ID, public key, and
+      fingerprint.
 - [ ] **HUMAN** Protect the private key at the approved local path. Never send
       it to the coordinator, paste it into the website, or place it in cloud
       storage, chat, logs, source control, or a persistent Relay profile.
@@ -91,9 +96,9 @@ grant contents, or cloud secrets in this checklist.
   authenticate every kit file, release identifier, binary hash, and
   compatibility record; retain its complete output as the secret-free tool
   identity receipt instead of transcribing values manually.
-- **AUTO** `init-config` must verify the approved proof-tool identity while
-  authenticating the ceremony and emit the participant's secret-free
-  assignment receipt.
+- **AUTO** `init-config` must resolve and hash both running executables against
+  the setup receipt, authenticate the ceremony with the approved proof-tool,
+  and emit the participant's secret-free tool and assignment receipt.
 
 ## 3. Prepare the contribution machine
 
@@ -127,6 +132,7 @@ relay ceremony init-config \
   --role participant \
   --phase phase1 \
   --coordinator-key /trusted/coordinator-public-key.hex \
+  --tool-identity-receipt /trusted/tool-identity-receipt.env \
   --signing-key /secure/participant-NN.ed25519.private.hex \
   --environment /secure/participant-NN.environment.json
 

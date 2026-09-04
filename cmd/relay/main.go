@@ -81,7 +81,8 @@ func usage() {
              --ceremony FILE --ceremony-signature FILE --coordinator-key FILE \
              --signing-key FILE --environment FILE [--grant FILE] [--out FILE]
   relay ceremony init-config --home DIR --role ROLE --coordinator-key FILE \
-             [--storage FILE] [role authentication flags] [--out FILE]
+             --tool-identity-receipt FILE [--storage FILE] \
+             [role authentication flags] [--out FILE]
   relay participant status [--config FILE | status flags]
   relay participant run [--config FILE] --grant FILE [--resume-candidate DIR]
   relay witness run --config FILE [--interval D] [--once]

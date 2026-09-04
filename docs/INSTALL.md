@@ -63,6 +63,7 @@ Extract the verified archive into a persistent, access-controlled directory:
 
 ```bash
 CEREMONY_TOOLS_ROOT="$HOME/ceremony-tools"
+TOOL_IDENTITY_RECEIPT="$CEREMONY_TOOLS_ROOT/tool-identity-receipt.env"
 mkdir -m 0700 -p "$CEREMONY_TOOLS_ROOT"
 chmod 0700 "$CEREMONY_TOOLS_ROOT"
 test ! -e "$CEREMONY_TOOLS_ROOT/ceremony-kit"
@@ -70,11 +71,17 @@ tar --no-same-owner -xzf \
   "$DOWNLOAD_ROOT/ceremony-kit-linux-amd64.tar.gz" \
   -C "$CEREMONY_TOOLS_ROOT"
 cd "$CEREMONY_TOOLS_ROOT/ceremony-kit"
-./setup verify
+./setup verify --receipt-out "$TOOL_IDENTITY_RECEIPT"
 ```
 
 `./setup verify` checks every internal file against the authenticated kit and
 confirms that `compatibility.json` names the hashes of the included binaries.
+It prints a secret-free receipt containing resolved kit paths, release
+repositories and versions, release identifiers, compatibility-test identity,
+and both binary SHA-256 digests. `--receipt-out` writes the same checked values
+to a fresh read-only file for `relay ceremony init-config`; it never contains a
+private key, credential, or grant. Retain the receipt instead of manually
+transcribing paths and versions.
 The release maintainer runs the compatibility exercise; operators do not need
 either source checkout or to rerun it. Stop here and choose exactly one of the
 two setup paths below. Do not run the
@@ -220,11 +227,13 @@ one role profile after staging the authenticated material:
 
 ```bash
 CEREMONY_HOME=/var/lib/mpc-ceremonies/CEREMONY_ID
+TOOL_IDENTITY_RECEIPT=/trusted/tool-identity-receipt.env
 relay ceremony init-config \
   --home "$CEREMONY_HOME" \
   --role participant \
   --phase phase1 \
   --coordinator-key /trusted/coordinator-public-key.hex \
+  --tool-identity-receipt "$TOOL_IDENTITY_RECEIPT" \
   --signing-key /secure/participant.ed25519.private.hex \
   --environment /secure/environment.json
 ```
@@ -264,12 +273,8 @@ before running `relay coordinator configure-storage`.
 
 ## Final verification
 
-```bash
-relay --help
-mpc-ceremony help
-aws --version
-command -v relay mpc-ceremony aws
-```
-
-Confirm `aws --version` reports `aws-cli/2...` and that all commands resolve to
-the reviewed paths. Record the kit tag and archive hash in the operator log.
+The setup receipt is the authoritative Relay/proof-tool path, version, release,
+and binary-hash record. `init-config` re-hashes both running executables against
+it, so no manual `command -v` transcript is needed. Coordinators using S3 or R2
+must still let the provider setup procedure check its own CLI prerequisites;
+those tools are not part of the ceremony kit.

@@ -45,6 +45,7 @@ STORAGE_CONFIG=$CEREMONY_HOME/config/relay-storage.json
 PARTICIPANT_ID=participant-03
 PHASE=phase1
 ROLE_CONFIG=$CEREMONY_HOME/config/participant-$PHASE.json
+TOOL_IDENTITY_RECEIPT=/trusted/tool-identity-receipt.env
 ```
 
 Before running a recipe, display and review its effective non-secret paths:
@@ -61,22 +62,38 @@ Do not use `/`, `$HOME`, a repository root, or another broad directory as
 
 **Run by:** every role, once per installed release.
 
+Verify the downloaded kit SHA-256 through [docs/INSTALL.md](docs/INSTALL.md),
+then have the authenticated setup command write a fresh receipt:
+
 ```sh
-relay --help
-mpc-ceremony help
-aws --version
-command -v relay mpc-ceremony aws
+cd /opt/ceremony-tools/ceremony-kit
+./setup verify --receipt-out "$TOOL_IDENTITY_RECEIPT"
 ```
 
-Also verify the downloaded kit SHA-256 through the procedure in
-[docs/INSTALL.md](docs/INSTALL.md), then run the kit's `./setup verify` command.
-
-**Success evidence:** resolved paths, versions, kit tag, archive digest, binary
-digests, and complete successful setup-verification output in a secret-free
-operator log.
+**Success evidence:** setup prints and writes a secret-free receipt containing
+the resolved kit binary paths, release repositories and versions, release
+identifiers, compatibility-test identity, and Relay and `mpc-ceremony` SHA-256
+digests. No manual `command -v` or version transcription is required.
 
 **Retry:** safe after correcting installation or path problems. Do not begin a
 ceremony action while any identity or compatibility check fails.
+
+### Generate a signing identity when your role requires one
+
+Follow [PARTICIPANT_KEY_GENERATION.md](PARTICIPANT_KEY_GENERATION.md). The core
+command is:
+
+```sh
+install -d -m 0700 /secure/public
+mpc-ceremony identity generate \
+  --identity-id "$PARTICIPANT_ID" \
+  --display-name "Participant Three" \
+  --private-key-out "/secure/$PARTICIPANT_ID.private.hex" \
+  --public-identity-out "/secure/public/$PARTICIPANT_ID.identity.json"
+```
+
+Send only the public identity file to the coordinator. The key ID and public
+fingerprint in that file are derived automatically.
 
 ## 2. Prepare a ceremony home
 
@@ -218,6 +235,7 @@ relay ceremony init-config \
   --role participant \
   --phase "$PHASE" \
   --coordinator-key "$COORDINATOR_KEY" \
+  --tool-identity-receipt "$TOOL_IDENTITY_RECEIPT" \
   --signing-key /secure/participant-03.ed25519.private.hex \
   --environment /secure/participant-03.environment.json \
   --out "$ROLE_CONFIG"
@@ -227,6 +245,8 @@ Relay authenticates the definition and coordinator trust key, derives the
 public key from the local participant key, and matches it to the exact roster
 identity, key ID, fingerprint, and Phase 1/2 positions. The resulting mode-
 `0600` profile stores paths, not private-key bytes or temporary grants.
+Before invoking proof-tool, Relay resolves and hashes its own executable and
+the configured `mpc-ceremony` executable against the setup receipt.
 
 **Success evidence:** the authenticated ceremony ID and mode, participant
 identity, key ID, fingerprint, both phase positions, selected phase, and fresh
@@ -498,6 +518,7 @@ relay ceremony init-config \
   --identity "$IDENTITY_ID" \
   --phase "$PHASE" \
   --coordinator-key "$COORDINATOR_KEY" \
+  --tool-identity-receipt "$TOOL_IDENTITY_RECEIPT" \
   --enrollment "$ENROLLMENT" \
   --enrollment-signature "$ENROLLMENT_SIGNATURE" \
   --out "$ROLE_CONFIG"

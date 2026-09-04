@@ -159,9 +159,12 @@ func TestProofToolCompatibility(t *testing.T) {
 	if err := os.WriteFile(environmentPath, []byte("{}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	toolIdentityReceiptPath := filepath.Join(root, "tool-identity-receipt.env")
+	writeTestToolIdentityReceipt(t, toolIdentityReceiptPath, definition.Mode, ceremonyBinary)
 	if err := runInitRoleConfig([]string{
 		"--home", productionHome, "--role", access.RoleParticipant, "--phase", "phase1",
 		"--storage", storagePath, "--coordinator-key", inspector.CoordinatorPublicKeyPath,
+		"--tool-identity-receipt", toolIdentityReceiptPath,
 		"--ceremony-binary", ceremonyBinary, "--signing-key", participantKey,
 		"--environment", environmentPath,
 	}); err != nil {
@@ -177,6 +180,7 @@ func TestProofToolCompatibility(t *testing.T) {
 	if err := runInitRoleConfig([]string{
 		"--home", productionHome, "--role", access.RoleWitness, "--phase", "phase1",
 		"--storage", storagePath, "--coordinator-key", inspector.CoordinatorPublicKeyPath,
+		"--tool-identity-receipt", toolIdentityReceiptPath,
 		"--ceremony-binary", ceremonyBinary, "--enrollment", witnessRecord,
 		"--enrollment-signature", witnessSignature,
 	}); err != nil {

@@ -8,7 +8,7 @@ die() {
 }
 
 usage() {
-  die "usage: $0 [verify] [--prefix DIR] [--storage-setup-root DIR] [--machine 1|2|3 --rehearsal-root DIR]"
+  die "usage: $0 [verify] [--receipt-out FRESH_FILE] [--prefix DIR] [--storage-setup-root DIR] [--machine 1|2|3 --rehearsal-root DIR]"
 }
 
 KIT_ROOT=$(cd "$(dirname "$0")" && pwd)
@@ -17,6 +17,7 @@ PREFIX=/usr/local/bin
 MACHINE=
 REHEARSAL_ROOT=${HOME:+$HOME/ceremony-tools}
 STORAGE_SETUP_ROOT=
+RECEIPT_OUT=
 
 if [[ ${1:-} == verify ]]; then
   ACTION=verify
@@ -27,6 +28,11 @@ while [[ $# -gt 0 ]]; do
     --prefix)
       [[ $# -ge 2 ]] || usage
       PREFIX=$2
+      shift 2
+      ;;
+    --receipt-out)
+      [[ $# -ge 2 ]] || usage
+      RECEIPT_OUT=$2
       shift 2
       ;;
     --machine)
@@ -53,6 +59,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ "$PREFIX" == /* ]] || die "--prefix must be an absolute directory"
+[[ -z "$RECEIPT_OUT" || "$RECEIPT_OUT" == /* ]] || die "--receipt-out must be an absolute path"
 [[ -z "$STORAGE_SETUP_ROOT" || "$STORAGE_SETUP_ROOT" == /* ]] ||
   die "--storage-setup-root must be an absolute directory"
 if [[ -n "$MACHINE" ]]; then
@@ -61,7 +68,7 @@ if [[ -n "$MACHINE" ]]; then
   [[ "$REHEARSAL_ROOT" == /* ]] || die "--rehearsal-root must be an absolute directory"
 fi
 
-for command_name in install sha256sum; do
+for command_name in basename chmod dirname install realpath sha256sum; do
   command -v "$command_name" >/dev/null 2>&1 || die "required command is missing: $command_name"
 done
 
@@ -126,9 +133,49 @@ expected_compatibility=$(printf '{\n  "schema": "ceremony-kit-compatibility-v1",
 [[ "$(<"$KIT_ROOT/compatibility.json")" == "$expected_compatibility" ]] ||
   die "compatibility.json does not match the kit binaries"
 
-printf 'Verified %s ceremony kit:\n' "$KIT_MODE"
-printf '  Relay:        %s@%s (%s)\n' "$RELAY_REPOSITORY" "$RELAY_TAG" "$RELAY_SHA256"
-printf '  mpc-ceremony: %s@%s (%s)\n' "$MPC_RELEASE_REPOSITORY" "$MPC_TAG" "$MPC_SHA256"
+KIT_ROOT=$(realpath -e -- "$KIT_ROOT")
+RELAY_VERIFIED_PATH=$(realpath -e -- "$KIT_ROOT/relay")
+MPC_CEREMONY_VERIFIED_PATH=$(realpath -e -- "$KIT_ROOT/mpc-ceremony")
+for receipt_value in "$KIT_ROOT" "$RELAY_VERIFIED_PATH" "$MPC_CEREMONY_VERIFIED_PATH"; do
+  [[ "$receipt_value" != *$'\n'* && "$receipt_value" != *$'\r'* ]] ||
+    die "tool identity receipt paths must not contain line breaks"
+done
+
+emit_tool_identity_receipt() {
+  printf '%s\n' \
+    'TOOL_IDENTITY_RECEIPT_SCHEMA=ceremony-kit-tool-identity-receipt-v1' \
+    "KIT_MODE=$KIT_MODE" \
+    "KIT_ROOT=$KIT_ROOT" \
+    'COMPATIBILITY_TEST=tiny-rehearsal-phase1-contribution-v1' \
+    "RELAY_VERIFIED_PATH=$RELAY_VERIFIED_PATH" \
+    "RELAY_REPOSITORY=$RELAY_REPOSITORY" \
+    "RELAY_VERSION=$RELAY_TAG" \
+    "RELAY_RELEASE_ID=$RELAY_REPOSITORY@$RELAY_TAG" \
+    "RELAY_SHA256=$RELAY_SHA256" \
+    "MPC_CEREMONY_VERIFIED_PATH=$MPC_CEREMONY_VERIFIED_PATH" \
+    "MPC_CEREMONY_REPOSITORY=$MPC_RELEASE_REPOSITORY" \
+    "MPC_CEREMONY_VERSION=$MPC_TAG" \
+    "MPC_CEREMONY_RELEASE_ID=$MPC_RELEASE_REPOSITORY@$MPC_TAG" \
+    "MPC_CEREMONY_SHA256=$MPC_SHA256"
+}
+
+if [[ -n "$RECEIPT_OUT" ]]; then
+  receipt_parent_input=$(dirname -- "$RECEIPT_OUT")
+  [[ -d "$receipt_parent_input" && ! -L "$receipt_parent_input" ]] ||
+    die "receipt parent must be an existing non-symlink directory"
+  receipt_parent=$(realpath -e -- "$receipt_parent_input")
+  RECEIPT_OUT="$receipt_parent/$(basename -- "$RECEIPT_OUT")"
+  [[ ! -e "$RECEIPT_OUT" && ! -L "$RECEIPT_OUT" ]] || die "receipt output already exists"
+  (
+    set -o noclobber
+    emit_tool_identity_receipt >"$RECEIPT_OUT"
+  ) || die "could not create fresh tool identity receipt"
+  chmod 0444 "$RECEIPT_OUT"
+fi
+
+printf 'Verified %s ceremony kit. Secret-free tool identity receipt:\n' "$KIT_MODE"
+emit_tool_identity_receipt
+[[ -n "$RECEIPT_OUT" ]] && printf 'RECEIPT_FILE=%s\n' "$RECEIPT_OUT"
 [[ "$ACTION" == verify ]] && exit 0
 
 [[ -d "$PREFIX" && ! -L "$PREFIX" ]] || die "installation prefix must be an existing non-symlink directory: $PREFIX"

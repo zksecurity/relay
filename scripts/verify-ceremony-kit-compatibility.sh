@@ -110,6 +110,24 @@ printf '{\n  "schema": "relay-storage-config-v1",\n  "provider": "r2",\n  "cerem
   "$mpc" >"$storage"
 chmod 0600 "$storage"
 
+tool_identity_receipt="$rehearsal/config/tool-identity-receipt.env"
+printf '%s\n' \
+  'TOOL_IDENTITY_RECEIPT_SCHEMA=ceremony-kit-tool-identity-receipt-v1' \
+  'KIT_MODE=rehearsal' \
+  "KIT_ROOT=$work_root" \
+  'COMPATIBILITY_TEST=tiny-rehearsal-phase1-contribution-v1' \
+  "RELAY_VERIFIED_PATH=$relay" \
+  'RELAY_REPOSITORY=zksecurity/relay' \
+  'RELAY_VERSION=compatibility' \
+  'RELAY_RELEASE_ID=zksecurity/relay@compatibility' \
+  "RELAY_SHA256=$RELAY_SHA256" \
+  "MPC_CEREMONY_VERIFIED_PATH=$mpc" \
+  'MPC_CEREMONY_REPOSITORY=Emurgo/proof-tool' \
+  'MPC_CEREMONY_VERSION=compatibility' \
+  'MPC_CEREMONY_RELEASE_ID=Emurgo/proof-tool@compatibility' \
+  "MPC_CEREMONY_SHA256=$MPC_SHA256" >"$tool_identity_receipt"
+chmod 0444 "$tool_identity_receipt"
+
 for phase in phase1 phase2; do
   profile="$rehearsal/config/participant-$phase.relay.json"
   HOME="$work_root/home" "$relay" ceremony init-config \
@@ -119,6 +137,7 @@ for phase in phase1 phase2; do
     --phase "$phase" \
     --storage "$storage" \
     --coordinator-key "$rehearsal/public/coordinator-public-key.hex" \
+    --tool-identity-receipt "$tool_identity_receipt" \
     --ceremony-binary "$mpc" \
     --signing-key "$rehearsal/keys/participant-01.ed25519.private.hex" \
     --environment "$rehearsal/config/environment.json" \
