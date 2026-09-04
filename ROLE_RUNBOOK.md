@@ -9,6 +9,10 @@ This runbook is for participants, public witnesses, mirror operators, auditors,
 release upload stations, and production-decision signers. The coordinator uses
 [COORDINATOR_RUNBOOK.md](COORDINATOR_RUNBOOK.md).
 
+[CHECKLISTS.md](CHECKLISTS.md) indexes the separate live checklist for every
+role, including the offline release and decision signers and their distinct
+online upload station.
+
 Participants should also receive a prefilled
 [lifecycle checklist](PARTICIPANT_CHECKLIST.md) and one fresh
 [turn checklist](PARTICIPANT_TURN_CHECKLIST.md) for each phase. These are
@@ -157,6 +161,9 @@ upload. It is not merely an estimate for the final upload.
 
 ## 4. Public witness
 
+Use one [public-witness checklist](PUBLIC_WITNESS_CHECKLIST.md) per assigned
+phase.
+
 Initialize the profile using the signed public-witness enrollment:
 
     relay ceremony init-config \
@@ -182,6 +189,9 @@ bytes, then upload the signed output using “Submit evidence” below. Your gra
 must name your signed public-witness enrollment.
 
 ## 5. Mirror operator
+
+Use one [mirror-operator checklist](MIRROR_OPERATOR_CHECKLIST.md) per assigned
+phase and retained head.
 
 Initialize `mirror-phase1.json` as above with `--role mirror` and the signed
 mirror enrollment, then set `ROLE_CONFIG` to that path.
@@ -222,6 +232,8 @@ not published or fetched.
 
 ## 6. Auditor
 
+Use one [auditor checklist](AUDITOR_CHECKLIST.md) for each independent audit.
+
 Initialize one authenticated auditor profile per phase using `--role auditor`
 and the signed auditor enrollment.
 
@@ -235,6 +247,11 @@ Replay the ceremony with `mpc-ceremony audit`. Upload the resulting signed
 audit record using your auditor grant.
 
 ## 7. Release signer and decision signers
+
+The offline roles use the [release-signer checklist](RELEASE_SIGNER_CHECKLIST.md)
+and one [decision-signer checklist](DECISION_SIGNER_CHECKLIST.md) per accountable
+decision signature. The separate online operator uses the
+[upload-station checklist](UPLOAD_STATION_CHECKLIST.md).
 
 The signing machine should remain offline and receive no storage credential.
 Review and sign the proof-tool output there, then move only the signed output
@@ -312,7 +329,9 @@ verification before using the evidence.
 - Relay records the highest public index seen under `~/.relay` and rejects a
   pointer that moves backward. Do not delete this state to silence a warning;
   contact the coordinator.
-- Relay refuses to overwrite a local file whose bytes differ from the
-  authenticated digest.
+- Relay refuses to overwrite an existing local transcript file. The mirror and
+  auditor sync path does not yet re-hash every pre-existing artifact, so require
+  mirror receipt preparation or the full audit to authenticate the complete
+  retained set before relying on it.
 - Keep private signing keys, contribution environments, grants, and provider
   credentials out of published and evidence directories.

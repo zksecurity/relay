@@ -13,31 +13,30 @@
 
 ## How to use this checklist
 
-- **AUTO** — Relay or proof-tool performs the check and emits evidence. You do
-  not need to reproduce it manually, but you must stop if it fails.
+- **AUTO NOW** — Relay or proof-tool performs the check and emits evidence. You
+  do not need to reproduce it manually, but you must stop if it fails.
+- **MANUAL — PLATFORM TODO** — the check is mechanical, but the coordination
+  platform does not yet perform and record it through a reviewed integration.
+  Run the cited procedure and attach its secret-free output until it does.
 - **HUMAN** — you must personally verify or attest to something software cannot
   know.
 - **STOP** — do not continue, retry with altered inputs, or work around the
   failure. Preserve non-secret output and contact the coordinator.
+
+See [CHECKLISTS.md](CHECKLISTS.md) for the shared classification rules. A
+dashboard rendering is not automatic verification.
 
 Relay transports and schedules ceremony data. The authenticated
 `mpc-ceremony` binary decides whether definitions, chains, identities,
 contributions, erasure records, and transitions are valid. Website status and
 Google login do not replace your Ed25519 ceremony identity.
 
-## Participant record
+## Participant assignment
 
-- [ ] **HUMAN** Ceremony ID: `______________________________________________`
-- [ ] **HUMAN** Mode: `production / rehearsal`
-- [ ] **HUMAN** Display name: `_____________________________________________`
-- [ ] **HUMAN** Participant identity ID:
-      `________________________________________`
-- [ ] **HUMAN** Frozen roster position:
-      `_________________________________________`
-- [ ] **HUMAN** Ed25519 key ID:
-      `_______________________________________________`
-- [ ] **HUMAN** Ed25519 public-key fingerprint:
-      `________________________________`
+- [ ] **MANUAL — PLATFORM TODO** Prefill the ceremony ID, mode, display name,
+      identity ID, key ID, public-key fingerprint, and Phase 1/2 positions from
+      the canonical roster. The platform should populate these values and later
+      bind them to the authenticated `init-config` receipt without transcription.
 - [ ] **HUMAN** Coordinator and emergency contact:
       `________________________________`
 - [ ] **HUMAN** Authenticated out-of-band channel:
@@ -75,9 +74,12 @@ grant contents, or cloud secrets in this checklist.
 - [ ] **HUMAN** Protect the private key at the approved local path. Never send
       it to the coordinator, paste it into the website, or place it in cloud
       storage, chat, logs, source control, or a persistent Relay profile.
-- [ ] **HUMAN** Send only your identity ID, key ID, public key, fingerprint,
-      and agreed display name through the approved channel.
-- **AUTO** During `init-config`, proof-tool must authenticate the signed
+- [ ] **MANUAL — PLATFORM TODO** Submit the public identity document through the
+      approved onboarding procedure. Future platform automation should parse
+      and validate it without manual field copying.
+- [ ] **HUMAN** I confirmed that the submitted document contains only my public
+      identity, key ID, public key, fingerprint, and agreed display name.
+- **AUTO NOW** During `init-config`, proof-tool must authenticate the signed
   definition, derive the public key from your local signing key, and match it
   to your exact roster identity, key ID, fingerprint, and Phase 1/2 positions.
 - [ ] **HUMAN** Review the authenticated assignment printed by `init-config`
@@ -92,11 +94,11 @@ grant contents, or cloud secrets in this checklist.
 - [ ] **HUMAN** Follow [docs/INSTALL.md](docs/INSTALL.md) on the machine that
       will perform the contribution.
 
-- **AUTO** Verify the archive digest before extraction. `./setup verify` must
+- **AUTO NOW** Verify the archive digest before extraction. `./setup verify` must
   authenticate every kit file, release identifier, binary hash, and
   compatibility record; retain its complete output as the secret-free tool
   identity receipt instead of transcribing values manually.
-- **AUTO** `init-config` must resolve and hash both running executables against
+- **AUTO NOW** `init-config` must resolve and hash both running executables against
   the setup receipt, authenticate the ceremony with the approved proof-tool,
   and emit the participant's secret-free tool and assignment receipt.
 
@@ -104,8 +106,11 @@ grant contents, or cloud secrets in this checklist.
 
 - [ ] **HUMAN** Use the approved dedicated machine, disposable VM, or other
       isolation procedure for this ceremony.
-- [ ] **HUMAN** Confirm adequate free disk space, stable power and networking,
-      correct UTC time, and disabled sleep for the expected turn duration.
+- [ ] **MANUAL — PLATFORM TODO** Run the approved readiness checks for free
+      disk, UTC clock, sleep settings, and expected runtime, and attach their
+      secret-free results. Future native/platform integration should populate
+      these checks directly.
+- [ ] **HUMAN** Confirm stable power and networking for the expected turn.
 - [ ] **HUMAN** Confirm the machine is not backing up, snapshotting, debugging,
       or crash-dumping the environment that may contain contribution
       randomness.
@@ -140,24 +145,21 @@ relay participant status \
   --config /var/lib/mpc-ceremonies/CEREMONY_ID/config/participant-phase1.json
 ```
 
-- **AUTO** `init-config` must authenticate the local ceremony, coordinator
+- **AUTO NOW** `init-config` must authenticate the local ceremony, coordinator
   trust key, participant signing key, environment, identity, and frozen roster
   positions, then print the ceremony mode, identity, key ID, fingerprint, and
   both phase assignments.
-- **AUTO** The persistent role config must contain validated public metadata
+- **AUTO NOW** The persistent role config must contain validated public metadata
   and approved paths, but no private-key bytes, cloud credentials, or temporary
   grant.
-- **AUTO** `participant status` must authenticate the public head and report
+- **AUTO NOW** `participant status` must authenticate the public head and report
   the expected phase, index, and next identity.
 
-- [ ] **HUMAN** Phase 1 profile path:
-      `____________________________________________`
-- [ ] **HUMAN** Phase 1 profile validation passed and the reported identity
-      and position are correct.
-- [ ] **HUMAN** Phase 2 profile path:
-      `____________________________________________`
-- [ ] **HUMAN** Phase 2 profile validation passed and the reported identity
-      and position are correct.
+- [ ] **MANUAL — PLATFORM TODO** Attach the secret-free Phase 1 and Phase 2
+      profile/assignment receipts to this participant record. Do not copy their
+      paths, identities, fingerprints, or positions into separate fields.
+- [ ] **HUMAN** The authenticated ceremony mode and Phase 1/2 assignments match
+      what I agreed to perform.
 
 Do not initialize Phase 2 against an unauthenticated or unsealed Phase 1
 result.
@@ -166,47 +168,46 @@ result.
 
 - [ ] **HUMAN** Tell the coordinator how to reach you and when your prepared
       machine will be available.
-- [ ] **HUMAN** Wait for the coordinator's authenticated start notice. A
-      website notification alone does not authorize computation.
-- [ ] **HUMAN** Keep the persistent role profile free of upload credentials.
+- [ ] **HUMAN** Treat a website notification as a reminder. Start only after
+      native Relay authenticates the current head, confirms you are next, and
+      validates the fresh grant delivered through the approved private channel.
 
-- **AUTO** You may run `relay participant status --config ROLE_CONFIG` without
+- **AUTO NOW** You may run `relay participant status --config ROLE_CONFIG` without
   a grant whenever you need to authenticate public position.
-- **AUTO** `relay participant run` repeats the out-of-turn check before any
+- **AUTO NOW** `relay participant run` repeats the out-of-turn check before any
   expensive computation even if you skip the separate status command.
 
 ## 6. Execute Phase 1
 
-- [ ] Complete one prefilled
+- [ ] **HUMAN** Complete one prefilled
       [participant turn checklist](PARTICIPANT_TURN_CHECKLIST.md) for Phase 1.
-- [ ] Record the submitted candidate manifest key:
-      `_________________________________`
-- [ ] Record the local resumable candidate directory:
-      `_____________________________`
-- [ ] Independently confirm the accepted public head names the expected Phase
-      1 chain and next position.
-- [ ] Retain the public candidate and secret-free logs until the coordinator
-      confirms acceptance or tells you the candidate is stale.
+- [ ] **MANUAL — PLATFORM TODO** Attach that turn's secret-free submission and
+      acceptance evidence to this lifecycle record. Do not transcribe the same
+      manifest, head, index, or timestamp fields again.
+- [ ] **HUMAN** Retain the local public candidate until authenticated acceptance
+      or staleness is confirmed.
 
 ## 7. Execute Phase 2
 
-- [ ] Confirm authenticated Phase 1 closure, beacon/seal transition, and the
-      signed Phase 2 initialization all pass before accepting a Phase 2 grant.
-- [ ] Complete a fresh prefilled
+- [ ] **MANUAL — PLATFORM TODO** Before starting Phase 2, run the full
+      prerequisite inspection in [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md)
+      against the complete local transcript and attach its output. Future Relay
+      and platform integration should fetch, verify, and record this preflight.
+- **AUTO NOW** `relay participant run` independently authenticates and replays
+  the required Phase 1 closure, beacon, seal, and Phase 2 initialization before
+  sampling new Phase 2 contribution randomness.
+- [ ] **HUMAN** Complete a fresh prefilled
       [participant turn checklist](PARTICIPANT_TURN_CHECKLIST.md) for Phase 2.
-- [ ] Record the submitted candidate manifest key:
-      `_________________________________`
-- [ ] Record the local resumable candidate directory:
-      `_____________________________`
-- [ ] Independently confirm the accepted public head names the expected Phase
-      2 chain and next position.
-- [ ] Retain the public candidate and secret-free logs until the coordinator
-      confirms acceptance or tells you the candidate is stale.
+- [ ] **MANUAL — PLATFORM TODO** Attach that turn's secret-free submission and
+      acceptance evidence to this lifecycle record without duplicating fields.
+- [ ] **HUMAN** Retain the local public candidate until authenticated acceptance
+      or staleness is confirmed.
 
 ## 8. Participant closeout
 
-- [ ] **HUMAN** Confirm the coordinator recorded both of your required turns
-      as accepted, or record why a phase did not apply.
+- [ ] **MANUAL — PLATFORM TODO** Confirm from authenticated public state that
+      both required turns were accepted, or attach the signed assignment showing
+      why a phase did not apply. Future platform automation should derive this.
 - [ ] **HUMAN** Delete expired grant files and any local credential copies only
       under the approved retention and destruction procedure.
 - [ ] **HUMAN** Destroy the disposable contribution environment and any
@@ -215,7 +216,6 @@ result.
       and secret-free participant log for the required retention period.
 - [ ] **HUMAN** Report every retry, interruption, deviation, suspected leak,
       or manual recovery action to the coordinator.
-- [ ] **HUMAN** Participant completion sign-off:
-      `____________________________________`
-- [ ] **HUMAN** Completion time (UTC):
-      `___________________________________________`
+- [ ] **MANUAL — PLATFORM TODO** Record checklist completion time and attach all
+      referenced secret-free receipts. This is administrative completion, not
+      an Ed25519 ceremony signature.

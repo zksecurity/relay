@@ -9,7 +9,8 @@ This is the coordinator runbook for operating `relay`. Use the
 [automation-aware coordinator checklist](COORDINATOR_CHECKLIST.md) as the live
 execution aid and [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md) for copy-oriented
 command recipes. Participants, witnesses, mirrors, auditors, release upload
-stations, and decision signers use [ROLE_RUNBOOK.md](ROLE_RUNBOOK.md).
+stations, and decision signers use [ROLE_RUNBOOK.md](ROLE_RUNBOOK.md) and the
+role-specific checklists indexed by [CHECKLISTS.md](CHECKLISTS.md).
 
 The [proof-tool repository](https://github.com/Emurgo/proof-tool) remains the
 authority for ceremony commands and validity rules. Relay transports bytes and

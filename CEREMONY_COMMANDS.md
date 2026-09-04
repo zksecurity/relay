@@ -275,6 +275,37 @@ with the independently authenticated roster and coordinator notice.
 wrong next identity is a stop condition—not permission to delete local
 high-water state.
 
+### Authenticate Phase 2 prerequisites
+
+Before starting Phase 2, inspect the complete local transcript with the
+approved proof-tool binary:
+
+```sh
+mpc-ceremony inspect \
+  --ceremony "$CEREMONY_HOME/public/ceremony.json" \
+  --ceremony-signature "$CEREMONY_HOME/public/ceremony.sig" \
+  --coordinator-public-key-file "$COORDINATOR_KEY" \
+  --transcript-dir "$CEREMONY_HOME/public" \
+  --full
+```
+
+The local transcript must already contain the complete closed Phase 1 chain,
+closure, beacon response and record, seal and commons, compiled R1CS, and the
+signed Phase 2 initialization. At full depth, proof-tool authenticates and
+replays Phase 1, derives the sealed commons, verifies the beacon/seal
+transition, and checks that Phase 2 genesis is the deterministic initialization
+bound to that exact seal.
+
+**Success evidence:** successful exit at `full` depth, Phase 1 reported sealed,
+Phase 2 reported started at its authenticated chain, and no missing artifact.
+
+**Platform gap:** no participant-facing Relay command currently fetches this
+complete prerequisite set and attaches the inspection result before grant
+delivery. Until one exists, stage the authenticated transcript under the
+approved procedure and attach the secret-free output manually. `relay
+participant run` still repeats the authoritative Phase 1 replay, seal, and
+Phase 2 initialization checks before sampling contribution randomness.
+
 ## 7. Issue a participant grant
 
 **Run by:** coordinator, only when the authenticated public head names this
@@ -600,9 +631,13 @@ relay auditor run --config "$CEREMONY_HOME/config/auditor-phase1.json"
 relay auditor run --config "$CEREMONY_HOME/config/auditor-phase2.json"
 ```
 
-Relay authenticates the chain and fetches only digest-pinned transcript files.
-An auditor must then run the exact `mpc-ceremony audit` procedure shipped with
-the approved proof-tool release against the independently obtained transcript:
+Relay authenticates the chain and verifies every newly fetched digest-pinned
+transcript file. It does not overwrite an existing local file, but the sync
+path does not yet compare every pre-existing artifact with its authenticated
+digest. Mirror receipt preparation and the full audit must perform that final
+complete-set check. An auditor must run the exact `mpc-ceremony audit`
+procedure shipped with the approved proof-tool release against the
+independently obtained transcript:
 
 ```sh
 mpc-ceremony audit --help
@@ -613,8 +648,9 @@ destination identity, and—where applicable—the complete proof-tool audit
 record and detached signature.
 
 **Retry:** safe when existing local files match their authenticated digests.
-Relay refuses to overwrite mismatching local bytes; investigate rather than
-deleting evidence reflexively.
+Relay will not overwrite existing local bytes, but current sync does not prove
+that they match. Require the corresponding proof-tool verification and
+investigate any mismatch rather than deleting evidence reflexively.
 
 ## 17. Prepare a mirror receipt
 

@@ -9,6 +9,8 @@
 > [scripted rehearsal](scripts/three-machine-rehearsal/README.md).
 > Copy-oriented Relay commands, expected evidence, and retry rules are in
 > [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md).
+> [CHECKLISTS.md](CHECKLISTS.md) indexes the execution checklist for every
+> ceremony and operational role.
 
 ## How to use this checklist
 
@@ -60,9 +62,12 @@ authoritative.
 
 ### Ceremony evidence record
 
-- [ ] **MANUAL — PLATFORM TODO** Record the effective Relay, `mpc-ceremony`,
-      provider CLI, and setup versions, resolved executable paths, release
-      tags, and binary SHA-256 values.
+- **AUTO NOW** `./setup verify` emits the effective Relay and `mpc-ceremony`
+  versions, resolved executable paths, release identifiers, and binary SHA-256
+  values as a secret-free tool-identity receipt. Retain the complete receipt.
+- [ ] **MANUAL — PLATFORM TODO** Attach the applicable provider CLI path and
+      version until the platform emits one combined setup/storage identity
+      record.
 - [ ] **MANUAL — PLATFORM TODO** Bind the record to the ceremony ID, mode, coordinator identity,
   storage configuration digest, and creation timestamp.
 - [ ] **MANUAL — PLATFORM TODO** Preserve changes as append-only operator events; do not silently
@@ -239,9 +244,10 @@ automatic result in the coordination platform.
 - **AUTO NOW** Reject persistent role profiles containing grants, cloud secrets,
   or private-key bytes. A validated profile may contain an approved private-key
   path, but not the key contents.
-- [ ] **MANUAL — PLATFORM TODO** Give every participant a prefilled copy of
-  [PARTICIPANT_CHECKLIST.md](PARTICIPANT_CHECKLIST.md) and a separate
-  [turn sheet](PARTICIPANT_TURN_CHECKLIST.md) for each phase.
+- [ ] **MANUAL — PLATFORM TODO** Assign every person the applicable checklist
+      from [CHECKLISTS.md](CHECKLISTS.md). Give every participant one lifecycle
+      checklist and a separate turn sheet for each scheduled phase. The future
+      platform should prefill only authenticated public assignment data.
 
 ## 6. Run participant turns
 
@@ -271,8 +277,10 @@ the coordinator to copy these values between systems.
 - [ ] **AUTHORIZE** After Relay and proof-tool verify the exact candidate,
       review the candidate digest and permit `relay coordinator accept
       --verify-publish` to use the protected coordinator signing key.
-- [ ] **HUMAN** Notify the next participant only after independent observation
-      agrees with the newly signed public head.
+- [ ] **MANUAL — PLATFORM TODO** Notify the next participant only after an
+      independent authenticated read agrees with the newly signed public head.
+      Future platform automation should enforce this ordering and preserve the
+      notification event.
 
 ### Mechanical checks and evidence
 
@@ -412,10 +420,13 @@ the coordinator to copy these values between systems.
       the incident procedure.
 - [ ] **HUMAN** Final completion time (UTC):
       `___________________________________________`
-- [ ] **HUMAN** Coordinator sign-off:
+- [ ] **HUMAN** Coordinator administrative closeout acknowledged by:
       `___________________________________________________`
-- [ ] **HUMAN** Independent reviewer sign-off:
+- [ ] **HUMAN** Independent administrative review acknowledged by:
       `____________________________________________`
+
+These acknowledgements complete the operator checklist; they are not Ed25519
+ceremony signatures.
 
 ### Mechanical checks and evidence
 

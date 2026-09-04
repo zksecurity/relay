@@ -8,41 +8,50 @@
 > See [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md) for the complete participant
 > status, contribution, and interrupted-upload recipes.
 
+Use the evidence labels in [CHECKLISTS.md](CHECKLISTS.md). In particular,
+**MANUAL — PLATFORM TODO** means a mechanical record must be attached manually
+until reviewed platform automation consumes and preserves it.
+
 ## Turn record
 
-- Ceremony ID: `____________________________________________________________`
-- Mode: `production / rehearsal`
-- Phase: `phase1 / phase2`
-- Participant display name: `_______________________________________________`
-- Participant identity ID: `________________________________________________`
-- Frozen position: `________________________________________________________`
-- Authenticated starting head: `____________________________________________`
-- Role config path: `_______________________________________________________`
-- Coordinator start notice (UTC): `_________________________________________`
-- Grant filename, not contents: `___________________________________________`
-- Grant expiry (UTC): `_____________________________________________________`
-- Minimum remaining window: `______________________________________________`
+- [ ] **MANUAL — PLATFORM TODO** Prefill the ceremony, mode, phase, participant
+      identity, frozen position, authenticated starting head, grant issue and
+      expiry times, and minimum-remaining window from authenticated inputs. The
+      future platform must populate one append-only turn record rather than ask
+      anyone to copy these values between systems.
+- [ ] **HUMAN** I selected and can access this protected role config path on my
+      machine:
+      `_______________________________________________________`
+- [ ] **HUMAN** I selected and can access this protected grant filename on my
+      machine, not its contents:
+      `___________________________________________`
 
 ## Before starting
 
-- [ ] **HUMAN** I received the start notice and grant through the agreed
-      authenticated private channel.
+- [ ] **HUMAN** I received the fresh grant through the agreed authenticated
+      private channel. Any website notification was only a reminder.
 - [ ] **HUMAN** My signing key and environment remain local and protected.
-- [ ] **HUMAN** The grant file is mode `0600`, has not been copied into logs,
-      chat, source control, browser storage, or persistent configuration, and
-      has enough remaining lifetime for the entire operation.
-- [ ] **HUMAN** My machine has stable power and networking, correct UTC time,
-      adequate disk, disabled sleep, and the approved contribution isolation.
+- [ ] **MANUAL — PLATFORM TODO** Confirm the grant file is a regular local file
+      with mode `0600`. Relay does not yet enforce its filesystem mode.
+- [ ] **HUMAN** The grant has not been copied into logs, chat, source control,
+      browser storage, or persistent configuration.
+- [ ] **MANUAL — PLATFORM TODO** Run the approved readiness checks for UTC time,
+      disk, sleep settings, and expected runtime and attach their output.
+- [ ] **HUMAN** My machine has stable power and networking and uses the approved
+      contribution isolation.
 - [ ] **HUMAN** I am not snapshotting, backing up, debugging, or crash-dumping
       the contribution environment.
-- **AUTO** `relay participant status --config ROLE_CONFIG` must exit
+- **AUTO NOW** `relay participant status --config ROLE_CONFIG` must exit
   successfully, print the authenticated head digest, and report my exact
   identity as next.
-- [ ] **HUMAN** I copied the printed head digest into this turn record and
-      compared the identity and position with the authenticated start notice.
+- [ ] **MANUAL — PLATFORM TODO** Attach the complete secret-free status output
+      to this turn. Future platform automation should bind the authenticated
+      head, identity, and position without manual digest transcription.
+- [ ] **HUMAN** The displayed ceremony, phase, identity, and position match the
+      assignment I agreed to perform.
 
-Stop if any value differs from the signed definition or authenticated start
-notice. Do not ask the coordinator to change signed state manually.
+Stop if any value differs from the signed definition or the assignment you
+agreed to perform. Do not ask the coordinator to change signed state manually.
 
 ## Run the turn
 
@@ -86,18 +95,19 @@ coordinator. Do not make an erasure statement you cannot honestly support.
 
 ## Successful submission
 
-- [ ] Relay exited successfully and printed `candidate submitted for
+- **AUTO NOW** Relay must exit successfully and print `candidate submitted for
       coordinator review`.
-- Attempt ID printed by Relay: `____________________________________________`
-- Candidate manifest key printed by Relay: `_______________________________`
-- Local resumable candidate directory printed by Relay:
-  `________________________________________________________________________`
-- Signed `destroyed_at` printed by Relay (UTC):
-  `________________________________________________________________________`
-- Submission completed (UTC): `____________________________________________`
-- [ ] I sent only the manifest key and other approved public status to the
-      coordinator, not the grant or private material.
-- [ ] I retained the intact public candidate directory until acceptance is
+- [ ] **MANUAL — PLATFORM TODO** Preserve the complete secret-free Relay output
+      and attach its attempt ID, candidate manifest key, local resumable
+      directory, signed `destroyed_at`, and submission time as one submission
+      receipt. Do not transcribe five separate fields; future Relay/platform
+      integration should emit and ingest the receipt directly.
+- [ ] **MANUAL — PLATFORM TODO** Deliver the manifest key and approved public
+      status to the coordinator. Future platform integration should ingest the
+      secret-free submission receipt directly.
+- [ ] **HUMAN** I confirmed that no grant contents, private key, contribution
+      randomness, or other private material was included.
+- [ ] **HUMAN** I retained the intact public candidate directory until acceptance is
       independently confirmed.
 
 Storage appearance or website progress does not establish successful
@@ -107,12 +117,13 @@ submission. The manifest-last upload and successful Relay exit do.
 
 Do not delete or modify the printed candidate directory and do not recompute.
 
-- [ ] Record the exact secret-free Relay error:
+- [ ] **MANUAL — PLATFORM TODO** Attach the exact secret-free Relay error:
       `_______________________________________________________________`
-- [ ] Contact the coordinator and report the candidate directory, attempt ID,
+- [ ] **HUMAN** Contact the coordinator and report the candidate directory, attempt ID,
       manifest key if printed, and failure time—never the grant contents.
-- [ ] Independently confirm the authenticated public head has not advanced.
-- [ ] Receive a replacement grant in a fresh mode-`0600` filename.
+- **AUTO NOW** `relay participant status` and resume must authenticate that the
+  public head has not advanced.
+- [ ] **HUMAN** Receive a replacement grant in a fresh mode-`0600` filename.
 
 Resume with:
 
@@ -123,7 +134,7 @@ relay participant run \
   --resume-candidate SAVED-CANDIDATE-DIRECTORY
 ```
 
-- **AUTO** Relay must re-hash every saved file, authenticate its ceremony,
+- **AUTO NOW** Relay must re-hash every saved file, authenticate its ceremony,
   phase, participant, position, attempt, and starting head, compare any
   existing remote bytes, and still upload `manifest.json` last.
 - **STOP** If Relay reports a stale head, changed local file, or conflicting
@@ -132,17 +143,21 @@ relay participant run \
 
 ## Acceptance and cleanup
 
-- [ ] The coordinator sent the accepted head and chain index through the
-      authenticated channel.
-- [ ] `relay participant status --config ROLE_CONFIG` independently
-      authenticated that head and showed the expected next position or phase
-      closure.
-- Accepted head: `__________________________________________________________`
-- Accepted chain/index: `__________________________________________________`
-- Acceptance observed (UTC): `_____________________________________________`
-- [ ] I removed expired grant files and temporary credentials under the
+- [ ] **MANUAL — PLATFORM TODO** Deliver the coordinator's acceptance reminder
+      through the authenticated channel. The reminder triggers a native status
+      check; it is not itself acceptance evidence.
+- **AUTO NOW** `relay participant status --config ROLE_CONFIG` must
+  independently authenticate the new public head and show that this position
+  was accepted, the expected next position, or phase closure.
+- [ ] **MANUAL — PLATFORM TODO** Attach the complete secret-free status output
+      and correlate it with the submitted candidate. Future Relay/platform
+      integration should emit an acceptance receipt binding the participant,
+      index, accepted output digest, chain digest, and `accepted_at` without
+      manual transcription.
+- [ ] **HUMAN** I removed expired grant files and temporary credentials under the
       approved procedure.
-- [ ] I retained or removed the public candidate and secret-free log according
+- [ ] **HUMAN** I retained or removed the public candidate and secret-free log according
       to the ceremony's stated evidence and retention policy.
-- [ ] I reported every interruption, deviation, retry, or suspected exposure.
-- Participant turn sign-off: `______________________________________________`
+- [ ] **HUMAN** I reported every interruption, deviation, retry, or suspected exposure.
+- [ ] **MANUAL — PLATFORM TODO** Record administrative checklist completion.
+      This is not a ceremony signature.

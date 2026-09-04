@@ -8,6 +8,7 @@ Operating procedures are split by audience:
 
 - [Coordinator runbook](COORDINATOR_RUNBOOK.md)
 - [Automation-aware coordinator checklist](COORDINATOR_CHECKLIST.md)
+- [Checklist index for every ceremony role](CHECKLISTS.md)
 - [Ceremony command recipes](CEREMONY_COMMANDS.md)
 - [Participant and other role runbook](ROLE_RUNBOOK.md)
 - [Participant lifecycle checklist](PARTICIPANT_CHECKLIST.md)
