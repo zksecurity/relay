@@ -39,7 +39,7 @@ func TestParticipateV2ProfileRequiresTurnGrant(t *testing.T) {
 		CoordinatorKey: filepath.Join(dir, "coordinator.hex"), CeremonyBinary: "mpc-ceremony",
 		SigningKey: filepath.Join(dir, "participant.hex"), Environment: filepath.Join(dir, "environment.json"),
 		CandidateParentDir: filepath.Join(dir, "candidates"), PublishedBaseURL: "https://ceremony.example",
-		PublishedBucket: "published",
+		PublishedBucket: "published", ExecutionMode: nativeExecutionMode,
 	}
 	if err := writeJSONNoReplace(configPath, config, 0o600); err != nil {
 		t.Fatal(err)

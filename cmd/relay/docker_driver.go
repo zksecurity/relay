@@ -236,7 +236,7 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 		Schema: dockerActiveStateSchema, ContainerID: containerID, Image: d.image,
 		Platform: d.platform, HandoffDir: handoff, CreatedAt: receipt.CreatedAt,
 	}
-	if err := writeJSONAtomic(d.activeStatePath(), state, 0o600); err != nil {
+	if err := writeJSONNoReplace(d.activeStatePath(), state, 0o600); err != nil {
 		_ = d.removeAndVerify(containerID)
 		_ = os.RemoveAll(handoff)
 		return nil, fmt.Errorf("persist contributor cleanup state: %w", err)

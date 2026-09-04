@@ -85,7 +85,7 @@ func TestParticipantConfigV2DefersTemporaryGrant(t *testing.T) {
 		CoordinatorKey: "/trusted/coordinator.hex", CeremonyBinary: "/usr/local/bin/mpc-ceremony",
 		SigningKey: "/keys/participant.hex", Environment: "/config/environment.json",
 		CandidateParentDir: "/work/candidates", PublishedBaseURL: "https://ceremony.example",
-		PublishedBucket: "published",
+		PublishedBucket: "published", ExecutionMode: "native",
 	}
 	if err := config.Validate(); err != nil {
 		t.Fatalf("v2 profile without temporary grant: %v", err)
@@ -137,7 +137,7 @@ func TestRoleConfigSeparatesPersistentPathsFromTemporaryAccess(t *testing.T) {
 		CoordinatorKey:    "/trusted/coordinator.hex", CeremonyBinary: "/usr/local/bin/mpc-ceremony",
 		SigningKey: "/secure/participant-01.hex", Environment: "/secure/environment.json",
 		RunRoot: "/ceremonies/example/run", StorageConfig: "/ceremonies/example/config/relay-storage.json",
-		PublishedBaseURL: "https://ceremony.example", PublishedBucket: "published",
+		PublishedBaseURL: "https://ceremony.example", PublishedBucket: "published", ExecutionMode: "native",
 	}
 	if err := participant.Validate(); err != nil {
 		t.Fatal(err)
@@ -155,5 +155,19 @@ func TestRoleConfigSeparatesPersistentPathsFromTemporaryAccess(t *testing.T) {
 	witness.SigningKey = "/secure/witness-01.hex"
 	if err := witness.Validate(); err == nil || !strings.Contains(err.Error(), "must not retain") {
 		t.Fatalf("non-participant retained signing key error = %v", err)
+	}
+}
+
+func TestLatestConfigsRequireExplicitExecutionMode(t *testing.T) {
+	participant := ParticipantConfig{
+		Schema: ParticipantConfigSchema, Phase: "phase1", Root: "/ceremony",
+		Ceremony: "/ceremony/ceremony.json", CeremonySignature: "/ceremony/ceremony.sig",
+		CoordinatorKey: "/trusted/coordinator.hex", CeremonyBinary: "mpc-ceremony",
+		SigningKey: "/keys/participant.hex", Environment: "/config/environment.json",
+		CandidateParentDir: "/work/candidates", PublishedBaseURL: "https://ceremony.example",
+		PublishedBucket: "published",
+	}
+	if err := participant.Validate(); err == nil || !strings.Contains(err.Error(), "execution_mode is required") {
+		t.Fatalf("missing participant execution mode error = %v", err)
 	}
 }

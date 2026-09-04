@@ -40,6 +40,9 @@ func runInitRoleConfig(args []string) error {
 	if err := set.Parse(args); err != nil {
 		return err
 	}
+	if err := rejectDockerFlagsWithoutDockerMode(args, executionMode); err != nil {
+		return err
+	}
 	if executionMode == dockerExecutionMode && !hasNamedFlag(args, "ceremony-binary") {
 		ceremonyBinary = "/usr/local/bin/mpc-ceremony"
 	}
@@ -55,6 +58,23 @@ func runInitRoleConfig(args []string) error {
 		}
 		if _, ok := ceremonyEnrollmentRole(role); !ok {
 			return fmt.Errorf("unsupported configured role %q", role)
+		}
+	}
+	if role == access.RoleParticipant {
+		if signingKey == "" || environment == "" {
+			return errors.New("participant config requires --signing-key and --environment")
+		}
+		if !filepath.IsAbs(signingKey) || filepath.Clean(signingKey) != signingKey ||
+			!filepath.IsAbs(environment) || filepath.Clean(environment) != environment {
+			return errors.New("--signing-key and --environment must be absolute clean paths")
+		}
+	} else {
+		if enrollment == "" || enrollmentSignature == "" {
+			return errors.New("non-participant config requires --enrollment and --enrollment-signature")
+		}
+		if !filepath.IsAbs(enrollment) || filepath.Clean(enrollment) != enrollment ||
+			!filepath.IsAbs(enrollmentSignature) || filepath.Clean(enrollmentSignature) != enrollmentSignature {
+			return errors.New("--enrollment and --enrollment-signature must be absolute clean paths")
 		}
 	}
 	if phase != "phase1" && phase != "phase2" {
@@ -96,6 +116,9 @@ func runInitRoleConfig(args []string) error {
 		PublishedBucket: storageConfig.PublishedBucket, ExecutionMode: executionMode,
 		DockerImage: dockerImage, DockerPlatform: dockerPlatform, DockerCLI: dockerCLI,
 	}
+	if err := config.ValidateExecution(); err != nil {
+		return fmt.Errorf("role config execution: %w", err)
+	}
 	inspector := transcript.Inspector{
 		Executable: ceremonyBinary, CeremonyPath: config.Ceremony,
 		CeremonySignaturePath: config.CeremonySignature, CoordinatorPublicKeyPath: coordinatorKey,
@@ -130,13 +153,6 @@ func runInitRoleConfig(args []string) error {
 	}
 	var participantAssignment transcript.ParticipantInspection
 	if role == access.RoleParticipant {
-		if signingKey == "" || environment == "" {
-			return errors.New("participant config requires --signing-key and --environment")
-		}
-		if !filepath.IsAbs(signingKey) || filepath.Clean(signingKey) != signingKey ||
-			!filepath.IsAbs(environment) || filepath.Clean(environment) != environment {
-			return errors.New("--signing-key and --environment must be absolute clean paths")
-		}
 		participant, err := inspector.Participant(signingKey)
 		if err != nil {
 			return err
@@ -153,13 +169,6 @@ func runInitRoleConfig(args []string) error {
 		config.Environment = environment
 		participantAssignment = participant
 	} else {
-		if enrollment == "" || enrollmentSignature == "" {
-			return errors.New("non-participant config requires --enrollment and --enrollment-signature")
-		}
-		if !filepath.IsAbs(enrollment) || filepath.Clean(enrollment) != enrollment ||
-			!filepath.IsAbs(enrollmentSignature) || filepath.Clean(enrollmentSignature) != enrollmentSignature {
-			return errors.New("--enrollment and --enrollment-signature must be absolute clean paths")
-		}
 		inspection, err := inspector.Enrollment(enrollment, enrollmentSignature)
 		if err != nil {
 			return err
@@ -330,4 +339,16 @@ func hasNamedFlag(args []string, name string) bool {
 		}
 	}
 	return false
+}
+
+func rejectDockerFlagsWithoutDockerMode(args []string, executionMode string) error {
+	if executionMode == dockerExecutionMode {
+		return nil
+	}
+	for _, name := range []string{"docker-image", "docker-platform", "docker-cli"} {
+		if hasNamedFlag(args, name) {
+			return fmt.Errorf("--%s requires --execution-mode docker", name)
+		}
+	}
+	return nil
 }

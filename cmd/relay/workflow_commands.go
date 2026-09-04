@@ -55,6 +55,9 @@ func runEnroll(args []string) error {
 	if err := set.Parse(args); err != nil {
 		return err
 	}
+	if err := rejectDockerFlagsWithoutDockerMode(args, executionMode); err != nil {
+		return err
+	}
 	if executionMode == dockerExecutionMode && !hasNamedFlag(args, "ceremony-binary") {
 		ceremonyBinary = "/usr/local/bin/mpc-ceremony"
 	}
@@ -163,6 +166,11 @@ func runParticipate(args []string) error {
 	if err != nil {
 		return err
 	}
+	runLock, err := acquireParticipantRunLock(configPath, config.CandidateParentDir)
+	if err != nil {
+		return err
+	}
+	defer runLock.release()
 	if effectiveExecutionMode(config.ExecutionMode) == dockerExecutionMode {
 		driver := dockerDriverForParticipant(config)
 		if err := driver.cleanupOrphan(); err != nil {

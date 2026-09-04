@@ -291,8 +291,7 @@ func (c RoleConfig) Validate() error {
 	if c.CeremonyBinary == "" {
 		return errors.New("role config ceremony_binary is required")
 	}
-	if err := validateExecution(c.Schema == RoleConfigSchema, c.Role, c.ExecutionMode, c.CeremonyBinary,
-		c.DockerImage, c.DockerPlatform, c.DockerCLI); err != nil {
+	if err := c.ValidateExecution(); err != nil {
 		return fmt.Errorf("role config execution: %w", err)
 	}
 	if c.Role == RoleParticipant {
@@ -322,6 +321,15 @@ func (c RoleConfig) Validate() error {
 		return errors.New("role config published_bucket is required")
 	}
 	return nil
+}
+
+// ValidateExecution checks every setting that controls whether and how Relay
+// invokes a participant container. Callers use this before invoking Docker;
+// full config validation may need an identity that is itself learned through
+// an authenticated ceremony inspection.
+func (c RoleConfig) ValidateExecution() error {
+	return validateExecution(c.Schema == RoleConfigSchema, c.Role, c.ExecutionMode, c.CeremonyBinary,
+		c.DockerImage, c.DockerPlatform, c.DockerCLI)
 }
 
 func (c ParticipantConfig) Validate() error {
@@ -356,6 +364,9 @@ func (c ParticipantConfig) Validate() error {
 
 func validateExecution(latest bool, role, mode, ceremonyBinary, image, platform, dockerCLI string) error {
 	if mode == "" {
+		if latest {
+			return errors.New("execution_mode is required by the latest configuration schema")
+		}
 		mode = "native"
 	}
 	if mode != "native" && mode != "docker" {

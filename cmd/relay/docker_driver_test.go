@@ -23,6 +23,7 @@ type dockerClientFake struct {
 	removed      bool
 	stillPresent bool
 	unsafe       bool
+	onCreate     func()
 }
 
 func (f *dockerClientFake) Output(args ...string) ([]byte, []byte, error) {
@@ -48,6 +49,9 @@ func (f *dockerClientFake) Output(args ...string) ([]byte, []byte, error) {
 			if destination == "/relay/output" {
 				f.handoff = source
 			}
+		}
+		if f.onCreate != nil {
+			f.onCreate()
 		}
 		return []byte(testContainerID + "\n"), nil, nil
 	case len(args) == 2 && args[0] == "inspect":
@@ -235,6 +239,31 @@ func TestDockerContributionBlocksWhenRemovalCannotBeVerified(t *testing.T) {
 	}
 	if _, err := os.Lstat(o.outDir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("candidate was promoted before removal: %v", err)
+	}
+}
+
+func TestDockerContributionDoesNotReplaceConcurrentLifecycleState(t *testing.T) {
+	o, pos, driver, fake := dockerContributionFixture(t)
+	statePath := driver.activeStatePath()
+	original := []byte("concurrent state\n")
+	fake.onCreate = func() {
+		if err := os.WriteFile(statePath, original, 0o600); err != nil {
+			t.Errorf("create concurrent lifecycle state: %v", err)
+		}
+	}
+	err := runNextAt(o, pos, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "persist contributor cleanup state") {
+		t.Fatalf("concurrent lifecycle state error = %v", err)
+	}
+	got, readErr := os.ReadFile(statePath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("concurrent lifecycle state was replaced: %q", got)
+	}
+	if !fake.removed {
+		t.Fatal("new contributor was not removed after lifecycle-state conflict")
 	}
 }
 
