@@ -16,7 +16,7 @@ Operating procedures are split by audience:
 - [Ceremony identity key-generation guide](PARTICIPANT_KEY_GENERATION.md)
 - [Participant per-phase turn checklist](PARTICIPANT_TURN_CHECKLIST.md)
 - [Participant contribution isolation design](docs/PARTICIPANT_ISOLATION_DESIGN.md)
-  (proposed; not a production procedure)
+  (implemented for Linux container isolation and macOS rehearsals)
 - [Three-machine tiny rehearsal scripts](scripts/three-machine-rehearsal/README.md)
 - [AWS storage setup](docs/AWS_SETUP.md)
 - [Cloudflare R2 storage setup](docs/R2_SETUP.md)
@@ -81,6 +81,20 @@ matches `relay-storage.json`:
       --tool-identity-receipt /trusted/tool-identity-receipt.env \
       --signing-key /secure/key --environment /secure/environment.json
     relay participant status --config /ceremony/config/participant-phase1.json
+
+To use the disposable contributor, add an immutable image ID or repository
+digest and the one platform selected for the signed ceremony:
+
+    relay ceremony init-config --home /ceremony --role participant --phase phase1 \
+      --coordinator-key /trusted/coordinator-public-key.hex \
+      --signing-key /secure/key --environment /secure/environment.json \
+      --execution-mode docker \
+      --docker-image registry.example/ceremony-tool@sha256:DIGEST \
+      --docker-platform linux/amd64
+
+Relay never pulls this image during a turn. Preload and authenticate it first.
+Docker mode is suitable for rehearsal on macOS; see the isolation design for
+the stronger production macOS boundary and the Linux production profile.
 
 When that participant is next, the coordinator issues a temporary grant and
 the participant runs:

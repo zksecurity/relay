@@ -96,6 +96,38 @@ func TestParticipantConfigV2DefersTemporaryGrant(t *testing.T) {
 	}
 }
 
+func TestParticipantConfigRequiresImmutableDockerImage(t *testing.T) {
+	config := ParticipantConfig{
+		Schema: ParticipantConfigSchema, Phase: "phase1", Root: "/ceremony",
+		Ceremony: "/ceremony/ceremony.json", CeremonySignature: "/ceremony/ceremony.sig",
+		CoordinatorKey: "/trusted/coordinator.hex", CeremonyBinary: "/usr/local/bin/mpc-ceremony",
+		SigningKey: "/keys/participant.hex", Environment: "/config/environment.json",
+		CandidateParentDir: "/work/candidates", PublishedBaseURL: "https://ceremony.example",
+		PublishedBucket: "published", ExecutionMode: "docker", DockerPlatform: "linux/arm64",
+		DockerCLI: "docker", DockerImage: "ceremony-tool:latest",
+	}
+	if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "immutable sha256") {
+		t.Fatalf("mutable image error = %v", err)
+	}
+	config.DockerImage = "sha256:" + strings.Repeat("a", 64)
+	if err := config.Validate(); err != nil {
+		t.Fatalf("immutable local image ID: %v", err)
+	}
+	config.Schema = ParticipantConfigSchemaV2
+	if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "latest configuration schema") {
+		t.Fatalf("legacy Docker profile error = %v", err)
+	}
+	config.Schema = ParticipantConfigSchema
+	config.DockerImage = "registry.example/ceremony-tool@sha256:" + strings.Repeat("b", 64)
+	if err := config.Validate(); err != nil {
+		t.Fatalf("immutable repository digest: %v", err)
+	}
+	config.DockerPlatform = "linux/s390x"
+	if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "linux/amd64 or linux/arm64") {
+		t.Fatalf("unsupported platform error = %v", err)
+	}
+}
+
 func TestRoleConfigSeparatesPersistentPathsFromTemporaryAccess(t *testing.T) {
 	participant := RoleConfig{
 		Schema: RoleConfigSchema, Role: RoleParticipant, IdentityID: "participant-01",

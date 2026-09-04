@@ -204,6 +204,9 @@ Never issue overlapping turns.
 - [ ] **MANUAL — PLATFORM TODO** Participant identity ID, key ID, and authenticated fingerprint.
 - [ ] **MANUAL — PLATFORM TODO** Starting authenticated head and chain index.
 - [ ] **MANUAL — PLATFORM TODO** Grant issue and expiry timestamps and minimum-remaining window.
+- [ ] **MANUAL — PLATFORM TODO** Participant execution mode and assurance
+      level; for Docker record the immutable image digest/ID, selected Linux
+      platform, and whether the host is Linux production or macOS rehearsal.
 - [ ] **MANUAL — PLATFORM TODO** Attempt ID and candidate manifest key.
 - [ ] **MANUAL — PLATFORM TODO** Candidate manifest and digests, erasure timestamp, acceptance
   timestamp, publication timestamp, and accepted chain index.

@@ -357,7 +357,8 @@ Revoke or expire suspected leaks under the incident procedure.
 
 ## 8. Run a participant contribution
 
-**Run by:** the participant on the approved native contribution machine.
+**Run by:** the participant using the execution mode already frozen in the
+validated profile.
 
 ```sh
 relay participant run \
@@ -369,6 +370,13 @@ Relay checks grant lifetime and scope, authenticates the public head, refuses
 an out-of-turn attempt before expensive work, downloads and verifies the
 accepted transcript, invokes proof-tool contribution, guides erasure
 attestation, rechecks the head, and uploads `manifest.json` last.
+
+In Docker mode, Relay requires the pinned image to be locally present, creates
+and inspects a networkless read-only contributor, runs it with only
+authenticated read-only inputs and one fresh public-output handoff, removes
+the exact container ID, verifies it is absent, and only then validates the
+handoff and asks for `NO COPIES RETAINED`. Native mode retains the ceremony
+kit's manual destruction procedure and `DESTROYED` confirmation.
 
 **Success evidence:** successful process exit plus:
 

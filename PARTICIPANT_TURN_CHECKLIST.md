@@ -85,7 +85,9 @@ not a completion percentage or an ETA.
       are public and intentionally retained for verification and interrupted
       upload recovery; they are not the contribution randomness.
 - [ ] **HUMAN** I entered the exact confirmation requested by the approved
-      native tool only after the preceding statements were true.
+      Relay workflow only after the preceding statements were true. Docker
+      mode requests `NO COPIES RETAINED` after measured removal; native mode
+      follows the ceremony kit's `DESTROYED` procedure.
 
 If cleanup is incomplete or uncertain, stop without uploading and contact the
 coordinator. Do not make an erasure statement you cannot honestly support.

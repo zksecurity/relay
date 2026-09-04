@@ -4,6 +4,7 @@ package access
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,8 +20,10 @@ const (
 	StorageConfigSchema       = "relay-storage-config-v1"
 	GrantSchema               = "relay-role-grant-v1"
 	ParticipantConfigSchemaV1 = "relay-participant-config-v1"
-	ParticipantConfigSchema   = "relay-participant-config-v2"
-	RoleConfigSchema          = "relay-role-config-v1"
+	ParticipantConfigSchemaV2 = "relay-participant-config-v2"
+	ParticipantConfigSchema   = "relay-participant-config-v3"
+	RoleConfigSchemaV1        = "relay-role-config-v1"
+	RoleConfigSchema          = "relay-role-config-v2"
 	CandidateManifestSchema   = "relay-candidate-manifest-v1"
 	SubmissionManifestSchema  = "relay-evidence-submission-v1"
 )
@@ -229,6 +232,10 @@ type ParticipantConfig struct {
 	PublishedBaseURL   string `json:"published_base_url"`
 	PublishedBucket    string `json:"published_bucket"`
 	GrantPath          string `json:"grant_path,omitempty"`
+	ExecutionMode      string `json:"execution_mode,omitempty"`
+	DockerImage        string `json:"docker_image,omitempty"`
+	DockerPlatform     string `json:"docker_platform,omitempty"`
+	DockerCLI          string `json:"docker_cli,omitempty"`
 }
 
 // RoleConfig is the persistent, non-secret production profile for one
@@ -254,11 +261,15 @@ type RoleConfig struct {
 	StorageConfig       string `json:"storage_config"`
 	PublishedBaseURL    string `json:"published_base_url"`
 	PublishedBucket     string `json:"published_bucket"`
+	ExecutionMode       string `json:"execution_mode,omitempty"`
+	DockerImage         string `json:"docker_image,omitempty"`
+	DockerPlatform      string `json:"docker_platform,omitempty"`
+	DockerCLI           string `json:"docker_cli,omitempty"`
 }
 
 func (c RoleConfig) Validate() error {
-	if c.Schema != RoleConfigSchema {
-		return fmt.Errorf("role config schema %q, want %q", c.Schema, RoleConfigSchema)
+	if c.Schema != RoleConfigSchemaV1 && c.Schema != RoleConfigSchema {
+		return fmt.Errorf("role config schema %q is unsupported", c.Schema)
 	}
 	if c.Role != RoleParticipant && c.Role != RoleWitness && c.Role != RoleMirror &&
 		c.Role != RoleAuditor && c.Role != RoleRelease {
@@ -279,6 +290,10 @@ func (c RoleConfig) Validate() error {
 	}
 	if c.CeremonyBinary == "" {
 		return errors.New("role config ceremony_binary is required")
+	}
+	if err := validateExecution(c.Schema == RoleConfigSchema, c.Role, c.ExecutionMode, c.CeremonyBinary,
+		c.DockerImage, c.DockerPlatform, c.DockerCLI); err != nil {
+		return fmt.Errorf("role config execution: %w", err)
 	}
 	if c.Role == RoleParticipant {
 		if c.SigningKey == "" || c.Environment == "" ||
@@ -310,7 +325,7 @@ func (c RoleConfig) Validate() error {
 }
 
 func (c ParticipantConfig) Validate() error {
-	if (c.Schema != ParticipantConfigSchemaV1 && c.Schema != ParticipantConfigSchema) ||
+	if (c.Schema != ParticipantConfigSchemaV1 && c.Schema != ParticipantConfigSchemaV2 && c.Schema != ParticipantConfigSchema) ||
 		(c.Phase != "phase1" && c.Phase != "phase2") {
 		return errors.New("participant config has invalid schema or phase")
 	}
@@ -328,11 +343,63 @@ func (c ParticipantConfig) Validate() error {
 	if c.Schema == ParticipantConfigSchemaV1 && c.GrantPath == "" {
 		return errors.New("participant config grant_path is required for v1")
 	}
+	if err := validateExecution(c.Schema == ParticipantConfigSchema, RoleParticipant, c.ExecutionMode,
+		c.CeremonyBinary, c.DockerImage, c.DockerPlatform, c.DockerCLI); err != nil {
+		return fmt.Errorf("participant config execution: %w", err)
+	}
 	base, err := url.Parse(c.PublishedBaseURL)
 	if err != nil || base.Scheme != "https" || base.Host == "" || base.RawQuery != "" || base.Fragment != "" {
 		return errors.New("participant config published_base_url must be an HTTPS origin")
 	}
 	return nil
+}
+
+func validateExecution(latest bool, role, mode, ceremonyBinary, image, platform, dockerCLI string) error {
+	if mode == "" {
+		mode = "native"
+	}
+	if mode != "native" && mode != "docker" {
+		return errors.New("execution_mode must be native or docker")
+	}
+	if mode == "native" {
+		if image != "" || platform != "" || dockerCLI != "" {
+			return errors.New("native execution must not contain Docker settings")
+		}
+		return nil
+	}
+	if role != RoleParticipant {
+		return errors.New("Docker execution is currently supported only for participants")
+	}
+	if !latest {
+		return errors.New("Docker execution requires the latest configuration schema")
+	}
+	if !filepath.IsAbs(ceremonyBinary) || filepath.Clean(ceremonyBinary) != ceremonyBinary {
+		return errors.New("Docker ceremony_binary must be an absolute clean container path")
+	}
+	if !pinnedDockerImage(image) {
+		return errors.New("docker_image must be an immutable sha256 image ID or repository@sha256 digest")
+	}
+	if platform != "linux/amd64" && platform != "linux/arm64" {
+		return errors.New("docker_platform must be linux/amd64 or linux/arm64")
+	}
+	if dockerCLI == "" {
+		return errors.New("docker_cli is required for Docker execution")
+	}
+	return nil
+}
+
+func pinnedDockerImage(image string) bool {
+	if strings.HasPrefix(image, "sha256:") && len(image) == len("sha256:")+64 {
+		_, err := hex.DecodeString(strings.TrimPrefix(image, "sha256:"))
+		return err == nil
+	}
+	const marker = "@sha256:"
+	index := strings.LastIndex(image, marker)
+	if index <= 0 || len(image) != index+len(marker)+64 {
+		return false
+	}
+	_, err := hex.DecodeString(image[index+len(marker):])
+	return err == nil
 }
 
 type FileRef struct {

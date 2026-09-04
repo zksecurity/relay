@@ -107,12 +107,13 @@ grant contents, or cloud secrets in this checklist.
 - [ ] **HUMAN** Keep the signing key and environment declaration at separately
       approved protected paths.
 
-The participant isolation design is being developed in
+Relay's Docker participant isolation is documented in
 [docs/PARTICIPANT_ISOLATION_DESIGN.md](docs/PARTICIPANT_ISOLATION_DESIGN.md).
-Until that design is implemented and approved, follow the production isolation
-and destruction procedure supplied with the authenticated ceremony kit. Do not
-claim that Relay has automatically erased a container or VM unless the
-approved implementation actually measured and recorded that result.
+It provides container-level isolation on Linux and functional rehearsal on
+macOS. It does not erase Docker Desktop's VM or make Docker-only macOS
+participation production-capable. Native profiles must continue to follow the
+production isolation and destruction procedure supplied with the authenticated
+ceremony kit.
 
 ## 4. Initialize once per phase
 
@@ -132,6 +133,20 @@ relay ceremony init-config \
 relay participant status \
   --config /var/lib/mpc-ceremonies/CEREMONY_ID/config/participant-phase1.json
 ```
+
+For Docker execution, the coordinator-supplied profile command also includes
+`--execution-mode docker`, a locally preloaded immutable `--docker-image`, and
+the ceremony's exact `--docker-platform`.
+
+- **AUTO** `init-config` must authenticate the local ceremony, coordinator
+  trust key, participant signing key, environment, identity, and frozen roster
+  positions, then print the ceremony mode, identity, key ID, fingerprint, and
+  both phase assignments.
+- **AUTO** The persistent role config must contain validated public metadata
+  and approved paths, but no private-key bytes, cloud credentials, or temporary
+  grant.
+- **AUTO** `participant status` must authenticate the public head and report
+  the expected phase, index, and next identity.
 
 - [ ] **MANUAL — PLATFORM TODO** Attach the secret-free Phase 1 and Phase 2
       profile/assignment receipts to this participant record. Do not copy their

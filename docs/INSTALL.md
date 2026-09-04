@@ -255,6 +255,20 @@ relay participant run --config "$ROLE_CONFIG" \
   --grant /secure/handoff/participant.grant.json
 ```
 
+For Docker-backed participant isolation, preload the coordinator-approved
+ceremony-tool image and add these flags to `ceremony init-config`:
+
+```bash
+  --execution-mode docker \
+  --docker-image registry.example/ceremony-tool@sha256:DIGEST \
+  --docker-platform linux/amd64
+```
+
+Use the one platform bound into the signed ceremony definition. Relay refuses
+mutable image tags, never pulls during a participant turn, and does not fall
+back to native execution. Docker Desktop on macOS is approved for rehearsal,
+not production erasure assurance.
+
 Relay authenticates the local key through `mpc-ceremony`, checks the signed
 published state, and rejects an out-of-turn participant before contribution
 work starts.

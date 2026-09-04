@@ -141,11 +141,15 @@ lifetime and public head. If it is not your turn, it exits before expensive
 work. Otherwise it:
 
 1. downloads and verifies the accepted transcript;
-2. invokes the proof-tool contribution;
-3. asks you to destroy the contribution environment;
-4. requires you to type `DESTROYED` before creating the signed erasure record;
-5. confirms that the public head has not changed; and
-6. uploads the candidate manifest last for coordinator review.
+2. invokes the proof-tool contribution using the profile's approved execution
+   mode;
+3. in Docker mode, removes the exact contributor container and verifies it is
+   absent before accepting the public handoff;
+4. asks only about cleanup it cannot observe: Docker mode requires
+   `NO COPIES RETAINED`; native mode retains the kit's `DESTROYED` procedure;
+5. creates the signed erasure record;
+6. confirms that the public head has not changed; and
+7. uploads the candidate manifest last for coordinator review.
 
 Long operations print UTC start, completion, and failure times, plus a
 one-minute elapsed-time heartbeat while otherwise silent. Proof-tool replay

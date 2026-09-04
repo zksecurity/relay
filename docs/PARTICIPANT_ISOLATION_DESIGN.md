@@ -1,10 +1,11 @@
 # Participant contribution isolation
 
-Status: proposed; the first Docker-backed implementation described here is
-rehearsal-only on macOS and is not a production isolation procedure.
+Status: implemented by Relay's explicit `docker` participant execution mode.
+It is rehearsal-only on macOS and is not a production macOS isolation
+procedure.
 
-This document defines the Docker-backed participant workflow that Relay should
-implement for Groth16 ceremonies. It narrows the design to the threat we care
+This document defines the Docker-backed participant workflow that Relay
+implements for Groth16 ceremonies. It narrows the design to the threat we care
 about: an honest participant should not accidentally preserve contribution
 randomness that a later compromise could recover.
 
@@ -86,12 +87,19 @@ candidate.
 
 ## Image and binary model
 
-Use one reproducible ceremony-tool image for all roles, selected by immutable
-image digest. Role-specific launch configurations may select different Relay
-commands, but they must not rebuild independent copies of `mpc-ceremony`.
+Use one reproducible ceremony-tool image for all participants, selected by an
+immutable repository digest or local image ID. Other roles do not generate
+toxic waste and do not need this contributor container.
 
-This keeps the Linux `mpc-ceremony` binary identical across macOS and Linux
-participants. Relay must verify both:
+The current proof-tool definition binds one exact executable, including its
+GOOS, GOARCH, and SHA-256. A ceremony must therefore select one Linux platform,
+currently `linux/amd64` or `linux/arm64`, and all participants must use that
+same image variant. This is a current software-binding constraint, not a
+Groth16 requirement. Supporting native images for both architectures in one
+ceremony requires a separate proof-tool protocol change to authenticate an
+allowlist of reviewed, equivalent binaries.
+
+Relay verifies both:
 
 1. the configured immutable image digest; and
 2. the `mpc-ceremony` binary digest required by the signed ceremony definition.
@@ -99,11 +107,10 @@ participants. Relay must verify both:
 The image must already be present before the sensitive container is created.
 The contributor runs with no network and cannot pull an image.
 
-The current generic `--ceremony-binary` hook is not sufficient for lifecycle
-enforcement because Relay cannot learn whether an opaque wrapper actually
-removed its container. Add a structured Docker execution driver to Relay. The
-driver may use the existing ceremony inspection and attestation interfaces,
-but contribution lifecycle transitions must be visible to Relay.
+The generic `--ceremony-binary` hook is not used as an opaque Docker wrapper.
+Relay's structured Docker execution driver owns and observes every contribution
+lifecycle transition while continuing to use the existing ceremony inspection
+and attestation interfaces.
 
 ## Container configuration
 
@@ -170,11 +177,11 @@ start and attach
   ↓
 wait for successful exit
   ↓
-validate public handoff
-  ↓
 remove exact container ID
   ↓
 inspect exact ID and require "not found"
+  ↓
+validate public handoff
   ↓
 participant no-copy confirmation
   ↓
@@ -225,7 +232,7 @@ Relay verified:
   ✓ contributor exited
   ✓ container <short-id> was removed
   ✓ container <short-id> no longer exists
-  ✓ temporary container storage was destroyed
+  ✓ its writable layer and tmpfs were removed
 
 Confirm that you:
   • did not create or retain a VM/container snapshot;
@@ -272,15 +279,25 @@ cleanup, not physical erasure.
 
 ### Production
 
-Production on macOS requires a dedicated disposable Linux VM that is not
-configured for snapshots, backups, hibernation, or swap. The Docker-only
-supervisor and state machine above do not yet implement the VM-destruction
-boundary, so they must not be represented as production-capable on macOS.
+For a reusable production Mac workflow, use a dedicated disposable Linux VM
+that is not configured for snapshots, backups, hibernation, or swap. The
+Docker-only supervisor and state machine above do not implement the
+VM-destruction boundary, so they must not be represented as production-capable
+on macOS.
+
+An alternative is a dedicated sacrificial Mac running Docker, followed by
+shutdown and a supported whole-device cryptographic erase. Because Relay
+cannot upload after its own machine is erased, that option requires a reviewed
+split handoff: copy out only the authenticated public candidate, erase the Mac,
+and create the final attestation and upload from a separate clean machine.
 
 A future VM-backed execution design must keep a trusted Relay supervisor and
-the participant signing key outside the disposable VM. It must authenticate
-and copy out only the public candidate plus the non-secret lifecycle evidence,
-destroy and prove removal of the exact VM, and only then permit participant
+the persistent participant signing-key file outside the disposable VM disk.
+If the current proof-tool signs inside the guest, key bytes still enter guest
+memory temporarily; keeping them entirely outside requires splitting signing
+from contribution. The supervisor must authenticate and copy out only the
+public candidate plus non-secret lifecycle evidence, destroy the exact VM and
+verify the runtime no longer registers it, and only then permit participant
 confirmation, erasure attestation, public-head recheck, and upload. It must
 also specify crash recovery and authenticate every item crossing from the VM
 before production use.
@@ -288,6 +305,15 @@ before production use.
 Removing a Docker container alone cannot establish that Docker Desktop's VM
 memory, backing storage, host swap, SSD snapshots, or backups contain no
 remnants.
+
+## Linux production profile
+
+A VM driver is not required on a dedicated Linux machine using native Docker
+Engine. The production procedure must still disable host swap, hibernation,
+and core-dump persistence; exclude ceremony storage from backups and snapshots;
+use the restricted mounts above; and power off or wipe the dedicated host at
+the ceremony's required assurance level. Relay records container-level facts;
+the participant remains responsible for host-level facts Relay cannot observe.
 
 ## Failure behavior
 
@@ -322,14 +348,14 @@ The implementation is not complete until automated tests demonstrate:
 
 ## Implementation scope
 
-The first implementation changes Relay, its participant configuration, role
+The implementation changes Relay, its participant configuration, role
 documentation, Docker assets, and tests. It provides container-level isolation
 for Linux and functional rehearsal on macOS; production macOS remains blocked
 on the separately reviewed VM-backed supervisor and handoff described above.
 It does not change Groth16 arithmetic or the proof-tool erasure schema.
 
-The implementation should introduce a small, testable execution-driver
-interface instead of embedding Docker command construction throughout the
-participant workflow. Native Linux execution may remain available, but
+The implementation uses a small, testable execution-driver interface instead
+of embedding Docker command construction throughout the participant workflow.
+Native Linux execution remains available, but
 production profiles must state their execution mode explicitly and must not
 silently fall back from Docker to native execution.

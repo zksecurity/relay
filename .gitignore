@@ -1,4 +1,5 @@
 dist/
 /relay
+/docker/ceremony-tool/mpc-ceremony
 .wrangler/
 scripts/three-machine-rehearsal/machine-*/.env

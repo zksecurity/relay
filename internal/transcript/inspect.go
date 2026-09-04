@@ -17,7 +17,14 @@ const (
 	enrollmentInspectionSchema  = "proof-tool-mpc-enrollment-inspection-v1"
 )
 
-type inspectionRunner func(executable string, args ...string) (stdout, stderr []byte, err error)
+// InspectionRunner invokes the trusted ceremony tool. It is exported so Relay
+// can place participant-side inspections inside the same pinned Docker image
+// used for the contribution.
+type InspectionRunner func(executable string, args ...string) (stdout, stderr []byte, err error)
+
+// Retained for package-local tests and callers compiled against the original
+// unexported seam.
+type inspectionRunner = InspectionRunner
 
 // Inspector delegates ceremony document authentication and interpretation to
 // the trusted mpc-ceremony binary. Relay consumes only its versioned projection.
@@ -27,8 +34,8 @@ type Inspector struct {
 	CeremonySignaturePath    string
 	CoordinatorPublicKeyPath string
 	TranscriptRoot           string
-
-	run inspectionRunner
+	Runner                   InspectionRunner
+	run                      inspectionRunner
 }
 
 type inspectionResult struct {
@@ -223,7 +230,10 @@ func (i Inspector) execute(args ...string) (inspectionResult, error) {
 	if i.CeremonyPath == "" || i.CeremonySignaturePath == "" || i.CoordinatorPublicKeyPath == "" {
 		return inspectionResult{}, errors.New("ceremony, ceremony signature, and coordinator public key are required for inspection")
 	}
-	runner := i.run
+	runner := i.Runner
+	if runner == nil {
+		runner = i.run
+	}
 	if runner == nil {
 		runner = runInspectionCommand
 	}
