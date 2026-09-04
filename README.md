@@ -83,7 +83,7 @@ matches `relay-storage.json`:
     relay participant status --config /ceremony/config/participant-phase1.json
 
 To use the disposable contributor, add an immutable image ID or repository
-digest and the one platform selected for the signed ceremony:
+digest for this participant's platform:
 
     relay ceremony init-config --home /ceremony --role participant --phase phase1 \
       --coordinator-key /trusted/coordinator-public-key.hex \
@@ -93,6 +93,10 @@ digest and the one platform selected for the signed ceremony:
       --docker-platform linux/amd64
 
 Relay never pulls this image during a turn. Preload and authenticate it first.
+The v2 signed ceremony definition may allow exact images' binaries for both
+`linux/amd64` and `linux/arm64`; each participant selects the matching image
+and Relay records that exact binary digest in its lifecycle receipt. Legacy v1
+definitions remain single-platform.
 Docker mode is suitable for rehearsal on macOS; see the isolation design for
 the stronger production macOS boundary and the Linux production profile.
 

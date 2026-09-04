@@ -204,7 +204,7 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 		_ = os.RemoveAll(handoff)
 		return nil, err
 	}
-	receipt.CeremonyBinarySHA256, err = signedCeremonyBinarySHA256(d.definition)
+	receipt.CeremonyBinarySHA256, err = signedCeremonyBinarySHA256(d.definition, d.platform)
 	if err != nil {
 		_ = os.RemoveAll(handoff)
 		return nil, err
@@ -714,22 +714,58 @@ func validContainerID(id string) bool {
 	return err == nil
 }
 
-func signedCeremonyBinarySHA256(path string) (string, error) {
+func signedCeremonyBinarySHA256(path, platform string) (string, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read signed ceremony software binding: %w", err)
 	}
 	var definition struct {
+		Schema   string `json:"schema"`
 		Software struct {
+			GoOS       string `json:"goos"`
+			GoArch     string `json:"goarch"`
 			ToolBinary struct {
 				SHA256 string `json:"sha256"`
 			} `json:"tool_binary"`
+			Binaries []struct {
+				GoOS       string `json:"goos"`
+				GoArch     string `json:"goarch"`
+				ToolBinary struct {
+					SHA256 string `json:"sha256"`
+				} `json:"tool_binary"`
+			} `json:"binaries"`
 		} `json:"software"`
 	}
 	if err := json.Unmarshal(raw, &definition); err != nil {
 		return "", fmt.Errorf("decode signed ceremony software binding: %w", err)
 	}
-	digest := definition.Software.ToolBinary.SHA256
+	var digest string
+	switch definition.Schema {
+	case "proof-tool-mpc-ceremony-definition-v1":
+		if definition.Software.GoOS+"/"+definition.Software.GoArch != platform {
+			return "", fmt.Errorf(
+				"signed ceremony binary platform is %q, want configured Docker platform %q",
+				definition.Software.GoOS+"/"+definition.Software.GoArch,
+				platform,
+			)
+		}
+		digest = definition.Software.ToolBinary.SHA256
+	case "proof-tool-mpc-ceremony-definition-v2":
+		for _, binary := range definition.Software.Binaries {
+			if binary.GoOS+"/"+binary.GoArch != platform {
+				continue
+			}
+			if digest != "" {
+				return "", fmt.Errorf("signed ceremony definition contains multiple binaries for %s", platform)
+			}
+			digest = binary.ToolBinary.SHA256
+		}
+		if digest == "" {
+			return "", fmt.Errorf("signed ceremony definition allows no binary for %s", platform)
+		}
+	default:
+		return "", fmt.Errorf("unsupported signed ceremony definition schema %q", definition.Schema)
+	}
 	if !strings.HasPrefix(digest, "sha256:") || len(digest) != len("sha256:")+64 {
 		return "", errors.New("signed ceremony definition has no valid tool binary SHA-256")
 	}

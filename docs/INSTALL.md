@@ -264,10 +264,12 @@ ceremony-tool image and add these flags to `ceremony init-config`:
   --docker-platform linux/amd64
 ```
 
-Use the one platform bound into the signed ceremony definition. Relay refuses
-mutable image tags, never pulls during a participant turn, and does not fall
-back to native execution. Docker Desktop on macOS is approved for rehearsal,
-not production erasure assurance.
+Use a platform present in the signed ceremony definition's exact binary
+allowlist. A v2 ceremony can mix `linux/amd64` participants with Apple-silicon
+Mac participants using `linux/arm64`; a legacy v1 ceremony cannot. Relay
+refuses mutable image tags, never pulls during a participant turn, and does not
+fall back to native execution. Docker Desktop on macOS is approved for
+rehearsal, not production erasure assurance.
 
 Relay authenticates the local key through `mpc-ceremony`, checks the signed
 published state, and rejects an out-of-turn participant before contribution

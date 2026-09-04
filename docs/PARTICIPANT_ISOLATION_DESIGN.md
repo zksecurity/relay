@@ -87,22 +87,22 @@ candidate.
 
 ## Image and binary model
 
-Use one reproducible ceremony-tool image for all participants, selected by an
-immutable repository digest or local image ID. Other roles do not generate
-toxic waste and do not need this contributor container.
+Use a reproducible ceremony-tool image for each allowed participant platform,
+selected by an immutable repository digest or local image ID. Other roles do
+not generate toxic waste and do not need this contributor container.
 
-The current proof-tool definition binds one exact executable, including its
-GOOS, GOARCH, and SHA-256. A ceremony must therefore select one Linux platform,
-currently `linux/amd64` or `linux/arm64`, and all participants must use that
-same image variant. This is a current software-binding constraint, not a
-Groth16 requirement. Supporting native images for both architectures in one
-ceremony requires a separate proof-tool protocol change to authenticate an
-allowlist of reviewed, equivalent binaries.
+The proof-tool v2 definition binds a canonical allowlist of exact executables,
+including each binary's GOOS, GOARCH, architecture level, SHA-256, BLAKE2b-256,
+and size. It can authorize both `linux/amd64` and `linux/arm64` in one ceremony,
+provided both binaries have identical source, toolchain, dependency, and build
+policy metadata. Each contribution attestation identifies the exact binary
+that ran. A legacy v1 definition is treated as a one-binary allowlist.
 
 Relay verifies both:
 
 1. the configured immutable image digest; and
-2. the `mpc-ceremony` binary digest required by the signed ceremony definition.
+2. the `mpc-ceremony` binary digest allowed for the configured platform by the
+   signed ceremony definition.
 
 The image must already be present before the sensitive container is created.
 The contributor runs with no network and cannot pull an image.

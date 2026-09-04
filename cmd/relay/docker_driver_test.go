@@ -167,7 +167,7 @@ func dockerContributionFixture(t *testing.T) (roleOpts, position, *dockerDriver,
 			t.Fatal(err)
 		}
 	}
-	definition := `{"software":{"tool_binary":{"sha256":"sha256:` + strings.Repeat("c", 64) + `"}}}`
+	definition := `{"schema":"proof-tool-mpc-ceremony-definition-v2","software":{"binaries":[{"goos":"linux","goarch":"arm64","goarm64":"v8.0","tool_binary":{"sha256":"sha256:` + strings.Repeat("c", 64) + `"}}]}}`
 	if err := os.WriteFile(paths["definition"], []byte(definition), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -235,6 +235,49 @@ func TestDockerContributionBlocksWhenRemovalCannotBeVerified(t *testing.T) {
 	}
 	if _, err := os.Lstat(o.outDir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("candidate was promoted before removal: %v", err)
+	}
+}
+
+func TestSignedCeremonyBinarySHA256SelectsConfiguredPlatform(t *testing.T) {
+	amdDigest := "sha256:" + strings.Repeat("a", 64)
+	armDigest := "sha256:" + strings.Repeat("b", 64)
+	definition := `{"schema":"proof-tool-mpc-ceremony-definition-v2","software":{"binaries":[` +
+		`{"goos":"linux","goarch":"amd64","goamd64":"v1","tool_binary":{"sha256":"` + amdDigest + `"}},` +
+		`{"goos":"linux","goarch":"arm64","goarm64":"v8.0","tool_binary":{"sha256":"` + armDigest + `"}}]}}`
+	path := filepath.Join(t.TempDir(), "ceremony.json")
+	if err := os.WriteFile(path, []byte(definition), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for platform, want := range map[string]string{
+		"linux/amd64": amdDigest,
+		"linux/arm64": armDigest,
+	} {
+		got, err := signedCeremonyBinarySHA256(path, platform)
+		if err != nil {
+			t.Fatalf("select %s: %v", platform, err)
+		}
+		if got != want {
+			t.Fatalf("select %s = %q, want %q", platform, got, want)
+		}
+	}
+	if _, err := signedCeremonyBinarySHA256(path, "linux/riscv64"); err == nil {
+		t.Fatal("unlisted platform was accepted")
+	}
+}
+
+func TestSignedCeremonyBinarySHA256TreatsV1AsSingletonPolicy(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("c", 64)
+	definition := `{"schema":"proof-tool-mpc-ceremony-definition-v1","software":{` +
+		`"goos":"linux","goarch":"amd64","tool_binary":{"sha256":"` + digest + `"}}}`
+	path := filepath.Join(t.TempDir(), "ceremony.json")
+	if err := os.WriteFile(path, []byte(definition), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := signedCeremonyBinarySHA256(path, "linux/amd64"); err != nil || got != digest {
+		t.Fatalf("select legacy binary = %q, %v", got, err)
+	}
+	if _, err := signedCeremonyBinarySHA256(path, "linux/arm64"); err == nil {
+		t.Fatal("legacy singleton policy was accepted on another platform")
 	}
 }
 
