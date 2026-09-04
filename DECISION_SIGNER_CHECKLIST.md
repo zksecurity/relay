@@ -13,11 +13,6 @@
       named in this decision assignment.
 - [ ] **HUMAN** I obtained the coordinator key, approved kit identity, decision
       draft, and evidence set through the approved authenticated procedure.
-- **AUTO NOW** `./setup verify` authenticates the approved proof-tool binary and
-  emits the tool-identity receipt.
-- **AUTO NOW** `mpc-ceremony decision prepare` strictly parses the draft,
-  derives its release and decision IDs, and checks ceremony, production circuit,
-  source, and signer-role bindings.
 - [ ] **MANUAL — PLATFORM TODO** Attach the tool receipt, canonical decision
       digest, signer role, and exact evidence-inventory digest to this assignment.
 
@@ -27,12 +22,6 @@
       incidents and deviations, and the exact evidence relevant to my role.
 - [ ] **AUTHORIZE** I explicitly choose the stated `GO` or `NO-GO` result and
       authorize my key to sign only the canonical decision bytes I reviewed.
-- **AUTO NOW** For `GO`, `mpc-ceremony decision sign` hashes and semantically
-  verifies the complete local evidence set before loading the signing key. It
-  must fail if the signer identity or role does not match.
-- **AUTO NOW** `mpc-ceremony decision verify` validates every detached role
-  signature, evidence digest, release/candidate/transcript coherence, and the
-  complete signer threshold required for `GO`.
 - [ ] **HUMAN** I did not treat a storage upload, dashboard status, or another
       person's approval as my own decision.
 

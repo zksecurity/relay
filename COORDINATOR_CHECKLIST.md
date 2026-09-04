@@ -1,6 +1,6 @@
 # MPC Ceremony Coordinator Checklist
 
-> This is an automation-aware execution aid for a production or rehearsal
+> This is a human execution aid for a production or rehearsal
 > ceremony. The authoritative procedures remain
 > [COORDINATOR_RUNBOOK.md](COORDINATOR_RUNBOOK.md),
 > [ROLE_RUNBOOK.md](ROLE_RUNBOOK.md), and the authenticated proof-tool ceremony
@@ -17,9 +17,6 @@
 The checklist deliberately separates mechanical verification from human trust
 decisions:
 
-- **AUTO NOW** — the current Relay, proof-tool, or storage adapter produces a
-  pass/fail result. Retain its complete secret-free output as evidence. An
-  operator cannot turn a failure into a pass by checking a box.
 - **MANUAL — PLATFORM TODO** — the check is mechanical and is intended for
   future platform automation, but no reviewed implementation exists today. A
   named operator must run the cited procedure, attach its secret-free evidence,
@@ -31,8 +28,13 @@ decisions:
   named human must explicitly permit the state transition or signature.
 - **STOP** — a live invariant failed. Pause the ceremony and investigate.
 
-Do not replace an **AUTO NOW** result with an unauthenticated checkbox. A
-**MANUAL — PLATFORM TODO** item is not automatic merely because a dashboard
+Automated controls are intentionally absent from this checklist. The platform
+shows them as non-interactive `passed`, `failed`, or `pending` system status;
+their requirements and evidence are in the
+[automation control matrix](AUTOMATION_CONTROL_MATRIX.md). A failed or pending
+blocking control cannot be overridden with a checkbox.
+
+A **MANUAL — PLATFORM TODO** item is not automatic merely because a dashboard
 renders it: use the authoritative runbook procedure until both the integration
 and its emitted evidence have been reviewed. Dashboard state is operational
 convenience; signed artifacts and independently authenticated records remain
@@ -62,9 +64,6 @@ authoritative.
 
 ### Ceremony evidence record
 
-- **AUTO NOW** `./setup verify` emits the effective Relay and `mpc-ceremony`
-  versions, resolved executable paths, release identifiers, and binary SHA-256
-  values as a secret-free tool-identity receipt. Retain the complete receipt.
 - [ ] **MANUAL — PLATFORM TODO** Attach the applicable provider CLI path and
       version until the platform emits one combined setup/storage identity
       record.
@@ -117,19 +116,6 @@ automatic result in the coordination platform.
 - [ ] **HUMAN** Confirm no role private key was requested, received, shared, or
       centralized.
 
-### Mechanical checks and evidence
-
-- **AUTO NOW** Reject a roster with no participant, fewer than two auditors, no
-  release signer, or an ambiguous participant order.
-- **AUTO NOW** Reject duplicate identity IDs, key IDs, or public keys across frozen
-  roles.
-- **AUTO NOW** Reject a release signer who is also the coordinator, a participant,
-  or an auditor under the approved identity policy.
-- **AUTO NOW** Store only public identity data: identity ID, key ID, public key,
-  fingerprint, and agreed display name.
-- **AUTO NOW** Export the exact canonical roster and digest for native review and
-  signing. A browser draft is not a frozen definition.
-
 ## 2. Install and authenticate the toolchain
 
 ### Human gates
@@ -139,25 +125,6 @@ automatic result in the coordination platform.
 - [ ] **HUMAN** Approve the exact release intended for this ceremony.
 - [ ] **HUMAN** Distribute the authenticated kit tag, archive digest, and
       coordinator public key independently of ceremony storage.
-
-### Mechanical checks and evidence
-
-- **AUTO NOW** Verify the downloaded archive SHA-256 before extraction.
-- **AUTO NOW** Run `./setup verify` and require every internal file and
-  compatibility record to pass.
-- **AUTO NOW** Require the pinned Relay, `mpc-ceremony`, and provider CLI versions.
-- **AUTO NOW** Resolve and record the reviewed command paths, versions, tags, and
-  binary hashes. At minimum capture the output of:
-
-  ```sh
-  relay --help
-  mpc-ceremony help
-  aws --version
-  command -v relay mpc-ceremony aws
-  ```
-
-- **AUTO NOW** Refuse ceremony actions when the effective tool identity differs
-  from the approved record.
 
 ## 3. Prepare and freeze the ceremony
 
@@ -173,21 +140,11 @@ automatic result in the coordination platform.
 - [ ] **AUTHORIZE** Review the exact definition digest and sign the frozen
       definition with the approved native coordinator tool.
 
-### Mechanical checks and evidence
+### Platform TODOs
 
-- **AUTO NOW** Create `public/`, `config/`, and `run/` beneath the approved home
-  with coordinator-controlled permissions.
-- **AUTO NOW** Run the authenticated proof-tool initialization procedure.
-- **AUTO NOW** Verify the signed `ceremony.json` and detached signature, ceremony
-  ID and mode, circuit ID, constraint-system digests, software binding,
-  coordinator identity, coordinator fingerprint, participant identities and
-  order, auditors, release signer, and beacon policies.
-- **AUTO NOW** Bind the signed definition to the exact canonical roster digest.
 - [ ] **MANUAL — PLATFORM TODO** Track signed role acknowledgements. Every
       frozen role must confirm its identity, fingerprint, and position before
       its first action.
-- **AUTO NOW** Authenticate and retain signed enrollments for witnesses, mirrors,
-  and every non-participant identity that can receive a grant.
 
 ## 4. Configure and validate storage
 
@@ -202,11 +159,8 @@ automatic result in the coordination platform.
 - [ ] **AUTHORIZE** Approve the generated secret-free
       `relay-storage.json` after all storage probes pass.
 
-### Mechanical checks and evidence
+### Platform TODOs
 
-- **AUTO NOW** Confirm the published origin is anonymously readable over HTTPS.
-- **AUTO NOW** For R2, reject an inbox with `r2.dev` access or a custom public
-  domain; for every provider, require the anonymous inbox-read probe to fail.
 - [ ] **MANUAL — PLATFORM TODO** Confirm the inbox has no other public policy,
   website endpoint, CDN behavior, or custom public hostname permitted by the
   selected provider.
@@ -216,12 +170,6 @@ automatic result in the coordination platform.
 - [ ] **MANUAL — PLATFORM TODO** From an independent machine or execution
       environment, prove a scoped test credential cannot list, read, or write
       outside its exact role prefix.
-- **AUTO NOW** Run `relay coordinator configure-storage` with the explicit trusted
-  coordinator public key and require published read/write/delete, anonymous
-  public-origin, and inbox-privacy probes to pass.
-- **AUTO NOW** Confirm disposable probes were removed.
-- **AUTO NOW** Set the storage config to mode `0600` and reject any persistent
-  temporary credentials or secrets in it.
 
 ## 5. Complete role handoffs
 
@@ -233,17 +181,13 @@ automatic result in the coordination platform.
 - [ ] **HUMAN** Confirm mirrors and auditors operate destinations independent
       of the coordinator and one another as required by policy.
 
-### Mechanical checks and evidence
+### Platform TODOs
 
 - [ ] **MANUAL — PLATFORM TODO** Deliver or make available the signed public definition,
   `relay-storage.json`, and each applicable signed enrollment without including
   grants or private signing keys.
 - [ ] **MANUAL — PLATFORM TODO** Track acknowledgement of the exact handoff
       digest from every role.
-- **AUTO NOW** Require every role profile to validate before it becomes ready.
-- **AUTO NOW** Reject persistent role profiles containing grants, cloud secrets,
-  or private-key bytes. A validated profile may contain an approved private-key
-  path, but not the key contents.
 - [ ] **MANUAL — PLATFORM TODO** Assign every person the applicable checklist
       from [CHECKLISTS.md](CHECKLISTS.md). Give every participant one lifecycle
       checklist and a separate turn sheet for each scheduled phase. The future
@@ -282,31 +226,13 @@ the coordinator to copy these values between systems.
       Future platform automation should enforce this ordering and preserve the
       notification event.
 
-### Mechanical checks and evidence
+### Platform TODOs
 
 - [ ] **MANUAL — PLATFORM TODO** Before grant issuance, require the signed
       public head to name this participant next and require no other live
       participant grant.
-- **AUTO NOW** Generate the grant into a fresh mode-`0600` file and bind it to
-  the exact participant prefix.
 - [ ] **MANUAL — PLATFORM TODO** Record delivery acknowledgement without
   recording the credential.
-- **AUTO NOW** Relay's participant uploader writes `manifest.json` last and
-  `relay coordinator candidates` treats the manifest as the submission marker.
-  Do not infer cryptographic validity or referenced-object completeness from
-  the listing; acceptance performs those checks.
-- **AUTO NOW** `relay coordinator candidates` discovers schema-valid manifests
-  for the configured ceremony and reports their claimed participant, phase,
-  index, and object key. Treat `ready` as ready for acceptance review, not as a
-  valid contribution; exact path, attempt, object bytes, hashes, schedule, and
-  chain-head binding are checked by `relay coordinator accept`.
-- **AUTO NOW** Review into a fresh local directory.
-- **AUTO NOW** `relay coordinator accept --verify-publish` must verify manifest
-  scope, every file hash, scheduled identity, current head, contribution,
-  signed erasure record, and chain transition, then produce the
-  coordinator-signed accepted transition before publishing a new signed head.
-- **AUTO NOW** Require `accepted_at` to be strictly after signed `destroyed_at`,
-  preserve subsecond timestamps, and retain the complete native receipt.
 - [ ] **MANUAL — PLATFORM TODO** Independently read and authenticate the new
       public head before the next turn can become eligible.
 
@@ -318,14 +244,6 @@ the coordinator to copy these values between systems.
 - [ ] **AUTHORIZE** Approve a replacement grant with a fresh filename and a
       conservative window for integrity checks and the remaining upload.
 
-- **AUTO NOW** Require the authenticated public head to remain unchanged.
-- **AUTO NOW** `--resume-candidate` must re-hash every saved file and bind the
-  candidate to the ceremony, phase, participant, position, attempt, and
-  starting head.
-- **AUTO NOW** Verify already uploaded objects byte-for-byte and upload
-  `manifest.json` last.
-- **AUTO NOW** Refuse resume on a stale head or conflicting local/remote bytes. Do
-  not recompute unless Relay reports that the saved candidate cannot be used.
 
 ## 7. Close, witness, beacon, and advance each phase
 
@@ -338,21 +256,10 @@ the coordinator to copy these values between systems.
 - [ ] **AUTHORIZE** After the pinned beacon and seal verify, permit publication
       and Phase 2 initialization or final Phase 2 completion.
 
-### Mechanical checks and evidence
+### Platform TODOs
 
-- **AUTO NOW** Prove every required participant was accepted exactly once and in
-  frozen order.
-- **AUTO NOW** Publish the closed chain with `relay coordinator publish --closed`
-  and verify the public pointer and all referenced immutable artifacts.
-- **AUTO NOW** Verify every witness record, signature, ceremony binding, observed
-  head, beacon round, and lead-time claim with proof-tool.
-- **AUTO NOW** Fetch and verify only the pinned future beacon round.
 - [ ] **MANUAL — PLATFORM TODO** Produce, authenticate, publish, and independently re-read the
   beacon/seal transition.
-- **AUTO NOW** After Phase 1, verify the seal and authenticated Phase 2
-  initialization before enabling any Phase 2 grant.
-- **AUTO NOW** After Phase 2, require both complete phases and both authenticated
-  beacon transitions.
 
 ## 8. Mirrors, audits, and operational evidence
 
@@ -367,14 +274,8 @@ the coordinator to copy these values between systems.
 - [ ] **AUTHORIZE** Promote only the exact evidence set whose automatic
       verification and identity review both pass.
 
-### Mechanical checks and evidence
+### Platform TODOs
 
-- **AUTO NOW** Authenticate every signed non-participant enrollment before issuing
-  a grant, and constrain the grant to that identity's exact evidence prefix.
-- **AUTO NOW** Verify mirror receipts bind the exact retained head, file set,
-  location digest, and independently authenticated mirror identity.
-- **AUTO NOW** Discover only manifest-last evidence submissions with
-  `relay coordinator evidence`.
 - [ ] **MANUAL — PLATFORM TODO** Verify manifest role, identity, ceremony,
       prefix, file hashes, and corresponding proof-tool evidence in a fresh
       review directory.
@@ -399,15 +300,6 @@ the coordinator to copy these values between systems.
 - [ ] **AUTHORIZE** Publish only after every required verification and
       authorization passes.
 
-### Mechanical checks and evidence
-
-- **AUTO NOW** Verify uploaded release and decision records with proof-tool. A
-  successful storage upload is not authorization.
-- **AUTO NOW** Require every release artifact, checksum, signature, audit, and
-  decision to refer to one ceremony and coherence set.
-- **AUTO NOW** Reject production labeling for a rehearsal, centralized fixture, or
-  incomplete evidence set.
-
 ## 10. Archive and close out
 
 ### Human gates
@@ -428,7 +320,7 @@ the coordinator to copy these values between systems.
 These acknowledgements complete the operator checklist; they are not Ed25519
 ceremony signatures.
 
-### Mechanical checks and evidence
+### Platform TODOs
 
 - [ ] **MANUAL — PLATFORM TODO** Build an authenticated inventory of the signed definition, both
   complete phase chains, closures, beacons, seals, operational evidence,

@@ -5,11 +5,8 @@ with the ceremony record. The runbooks remain authoritative; the checklists are
 execution aids, and [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md) contains the
 copy-oriented commands.
 
-## Evidence labels
+## Checklist labels
 
-- **AUTO NOW** — the current Relay, proof-tool, or storage adapter produces a
-  pass/fail result and secret-free evidence. A checkbox cannot override a
-  failure.
 - **MANUAL — PLATFORM TODO** — the check is mechanical, but the coordination
   platform does not yet perform and record it through a reviewed integration.
   Until then, a named operator must run the cited procedure and attach its
@@ -20,10 +17,16 @@ copy-oriented commands.
   named person must explicitly permit the signature or state transition.
 - **STOP** — pause and investigate; do not work around the failed invariant.
 
+Automated controls are not checklist items. The platform presents them as
+non-interactive `passed`, `failed`, or `pending` system status, with blocking
+failures, remediation, and links to secret-free evidence. The requirements are
+maintained separately in the
+[automation control matrix](AUTOMATION_CONTROL_MATRIX.md).
+
 Rendering a mechanical item on a dashboard does not make it automatic. The
 platform must execute or consume the authoritative check, preserve its exact
 inputs and result, and emit reviewable evidence before a **MANUAL — PLATFORM
-TODO** item can become **AUTO NOW**.
+TODO** item can leave the human checklist and move into that matrix.
 
 ## Role checklists
 

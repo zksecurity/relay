@@ -12,10 +12,6 @@
       digest through the agreed channel independently of ceremony storage.
 - [ ] **HUMAN** I control the witness signing key and did not provide it to the
       coordinator, website, or upload station.
-- **AUTO NOW** `./setup verify` authenticates the kit and emits the approved
-  tool-identity receipt.
-- **AUTO NOW** `relay ceremony init-config --role witness` authenticates the
-  signed witness enrollment, ceremony, phase, tools, and public storage profile.
 - [ ] **HUMAN** I reviewed the authenticated assignment and confirmed that the
       ceremony, phase, witness identity, and expected observation window match
       what I agreed to monitor.
@@ -30,9 +26,6 @@
 - [ ] **MANUAL — PLATFORM TODO** Register that I am actively monitoring the
       assigned phase and make that readiness visible to the coordinator. The
       platform must not claim an observation merely because I am online.
-- **AUTO NOW** `relay witness run --config ROLE_CONFIG` detects the public
-  pointer's closure claim, authenticates the signed chain it names, and reports
-  the accepted index and chain digest. The pointer alone is not a signed closure.
 - [ ] **MANUAL — PLATFORM TODO** Fetch the exact closure bytes from the public
       origin during the observation window and attach the retrieval evidence.
       Relay does not yet fetch and preserve that closure record for the witness.
@@ -41,21 +34,13 @@
       signed witness lead remaining.
 - [ ] **HUMAN** My recorded `observed_at` truthfully describes that independent
       observation; it was not copied from the coordinator or inferred later.
-- **AUTO NOW** `mpc-ceremony ops prepare-public-witness-receipt` authenticates
-  the definition, coordinator-signed closure, schedule, enrollment, publication
-  location, and claimed observation time, then exports exact canonical signing
-  bytes. It does not make the real-world observation claim for the witness.
 - [ ] **AUTHORIZE** After reviewing those canonical bytes, I authorize my
       witness key to sign exactly that receipt.
-- **AUTO NOW** `mpc-ceremony ops import-signature` and `ops verify` must accept
-  the detached signature and exact related evidence.
 
 ## Submission and closeout
 
 - [ ] **HUMAN** Only signed public witness output—not my private key, raw grant,
       or unrelated files—was transferred to the upload environment.
-- **AUTO NOW** `relay witness submit` validates the role-scoped grant, rejects
-  secret-looking or unsafe files, and uploads the evidence manifest last.
 - [ ] **MANUAL — PLATFORM TODO** Attach the printed manifest key and the
       coordinator's accepted/rejected/superseded result to this assignment. A
       future platform should correlate them automatically.

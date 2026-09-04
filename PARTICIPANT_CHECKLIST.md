@@ -13,8 +13,6 @@
 
 ## How to use this checklist
 
-- **AUTO NOW** — Relay or proof-tool performs the check and emits evidence. You
-  do not need to reproduce it manually, but you must stop if it fails.
 - **MANUAL — PLATFORM TODO** — the check is mechanical, but the coordination
   platform does not yet perform and record it through a reviewed integration.
   Run the cited procedure and attach its secret-free output until it does.
@@ -79,9 +77,6 @@ grant contents, or cloud secrets in this checklist.
       and validate it without manual field copying.
 - [ ] **HUMAN** I confirmed that the submitted document contains only my public
       identity, key ID, public key, fingerprint, and agreed display name.
-- **AUTO NOW** During `init-config`, proof-tool must authenticate the signed
-  definition, derive the public key from your local signing key, and match it
-  to your exact roster identity, key ID, fingerprint, and Phase 1/2 positions.
 - [ ] **HUMAN** Review the authenticated assignment printed by `init-config`
       and confirm that the ceremony mode, scheduled phases, and positions match
       what you agreed to.
@@ -94,13 +89,6 @@ grant contents, or cloud secrets in this checklist.
 - [ ] **HUMAN** Follow [docs/INSTALL.md](docs/INSTALL.md) on the machine that
       will perform the contribution.
 
-- **AUTO NOW** Verify the archive digest before extraction. `./setup verify` must
-  authenticate every kit file, release identifier, binary hash, and
-  compatibility record; retain its complete output as the secret-free tool
-  identity receipt instead of transcribing values manually.
-- **AUTO NOW** `init-config` must resolve and hash both running executables against
-  the setup receipt, authenticate the ceremony with the approved proof-tool,
-  and emit the participant's secret-free tool and assignment receipt.
 
 ## 3. Prepare the contribution machine
 
@@ -145,16 +133,6 @@ relay participant status \
   --config /var/lib/mpc-ceremonies/CEREMONY_ID/config/participant-phase1.json
 ```
 
-- **AUTO NOW** `init-config` must authenticate the local ceremony, coordinator
-  trust key, participant signing key, environment, identity, and frozen roster
-  positions, then print the ceremony mode, identity, key ID, fingerprint, and
-  both phase assignments.
-- **AUTO NOW** The persistent role config must contain validated public metadata
-  and approved paths, but no private-key bytes, cloud credentials, or temporary
-  grant.
-- **AUTO NOW** `participant status` must authenticate the public head and report
-  the expected phase, index, and next identity.
-
 - [ ] **MANUAL — PLATFORM TODO** Attach the secret-free Phase 1 and Phase 2
       profile/assignment receipts to this participant record. Do not copy their
       paths, identities, fingerprints, or positions into separate fields.
@@ -172,10 +150,6 @@ result.
       native Relay authenticates the current head, confirms you are next, and
       validates the fresh grant delivered through the approved private channel.
 
-- **AUTO NOW** You may run `relay participant status --config ROLE_CONFIG` without
-  a grant whenever you need to authenticate public position.
-- **AUTO NOW** `relay participant run` repeats the out-of-turn check before any
-  expensive computation even if you skip the separate status command.
 
 ## 6. Execute Phase 1
 
@@ -193,9 +167,6 @@ result.
       prerequisite inspection in [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md)
       against the complete local transcript and attach its output. Future Relay
       and platform integration should fetch, verify, and record this preflight.
-- **AUTO NOW** `relay participant run` independently authenticates and replays
-  the required Phase 1 closure, beacon, seal, and Phase 2 initialization before
-  sampling new Phase 2 contribution randomness.
 - [ ] **HUMAN** Complete a fresh prefilled
       [participant turn checklist](PARTICIPANT_TURN_CHECKLIST.md) for Phase 2.
 - [ ] **MANUAL — PLATFORM TODO** Attach that turn's secret-free submission and

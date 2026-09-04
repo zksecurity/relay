@@ -12,10 +12,6 @@
       and supplied only its public identity to the coordinator.
 - [ ] **HUMAN** I obtained the coordinator public key, approved kit tag, and kit
       digest through an independent authenticated channel.
-- **AUTO NOW** The signed ceremony definition identifies me as the distinct
-  release signer and rejects prohibited role overlap.
-- **AUTO NOW** `./setup verify` authenticates the approved proof-tool binary and
-  emits the tool-identity receipt.
 - [ ] **HUMAN** The signing machine is offline, independently controlled, and
       contains no storage credential, browser session, or online upload profile.
 - [ ] **MANUAL — PLATFORM TODO** Attach the secret-free setup and assignment
@@ -26,16 +22,10 @@
 - [ ] **HUMAN** I received the exact candidate, audit reports, operational
       evidence bundle, and public verification material through the approved
       offline transfer procedure.
-- **AUTO NOW** `mpc-ceremony release sign` must verify the candidate, at least
-  two distinct enrolled auditor reports, both phase evidence, witness quorum,
-  independent mirror evidence, beacon evidence, and ceremony coherence before
-  producing a fresh release directory.
 - [ ] **HUMAN** I reviewed the exact ceremony ID, release contents, audit
       identities, operational evidence, warnings, and intended public label.
 - [ ] **AUTHORIZE** I authorize my offline release key to sign exactly the
       verified release manifest and no substitute or later-modified bytes.
-- **AUTO NOW** `mpc-ceremony release verify` must authenticate the completed
-  release using the independently trusted release public key and key ID.
 
 ## Handoff and closeout
 

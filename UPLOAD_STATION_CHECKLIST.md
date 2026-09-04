@@ -13,11 +13,6 @@
       type and authenticated transfer procedure.
 - [ ] **HUMAN** I obtained the coordinator public key, approved kit tag, and kit
       digest independently of ceremony storage.
-- **AUTO NOW** `./setup verify` authenticates the station's Relay and proof-tool
-  binaries and emits the tool-identity receipt.
-- **AUTO NOW** Where a role profile exists, `relay ceremony init-config`
-  authenticates the signer enrollment, ceremony, role, tools, and public source
-  without storing a signing-key path or grant.
 - [ ] **HUMAN** The station contains no witness, mirror, auditor, release, or
       decision private signing key.
 - [ ] **MANUAL — PLATFORM TODO** Record which authenticated signer enrollment
@@ -32,11 +27,6 @@
       secret-free result, and require its ceremony and signer identity to match
       this assignment. Relay currently validates transport, not ceremony
       semantics, for generic evidence submissions.
-- **AUTO NOW** Relay validates the temporary grant's role, identity, ceremony,
-  prefix, expiry, and minimum remaining window before upload.
-- **AUTO NOW** The applicable `relay witness submit`, `relay mirror submit`,
-  `relay auditor submit`, `relay release run`, or `relay submit-evidence`
-  command rejects unsafe inputs and uploads `manifest.json` last.
 - [ ] **MANUAL — PLATFORM TODO** Attach the printed manifest key and track the
       coordinator's accepted/rejected/superseded result. Future platform
       automation should populate this append-only status directly.

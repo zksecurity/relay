@@ -41,9 +41,6 @@ until reviewed platform automation consumes and preserves it.
       contribution isolation.
 - [ ] **HUMAN** I am not snapshotting, backing up, debugging, or crash-dumping
       the contribution environment.
-- **AUTO NOW** `relay participant status --config ROLE_CONFIG` must exit
-  successfully, print the authenticated head digest, and report my exact
-  identity as next.
 - [ ] **MANUAL — PLATFORM TODO** Attach the complete secret-free status output
       to this turn. Future platform automation should bind the authenticated
       head, identity, and position without manual digest transcription.
@@ -95,8 +92,6 @@ coordinator. Do not make an erasure statement you cannot honestly support.
 
 ## Successful submission
 
-- **AUTO NOW** Relay must exit successfully and print `candidate submitted for
-      coordinator review`.
 - [ ] **MANUAL — PLATFORM TODO** Preserve the complete secret-free Relay output
       and attach its attempt ID, candidate manifest key, local resumable
       directory, signed `destroyed_at`, and submission time as one submission
@@ -121,8 +116,6 @@ Do not delete or modify the printed candidate directory and do not recompute.
       `_______________________________________________________________`
 - [ ] **HUMAN** Contact the coordinator and report the candidate directory, attempt ID,
       manifest key if printed, and failure time—never the grant contents.
-- **AUTO NOW** `relay participant status` and resume must authenticate that the
-  public head has not advanced.
 - [ ] **HUMAN** Receive a replacement grant in a fresh mode-`0600` filename.
 
 Resume with:
@@ -134,9 +127,6 @@ relay participant run \
   --resume-candidate SAVED-CANDIDATE-DIRECTORY
 ```
 
-- **AUTO NOW** Relay must re-hash every saved file, authenticate its ceremony,
-  phase, participant, position, attempt, and starting head, compare any
-  existing remote bytes, and still upload `manifest.json` last.
 - **STOP** If Relay reports a stale head, changed local file, or conflicting
   remote byte, do not work around it. Preserve the secret-free error and ask
   the coordinator whether a new contribution is required.
@@ -146,9 +136,6 @@ relay participant run \
 - [ ] **MANUAL — PLATFORM TODO** Deliver the coordinator's acceptance reminder
       through the authenticated channel. The reminder triggers a native status
       check; it is not itself acceptance evidence.
-- **AUTO NOW** `relay participant status --config ROLE_CONFIG` must
-  independently authenticate the new public head and show that this position
-  was accepted, the expected next position, or phase closure.
 - [ ] **MANUAL — PLATFORM TODO** Attach the complete secret-free status output
       and correlate it with the submitted candidate. Future Relay/platform
       integration should emit an acceptance receipt binding the participant,
