@@ -178,6 +178,7 @@ func dockerContributionFixture(t *testing.T) (roleOpts, position, *dockerDriver,
 		root: root, definition: paths["definition"], definitionSig: paths["definitionSig"],
 		coordinatorKey: paths["coordinator"], signingKey: paths["key"], environment: paths["environment"],
 		candidateRoot: candidates, client: fake, now: time.Now,
+		hostSwapStatus: func() (string, error) { return "disabled", nil },
 	}
 	o := roleOpts{
 		root: root, definition: paths["definition"], definitionSig: paths["definitionSig"],

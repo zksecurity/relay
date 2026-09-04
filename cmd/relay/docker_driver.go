@@ -70,6 +70,7 @@ type dockerDriver struct {
 	candidateRoot  string
 	client         dockerCommandClient
 	now            func() time.Time
+	hostSwapStatus func() (string, error)
 }
 
 type dockerActiveState struct {
@@ -161,7 +162,7 @@ func (d *dockerDriver) preflight() error {
 	if os.Getuid() == 0 {
 		return errors.New("Relay refuses to launch the contributor as root")
 	}
-	if _, err := dockerHostSwapStatus(); err != nil {
+	if _, err := d.swapStatus(); err != nil {
 		return err
 	}
 	stdout, stderr, err := d.client.Output("image", "inspect", "--format", "{{.Os}}/{{.Architecture}}", d.image)
@@ -198,7 +199,7 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 		Image: d.image, Platform: d.platform, CeremonyBinary: d.ceremonyBinary,
 		CreatedAt: d.now().UTC().Format(time.RFC3339),
 	}
-	receipt.HostSwapStatus, err = dockerHostSwapStatus()
+	receipt.HostSwapStatus, err = d.swapStatus()
 	if err != nil {
 		_ = os.RemoveAll(handoff)
 		return nil, err
@@ -754,6 +755,13 @@ func dockerHostSwapStatus() (string, error) {
 	default:
 		return "", fmt.Errorf("Docker participant execution is unsupported on %s", runtime.GOOS)
 	}
+}
+
+func (d *dockerDriver) swapStatus() (string, error) {
+	if d.hostSwapStatus != nil {
+		return d.hostSwapStatus()
+	}
+	return dockerHostSwapStatus()
 }
 
 func shortContainerID(id string) string {
