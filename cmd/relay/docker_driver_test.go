@@ -75,6 +75,35 @@ func (f *dockerClientFake) Output(args ...string) ([]byte, []byte, error) {
 }
 
 func (f *dockerClientFake) Attached(_ io.Writer, _ io.Writer, args ...string) error {
+	if len(args) > 0 && args[0] == "run" {
+		for index, arg := range args {
+			if arg != "--mount" || index+1 >= len(args) {
+				continue
+			}
+			var source, destination string
+			for _, part := range strings.Split(args[index+1], ",") {
+				if strings.HasPrefix(part, "src=") {
+					source = strings.TrimPrefix(part, "src=")
+				}
+				if strings.HasPrefix(part, "dst=") {
+					destination = strings.TrimPrefix(part, "dst=")
+				}
+			}
+			if destination == "/relay/output" {
+				evidence := filepath.Join(source, "evidence")
+				if err := os.Mkdir(evidence, 0o700); err != nil {
+					return err
+				}
+				for _, name := range []string{"host-wipe.json", "host-wipe.sig"} {
+					if err := os.WriteFile(filepath.Join(evidence, name), []byte("public "+name), 0o600); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+		}
+		return errors.New("host-wipe Docker run has no output mount")
+	}
 	if len(args) != 3 || args[0] != "start" || args[1] != "--attach" || args[2] != testContainerID {
 		return errors.New("unexpected attached Docker command")
 	}
@@ -347,5 +376,37 @@ func TestConfirmDockerNoCopiesUpdatesLocalLifecycleLog(t *testing.T) {
 	}
 	if receipt.ParticipantConfirmation != "NO COPIES RETAINED" || receipt.ConfirmedAt == "" {
 		t.Fatalf("confirmation not recorded: %#v", receipt)
+	}
+}
+
+func TestDockerHostWipeAttestationUsesFreshNarrowHandoff(t *testing.T) {
+	o, _, driver, _ := dockerContributionFixture(t)
+	outDir := filepath.Join(filepath.Dir(o.outDir), "host-wipe-evidence")
+	if err := driver.attestHostWipe(o, time.Now(), outDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateHostWipeHandoff(outDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.attestHostWipe(o, time.Now(), outDir); err == nil ||
+		!strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("existing host-wipe output error = %v", err)
+	}
+}
+
+func TestConfirmMacHostWipeRequiresExactStatement(t *testing.T) {
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := write.WriteString("MAC WIPED AND CLEANLY REINSTALLED\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = write.Close()
+	original := os.Stdin
+	os.Stdin = read
+	t.Cleanup(func() { os.Stdin = original; _ = read.Close() })
+	if err := confirmMacHostWipe(); err != nil {
+		t.Fatal(err)
 	}
 }

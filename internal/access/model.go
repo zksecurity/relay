@@ -35,6 +35,7 @@ const (
 	RoleAuditor     = "auditor"
 	RoleRelease     = "release"
 	RoleDecision    = "decision"
+	RoleHostWipe    = "host-wipe"
 )
 
 type StorageConfig struct {
@@ -212,6 +213,8 @@ func Prefix(ceremonyID, role, identity string) (string, error) {
 		root = "releases"
 	case RoleDecision:
 		root = "decisions"
+	case RoleHostWipe:
+		root = "host-wipes"
 	default:
 		return "", fmt.Errorf("unsupported grant role %q", role)
 	}
@@ -488,6 +491,16 @@ func (m SubmissionManifest) Validate() error {
 			return fmt.Errorf("evidence file %q is duplicated", file.Name)
 		}
 		seen[file.Name] = struct{}{}
+	}
+	if m.Role == RoleHostWipe {
+		if len(seen) != 2 {
+			return errors.New("host-wipe evidence must contain exactly host-wipe.json and host-wipe.sig")
+		}
+		for _, name := range []string{"host-wipe.json", "host-wipe.sig"} {
+			if _, ok := seen[name]; !ok {
+				return errors.New("host-wipe evidence must contain exactly host-wipe.json and host-wipe.sig")
+			}
+		}
 	}
 	if _, err := time.Parse(time.RFC3339, m.CompletedAt); err != nil {
 		return errors.New("evidence completed_at must be RFC3339")

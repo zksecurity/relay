@@ -113,6 +113,9 @@ automatic result in the coordination platform.
       owner.
 - [ ] **HUMAN** Confirm each participant, auditor, and release signer generated
       its own Ed25519 keypair on its own machine.
+- [ ] **HUMAN** Identify every production participant using macOS and confirm
+      the canonical initialization input lists exactly those identity IDs in
+      sorted `host_wipe_participants`.
 - [ ] **HUMAN** Confirm no role private key was requested, received, shared, or
       centralized.
 
@@ -206,7 +209,9 @@ Never issue overlapping turns.
 - [ ] **MANUAL — PLATFORM TODO** Grant issue and expiry timestamps and minimum-remaining window.
 - [ ] **MANUAL — PLATFORM TODO** Participant execution mode and assurance
       level; for Docker record the immutable image digest/ID, selected Linux
-      platform, and whether the host is Linux production or macOS rehearsal.
+      platform, and whether the host is Linux or macOS. For a production Mac,
+      mark candidate acceptance provisional for release until host-wipe
+      evidence is verified.
 - [ ] **MANUAL — PLATFORM TODO** Attempt ID and candidate manifest key.
 - [ ] **MANUAL — PLATFORM TODO** Candidate manifest and digests, erasure timestamp, acceptance
   timestamp, publication timestamp, and accepted chain index.
@@ -283,8 +288,11 @@ the coordinator to copy these values between systems.
       prefix, file hashes, and corresponding proof-tool evidence in a fresh
       review directory.
 - [ ] **MANUAL — PLATFORM TODO** Record missing, rejected, duplicated, and superseded submissions.
+- [ ] **HUMAN** For every required production Mac, confirm the participant's
+      final scheduled contribution is accepted before requesting the
+      whole-device wipe and clean reinstall.
 - [ ] **MANUAL — PLATFORM TODO** Block release until the signed definition's independent audit
-  threshold is satisfied.
+      threshold is satisfied.
 
 ## 9. Release and production decision
 

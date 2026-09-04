@@ -644,6 +644,110 @@ func runSubmitEvidence(args []string) error {
 	return runSubmitEvidenceForRole(args, "")
 }
 
+func runParticipantHostWipe(args []string) error {
+	set := flag.NewFlagSet("participant attest-host-wipe", flag.ContinueOnError)
+	var configPath, grantPath, outDir string
+	set.StringVar(&configPath, "config", defaultParticipantConfigPath(), "participant configuration restored from separate storage")
+	set.StringVar(&grantPath, "grant", "", "fresh temporary host-wipe grant")
+	set.StringVar(&outDir, "out-dir", "", "fresh directory for the signed host-wipe evidence")
+	if err := set.Parse(args); err != nil {
+		return err
+	}
+	if configPath == "" || grantPath == "" || outDir == "" {
+		return errors.New("--config, --grant, and --out-dir are required")
+	}
+	if !filepath.IsAbs(outDir) || filepath.Clean(outDir) != outDir {
+		return errors.New("--out-dir must be an absolute clean path")
+	}
+	config, configuredIdentity, err := loadParticipantProfile(configPath)
+	if err != nil {
+		return err
+	}
+	runLock, err := acquireParticipantRunLock(configPath, config.CandidateParentDir)
+	if err != nil {
+		return err
+	}
+	defer runLock.release()
+	grant, err := loadGrant(grantPath)
+	if err != nil {
+		return err
+	}
+	if err := grant.CheckUsable(time.Now()); err != nil {
+		return err
+	}
+	if grant.Role != access.RoleHostWipe {
+		return fmt.Errorf("grant role is %s, want %s", grant.Role, access.RoleHostWipe)
+	}
+	o := participantRoleOptions(config, grant.IdentityID)
+	definition, err := o.inspector().Definition()
+	if err != nil {
+		return err
+	}
+	participant, err := o.inspector().Participant(config.SigningKey)
+	if err != nil {
+		return err
+	}
+	if configuredIdentity != "" && participant.ParticipantID != configuredIdentity {
+		return errors.New("configured participant identity does not match the local signing key")
+	}
+	if participant.CeremonyID != grant.CeremonyID || participant.ParticipantID != grant.IdentityID ||
+		definition.CeremonyID != grant.CeremonyID {
+		return errors.New("local participant key and ceremony do not match the host-wipe grant")
+	}
+	if definition.Mode != "production" || !definition.RequiresHostWipe(participant.ParticipantID) {
+		return errors.New("authenticated ceremony does not require this participant to attest a production Mac host wipe")
+	}
+	if err := confirmMacHostWipe(); err != nil {
+		return err
+	}
+	wipedAt := time.Now().UTC().Truncate(time.Second)
+	if o.docker != nil {
+		if err := o.docker.attestHostWipe(o, wipedAt, outDir); err != nil {
+			return err
+		}
+	} else {
+		command := exec.Command(o.ceremonyExecutable(),
+			"ops", "attest-host-wipe",
+			"--ceremony", o.definition,
+			"--ceremony-signature", o.definitionSig,
+			"--coordinator-public-key-file", o.coordinatorKey,
+			"--participant-id", participant.ParticipantID,
+			"--participant-signing-key", config.SigningKey,
+			"--wiped-at", wipedAt.Format(time.RFC3339),
+			"--out-dir", outDir,
+		)
+		command.Stdout, command.Stderr = os.Stdout, os.Stderr
+		if err := command.Run(); err != nil {
+			return fmt.Errorf("create host-wipe attestation: %w", err)
+		}
+	}
+	if err := validateHostWipeHandoff(outDir); err != nil {
+		return err
+	}
+	if err := runSubmitEvidenceForRole(
+		[]string{"--grant", grantPath, "--dir", outDir},
+		access.RoleHostWipe,
+	); err != nil {
+		return fmt.Errorf("upload host-wipe evidence; signed evidence remains at %s: %w", outDir, err)
+	}
+	return nil
+}
+
+func confirmMacHostWipe() error {
+	fmt.Fprintln(os.Stderr, "Production Mac wipe confirmation:")
+	fmt.Fprintln(os.Stderr, "- The whole Mac was erased and macOS was cleanly reinstalled.")
+	fmt.Fprintln(os.Stderr, "- No pre-wipe backup, snapshot, Docker Desktop state, private contribution environment, or contribution-randomness copy was restored.")
+	fmt.Fprint(os.Stderr, "Type MAC WIPED AND CLEANLY REINSTALLED to sign and upload the attestation: ")
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && len(line) == 0 {
+		return fmt.Errorf("read host-wipe confirmation: %w", err)
+	}
+	if strings.TrimSpace(line) != "MAC WIPED AND CLEANLY REINSTALLED" {
+		return errors.New("host wipe was not confirmed; no attestation was created or uploaded")
+	}
+	return nil
+}
+
 func runReleaseEvidence(args []string) error {
 	return runSubmitEvidenceForRole(args, access.RoleRelease)
 }

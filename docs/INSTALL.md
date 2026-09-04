@@ -268,8 +268,14 @@ Use a platform present in the signed ceremony definition's exact binary
 allowlist. A v2 ceremony can mix `linux/amd64` participants with Apple-silicon
 Mac participants using `linux/arm64`; a legacy v1 ceremony cannot. Relay
 refuses mutable image tags, never pulls during a participant turn, and does not
-fall back to native execution. Docker Desktop on macOS is approved for
-rehearsal, not production erasure assurance.
+fall back to native execution. Docker Desktop on macOS may be used for
+production only when the signed ceremony policy names that participant in
+`host_wipe_participants`. Container cleanup permits provisional contribution
+acceptance; final parameter release remains blocked until the participant
+performs a supported whole-device erase, cleanly reinstalls macOS without
+restoring pre-wipe backups, snapshots, or Docker state, and submits the
+separate signed host-wipe attestation. See
+[`PARTICIPANT_ISOLATION_DESIGN.md`](PARTICIPANT_ISOLATION_DESIGN.md).
 
 Relay authenticates the local key through `mpc-ceremony`, checks the signed
 published state, and rejects an out-of-turn participant before contribution

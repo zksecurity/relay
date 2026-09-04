@@ -147,6 +147,11 @@ relay participant run \
       approved procedure.
 - [ ] **HUMAN** I retained or removed the public candidate and secret-free log according
       to the ceremony's stated evidence and retention policy.
+- [ ] **HUMAN — PRODUCTION MAC ONLY** If this was my final scheduled
+      contribution, I completed the separate whole-device erase, clean
+      reinstall, and `relay participant attest-host-wipe` steps in
+      [PARTICIPANT_CHECKLIST.md](PARTICIPANT_CHECKLIST.md). Until then, my
+      accepted contribution remains provisional for final release.
 - [ ] **HUMAN** I reported every interruption, deviation, retry, or suspected exposure.
 - [ ] **MANUAL — PLATFORM TODO** Record administrative checklist completion.
       This is not a ceremony signature.

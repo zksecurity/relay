@@ -163,6 +163,35 @@ The grant's minimum remaining window must cover the whole operation when
 starting a new contribution: transcript download, computation, erasure, and
 upload. It is not merely an estimate for the final upload.
 
+### Production Mac final wipe
+
+If the authenticated definition lists your identity in
+`host_wipe_participants`, the coordinator may accept each candidate while your
+whole-device wipe is pending, but the final parameters cannot be approved or
+released. After your final scheduled contribution:
+
+1. Preserve only the approved public ceremony material and participant
+   signing/config material on separately protected storage.
+2. Erase the whole Mac using the supported procedure and cleanly reinstall
+   macOS.
+3. Do not restore a pre-wipe backup, snapshot, Docker Desktop state,
+   private contribution environment, or copy of contribution randomness.
+   Public candidates are not toxic waste and may follow the approved public
+   evidence retention policy.
+4. Reinstall and authenticate the approved Relay and pinned proof-tool image,
+   then restore only the approved material from step 1.
+5. Obtain a fresh identity-scoped `host-wipe` grant and run:
+
+       relay participant attest-host-wipe \
+         --config "$ROLE_CONFIG" \
+         --grant participant-03.host-wipe.grant.json \
+         --out-dir "$CEREMONY_HOME/run/host-wipe-evidence"
+
+Type `MAC WIPED AND CLEANLY REINSTALLED` only if every displayed assertion is
+true. Relay creates and uploads `host-wipe.json` and `host-wipe.sig`. This is
+your authenticated statement, not mathematical proof that a malicious operator
+kept no earlier copy.
+
 ## 4. Public witness
 
 Use one [public-witness checklist](PUBLIC_WITNESS_CHECKLIST.md) per assigned
@@ -278,7 +307,8 @@ record and ceremony signatures.
 ## 8. Submit evidence
 
 Witnesses, mirrors, auditors, release upload stations, and decision signers all
-use the same transport command after producing signed proof-tool output:
+use the same transport command after producing signed proof-tool output.
+Production Mac participants use the guided host-wipe command above instead:
 
     relay witness submit \
       --config "$ROLE_CONFIG" \

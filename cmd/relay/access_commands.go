@@ -184,12 +184,12 @@ func runGrant(args []string) error {
 	set := flag.NewFlagSet("coordinator grant", flag.ContinueOnError)
 	var storagePath, role, identity, ttlText, minimumText, legacyMinimumText, enrollment, enrollmentSignature, out string
 	set.StringVar(&storagePath, "storage", "", "storage configuration from configure-storage")
-	set.StringVar(&role, "role", "", "participant, witness, mirror, auditor, release, or decision")
+	set.StringVar(&role, "role", "", "participant, witness, mirror, auditor, release, decision, or host-wipe")
 	set.StringVar(&identity, "identity", "", "authenticated ceremony or enrollment identity")
 	set.StringVar(&ttlText, "credential-ttl", "", "required temporary credential lifetime")
 	set.StringVar(&minimumText, "minimum-remaining", "", "required credential lifetime remaining before work begins")
 	set.StringVar(&legacyMinimumText, "minimum-upload-window", "", "deprecated alias for --minimum-remaining")
-	set.StringVar(&enrollment, "enrollment", "", "signed operational enrollment for non-participant roles")
+	set.StringVar(&enrollment, "enrollment", "", "signed operational enrollment for roles other than participant and host-wipe")
 	set.StringVar(&enrollmentSignature, "enrollment-signature", "", "detached enrollment signature")
 	set.StringVar(&out, "out", "", "fresh secret grant file")
 	if err := set.Parse(args); err != nil {
@@ -251,10 +251,21 @@ func authenticateGrantIdentity(config access.StorageConfig, role, identity, enro
 		CeremonySignaturePath:    config.CeremonySignature,
 		CoordinatorPublicKeyPath: config.CoordinatorPublicKey,
 	}
-	if role == access.RoleParticipant {
+	if role == access.RoleParticipant || role == access.RoleHostWipe {
 		definition, err := inspector.Definition()
 		if err != nil {
 			return err
+		}
+		if definition.CeremonyID != config.CeremonyID {
+			return errors.New("authenticated definition does not match the storage ceremony")
+		}
+		if role == access.RoleHostWipe {
+			for _, participant := range definition.HostWipeParticipants {
+				if participant == identity {
+					return nil
+				}
+			}
+			return fmt.Errorf("participant %q is not required by the authenticated host-wipe policy", identity)
 		}
 		for _, participant := range append(append([]string(nil), definition.Phase1Participants...), definition.Phase2Participants...) {
 			if participant == identity {

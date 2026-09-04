@@ -16,7 +16,7 @@ Operating procedures are split by audience:
 - [Ceremony identity key-generation guide](PARTICIPANT_KEY_GENERATION.md)
 - [Participant per-phase turn checklist](PARTICIPANT_TURN_CHECKLIST.md)
 - [Participant contribution isolation design](docs/PARTICIPANT_ISOLATION_DESIGN.md)
-  (implemented for Linux container isolation and macOS rehearsals)
+  (implemented for Linux and for macOS with a production release-time wipe gate)
 - [Three-machine tiny rehearsal scripts](scripts/three-machine-rehearsal/README.md)
 - [AWS storage setup](docs/AWS_SETUP.md)
 - [Cloudflare R2 storage setup](docs/R2_SETUP.md)
@@ -97,8 +97,10 @@ The v2 signed ceremony definition may allow exact images' binaries for both
 `linux/amd64` and `linux/arm64`; each participant selects the matching image
 and Relay records that exact binary digest in its lifecycle receipt. Legacy v1
 definitions remain single-platform.
-Docker mode is suitable for rehearsal on macOS; see the isolation design for
-the stronger production macOS boundary and the Linux production profile.
+On a production Mac, Docker removal is the immediate contribution cleanup, but
+final release is additionally blocked until the participant wipes and cleanly
+reinstalls the whole Mac and submits the separate signed host-wipe record. See
+the isolation design for the exact boundary and limitations.
 
 When that participant is next, the coordinator issues a temporary grant and
 the participant runs:
@@ -124,6 +126,26 @@ coordinator then runs:
     relay coordinator candidates --storage relay-storage.json
     relay coordinator accept --storage relay-storage.json --candidate-key KEY \
       --coordinator-signing-key /secure/coordinator-key
+
+For a participant listed in the signed `host_wipe_participants` policy, that
+acceptance is provisional for release. After the participant's final turn and
+whole-Mac erase/clean reinstall, the coordinator issues a separate grant:
+
+    relay coordinator grant --storage relay-storage.json --role host-wipe \
+      --identity participant-03 --credential-ttl 2h \
+      --minimum-remaining 30m --out participant-03.host-wipe.grant.json
+
+The participant restores only approved public files and separately held
+signing/config material, then runs:
+
+    relay participant attest-host-wipe \
+      --config /ceremony/config/participant-phase1.json \
+      --grant participant-03.host-wipe.grant.json \
+      --out-dir /ceremony/run/host-wipe-evidence
+
+Relay requires the exact on-screen confirmation and uploads the signed public
+record. Proof-tool release verification rejects missing, invalid, duplicate,
+or too-early required host-wipe evidence.
 
 Other roles upload their already signed proof-tool outputs with the relevant
 role command or the compatible `relay submit-evidence --grant FILE --dir DIR`;

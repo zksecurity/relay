@@ -22,6 +22,33 @@ func TestGrantPrefixIsIdentityScoped(t *testing.T) {
 	}
 }
 
+func TestHostWipeGrantAndEvidenceAreIdentityScoped(t *testing.T) {
+	want := "host-wipes/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/participant-03/"
+	prefix, err := Prefix(testCeremony, RoleHostWipe, "participant-03")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prefix != want {
+		t.Fatalf("host-wipe prefix = %q, want %q", prefix, want)
+	}
+	manifest := SubmissionManifest{
+		Schema: SubmissionManifestSchema, CeremonyID: testCeremony,
+		Role: RoleHostWipe, IdentityID: "participant-03", AttemptID: strings.Repeat("b", 32),
+		Files: []FileRef{
+			{Name: "host-wipe.json", SHA256: testCeremony, Size: 1},
+			{Name: "host-wipe.sig", SHA256: testCeremony, Size: 1},
+		},
+		CompletedAt: "2026-09-04T12:00:00Z",
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	manifest.Files = manifest.Files[:1]
+	if err := manifest.Validate(); err == nil {
+		t.Fatal("incomplete host-wipe evidence accepted")
+	}
+}
+
 func TestGrantUsabilityChecksMinimumWindow(t *testing.T) {
 	now := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
 	prefix, _ := Prefix(testCeremony, RoleParticipant, "participant-03")

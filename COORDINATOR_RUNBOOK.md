@@ -58,8 +58,10 @@ Never ask for or accept a role's private key.
 Check that identity IDs, key IDs, and public keys are unique across the
 coordinator, participants, auditors, and release signer. The ceremony
 definition freezes those identities, the participant order, and the auditor
-and release roles. Retain the authenticated submissions in the coordinator
-record so the roster can be reviewed independently.
+and release roles. For production, also identify every participant using a Mac
+and include those identity IDs, sorted, in the initialization input's
+`host_wipe_participants` field. Retain the authenticated submissions in the
+coordinator record so the roster and wipe policy can be reviewed independently.
 
 Run `mpc-ceremony init`, then confirm that `ceremony.json` contains the intended
 coordinator, participant order, at least two auditors, and a distinct release
@@ -77,7 +79,9 @@ non-participant upload prefix. An upload-only station uses the enrollment of
 the signing identity whose output it transports; it does not receive that
 identity's private key. Participants do not send their private keys or need a
 separate Relay enrollment record: Relay matches their local private key to the
-participant identity already frozen in the signed roster.
+participant identity already frozen in the signed roster. A `host-wipe` grant
+is also roster-authenticated and needs no enrollment; Relay issues it only when
+the requested identity appears in the signed `host_wipe_participants` policy.
 
 Relay requires a proof-tool version that supports read-only inspection of
 definitions, chains, participants, and operational enrollments, plus the
@@ -290,6 +294,26 @@ Keep the release signing machine offline. Give its scoped grant only to the
 separate online station that uploads the signed output. Use the same separation
 for production-decision signatures.
 
+### Production Mac post-wipe evidence
+
+After a required Mac participant's final scheduled contribution is accepted,
+tell the participant to perform the documented whole-device erase and clean
+reinstall. Do not issue this grant before the reinstall is complete:
+
+    relay coordinator grant \
+      --storage "$STORAGE_CONFIG" \
+      --role host-wipe \
+      --identity participant-03 \
+      --credential-ttl 2h \
+      --minimum-remaining 30m \
+      --out participant-03.host-wipe.grant.json
+
+The participant uses `relay participant attest-host-wipe` after reinstall.
+The normal accepted chain does not roll back while this is pending; instead,
+the final operational-evidence bundle and release remain blocked. If a
+participant contributes again after attesting, the old record is too early and
+the participant must wipe again after the new final contribution.
+
 ## 7. Review role evidence
 
 List complete submissions, optionally filtering by role:
@@ -304,6 +328,13 @@ relying on evidence:
 3. Run the corresponding proof-tool verification command.
 4. Promote only authenticated, coherent evidence to the published artifact
    set.
+
+For `host-wipe`, verify `host-wipe.json` and `host-wipe.sig` with proof-tool
+and include their exact artifact references in the operational-evidence
+bundle's `host_wipes` list. Proof-tool requires exactly one valid record for
+each identity named by the signed definition, and requires its timestamp to
+postdate that participant's final accepted contribution. Release signing then
+fails closed until the set is complete.
 
 Incomplete uploads do not appear because each role uploads `manifest.json`
 last. Never treat possession of a storage credential as a ceremony signature.

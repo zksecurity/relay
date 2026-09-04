@@ -1,8 +1,8 @@
 # Participant contribution isolation
 
 Status: implemented by Relay's explicit `docker` participant execution mode.
-It is rehearsal-only on macOS and is not a production macOS isolation
-procedure.
+On macOS, production use additionally requires a delayed whole-device wipe
+attestation before the final parameters may be approved or released.
 
 This document defines the Docker-backed participant workflow that Relay
 implements for Groth16 ceremonies. It narrows the design to the threat we care
@@ -81,9 +81,9 @@ engine directly.
 - physical RAM recovery from a machine that remains powered on; and
 - cryptographic proof that no copy exists.
 
-Production operators that need a stronger physical boundary must use a
-dedicated disposable Linux VM and destroy that VM after copying out the public
-candidate.
+Production operators that need a shorter retention window or stronger physical
+boundary should use a dedicated disposable Linux VM and destroy that VM after
+copying out the public candidate.
 
 ## Image and binary model
 
@@ -189,7 +189,13 @@ signed erasure attestation
   ↓
 recheck public ceremony head
   ↓
-upload candidate manifest last
+upload candidate manifest last (provisional on a production Mac)
+  ↓
+after the participant's final turn: erase the whole Mac and cleanly reinstall
+  ↓
+sign and upload the separate host-wipe attestation
+  ↓
+release verification checks every required wipe and may release parameters
 ```
 
 Relay must inspect the effective container configuration before starting it.
@@ -259,10 +265,10 @@ timestamps, exit status, removal result, and the final participant response.
 The log must never contain command environment variables, key bytes, random
 values, or container memory.
 
-Do not change the proof-tool erasure schema in the first implementation. Under
-the stated honest-participant threat model, binding the lifecycle log into the
-signed erasure record adds audit integrity but does not prevent the accidental
-retention or later-compromise risks in scope.
+The immediate proof-tool erasure schema remains unchanged. Under the stated
+honest-participant threat model, binding the lifecycle log into that signed
+record would add audit integrity but would not prevent the accidental retention
+or later-compromise risks in scope.
 
 The existing erasure command may run only after Relay has measured successful
 cleanup and received `NO COPIES RETAINED`. A future protocol revision may bind
@@ -279,17 +285,51 @@ cleanup, not physical erasure.
 
 ### Production
 
-For a reusable production Mac workflow, use a dedicated disposable Linux VM
-that is not configured for snapshots, backups, hibernation, or swap. The
-Docker-only supervisor and state machine above do not implement the
-VM-destruction boundary, so they must not be represented as production-capable
-on macOS.
+A production Mac may contribute through the same pinned Docker workflow. Its
+candidate can be cryptographically verified and accepted into the chain before
+the whole-device wipe, but that acceptance is provisional for release purposes.
+The signed ceremony definition lists every participant subject to this policy
+in `host_wipe_participants`.
 
-An alternative is a dedicated sacrificial Mac running Docker, followed by
-shutdown and a supported whole-device cryptographic erase. Because Relay
-cannot upload after its own machine is erased, that option requires a reviewed
-split handoff: copy out only the authenticated public candidate, erase the Mac,
-and create the final attestation and upload from a separate clean machine.
+After that participant's final scheduled contribution:
+
+1. Preserve the public ceremony files and participant signing/config material
+   only on separately approved storage. Do not preserve Docker Desktop state or
+   any contribution-environment copy.
+2. Use the supported macOS whole-device erase procedure and perform a clean
+   reinstall.
+3. Do not restore a pre-wipe backup, snapshot, Docker Desktop data, or
+   private contribution-environment or contribution-randomness copy.
+4. Restore only the approved public files, signing/config material, Relay, and
+   the pinned proof-tool image.
+5. Obtain an identity-scoped `host-wipe` grant and run
+   `relay participant attest-host-wipe`. Type the exact confirmation only when
+   all displayed assertions are true.
+
+The proof tool signs a separate `host-wipe.json` record with the participant's
+ceremony key. Operational-evidence verification requires exactly one valid
+record for every participant named by the signed policy and checks that its
+`wiped_at` is later than that participant's final accepted contribution. The
+release signer therefore cannot sign or release final parameters while a
+required wipe is missing, invalid, duplicated, or too early.
+
+Relay prints `accepted provisionally` when the coordinator accepts a candidate
+from a participant covered by this policy. That status is derived from the
+signed definition and accepted chain, not stored as a separate mutable boolean.
+Likewise, an inbox upload is only `submitted for review`; “wipe confirmed” is
+authoritative only when proof-tool verifies the signed record inside the final
+operational-evidence bundle. This avoids a dashboard or local state file
+accidentally overriding the cryptographic release gate.
+
+This is authenticated evidence of an honest participant's statement, not
+physical or cryptographic proof of deletion. A malicious operator could copy
+the secret before wiping and then sign a false statement. The design here is
+for honest participants and primarily prevents an accidental long-lived copy
+from remaining on a Mac that is compromised later.
+
+A dedicated disposable Linux VM remains the stronger option when the delay
+between contribution and whole-host destruction is unacceptable. It should not
+be configured for snapshots, backups, hibernation, or swap.
 
 A future VM-backed execution design must keep a trusted Relay supervisor and
 the persistent participant signing-key file outside the disposable VM disk.
@@ -304,7 +344,8 @@ before production use.
 
 Removing a Docker container alone cannot establish that Docker Desktop's VM
 memory, backing storage, host swap, SSD snapshots, or backups contain no
-remnants.
+remnants. That is why production Mac release is gated on the later whole-device
+wipe rather than container removal alone.
 
 ## Linux production profile
 
@@ -327,6 +368,8 @@ the participant remains responsible for host-level facts Relay cannot observe.
 | Exact container ID still resolves after removal | Stop; do not attest or upload. |
 | Participant declines or cannot confirm | Stop; do not attest or upload. |
 | Upload fails after erasure | Retain the public candidate and use the existing resumable upload flow. |
+| Required Mac wipe is outstanding | Contributions may remain accepted, but do not sign or publish the final release. |
+| Host-wipe evidence is missing, duplicated, invalid, or predates the participant's final contribution | Reject operational evidence and block release. |
 
 ## Acceptance tests
 
@@ -341,6 +384,10 @@ The implementation is not complete until automated tests demonstrate:
 - a recorded orphan is cleaned before the next run;
 - removal failure and a still-inspectable container block attestation/upload;
 - an incorrect confirmation phrase blocks attestation/upload;
+- a required post-wipe record is participant-signed, identity-scoped, and
+  cannot be created for a rehearsal or an unlisted participant;
+- missing or too-early host-wipe evidence blocks operational-evidence and
+  release verification;
 - logs and process arguments contain no random value or key material;
 - upload failure preserves only the verified public resumable candidate; and
 - a complete macOS Docker rehearsal uses the pinned Linux binary and exercises
@@ -348,11 +395,11 @@ The implementation is not complete until automated tests demonstrate:
 
 ## Implementation scope
 
-The implementation changes Relay, its participant configuration, role
-documentation, Docker assets, and tests. It provides container-level isolation
-for Linux and functional rehearsal on macOS; production macOS remains blocked
-on the separately reviewed VM-backed supervisor and handoff described above.
-It does not change Groth16 arithmetic or the proof-tool erasure schema.
+The implementation changes Relay, proof-tool's signed definition and
+operational-evidence schemas, participant documentation, Docker assets, and
+tests. It provides container-level isolation for Linux and macOS and adds the
+delayed whole-Mac wipe gate required for production macOS. It does not change
+Groth16 arithmetic or the immediate contribution-erasure schema.
 
 The implementation uses a small, testable execution-driver interface instead
 of embedding Docker command construction throughout the participant workflow.
