@@ -143,7 +143,7 @@ for phase in phase1 phase2; do
     --environment "$rehearsal/config/environment.json" \
     --out "$profile" >/dev/null
   [[ -f "$profile" && ! -L "$profile" ]] || die "Relay did not create the $phase participant profile"
-  grep -Eq '"schema"[[:space:]]*:[[:space:]]*"relay-role-config-v1"' "$profile" ||
+  grep -Eq '"schema"[[:space:]]*:[[:space:]]*"relay-role-config-v2"' "$profile" ||
     die "Relay emitted an unexpected role profile schema"
   grep -Eq '"identity_id"[[:space:]]*:[[:space:]]*"participant-01"' "$profile" ||
     die "Relay emitted an unexpected participant identity"
