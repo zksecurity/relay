@@ -72,15 +72,12 @@ grant contents, or cloud secrets in this checklist.
       storage, chat, logs, source control, or a persistent Relay profile.
 - [ ] **HUMAN** Send only your identity ID, key ID, public key, fingerprint,
       and agreed display name through the approved channel.
-- [ ] **HUMAN** Independently confirm your fingerprint with the coordinator.
-- [ ] **HUMAN** After ceremony initialization, inspect the signed definition
-      and confirm your exact identity, key, position, ceremony mode, and phase
-      obligations.
-
-- **AUTO** Proof-tool must authenticate the signed definition and coordinator
-  signature.
-- **AUTO** Relay must match your local signing key to the participant identity
-  frozen in that definition rather than trusting a filename or website claim.
+- **AUTO** During `init-config`, proof-tool must authenticate the signed
+  definition, derive the public key from your local signing key, and match it
+  to your exact roster identity, key ID, fingerprint, and Phase 1/2 positions.
+- [ ] **HUMAN** Review the authenticated assignment printed by `init-config`
+      and confirm that the ceremony mode, scheduled phases, and positions match
+      what you agreed to.
 
 ## 2. Install and authenticate the tools
 
@@ -89,20 +86,14 @@ grant contents, or cloud secrets in this checklist.
       storage.
 - [ ] **HUMAN** Follow [docs/INSTALL.md](docs/INSTALL.md) on the machine that
       will perform the contribution.
-- [ ] **HUMAN** Record the reviewed command paths and versions in a local,
-      secret-free participant log.
 
-- **AUTO** Verify the archive digest before extraction and require
-  `./setup verify` to pass every internal file and compatibility check.
-- **AUTO** Require these commands to resolve to the reviewed paths and pinned
-  versions:
-
-  ```sh
-  relay --help
-  mpc-ceremony help
-  aws --version
-  command -v relay mpc-ceremony aws
-  ```
+- **AUTO** Verify the archive digest before extraction. `./setup verify` must
+  authenticate every kit file, release identifier, binary hash, and
+  compatibility record; retain its complete output as the secret-free tool
+  identity receipt instead of transcribing values manually.
+- **AUTO** `init-config` must verify the approved proof-tool identity while
+  authenticating the ceremony and emit the participant's secret-free
+  assignment receipt.
 
 ## 3. Prepare the contribution machine
 
@@ -145,7 +136,8 @@ relay participant status \
 
 - **AUTO** `init-config` must authenticate the local ceremony, coordinator
   trust key, participant signing key, environment, identity, and frozen roster
-  position.
+  positions, then print the ceremony mode, identity, key ID, fingerprint, and
+  both phase assignments.
 - **AUTO** The persistent role config must contain validated public metadata
   and approved paths, but no private-key bytes, cloud credentials, or temporary
   grant.

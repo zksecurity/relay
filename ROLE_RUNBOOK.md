@@ -111,9 +111,12 @@ temporary upload credential is issued:
 
     ROLE_CONFIG="$CEREMONY_HOME/config/participant-phase1.json"
 
-Enrollment asks proof-tool to match your key to the authenticated participant
+Initialization asks proof-tool to match your key to the authenticated participant
 roster. It does not trust the key's filename or the coordinator's assertion
-about your identity.
+about your identity. Relay prints the authenticated ceremony mode, identity,
+key ID, fingerprint, and both phase positions. Confirm only that the mode and
+assignments match what you agreed to; proof-tool has already performed the
+cryptographic key comparison.
 
 Check the signed public position without an upload credential:
 

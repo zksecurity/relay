@@ -85,6 +85,7 @@ func runInitRoleConfig(args []string) error {
 	if definition.CeremonyID != storageConfig.CeremonyID {
 		return errors.New("local ceremony does not match relay-storage.json")
 	}
+	var participantAssignment transcript.ParticipantInspection
 	if role == access.RoleParticipant {
 		if signingKey == "" || environment == "" {
 			return errors.New("participant config requires --signing-key and --environment")
@@ -107,6 +108,7 @@ func runInitRoleConfig(args []string) error {
 		config.IdentityID = participant.ParticipantID
 		config.SigningKey = signingKey
 		config.Environment = environment
+		participantAssignment = participant
 	} else {
 		if enrollment == "" || enrollmentSignature == "" {
 			return errors.New("non-participant config requires --enrollment and --enrollment-signature")
@@ -142,8 +144,39 @@ func runInitRoleConfig(args []string) error {
 	if err := writeJSONNoReplace(out, config, 0o600); err != nil {
 		return err
 	}
-	fmt.Printf("configured %s %s for %s\nprofile: %s\n", config.Role, config.IdentityID, config.Phase, out)
+	if role == access.RoleParticipant {
+		fmt.Print(formatParticipantAssignment(definition, participantAssignment, phase, out))
+	} else {
+		fmt.Printf("configured %s %s for %s\nprofile: %s\n", config.Role, config.IdentityID, config.Phase, out)
+	}
 	return nil
+}
+
+func formatParticipantAssignment(
+	definition transcript.Definition,
+	participant transcript.ParticipantInspection,
+	selectedPhase string,
+	profilePath string,
+) string {
+	return fmt.Sprintf(
+		"configured participant %s for %s\nceremony: %s (%s)\nkey id: %s\nfingerprint: %s\nphase1 position: %s\nphase2 position: %s\nprofile: %s\n",
+		participant.ParticipantID,
+		selectedPhase,
+		definition.CeremonyID,
+		definition.Mode,
+		participant.KeyID,
+		participant.PublicKeyFingerprint,
+		formatParticipantPosition(participant.Phase1Position),
+		formatParticipantPosition(participant.Phase2Position),
+		profilePath,
+	)
+}
+
+func formatParticipantPosition(position *uint8) string {
+	if position == nil {
+		return "not scheduled"
+	}
+	return fmt.Sprintf("%d", *position)
 }
 
 func ceremonyEnrollmentRole(role string) (string, bool) {

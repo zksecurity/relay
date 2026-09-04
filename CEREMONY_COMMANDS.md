@@ -223,13 +223,16 @@ relay ceremony init-config \
   --out "$ROLE_CONFIG"
 ```
 
-Relay authenticates the definition, coordinator trust key, local participant
-key, phase eligibility, identity, and frozen position. The resulting mode-
+Relay authenticates the definition and coordinator trust key, derives the
+public key from the local participant key, and matches it to the exact roster
+identity, key ID, fingerprint, and Phase 1/2 positions. The resulting mode-
 `0600` profile stores paths, not private-key bytes or temporary grants.
 
-**Success evidence:** `configured participant PARTICIPANT_ID for PHASE`, the
-fresh profile path, and the participant's independently checked identity and
-position.
+**Success evidence:** the authenticated ceremony ID and mode, participant
+identity, key ID, fingerprint, both phase positions, selected phase, and fresh
+profile path printed by Relay. The participant must confirm that the mode and
+assignments match what they agreed to; they do not manually repeat the
+cryptographic key comparison.
 
 **Retry:** the output is create-only. If any authenticated value is wrong,
 stop; do not edit the generated JSON. Resolve the source problem and use a
