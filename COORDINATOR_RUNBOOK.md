@@ -5,9 +5,11 @@
 > [scripted three-machine rehearsal](scripts/three-machine-rehearsal/README.md)
 > and its machine-specific `.env` files.
 
-This is the coordinator checklist for operating `relay`. Participants,
-witnesses, mirrors, auditors, release upload stations, and decision signers use
-[ROLE_RUNBOOK.md](ROLE_RUNBOOK.md).
+This is the coordinator runbook for operating `relay`. Use the
+[automation-aware coordinator checklist](COORDINATOR_CHECKLIST.md) as the live
+execution aid and [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md) for copy-oriented
+command recipes. Participants, witnesses, mirrors, auditors, release upload
+stations, and decision signers use [ROLE_RUNBOOK.md](ROLE_RUNBOOK.md).
 
 The [proof-tool repository](https://github.com/Emurgo/proof-tool) remains the
 authority for ceremony commands and validity rules. Relay transports bytes and

@@ -206,7 +206,8 @@ func runParticipate(args []string) error {
 	if err := confirmErasure(); err != nil {
 		return err
 	}
-	if err := runErasure(o); err != nil {
+	destroyedAt, err := runErasure(o)
+	if err != nil {
 		return err
 	}
 	manifest, err := prepareCandidateManifest(o.outDir, grant, config.Phase, pos, attempt)
@@ -231,7 +232,9 @@ func runParticipate(args []string) error {
 	if err != nil {
 		return fmt.Errorf("upload interrupted; completed candidate remains at %s and can be resumed with a fresh grant: %w", o.outDir, err)
 	}
-	fmt.Printf("candidate submitted for coordinator review\nmanifest: %s\n", manifestKey)
+	fmt.Printf("candidate submitted for coordinator review\n")
+	fmt.Printf("attempt: %s\ncandidate directory: %s\ndestroyed_at: %s\nmanifest: %s\n",
+		attempt, o.outDir, destroyedAt.UTC().Format(time.RFC3339), manifestKey)
 	return nil
 }
 
@@ -277,12 +280,35 @@ func resumeCandidateUpload(config access.ParticipantConfig, grant access.Grant, 
 	if err := verifyLocalCandidate(candidateDir, manifest); err != nil {
 		return err
 	}
+	destroyedAt, err := candidateDestroyedAt(candidateDir)
+	if err != nil {
+		return err
+	}
 	manifestKey, err := uploadCandidate(grantClient(grant), grant.Prefix, candidateDir, localManifest, manifest)
 	if err != nil {
 		return fmt.Errorf("upload interrupted again; completed candidate remains at %s: %w", candidateDir, err)
 	}
-	fmt.Printf("candidate upload resumed without recomputing the contribution\nmanifest: %s\n", manifestKey)
+	fmt.Printf("candidate upload resumed without recomputing the contribution\n")
+	fmt.Printf("attempt: %s\ncandidate directory: %s\ndestroyed_at: %s\nmanifest: %s\n",
+		manifest.AttemptID, candidateDir, destroyedAt, manifestKey)
 	return nil
+}
+
+func candidateDestroyedAt(candidateDir string) (string, error) {
+	raw, err := os.ReadFile(filepath.Join(candidateDir, "erasure.json"))
+	if err != nil {
+		return "", fmt.Errorf("read saved erasure record: %w", err)
+	}
+	var erasure struct {
+		DestroyedAt string `json:"destroyed_at"`
+	}
+	if err := json.Unmarshal(raw, &erasure); err != nil {
+		return "", fmt.Errorf("decode saved erasure record: %w", err)
+	}
+	if _, err := time.Parse(time.RFC3339, erasure.DestroyedAt); err != nil {
+		return "", errors.New("saved erasure record has an invalid destroyed_at")
+	}
+	return erasure.DestroyedAt, nil
 }
 
 func verifyLocalCandidate(candidateDir string, manifest access.CandidateManifest) error {
@@ -440,8 +466,9 @@ func erasureTimestamp(candidateDir string, now time.Time) time.Time {
 	return now
 }
 
-func runErasure(o roleOpts) error {
-	return runErasureAt(o, erasureTimestamp(o.outDir, time.Now().UTC()))
+func runErasure(o roleOpts) (time.Time, error) {
+	destroyedAt := erasureTimestamp(o.outDir, time.Now().UTC())
+	return destroyedAt, runErasureAt(o, destroyedAt)
 }
 
 func runErasureAt(o roleOpts, destroyedAt time.Time) error {

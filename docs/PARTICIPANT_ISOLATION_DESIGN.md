@@ -1,0 +1,335 @@
+# Participant contribution isolation
+
+Status: proposed; the first Docker-backed implementation described here is
+rehearsal-only on macOS and is not a production isolation procedure.
+
+This document defines the Docker-backed participant workflow that Relay should
+implement for Groth16 ceremonies. It narrows the design to the threat we care
+about: an honest participant should not accidentally preserve contribution
+randomness that a later compromise could recover.
+
+It does not claim cryptographic proof of erasure. A participant or host that is
+malicious during the contribution can copy memory before cleanup and then
+produce an apparently valid erasure statement.
+
+## Security objective
+
+The Groth16 contribution randomness must exist only inside a short-lived
+contributor environment. Relay must automatically destroy that environment
+before it creates an erasure attestation or uploads the public candidate.
+
+The safe path must not depend on the participant knowing which Docker objects,
+temporary files, or processes to remove manually.
+
+## Roles and trust boundaries
+
+Relay is the **participant supervisor**. It runs on the participant's host and:
+
+- downloads and authenticates ceremony inputs;
+- creates and validates the contributor container;
+- starts the contribution and validates its public output;
+- terminates and removes the contributor on every exit path;
+- verifies that the exact container ID no longer exists;
+- asks the participant only about copies Relay cannot observe;
+- invokes the existing signed erasure command; and
+- uploads only after the erasure record exists.
+
+The participant supervisor is not the ceremony coordinator. The coordinator
+must not receive the participant's private signing key or create the
+participant's erasure statement.
+
+The **contributor** is a fresh, one-shot container. It runs the pinned
+`mpc-ceremony` contribution command and has no storage or network role.
+
+```text
+participant host
+└── Relay supervisor
+    ├── authenticated input cache
+    ├── participant signing key
+    ├── public candidate handoff
+    └── disposable contributor
+        ├── mpc-ceremony contribute
+        ├── contribution randomness in process memory
+        ├── no network
+        └── temporary state destroyed on removal
+```
+
+Do not run Relay inside a container with `/var/run/docker.sock` mounted. Access
+to the Docker socket is effectively control of the Docker host and defeats the
+intended boundary. Relay should run on the host and invoke the local Docker
+engine directly.
+
+## Threat model
+
+### In scope
+
+- an honest participant forgetting or misunderstanding cleanup steps;
+- contribution randomness remaining in a stopped container, writable layer,
+  temporary file, swap, or core dump;
+- a later compromise of the participant's ordinary workstation;
+- accidental network access during contribution;
+- accidental broad host mounts;
+- interruption, contribution failure, or Relay termination during cleanup;
+- use of an unapproved image or ceremony binary; and
+- accidentally uploading before cleanup and confirmation.
+
+### Out of scope
+
+- a malicious participant deliberately copying the randomness;
+- a host, kernel, hypervisor, or Docker daemon compromised during execution;
+- physical RAM recovery from a machine that remains powered on; and
+- cryptographic proof that no copy exists.
+
+Production operators that need a stronger physical boundary must use a
+dedicated disposable Linux VM and destroy that VM after copying out the public
+candidate.
+
+## Image and binary model
+
+Use one reproducible ceremony-tool image for all roles, selected by immutable
+image digest. Role-specific launch configurations may select different Relay
+commands, but they must not rebuild independent copies of `mpc-ceremony`.
+
+This keeps the Linux `mpc-ceremony` binary identical across macOS and Linux
+participants. Relay must verify both:
+
+1. the configured immutable image digest; and
+2. the `mpc-ceremony` binary digest required by the signed ceremony definition.
+
+The image must already be present before the sensitive container is created.
+The contributor runs with no network and cannot pull an image.
+
+The current generic `--ceremony-binary` hook is not sufficient for lifecycle
+enforcement because Relay cannot learn whether an opaque wrapper actually
+removed its container. Add a structured Docker execution driver to Relay. The
+driver may use the existing ceremony inspection and attestation interfaces,
+but contribution lifecycle transitions must be visible to Relay.
+
+## Container configuration
+
+Relay must create the contributor with all of these controls:
+
+- immutable image digest, never a mutable tag;
+- non-root user;
+- read-only root filesystem;
+- `network=none`;
+- no host PID, IPC, or user namespace sharing;
+- all Linux capabilities dropped;
+- `no-new-privileges` enabled;
+- core dump soft and hard limits set to zero;
+- a bounded, memory-backed temporary directory;
+- authenticated ceremony inputs mounted read-only;
+- the environment declaration mounted read-only;
+- the participant signing key mounted as a single read-only file;
+- one fresh, mode-`0700` public candidate handoff mounted writable; and
+- no home directory, repository root, Docker socket, cloud credential, or
+  unrelated host directory mounted.
+
+The signing key is not Groth16 toxic waste, but it remains sensitive. The
+approved and digest-pinned ceremony binary needs it to sign the contribution
+attestation. It must never be copied into the image or writable container
+storage.
+
+Memory-backed files can still be swapped by the host or VM. Relay's preflight
+must therefore require swap to be disabled at the Linux host/VM level. A
+container flag alone is not enough.
+
+## Mount contract
+
+```text
+host                                  contributor
+────────────────────────────────────────────────────────────
+authenticated ceremony inputs  ─RO─> /input
+environment.json              ─RO─> /config/environment.json
+participant signing key       ─RO─> /key/participant.key
+fresh candidate handoff       ─RW─> /output
+                                      /tmp  (bounded tmpfs)
+```
+
+Only public candidate files may cross from `/output` to the host. Relay must
+reject symlinks, devices, sockets, unexpected filenames, files outside the
+handoff directory, and outputs that fail the existing proof-tool verification
+and digest checks.
+
+The public candidate and its attestations are intentionally retained for
+interrupted-upload recovery. They are not toxic waste.
+
+## Lifecycle state machine
+
+Relay must use an explicit container lifecycle rather than treating
+`docker run --rm` as sufficient evidence:
+
+```text
+preflight
+  ↓
+create container and persist its exact ID
+  ↓
+inspect effective configuration
+  ↓
+start and attach
+  ↓
+wait for successful exit
+  ↓
+validate public handoff
+  ↓
+remove exact container ID
+  ↓
+inspect exact ID and require "not found"
+  ↓
+participant no-copy confirmation
+  ↓
+signed erasure attestation
+  ↓
+recheck public ceremony head
+  ↓
+upload candidate manifest last
+```
+
+Relay must inspect the effective container configuration before starting it.
+It must not infer safety merely from the arguments it intended to pass.
+
+The persisted cleanup record contains the container ID and non-secret
+lifecycle state. If Relay or the host restarts, the next participant command
+must finish cleanup for any recorded container before starting or resuming
+other work.
+
+All error and signal paths after container creation must attempt termination
+and removal. Failure to verify removal is terminal: Relay must not attest or
+upload.
+
+## Measured facts and participant assertion
+
+Relay is responsible for measuring and displaying:
+
+- approved image and ceremony-binary digests;
+- effective network and mount configuration;
+- core dump limit;
+- contribution exit status;
+- container removal; and
+- absence of the exact container ID after removal.
+
+The participant is responsible only for facts outside Relay's visibility:
+
+- no VM or container snapshot was created or retained;
+- no debugger or memory-dump mechanism copied the contributor's memory;
+- no manual copy of private temporary state was retained; and
+- the disposable environment was not enrolled in a backup system.
+
+After verified cleanup, Relay must display the measured results and require
+this exact production confirmation:
+
+```text
+Contribution completed.
+
+Relay verified:
+  ✓ contributor exited
+  ✓ container <short-id> was removed
+  ✓ container <short-id> no longer exists
+  ✓ temporary container storage was destroyed
+
+Confirm that you:
+  • did not create or retain a VM/container snapshot;
+  • did not dump or copy the contributor's memory;
+  • did not retain any other copy of the contribution randomness; and
+  • did not configure the disposable environment for backup.
+
+Type NO COPIES RETAINED to continue:
+```
+
+Any other input, EOF, or uncertainty stops the workflow without producing an
+erasure attestation or uploading. There is no non-interactive bypass in
+production mode.
+
+This replaces the current ambiguous `DESTROYED` prompt. The participant does
+not manually remove the container at the prompt; Relay has already done and
+verified the mechanical cleanup.
+
+## Evidence decision
+
+For the first implementation, write a local lifecycle log containing image and
+binary digests, container ID, effective non-secret security configuration,
+timestamps, exit status, removal result, and the final participant response.
+The log must never contain command environment variables, key bytes, random
+values, or container memory.
+
+Do not change the proof-tool erasure schema in the first implementation. Under
+the stated honest-participant threat model, binding the lifecycle log into the
+signed erasure record adds audit integrity but does not prevent the accidental
+retention or later-compromise risks in scope.
+
+The existing erasure command may run only after Relay has measured successful
+cleanup and received `NO COPIES RETAINED`. A future protocol revision may bind
+a lifecycle-log digest if the ceremony adopts a malicious-participant audit
+requirement.
+
+## macOS assurance levels
+
+### Rehearsal
+
+Docker Desktop with a disposable contributor container is acceptable for
+functional rehearsal. The evidence must describe this as container-level
+cleanup, not physical erasure.
+
+### Production
+
+Production on macOS requires a dedicated disposable Linux VM that is not
+configured for snapshots, backups, hibernation, or swap. The Docker-only
+supervisor and state machine above do not yet implement the VM-destruction
+boundary, so they must not be represented as production-capable on macOS.
+
+A future VM-backed execution design must keep a trusted Relay supervisor and
+the participant signing key outside the disposable VM. It must authenticate
+and copy out only the public candidate plus the non-secret lifecycle evidence,
+destroy and prove removal of the exact VM, and only then permit participant
+confirmation, erasure attestation, public-head recheck, and upload. It must
+also specify crash recovery and authenticate every item crossing from the VM
+before production use.
+
+Removing a Docker container alone cannot establish that Docker Desktop's VM
+memory, backing storage, host swap, SSD snapshots, or backups contain no
+remnants.
+
+## Failure behavior
+
+| Failure | Required behavior |
+| --- | --- |
+| Image or binary digest mismatch | Do not create the contributor. |
+| Unsafe effective container configuration | Remove it without starting; do not contribute. |
+| Contribution exits nonzero or is interrupted | Terminate and remove; do not attest or upload. |
+| Public handoff is malformed | Remove contributor; retain no unverified output as resumable state. |
+| Container removal fails | Stop; do not attest or upload. |
+| Exact container ID still resolves after removal | Stop; do not attest or upload. |
+| Participant declines or cannot confirm | Stop; do not attest or upload. |
+| Upload fails after erasure | Retain the public candidate and use the existing resumable upload flow. |
+
+## Acceptance tests
+
+The implementation is not complete until automated tests demonstrate:
+
+- an unpinned or mismatching image is rejected;
+- a mismatching ceremony binary is rejected;
+- networked, privileged, root, writable-root, core-enabled, or broadly mounted
+  containers are rejected before start;
+- only the expected regular public files cross the handoff boundary;
+- nonzero exit, cancellation, and simulated Relay termination invoke cleanup;
+- a recorded orphan is cleaned before the next run;
+- removal failure and a still-inspectable container block attestation/upload;
+- an incorrect confirmation phrase blocks attestation/upload;
+- logs and process arguments contain no random value or key material;
+- upload failure preserves only the verified public resumable candidate; and
+- a complete macOS Docker rehearsal uses the pinned Linux binary and exercises
+  the measured-cleanup-before-confirmation order.
+
+## Implementation scope
+
+The first implementation changes Relay, its participant configuration, role
+documentation, Docker assets, and tests. It provides container-level isolation
+for Linux and functional rehearsal on macOS; production macOS remains blocked
+on the separately reviewed VM-backed supervisor and handoff described above.
+It does not change Groth16 arithmetic or the proof-tool erasure schema.
+
+The implementation should introduce a small, testable execution-driver
+interface instead of embedding Docker command construction throughout the
+participant workflow. Native Linux execution may remain available, but
+production profiles must state their execution mode explicitly and must not
+silently fall back from Docker to native execution.

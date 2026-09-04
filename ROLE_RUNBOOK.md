@@ -9,6 +9,13 @@ This runbook is for participants, public witnesses, mirror operators, auditors,
 release upload stations, and production-decision signers. The coordinator uses
 [COORDINATOR_RUNBOOK.md](COORDINATOR_RUNBOOK.md).
 
+Participants should also receive a prefilled
+[lifecycle checklist](PARTICIPANT_CHECKLIST.md) and one fresh
+[turn checklist](PARTICIPANT_TURN_CHECKLIST.md) for each phase. These are
+execution aids; [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md) contains
+copy-oriented commands, and this runbook remains authoritative if their
+wording differs.
+
 The [proof-tool repository](https://github.com/Emurgo/proof-tool) remains the
 authority for ceremony validity. Relay transports bytes and reports public
 position; the trusted `mpc-ceremony` binary authenticates definitions, chains,

@@ -287,6 +287,7 @@ func reportStatus(o roleOpts) error {
 
 	fmt.Printf("ceremony  %s  (%s)\n", pos.definition.CeremonyID, pos.definition.Mode)
 	fmt.Printf("%s     %d of %d accepted\n", o.phase, pos.accepted, len(schedule))
+	fmt.Printf("head      %s\n", pos.pointer.Chain.SHA256)
 	if pos.phaseClosed {
 		fmt.Printf("          phase is closed; no further contributions\n")
 	} else if pos.nextID != "" {

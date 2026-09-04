@@ -357,7 +357,7 @@ func testProofToolContributionCommands(t *testing.T, ceremonyBinary, fixtureRoot
 	if err := runNext(o, pos); err != nil {
 		t.Fatalf("Relay contribution invocation against proof-tool: %v", err)
 	}
-	if err := runErasure(o); err != nil {
+	if _, err := runErasure(o); err != nil {
 		t.Fatalf("Relay erasure invocation against proof-tool: %v", err)
 	}
 	runProofCommand(t, root, ceremonyBinary,

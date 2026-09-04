@@ -187,6 +187,28 @@ func TestVerifyLocalCandidateRejectsChangedFile(t *testing.T) {
 	}
 }
 
+func TestCandidateDestroyedAt(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "erasure.json")
+	if err := os.WriteFile(path, []byte(`{"destroyed_at":"2026-09-04T12:00:00Z"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := candidateDestroyedAt(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "2026-09-04T12:00:00Z" {
+		t.Fatalf("destroyed_at = %q", got)
+	}
+
+	if err := os.WriteFile(path, []byte(`{"destroyed_at":"not-a-time"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := candidateDestroyedAt(dir); err == nil {
+		t.Fatal("invalid destroyed_at accepted")
+	}
+}
+
 func TestValidateResumableCandidateRejectsAdvancedHead(t *testing.T) {
 	_, _, manifest := candidateFixture(t)
 	config := access.ParticipantConfig{Phase: manifest.Phase}

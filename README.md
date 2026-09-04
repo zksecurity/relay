@@ -7,7 +7,13 @@ role discover from the bucket where the ceremony stands.
 Operating procedures are split by audience:
 
 - [Coordinator runbook](COORDINATOR_RUNBOOK.md)
+- [Automation-aware coordinator checklist](COORDINATOR_CHECKLIST.md)
+- [Ceremony command recipes](CEREMONY_COMMANDS.md)
 - [Participant and other role runbook](ROLE_RUNBOOK.md)
+- [Participant lifecycle checklist](PARTICIPANT_CHECKLIST.md)
+- [Participant per-phase turn checklist](PARTICIPANT_TURN_CHECKLIST.md)
+- [Participant contribution isolation design](docs/PARTICIPANT_ISOLATION_DESIGN.md)
+  (proposed; not a production procedure)
 - [Three-machine tiny rehearsal scripts](scripts/three-machine-rehearsal/README.md)
 - [AWS storage setup](docs/AWS_SETUP.md)
 - [Cloudflare R2 storage setup](docs/R2_SETUP.md)
