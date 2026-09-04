@@ -268,6 +268,11 @@ func runParticipantStatus(args []string) error {
 		return err
 	}
 	o := participantRoleOptions(config, "")
+	if o.docker != nil {
+		if err := o.docker.preflight(); err != nil {
+			return err
+		}
+	}
 	participant, err := o.inspector().Participant(config.SigningKey)
 	if err != nil {
 		return err

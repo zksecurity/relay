@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -171,9 +172,13 @@ func runParticipate(args []string) error {
 		return err
 	}
 	defer runLock.release()
+	var preparedDocker *dockerDriver
 	if effectiveExecutionMode(config.ExecutionMode) == dockerExecutionMode {
-		driver := dockerDriverForParticipant(config)
-		if err := driver.cleanupOrphan(); err != nil {
+		preparedDocker = dockerDriverForParticipant(config)
+		if err := preparedDocker.preflight(); err != nil {
+			return err
+		}
+		if err := preparedDocker.cleanupOrphan(); err != nil {
 			return err
 		}
 	}
@@ -195,6 +200,9 @@ func runParticipate(args []string) error {
 		return errors.New("participant configuration refers to a non-participant grant")
 	}
 	o := participantRoleOptions(config, grant.IdentityID)
+	if preparedDocker != nil {
+		o.docker = preparedDocker
+	}
 	participant, err := o.inspector().Participant(config.SigningKey)
 	if err != nil {
 		return err
@@ -481,13 +489,15 @@ func confirmDockerNoCopies(o roleOpts) error {
 	}
 	var receipt dockerLifecycleReceipt
 	if err := json.Unmarshal(raw, &receipt); err != nil || receipt.Schema != dockerLifecycleSchema ||
-		!receipt.RemovalVerified || !verifiedLifecycleFacts(receipt.Security) {
+		!receipt.RemovalVerified || !verifiedDaemonFacts(receipt.Daemon) ||
+		!verifiedLifecycleFacts(receipt.Security) || !verifiedHostSwapStatus(runtime.GOOS, receipt.HostSwapStatus) {
 		return errors.New("Docker lifecycle record does not prove the required measured cleanup")
 	}
 	shortID := shortContainerID(receipt.ContainerID)
 	fmt.Printf(`Contribution completed.
 
 Relay verified:
+  ✓ Docker daemon %s was reached through local endpoint %s
   ✓ contributor exited
   ✓ container %s was removed
   ✓ container %s no longer exists
@@ -499,7 +509,7 @@ Confirm that you:
   • did not retain any other copy of the contribution randomness; and
   • did not configure the disposable environment for backup.
 
-Type NO COPIES RETAINED to continue: `, shortID, shortID)
+Type NO COPIES RETAINED to continue: `, receipt.Daemon.ID, receipt.Daemon.Endpoint, shortID, shortID)
 	line, readErr := bufio.NewReader(os.Stdin).ReadString('\n')
 	if readErr != nil && len(line) == 0 {
 		return readErr
@@ -679,6 +689,11 @@ func runParticipantHostWipe(args []string) error {
 		return fmt.Errorf("grant role is %s, want %s", grant.Role, access.RoleHostWipe)
 	}
 	o := participantRoleOptions(config, grant.IdentityID)
+	if o.docker != nil {
+		if err := o.docker.preflight(); err != nil {
+			return err
+		}
+	}
 	definition, err := o.inspector().Definition()
 	if err != nil {
 		return err

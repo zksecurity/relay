@@ -93,6 +93,11 @@ digest for this participant's platform:
       --docker-platform linux/amd64
 
 Relay never pulls this image during a turn. Preload and authenticate it first.
+Before any contributor is created, Relay resolves the selected Docker context,
+rejects non-local daemon endpoints, pins every command to the resulting Unix
+socket, and records the daemon ID and actual `userns`/`rootless` security
+options. SIGINT or SIGTERM during a contribution triggers force-removal and
+absence verification of the exact recorded container before Relay exits.
 The v2 signed ceremony definition may allow exact images' binaries for both
 `linux/amd64` and `linux/arm64`; each participant selects the matching image
 and Relay records that exact binary digest in its lifecycle receipt. Legacy v1

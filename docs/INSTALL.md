@@ -268,7 +268,11 @@ Use a platform present in the signed ceremony definition's exact binary
 allowlist. A v2 ceremony can mix `linux/amd64` participants with Apple-silicon
 Mac participants using `linux/arm64`; a legacy v1 ceremony cannot. Relay
 refuses mutable image tags, never pulls during a participant turn, and does not
-fall back to native execution. Docker Desktop on macOS may be used for
+fall back to native execution. Relay also resolves the active Docker context,
+rejects remote daemon endpoints, pins subsequent commands to the inspected
+local Unix socket, and records the daemon ID and actual user-namespace security
+options. Docker Desktop on Linux is unsupported because its hidden VM prevents
+Relay from validating daemon-host swap. Docker Desktop on macOS may be used for
 production only when the signed ceremony policy names that participant in
 `host_wipe_participants`. Container cleanup permits provisional contribution
 acceptance; final parameter release remains blocked until the participant

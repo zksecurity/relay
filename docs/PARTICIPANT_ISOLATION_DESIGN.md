@@ -120,7 +120,11 @@ Relay must create the contributor with all of these controls:
 - non-root user;
 - read-only root filesystem;
 - `network=none`;
-- no host PID, IPC, or user namespace sharing;
+- no host PID or IPC namespace sharing, and explicit `--userns=host` rejected;
+- the selected Docker context resolved to an absolute local Unix socket and
+  pinned for every later Docker command;
+- Docker daemon ID, version, operating system, architecture, and effective
+  `userns`/`rootless` security options inspected and recorded;
 - all Linux capabilities dropped;
 - `no-new-privileges` enabled;
 - core dump soft and hard limits set to zero;
@@ -137,9 +141,20 @@ approved and digest-pinned ceremony binary needs it to sign the contribution
 attestation. It must never be copied into the image or writable container
 storage.
 
-Memory-backed files can still be swapped by the host or VM. Relay's preflight
-must therefore require swap to be disabled at the Linux host/VM level. A
-container flag alone is not enough.
+An empty container `UsernsMode` means the daemon default; it does not prove UID
+remapping. Relay derives `daemon-remapped`, `rootless-daemon`, or
+`daemon-default-unremapped` from the daemon's actual `SecurityOptions` and
+records that result without claiming remapping where none exists. Running as a
+non-root UID, dropping capabilities, and rejecting explicit host-user-namespace
+mode remain mandatory.
+
+Memory-backed files can still be swapped by the host or VM. Relay rejects
+remote `tcp://` and `ssh://` Docker endpoints before checking Linux host swap,
+then pins all commands to the resolved local Unix endpoint. Native Docker
+Engine on Linux must have host swap disabled. Docker Desktop on Linux is
+rejected because Relay cannot apply that host check to its hidden VM. On macOS,
+VM and host swap remain explicitly unassessed and the later whole-device wipe
+is still required for production.
 
 ## Mount contract
 
@@ -210,6 +225,14 @@ All error and signal paths after container creation must attempt termination
 and removal. Failure to verify removal is terminal: Relay must not attest or
 upload.
 
+Relay registers SIGINT and SIGTERM before creating the contributor. If either
+arrives while the attached contribution is running, Relay cancels the Docker
+client, force-removes the exact recorded container ID with its anonymous
+volumes, verifies that both `inspect` and an all-containers query find no such
+ID, removes the matching lifecycle state, and only then exits without
+attesting or uploading. If absence cannot be verified, Relay fails closed and
+retains the lifecycle state for recovery.
+
 ## Measured facts and participant assertion
 
 Relay is responsible for measuring and displaying:
@@ -260,8 +283,10 @@ verified the mechanical cleanup.
 ## Evidence decision
 
 For the first implementation, write a local lifecycle log containing image and
-binary digests, container ID, effective non-secret security configuration,
-timestamps, exit status, removal result, and the final participant response.
+binary digests, the resolved local daemon endpoint and daemon ID, inspected
+daemon security options, container ID, effective non-secret container security
+configuration, timestamps, exit status, removal result, and the final
+participant response.
 The log must never contain command environment variables, key bytes, random
 values, or container memory.
 
@@ -350,7 +375,9 @@ wipe rather than container removal alone.
 ## Linux production profile
 
 A VM driver is not required on a dedicated Linux machine using native Docker
-Engine. The production procedure must still disable host swap, hibernation,
+Engine through a local Unix socket. Remote contexts and Docker Desktop on Linux
+are rejected because Relay cannot bind its host swap check to those execution
+hosts. The production procedure must still disable host swap, hibernation,
 and core-dump persistence; exclude ceremony storage from backups and snapshots;
 use the restricted mounts above; and power off or wipe the dedicated host at
 the ceremony's required assurance level. Relay records container-level facts;

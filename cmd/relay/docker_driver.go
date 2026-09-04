@@ -2,18 +2,22 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/zksecurity/relay/internal/access"
@@ -23,21 +27,39 @@ import (
 const (
 	dockerExecutionMode       = "docker"
 	nativeExecutionMode       = "native"
-	dockerLifecycleSchema     = "relay-docker-lifecycle-v1"
-	dockerActiveStateSchema   = "relay-docker-active-container-v1"
+	dockerLifecycleSchema     = "relay-docker-lifecycle-v2"
+	dockerActiveStateSchema   = "relay-docker-active-container-v2"
 	dockerLifecycleLogName    = "relay-lifecycle.json"
 	dockerActiveStateFileName = ".relay-active-container.json"
+	dockerLinuxSwapDisabled   = "disabled-relay-linux-host-local-unix-daemon"
+	dockerMacSwapUnassessed   = "not-assessed-macos-host-wipe-required"
 )
 
 type dockerCommandClient interface {
 	Output(args ...string) ([]byte, []byte, error)
 	Attached(stdout, stderr io.Writer, args ...string) error
+	AttachedContext(ctx context.Context, stdout, stderr io.Writer, args ...string) error
+	BindHost(host string) dockerCommandClient
 }
 
-type osDockerCommandClient struct{ binary string }
+type osDockerCommandClient struct {
+	binary string
+	host   string
+}
+
+func (c osDockerCommandClient) command(ctx context.Context, args ...string) *exec.Cmd {
+	if c.host != "" {
+		args = append([]string{"--host", c.host}, args...)
+	}
+	command := exec.CommandContext(ctx, c.binary, args...)
+	if c.host != "" {
+		command.Env = dockerEnvironmentWithoutTargetOverrides()
+	}
+	return command
+}
 
 func (c osDockerCommandClient) Output(args ...string) ([]byte, []byte, error) {
-	command := exec.Command(c.binary, args...)
+	command := c.command(context.Background(), args...)
 	var stdout, stderr bytes.Buffer
 	command.Stdout, command.Stderr = &stdout, &stderr
 	err := command.Run()
@@ -45,10 +67,32 @@ func (c osDockerCommandClient) Output(args ...string) ([]byte, []byte, error) {
 }
 
 func (c osDockerCommandClient) Attached(stdout, stderr io.Writer, args ...string) error {
-	command := exec.Command(c.binary, args...)
+	return c.AttachedContext(context.Background(), stdout, stderr, args...)
+}
+
+func (c osDockerCommandClient) AttachedContext(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+	command := c.command(ctx, args...)
 	command.Stdout, command.Stderr = stdout, stderr
 	command.Stdin = os.Stdin
 	return command.Run()
+}
+
+func (c osDockerCommandClient) BindHost(host string) dockerCommandClient {
+	c.host = host
+	return c
+}
+
+func dockerEnvironmentWithoutTargetOverrides() []string {
+	environment := os.Environ()
+	filtered := make([]string, 0, len(environment))
+	for _, entry := range environment {
+		name, _, _ := strings.Cut(entry, "=")
+		if name == "DOCKER_HOST" || name == "DOCKER_CONTEXT" {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }
 
 type dockerMount struct {
@@ -71,30 +115,50 @@ type dockerDriver struct {
 	client         dockerCommandClient
 	now            func() time.Time
 	hostSwapStatus func() (string, error)
+	interruptCtx   func() (context.Context, context.CancelFunc)
+	daemon         dockerDaemonFacts
 }
 
 type dockerActiveState struct {
-	Schema      string `json:"schema"`
-	ContainerID string `json:"container_id"`
-	Image       string `json:"image"`
-	Platform    string `json:"platform"`
-	HandoffDir  string `json:"handoff_dir"`
-	CreatedAt   string `json:"created_at"`
+	Schema         string `json:"schema"`
+	ContainerID    string `json:"container_id"`
+	Image          string `json:"image"`
+	Platform       string `json:"platform"`
+	DaemonID       string `json:"daemon_id"`
+	DaemonEndpoint string `json:"daemon_endpoint"`
+	HandoffDir     string `json:"handoff_dir"`
+	CreatedAt      string `json:"created_at"`
+}
+
+type dockerDaemonFacts struct {
+	Context            string   `json:"context"`
+	Endpoint           string   `json:"endpoint"`
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	ServerVersion      string   `json:"server_version"`
+	OperatingSystem    string   `json:"operating_system"`
+	OSType             string   `json:"os_type"`
+	Architecture       string   `json:"architecture"`
+	SecurityOptions    []string `json:"security_options"`
+	LocalUnixEndpoint  bool     `json:"local_unix_endpoint"`
+	UserNamespaceRemap bool     `json:"user_namespace_remap"`
+	Rootless           bool     `json:"rootless"`
 }
 
 type dockerSecurityFacts struct {
-	NetworkNone     bool `json:"network_none"`
-	ReadOnlyRoot    bool `json:"read_only_root"`
-	NonRoot         bool `json:"non_root"`
-	CapabilitiesOff bool `json:"capabilities_dropped"`
-	NoNewPrivileges bool `json:"no_new_privileges"`
-	CoreDumpsOff    bool `json:"core_dumps_disabled"`
-	LogDriverOff    bool `json:"log_driver_disabled"`
-	PrivatePID      bool `json:"private_pid_namespace"`
-	PrivateIPC      bool `json:"private_ipc_namespace"`
-	NoHostUserNS    bool `json:"no_host_user_namespace"`
-	BoundedTmpfs    bool `json:"bounded_tmpfs"`
-	MountsVerified  bool `json:"mounts_verified"`
+	NetworkNone           bool   `json:"network_none"`
+	ReadOnlyRoot          bool   `json:"read_only_root"`
+	NonRoot               bool   `json:"non_root"`
+	CapabilitiesOff       bool   `json:"capabilities_dropped"`
+	NoNewPrivileges       bool   `json:"no_new_privileges"`
+	CoreDumpsOff          bool   `json:"core_dumps_disabled"`
+	LogDriverOff          bool   `json:"log_driver_disabled"`
+	PrivatePID            bool   `json:"private_pid_namespace"`
+	PrivateIPC            bool   `json:"private_ipc_namespace"`
+	UserNamespaceMode     string `json:"user_namespace_mode"`
+	UserNamespaceRemapped bool   `json:"user_namespace_remapped"`
+	BoundedTmpfs          bool   `json:"bounded_tmpfs"`
+	MountsVerified        bool   `json:"mounts_verified"`
 }
 
 type dockerLifecycleReceipt struct {
@@ -104,6 +168,7 @@ type dockerLifecycleReceipt struct {
 	Platform                string              `json:"platform"`
 	CeremonyBinary          string              `json:"ceremony_binary"`
 	CeremonyBinarySHA256    string              `json:"ceremony_binary_sha256"`
+	Daemon                  dockerDaemonFacts   `json:"daemon"`
 	HostSwapStatus          string              `json:"host_swap_status"`
 	ContainerID             string              `json:"container_id"`
 	CreatedAt               string              `json:"created_at"`
@@ -162,6 +227,9 @@ func (d *dockerDriver) preflight() error {
 	if os.Getuid() == 0 {
 		return errors.New("Relay refuses to launch the contributor as root")
 	}
+	if err := d.authenticateDaemon(); err != nil {
+		return err
+	}
 	if _, err := d.swapStatus(); err != nil {
 		return err
 	}
@@ -175,12 +243,128 @@ func (d *dockerDriver) preflight() error {
 	return nil
 }
 
+func (d *dockerDriver) authenticateDaemon() error {
+	if d.daemon.Endpoint != "" {
+		facts, err := inspectDockerDaemon(d.client, d.daemon.Context, d.daemon.Endpoint)
+		if err != nil {
+			return err
+		}
+		if facts.ID != d.daemon.ID {
+			return fmt.Errorf("Docker daemon identity changed from %q to %q", d.daemon.ID, facts.ID)
+		}
+		d.daemon = facts
+		return nil
+	}
+	contextName, endpoint, err := resolveDockerEndpoint(d.client)
+	if err != nil {
+		return err
+	}
+	if err := validateLocalDockerEndpoint(endpoint); err != nil {
+		return err
+	}
+	d.client = d.client.BindHost(endpoint)
+	facts, err := inspectDockerDaemon(d.client, contextName, endpoint)
+	if err != nil {
+		return err
+	}
+	d.daemon = facts
+	return nil
+}
+
+func resolveDockerEndpoint(client dockerCommandClient) (string, string, error) {
+	contextName := strings.TrimSpace(os.Getenv("DOCKER_CONTEXT"))
+	if contextName != "" {
+		endpoint, err := inspectDockerContextEndpoint(client, contextName)
+		return contextName, endpoint, err
+	}
+	if endpoint := strings.TrimSpace(os.Getenv("DOCKER_HOST")); endpoint != "" {
+		return "DOCKER_HOST", endpoint, nil
+	}
+	stdout, stderr, err := client.Output("context", "show")
+	if err != nil {
+		return "", "", fmt.Errorf("resolve active Docker context: %s", dockerDiagnostic(stderr, err))
+	}
+	contextName = strings.TrimSpace(string(stdout))
+	if contextName == "" {
+		return "", "", errors.New("Docker returned an empty active context")
+	}
+	endpoint, err := inspectDockerContextEndpoint(client, contextName)
+	return contextName, endpoint, err
+}
+
+func inspectDockerContextEndpoint(client dockerCommandClient, contextName string) (string, error) {
+	stdout, stderr, err := client.Output(
+		"context", "inspect", contextName,
+		"--format", "{{json .Endpoints.docker.Host}}",
+	)
+	if err != nil {
+		return "", fmt.Errorf("inspect Docker context %q: %s", contextName, dockerDiagnostic(stderr, err))
+	}
+	var endpoint string
+	if err := json.Unmarshal(bytes.TrimSpace(stdout), &endpoint); err != nil || endpoint == "" {
+		return "", fmt.Errorf("Docker context %q has no valid daemon endpoint", contextName)
+	}
+	return endpoint, nil
+}
+
+func validateLocalDockerEndpoint(endpoint string) error {
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Scheme != "unix" || parsed.Host != "" || parsed.User != nil ||
+		parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path == "" ||
+		!filepath.IsAbs(parsed.Path) || filepath.Clean(parsed.Path) != parsed.Path {
+		return fmt.Errorf("Docker endpoint %q is not an absolute local Unix socket; remote Docker daemons are not supported", endpoint)
+	}
+	return nil
+}
+
+func inspectDockerDaemon(client dockerCommandClient, contextName, endpoint string) (dockerDaemonFacts, error) {
+	stdout, stderr, err := client.Output("info", "--format", "{{json .}}")
+	if err != nil {
+		return dockerDaemonFacts{}, fmt.Errorf("inspect Docker daemon: %s", dockerDiagnostic(stderr, err))
+	}
+	var info struct {
+		ID              string   `json:"ID"`
+		Name            string   `json:"Name"`
+		ServerVersion   string   `json:"ServerVersion"`
+		OperatingSystem string   `json:"OperatingSystem"`
+		OSType          string   `json:"OSType"`
+		Architecture    string   `json:"Architecture"`
+		SecurityOptions []string `json:"SecurityOptions"`
+	}
+	if err := json.Unmarshal(stdout, &info); err != nil {
+		return dockerDaemonFacts{}, errors.New("decode Docker daemon inspection")
+	}
+	if info.ID == "" || info.Name == "" || info.ServerVersion == "" || info.OperatingSystem == "" ||
+		info.OSType != "linux" || info.Architecture == "" {
+		return dockerDaemonFacts{}, errors.New("Docker daemon inspection is incomplete or is not a Linux daemon")
+	}
+	securityOptions := append([]string(nil), info.SecurityOptions...)
+	sort.Strings(securityOptions)
+	facts := dockerDaemonFacts{
+		Context: contextName, Endpoint: endpoint, ID: info.ID, Name: info.Name,
+		ServerVersion: info.ServerVersion, OperatingSystem: info.OperatingSystem,
+		OSType: info.OSType, Architecture: info.Architecture, SecurityOptions: securityOptions,
+		LocalUnixEndpoint:  true,
+		UserNamespaceRemap: dockerSecurityOptionEnabled(securityOptions, "name=userns"),
+		Rootless:           dockerSecurityOptionEnabled(securityOptions, "name=rootless"),
+	}
+	if !verifiedDaemonFacts(facts) {
+		return dockerDaemonFacts{}, errors.New("Docker daemon identity or security inspection failed verification")
+	}
+	return facts, nil
+}
+
 func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time.Time) (*dockerLifecycleReceipt, error) {
 	if err := d.preflight(); err != nil {
 		return nil, err
 	}
+	interruptCtx, stopInterrupts := d.contributionInterruptContext()
+	defer stopInterrupts()
 	if err := d.cleanupOrphan(); err != nil {
 		return nil, err
+	}
+	if interruptCtx.Err() != nil {
+		return nil, errors.New("contribution interrupted before a contributor container was created")
 	}
 	if err := ensurePrivateDirectory(d.candidateRoot); err != nil {
 		return nil, fmt.Errorf("candidate parent: %w", err)
@@ -197,7 +381,7 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 	receipt := &dockerLifecycleReceipt{
 		Schema: dockerLifecycleSchema, ExecutionMode: dockerExecutionMode,
 		Image: d.image, Platform: d.platform, CeremonyBinary: d.ceremonyBinary,
-		CreatedAt: d.now().UTC().Format(time.RFC3339),
+		Daemon: d.daemon, CreatedAt: d.now().UTC().Format(time.RFC3339),
 	}
 	receipt.HostSwapStatus, err = d.swapStatus()
 	if err != nil {
@@ -234,7 +418,8 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 	receipt.ContainerID = containerID
 	state := dockerActiveState{
 		Schema: dockerActiveStateSchema, ContainerID: containerID, Image: d.image,
-		Platform: d.platform, HandoffDir: handoff, CreatedAt: receipt.CreatedAt,
+		Platform: d.platform, DaemonID: d.daemon.ID, DaemonEndpoint: d.daemon.Endpoint,
+		HandoffDir: handoff, CreatedAt: receipt.CreatedAt,
 	}
 	if err := writeJSONNoReplace(d.activeStatePath(), state, 0o600); err != nil {
 		_ = d.removeAndVerify(containerID)
@@ -246,33 +431,54 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 	promoted := false
 	defer func() {
 		if !removed {
-			_ = d.removeAndVerify(containerID)
+			_ = d.cleanupTrackedContainer(containerID)
 		}
 		if !promoted {
 			_ = os.RemoveAll(handoff)
 		}
 	}()
+	cleanupInterrupted := func() error {
+		if err := d.cleanupTrackedContainer(containerID); err != nil {
+			return fmt.Errorf("contribution interrupted; exact container cleanup could not be verified: %w", err)
+		}
+		removed = true
+		return fmt.Errorf("contribution interrupted; contributor container %s was forcibly removed and its absence verified", shortContainerID(containerID))
+	}
+	if interruptCtx.Err() != nil {
+		return nil, cleanupInterrupted()
+	}
 	facts, err := d.inspectSecurity(containerID, mounts)
 	if err != nil {
+		if interruptCtx.Err() != nil {
+			return nil, cleanupInterrupted()
+		}
 		return nil, err
 	}
 	receipt.Security = facts
 	receipt.StartedAt = d.now().UTC().Format(time.RFC3339)
-	startErr := d.client.Attached(os.Stdout, os.Stderr, "start", "--attach", containerID)
+	startErr := d.client.AttachedContext(interruptCtx, os.Stdout, os.Stderr, "start", "--attach", containerID)
 	receipt.ExitedAt = d.now().UTC().Format(time.RFC3339)
+	if interruptCtx.Err() != nil {
+		return nil, cleanupInterrupted()
+	}
 	exitCode, exitErr := d.exitCode(containerID)
 	if exitErr != nil {
 		return nil, exitErr
 	}
 	receipt.ExitCode = exitCode
-	if err := d.removeAndVerify(containerID); err != nil {
+	if err := d.cleanupTrackedContainer(containerID); err != nil {
 		return nil, err
 	}
 	removed = true
 	receipt.RemovedAt = d.now().UTC().Format(time.RFC3339)
 	receipt.RemovalVerified = true
-	if err := os.Remove(d.activeStatePath()); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("remove contributor cleanup state: %w", err)
+	// Once absence is verified there is no sensitive container left to clean.
+	// Restore normal signal behavior so a later Ctrl-C cannot be swallowed while
+	// Relay validates or promotes the public-only handoff.
+	interrupted := interruptCtx.Err() != nil
+	stopInterrupts()
+	if interrupted {
+		return nil, fmt.Errorf("contribution interrupted; contributor container %s was forcibly removed and its absence verified", shortContainerID(containerID))
 	}
 	if startErr != nil || exitCode != 0 {
 		_ = os.RemoveAll(handoff)
@@ -303,6 +509,13 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 	}
 	promoted = true
 	return receipt, nil
+}
+
+func (d *dockerDriver) contributionInterruptContext() (context.Context, context.CancelFunc) {
+	if d.interruptCtx != nil {
+		return d.interruptCtx()
+	}
+	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }
 
 func (d *dockerDriver) attestErasure(o roleOpts, destroyedAt time.Time) error {
@@ -573,6 +786,20 @@ func (d *dockerDriver) inspectSecurity(containerID string, expected []dockerMoun
 		return dockerSecurityFacts{}, errors.New("decode contributor Docker inspection")
 	}
 	r := records[0]
+	userNamespaceMode := "daemon-default-unremapped"
+	userNamespaceRemapped := false
+	switch {
+	case r.HostConfig.UsernsMode == "host":
+		userNamespaceMode = "host"
+	case d.daemon.Rootless:
+		userNamespaceMode = "rootless-daemon"
+		userNamespaceRemapped = true
+	case d.daemon.UserNamespaceRemap:
+		userNamespaceMode = "daemon-remapped"
+		userNamespaceRemapped = true
+	case r.HostConfig.UsernsMode != "":
+		userNamespaceMode = "container-" + r.HostConfig.UsernsMode
+	}
 	facts := dockerSecurityFacts{
 		NetworkNone: r.HostConfig.NetworkMode == "none", ReadOnlyRoot: r.HostConfig.ReadonlyRootfs,
 		NonRoot:         r.Config.User != "" && r.Config.User != "0" && r.Config.User != "root" && !strings.HasPrefix(r.Config.User, "0:"),
@@ -580,7 +807,7 @@ func (d *dockerDriver) inspectSecurity(containerID string, expected []dockerMoun
 		NoNewPrivileges: stringSliceContainsPrefix(r.HostConfig.SecurityOpt, "no-new-privileges"),
 		LogDriverOff:    r.HostConfig.LogConfig.Type == "none",
 		PrivatePID:      r.HostConfig.PidMode != "host", PrivateIPC: r.HostConfig.IpcMode != "host",
-		NoHostUserNS: r.HostConfig.UsernsMode != "host",
+		UserNamespaceMode: userNamespaceMode, UserNamespaceRemapped: userNamespaceRemapped,
 	}
 	for _, limit := range r.HostConfig.Ulimits {
 		if limit.Name == "core" && limit.Soft == 0 && limit.Hard == 0 {
@@ -593,7 +820,8 @@ func (d *dockerDriver) inspectSecurity(containerID string, expected []dockerMoun
 	if r.Config.Image != d.image || r.HostConfig.Privileged ||
 		!facts.NetworkNone || !facts.ReadOnlyRoot || !facts.NonRoot || !facts.CapabilitiesOff ||
 		!facts.NoNewPrivileges || !facts.CoreDumpsOff || !facts.LogDriverOff ||
-		!facts.PrivatePID || !facts.PrivateIPC || !facts.NoHostUserNS || !facts.BoundedTmpfs || !facts.MountsVerified {
+		!facts.PrivatePID || !facts.PrivateIPC || facts.UserNamespaceMode == "host" ||
+		!facts.BoundedTmpfs || !facts.MountsVerified {
 		return dockerSecurityFacts{}, errors.New("effective contributor container configuration failed isolation verification")
 	}
 	return facts, nil
@@ -676,6 +904,30 @@ func (d *dockerDriver) removeAndVerify(containerID string) error {
 	return nil
 }
 
+func (d *dockerDriver) cleanupTrackedContainer(containerID string) error {
+	if err := d.removeAndVerify(containerID); err != nil {
+		return err
+	}
+	path := d.activeStatePath()
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read contributor cleanup state after removal: %w", err)
+	}
+	var state dockerActiveState
+	if err := json.Unmarshal(raw, &state); err != nil || state.Schema != dockerActiveStateSchema ||
+		state.ContainerID != containerID || state.Image != d.image || state.Platform != d.platform ||
+		state.DaemonID != d.daemon.ID || state.DaemonEndpoint != d.daemon.Endpoint {
+		return errors.New("contributor container was removed but its lifecycle state changed unexpectedly")
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove contributor cleanup state: %w", err)
+	}
+	return nil
+}
+
 func (d *dockerDriver) cleanupOrphan() error {
 	path := d.activeStatePath()
 	raw, err := os.ReadFile(path)
@@ -686,8 +938,13 @@ func (d *dockerDriver) cleanupOrphan() error {
 		return fmt.Errorf("read recorded contributor cleanup state: %w", err)
 	}
 	var state dockerActiveState
-	if err := json.Unmarshal(raw, &state); err != nil || state.Schema != dockerActiveStateSchema || !validContainerID(state.ContainerID) {
+	if err := json.Unmarshal(raw, &state); err != nil || state.Schema != dockerActiveStateSchema ||
+		!validContainerID(state.ContainerID) || state.Image != d.image || state.Platform != d.platform ||
+		state.DaemonID == "" || state.DaemonEndpoint == "" {
 		return errors.New("recorded contributor cleanup state is invalid; refusing to start another contribution")
+	}
+	if d.daemon.ID == "" || state.DaemonID != d.daemon.ID || state.DaemonEndpoint != d.daemon.Endpoint {
+		return errors.New("recorded contributor belongs to a different Docker daemon; refusing to discard its cleanup state")
 	}
 	if err := d.removeAndVerify(state.ContainerID); err != nil {
 		return fmt.Errorf("clean recorded contributor before continuing: %w", err)
@@ -856,11 +1113,17 @@ func signedCeremonyBinarySHA256(path, platform string) (string, error) {
 	return digest, nil
 }
 
-func dockerHostSwapStatus() (string, error) {
-	switch runtime.GOOS {
+func dockerHostSwapStatus(goos string, daemon dockerDaemonFacts) (string, error) {
+	switch goos {
 	case "darwin":
-		return "not-assessed-macos-host-wipe-required", nil
+		return dockerMacSwapUnassessed, nil
 	case "linux":
+		if !verifiedDaemonFacts(daemon) {
+			return "", errors.New("cannot assess host swap before authenticating the local Docker daemon")
+		}
+		if strings.Contains(strings.ToLower(daemon.OperatingSystem), "docker desktop") {
+			return "", errors.New("Docker Desktop on Linux runs the daemon in a VM whose swap Relay cannot verify; use native Docker Engine")
+		}
 		raw, err := os.ReadFile("/proc/swaps")
 		if err != nil {
 			return "", fmt.Errorf("check host swap: %w", err)
@@ -868,9 +1131,9 @@ func dockerHostSwapStatus() (string, error) {
 		if len(strings.Fields(string(raw))) > 5 {
 			return "", errors.New("host swap is active; disable it before creating a contributor container")
 		}
-		return "disabled", nil
+		return dockerLinuxSwapDisabled, nil
 	default:
-		return "", fmt.Errorf("Docker participant execution is unsupported on %s", runtime.GOOS)
+		return "", fmt.Errorf("Docker participant execution is unsupported on %s", goos)
 	}
 }
 
@@ -878,7 +1141,7 @@ func (d *dockerDriver) swapStatus() (string, error) {
 	if d.hostSwapStatus != nil {
 		return d.hostSwapStatus()
 	}
-	return dockerHostSwapStatus()
+	return dockerHostSwapStatus(runtime.GOOS, d.daemon)
 }
 
 func shortContainerID(id string) string {
@@ -925,7 +1188,40 @@ func writeJSONAtomic(path string, value any, mode os.FileMode) error {
 func verifiedLifecycleFacts(f dockerSecurityFacts) bool {
 	return f.NetworkNone && f.ReadOnlyRoot && f.NonRoot && f.CapabilitiesOff &&
 		f.NoNewPrivileges && f.CoreDumpsOff && f.LogDriverOff && f.PrivatePID &&
-		f.PrivateIPC && f.NoHostUserNS && f.BoundedTmpfs && f.MountsVerified
+		f.PrivateIPC && f.UserNamespaceMode != "" && f.UserNamespaceMode != "host" &&
+		f.BoundedTmpfs && f.MountsVerified
+}
+
+func verifiedHostSwapStatus(goos, status string) bool {
+	switch goos {
+	case "linux":
+		return status == dockerLinuxSwapDisabled
+	case "darwin":
+		return status == dockerMacSwapUnassessed
+	default:
+		return false
+	}
+}
+
+func verifiedDaemonFacts(f dockerDaemonFacts) bool {
+	if !f.LocalUnixEndpoint || f.Context == "" || f.ID == "" || f.Name == "" ||
+		f.ServerVersion == "" || f.OperatingSystem == "" || f.OSType != "linux" || f.Architecture == "" {
+		return false
+	}
+	if validateLocalDockerEndpoint(f.Endpoint) != nil {
+		return false
+	}
+	return f.UserNamespaceRemap == dockerSecurityOptionEnabled(f.SecurityOptions, "name=userns") &&
+		f.Rootless == dockerSecurityOptionEnabled(f.SecurityOptions, "name=rootless")
+}
+
+func dockerSecurityOptionEnabled(options []string, want string) bool {
+	for _, option := range options {
+		if option == want || strings.HasPrefix(option, want+",") {
+			return true
+		}
+	}
+	return false
 }
 
 func stringSliceContainsFold(values []string, want string) bool {

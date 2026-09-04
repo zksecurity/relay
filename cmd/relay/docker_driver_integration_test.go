@@ -28,13 +28,16 @@ func TestDockerDriverWithRealCeremonyTool(t *testing.T) {
 		image: image, platform: platform, ceremonyBinary: "/usr/local/bin/mpc-ceremony",
 		client: osDockerCommandClient{binary: "docker"}, now: time.Now,
 	}
+	if err := bootstrap.preflight(); err != nil {
+		t.Fatal(err)
+	}
 	bootstrapMounts := []dockerMount{{Source: workspace, Destination: "/work", ReadOnly: false}}
 	if err := validateMountSources(bootstrapMounts); err != nil {
 		t.Fatal(err)
 	}
 	initialize := bootstrap.baseRunArgs(true, bootstrapMounts)
 	initialize = append(initialize, image, "rehearsal", "init",
-		"--created-at", time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
+		"--created-at", time.Now().UTC().Add(-time.Minute).Truncate(time.Second).Format(time.RFC3339),
 		"--out-dir", "/work/rehearsal")
 	if err := bootstrap.client.Attached(os.Stdout, os.Stderr, initialize...); err != nil {
 		t.Fatal(err)
@@ -59,6 +62,9 @@ func TestDockerDriverWithRealCeremonyTool(t *testing.T) {
 		t.Fatal(err)
 	}
 	driver := dockerDriverForParticipant(config)
+	if err := driver.preflight(); err != nil {
+		t.Fatal(err)
+	}
 	definition, err := driver.inspector().Definition()
 	if err != nil {
 		t.Fatal(err)
