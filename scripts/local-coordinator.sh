@@ -5,7 +5,7 @@ umask 077
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd)
 usage() {
-  printf 'Usage: ./scripts/local-coordinator.sh prepare|run /absolute/test-folder\n'
+  printf 'Usage: ./scripts/local-coordinator.sh prepare|run|identity|clear-mocks /absolute/test-folder\n'
   printf 'prepare builds only; run opens the rehearsal-only interactive helper.\n'
 }
 if [[ ${1:-} == --help ]]; then usage; exit 0; fi
@@ -58,13 +58,16 @@ case "$action" in
     printf '\nLocal build ready. Approved Relay installation was not changed.\nRun it yourself with:\n'
     printf '  ./scripts/local-coordinator.sh run %q\n' "$test_root"
     ;;
-  run)
+  run|identity|clear-mocks)
     [[ -d "$test_root" && ! -L "$test_root" && -x "$test_root/relay-local" && ! -L "$test_root/relay-local" ]] || {
       printf 'Prepare this dedicated test folder first.\n' >&2; exit 1;
     }
     [[ -t 0 ]] || { printf 'Run from an interactive terminal.\n' >&2; exit 1; }
     test_root=$(cd -- "$test_root" && pwd -P)
-    exec "$test_root/relay-local" coordinator prepare-local --root "$test_root"
+    launch=("$test_root/relay-local" coordinator prepare-local --root "$test_root")
+    if [[ "$action" == identity ]]; then launch+=(--new-identity); fi
+    if [[ "$action" == clear-mocks ]]; then launch+=(--clear-mocks); fi
+    exec "${launch[@]}"
     ;;
   *) usage >&2; exit 1 ;;
 esac

@@ -10,12 +10,128 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestCoordinatorRequiredPrompts(t *testing.T) {
+	w := setupFixture(t)
+	w.input = bufio.NewReader(strings.NewReader("\n \t\njason\n"))
+	value, err := w.required("Display name", "")
+	if err != nil || value != "jason" {
+		t.Fatal(value, err)
+	}
+	if strings.Count(w.output.(*bytes.Buffer).String(), "This value is required") != 2 {
+		t.Fatal("did not reprompt for blank and whitespace")
+	}
+	w.input = bufio.NewReader(strings.NewReader("\n"))
+	value, err = w.required("Mode", "rehearsal")
+	if err != nil || value != "rehearsal" {
+		t.Fatal("blank should accept a valid default")
+	}
+	w.input = bufio.NewReader(strings.NewReader(""))
+	if _, err = w.required("Name", ""); err != io.EOF {
+		t.Fatal("EOF must stop, not loop", err)
+	}
+	w.input = bufio.NewReader(strings.NewReader("\n"))
+	if err = w.confirm("Sign", "SIGN"); err == nil {
+		t.Fatal("blank confirmation must cancel")
+	}
+}
+
+func TestCoordinatorNumberedChoices(t *testing.T) {
+	w := setupFixture(t)
+	options := []setupChoice{{"aws", "Amazon S3"}, {"r2", "Cloudflare R2"}}
+	w.input = bufio.NewReader(strings.NewReader("\ntext\n0\n3\n2\n"))
+	value, err := w.choose("Provider", "", options)
+	if err != nil || value != "r2" {
+		t.Fatal(value, err)
+	}
+	w.input = bufio.NewReader(strings.NewReader("\n"))
+	value, err = w.choose("Provider", "aws", options)
+	if err != nil || value != "aws" {
+		t.Fatal("default choice failed", value, err)
+	}
+	if _, err = w.choose("Empty", "", nil); err == nil {
+		t.Fatal("empty choices accepted")
+	}
+}
+
+func TestCoordinatorParticipantOrderUsesNumbers(t *testing.T) {
+	w := setupFixture(t)
+	second := w.d.Identities.Roster[0]
+	second.Identity.ID = "participant2"
+	second.Identity.DisplayName = "Bob"
+	w.d.Identities.Roster = append(w.d.Identities.Roster, second)
+	w.input = bufio.NewReader(strings.NewReader("1,1\n1,\n3\n2,1\n"))
+	order, err := w.participantOrder("Order", nil)
+	if err != nil || strings.Join(order, ",") != "participant2,participant1" {
+		t.Fatal(order, err)
+	}
+	w.input = bufio.NewReader(strings.NewReader("\n"))
+	order, err = w.participantOrder("Order", order)
+	if err != nil || strings.Join(order, ",") != "participant2,participant1" {
+		t.Fatal("saved order not preserved", order, err)
+	}
+}
+
+func TestCoordinatorIdentityConfirmationUsesShortAcknowledgement(t *testing.T) {
+	w := setupFixture(t)
+	identity := w.d.Identities.Roster[0].Identity
+	path := filepath.Join(w.d.Work, "public-identity.json")
+	if err := setupWriteNew(path, identity); err != nil {
+		t.Fatal(err)
+	}
+	w.d.Identities.Roster = nil
+	w.input = bufio.NewReader(strings.NewReader("4\n" + path + "\n\n"))
+	if err := w.identity(); err == nil || len(w.d.Identities.Roster) != 0 {
+		t.Fatal("accepted blank confirmation")
+	}
+	w.input = bufio.NewReader(strings.NewReader("4\n" + path + "\nVERIFIED\n"))
+	if err := w.identity(); err != nil {
+		t.Fatal(err)
+	}
+	if len(w.d.Identities.Roster) != 1 {
+		t.Fatal("identity not imported")
+	}
+	output := w.output.(*bytes.Buffer).String()
+	if !strings.Contains(output, identity.Fingerprint) || !strings.Contains(output, "type VERIFIED") {
+		t.Fatal("missing full fingerprint or short confirmation")
+	}
+}
+
+func TestCoordinatorIdentityIDIsAutomatic(t *testing.T) {
+	w := setupFixture(t)
+	if err := os.Remove(filepath.Join(w.d.Keys, "signing.hex")); err != nil {
+		t.Fatal(err)
+	}
+	w.input = bufio.NewReader(strings.NewReader("\n  \njason\nGENERATE\n"))
+	var id, display string
+	w.localAction = func(_ string, role string, command []string, _ bool) error {
+		if role != "keygen" {
+			t.Fatal(role)
+		}
+		for n, arg := range command {
+			if arg == "--identity-id" {
+				id = command[n+1]
+			}
+			if arg == "--display-name" {
+				display = command[n+1]
+			}
+		}
+		return nil
+	}
+	if err := w.generateIdentity(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(id, "coordinator-") || !guidedName.MatchString(id) || display != "jason" {
+		t.Fatal(id, display)
+	}
+}
 
 func setupFixture(t *testing.T) coordinatorWizard {
 	t.Helper()
@@ -146,6 +262,43 @@ func TestCoordinatorDraftRoundTripAndStrictInputs(t *testing.T) {
 		t.Fatal("followed input symlink")
 	}
 }
+func TestCoordinatorPostInitializationMenu(t *testing.T) {
+	for _, tc := range []struct {
+		name, status, heading string
+		local, storage        bool
+	}{
+		{"verified", "definition-verified", "Initialization complete", false, true},
+		{"local", "definition-verified", "Local setup test complete", true, false},
+		{"interrupted", "initialization-attempted", "Initialization needs verification", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := setupFixture(t)
+			w.d.Status = tc.status
+			if tc.local {
+				w.localAction = func(string, string, []string, bool) error { t.Fatal("unexpected action"); return nil }
+			}
+			w.input = bufio.NewReader(strings.NewReader("0\n"))
+			if err := w.menu(); err != nil {
+				t.Fatal(err)
+			}
+			out := w.output.(*bytes.Buffer).String()
+			for _, hidden := range []string{"1 Basics", "2 Generate", "3 Import", "4 Orders", "5 Add", "8 Approve", "11 Remove", "Coordinator preparation"} {
+				if strings.Contains(out, hidden) {
+					t.Fatalf("stale action %q in %s", hidden, out)
+				}
+			}
+			for _, visible := range []string{tc.heading, "7 Review identities and policy", "9 Verify existing definition", "0 Save and exit"} {
+				if !strings.Contains(out, visible) {
+					t.Fatalf("missing %q", visible)
+				}
+			}
+			if strings.Contains(out, "10 Configure storage") != tc.storage {
+				t.Fatal("incorrect storage availability")
+			}
+		})
+	}
+}
+
 func TestCoordinatorInitializationRequiresConsentAndFreezesOnFailure(t *testing.T) {
 	w := setupFixture(t)
 	calls := 0

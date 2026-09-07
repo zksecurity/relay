@@ -25,14 +25,22 @@ These images are local test artifacts, not approved production releases.
 
 ## Suggested first pass
 
-1. The harness supplies **mock public identities** for two auditors, a
-   final-parameter signer and a participant. Their private keys are discarded;
-   this is an initialization/UI test, not a complete multiparty ceremony.
+1. New drafts start with an **empty roster**. Generate each test role separately:
+
+   ```sh
+   ./scripts/local-coordinator.sh identity "$HOME/ceremonies/local-coordinator-test"
+   ```
+
+   Repeat for one participant, two auditors, and a final-parameter signer.
+   Each gets a separate folder under `test-roles` with its own private key.
+   The generator prints the public `identity.json` path and fingerprint to share.
 2. Choose **2** to generate your test coordinator identity in Docker.
-3. Choose **3**, role `coordinator`, and import
+3. Choose **3**, select **Coordinator** from the numbered role menu, and import
    `~/ceremonies/local-coordinator-test/keys/identity.json` using its full path.
    Confirm the displayed fingerprint. Do not import your production identity.
-4. Choose **4** and accept the suggested template, participant orders and minimums.
+4. Choose **3** for each other role and import only its public identity file.
+   Confirm the fingerprint shown by that role's generator. Nothing is auto-imported.
+   Then choose **4** and review participant orders, minimums and the beacon template.
 5. Choose **7** to review, then **0** to exit. Run the second command again to
    confirm your draft was saved.
 6. When ready, choose **8** and type `INITIALIZE REHEARSAL`.
@@ -42,6 +50,21 @@ These images are local test artifacts, not approved production releases.
 Failed initialization remains frozen for investigation, as in the real helper.
 Do not delete uncertain outputs to force a retry. Use a fresh, separately named
 test folder for another independent experiment.
+
+## Existing tests with preloaded mocks
+
+Exit the helper and rebuild your local launcher after updating the source.
+For an unsigned draft, remove old mock assignments without deleting any files:
+
+```sh
+./scripts/local-coordinator.sh clear-mocks "$HOME/ceremonies/local-coordinator-test"
+```
+
+This asks for confirmation and preserves your coordinator identity and real
+imports. It resets phase orders that referred to removed mocks; review them
+after importing the new test identities. It refuses to change a frozen draft.
+All roles here still belong to you on one machine, so this tests file handoff
+and key separation—not independent participants or organizations.
 
 ## Automated checks
 

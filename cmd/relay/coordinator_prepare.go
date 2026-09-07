@@ -228,7 +228,11 @@ type coordinatorWizard struct {
 }
 
 func (w *coordinatorWizard) ask(label, current string) (string, error) {
-	fmt.Fprintf(w.output, "%s [%s]: ", label, current)
+	if current == "" {
+		fmt.Fprintf(w.output, "%s: ", label)
+	} else {
+		fmt.Fprintf(w.output, "%s [%s]: ", label, current)
+	}
 	value, err := w.input.ReadString('\n')
 	if err != nil {
 		return "", err
@@ -238,6 +242,87 @@ func (w *coordinatorWizard) ask(label, current string) (string, error) {
 		return current, nil
 	}
 	return value, nil
+}
+func (w *coordinatorWizard) required(label, current string) (string, error) {
+	for {
+		value, err := w.ask(label, current)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(value) != "" {
+			return value, nil
+		}
+		fmt.Fprintln(w.output, "This value is required. Please enter it, or press Ctrl-C to stop.")
+	}
+}
+
+type setupChoice struct{ value, label string }
+
+func (w *coordinatorWizard) choose(label, current string, choices []setupChoice) (string, error) {
+	if len(choices) == 0 {
+		return "", errors.New("no choices available yet")
+	}
+	fmt.Fprintln(w.output, label)
+	defaultNumber := ""
+	for n, c := range choices {
+		fmt.Fprintf(w.output, "  %d. %s\n", n+1, c.label)
+		if c.value == current {
+			defaultNumber = strconv.Itoa(n + 1)
+		}
+	}
+	for {
+		answer, err := w.required("Choose a number", defaultNumber)
+		if err != nil {
+			return "", err
+		}
+		n, err := strconv.Atoi(answer)
+		if err == nil && n >= 1 && n <= len(choices) {
+			return choices[n-1].value, nil
+		}
+		fmt.Fprintf(w.output, "Enter a number from 1 to %d.\n", len(choices))
+	}
+}
+
+func (w *coordinatorWizard) participantOrder(label string, current []string) ([]string, error) {
+	if len(w.d.Identities.Roster) == 0 {
+		return nil, errors.New("import participants before choosing their order")
+	}
+	fmt.Fprintln(w.output, label)
+	positions := map[string]string{}
+	for n, p := range w.d.Identities.Roster {
+		fmt.Fprintf(w.output, "  %d. %s (%s)\n", n+1, p.Identity.DisplayName, p.Identity.ID)
+		positions[p.Identity.ID] = strconv.Itoa(n + 1)
+	}
+	defaults := []string{}
+	for _, id := range current {
+		if positions[id] == "" {
+			defaults = nil
+			break
+		}
+		defaults = append(defaults, positions[id])
+	}
+	for {
+		answer, err := w.required("Participant numbers in order, separated by commas (for example 2,1)", strings.Join(defaults, ","))
+		if err != nil {
+			return nil, err
+		}
+		ids := []string{}
+		seen := map[int]bool{}
+		valid := true
+		for _, part := range strings.Split(answer, ",") {
+			n, err := strconv.Atoi(strings.TrimSpace(part))
+			if err != nil || n < 1 || n > len(w.d.Identities.Roster) || seen[n] {
+				valid = false
+				break
+			}
+			seen[n] = true
+			ids = append(ids, w.d.Identities.Roster[n-1].Identity.ID)
+		}
+		if valid {
+			return ids, nil
+		}
+		fmt.Fprintln(w.output, "Use each listed number at most once; empty or unknown entries are not allowed.")
+	}
 }
 func (w *coordinatorWizard) confirm(label, exact string) error {
 	value, err := w.ask(label+"; type "+exact, "")
@@ -280,11 +365,11 @@ func (w *coordinatorWizard) summary() {
 }
 
 func (w *coordinatorWizard) basics() error {
-	mode, err := w.ask("Mode: rehearsal or production", w.d.Mode)
+	mode, err := w.choose("Ceremony mode", w.d.Mode, []setupChoice{{"rehearsal", "Rehearsal — test only"}, {"production", "Production — real ceremony"}})
 	if err != nil {
 		return err
 	}
-	circuit, err := w.ask("Circuit: ownership-destination-v2 or rehearsal-tiny-v1", w.d.Circuit)
+	circuit, err := w.choose("Circuit", w.d.Circuit, []setupChoice{{"ownership-destination-v2", "Ownership destination v2 — production circuit"}, {"rehearsal-tiny-v1", "Tiny test circuit — rehearsal only"}})
 	if err != nil {
 		return err
 	}
@@ -301,11 +386,11 @@ func (w *coordinatorWizard) basics() error {
 	return w.save()
 }
 func (w *coordinatorWizard) identity() error {
-	role, err := w.ask("Import role: coordinator, release-signer, auditor, participant", "")
+	role, err := w.choose("Import role", "", []setupChoice{{"coordinator", "Coordinator"}, {"release-signer", "Final-parameter signer"}, {"auditor", "Auditor"}, {"participant", "Participant"}})
 	if err != nil {
 		return err
 	}
-	path, err := w.ask("Absolute path to that role's public identity.json (never a private key)", "")
+	path, err := w.required("Absolute path to that role's public identity.json (never a private key)", "")
 	if err != nil {
 		return err
 	}
@@ -317,7 +402,7 @@ func (w *coordinatorWizard) identity() error {
 		return err
 	}
 	fmt.Fprintf(w.output, "Identity %q (%q), fingerprint %s\n", i.ID, i.DisplayName, i.Fingerprint)
-	if err := w.confirm("Confirm this fingerprint with its owner through your agreed independent channel", i.Fingerprint); err != nil {
+	if err := w.confirm("Compare the full fingerprint above with the owner's copy through your agreed independent channel. Confirm only if they match", "VERIFIED"); err != nil {
 		return err
 	}
 	switch role {
@@ -347,7 +432,7 @@ func (w *coordinatorWizard) identity() error {
 	return w.save()
 }
 func (w *coordinatorWizard) policy() error {
-	path, err := w.ask("Path to reviewed init policy.json (review the beacon preset before signing)", w.d.PolicyTemplate)
+	path, err := w.required("Path to reviewed init policy.json (review the beacon preset before signing)", w.d.PolicyTemplate)
 	if err != nil {
 		return err
 	}
@@ -365,19 +450,16 @@ func (w *coordinatorWizard) policy() error {
 		if len(previous.Participants) > 0 {
 			defaultOrder = previous.Participants
 		}
-		order, err := w.ask(fmt.Sprintf("Phase %d participant IDs in order, comma-separated", n+1), strings.Join(defaultOrder, ","))
+		order, err := w.participantOrder(fmt.Sprintf("Phase %d contribution order", n+1), defaultOrder)
 		if err != nil {
 			return err
 		}
-		p.Participants = nil
-		for _, id := range strings.Split(order, ",") {
-			p.Participants = append(p.Participants, strings.TrimSpace(id))
-		}
+		p.Participants = order
 		defaultMinimum := len(p.Participants)
 		if previous.Minimum > 0 {
 			defaultMinimum = previous.Minimum
 		}
-		minimum, err := w.ask(fmt.Sprintf("Phase %d minimum contributions required before closure", n+1), strconv.Itoa(defaultMinimum))
+		minimum, err := w.required(fmt.Sprintf("Phase %d minimum contributions required before closure", n+1), strconv.Itoa(defaultMinimum))
 		if err != nil {
 			return err
 		}
@@ -410,7 +492,7 @@ func setupFileHash(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 func (w *coordinatorWizard) binary() error {
-	path, err := w.ask("Additional approved Linux proof-tool binary, absolute path", "")
+	path, err := w.required("Additional approved Linux proof-tool binary, absolute path", "")
 	if err != nil {
 		return err
 	}
@@ -421,7 +503,8 @@ func (w *coordinatorWizard) binary() error {
 	if err != nil {
 		return err
 	}
-	if err := w.confirm("Compare with the SHA-256 in the approved proof-tool release through your agreed channel", digest); err != nil {
+	fmt.Fprintf(w.output, "Binary SHA-256: %s\n", digest)
+	if err := w.confirm("Compare the full SHA-256 above with the approved proof-tool release through your agreed channel", "VERIFIED"); err != nil {
 		return err
 	}
 	w.d.Binaries = append(w.d.Binaries, setupBinary{path, digest})
@@ -493,7 +576,21 @@ func (w *coordinatorWizard) action(name, role string, command []string, credenti
 }
 
 func (w *coordinatorWizard) removeIdentity() error {
-	id, err := w.ask("Identity ID to remove from this unsigned draft", "")
+	choices := []setupChoice{}
+	add := func(role string, i setupIdentity) {
+		if i.ID != "" {
+			choices = append(choices, setupChoice{i.ID, fmt.Sprintf("%s: %s (%s)", role, i.DisplayName, i.ID)})
+		}
+	}
+	add("Coordinator", w.d.Identities.Coordinator)
+	add("Final-parameter signer", w.d.Identities.ReleaseSigner)
+	for _, i := range w.d.Identities.Auditors {
+		add("Auditor", i)
+	}
+	for _, p := range w.d.Identities.Roster {
+		add("Participant", p.Identity)
+	}
+	id, err := w.choose("Assignment to remove from the unsigned draft", "", choices)
 	if err != nil {
 		return err
 	}
@@ -528,11 +625,13 @@ func (w *coordinatorWizard) generateIdentity() error {
 			return errors.New("identity files already exist or cannot be checked; import your existing public identity instead")
 		}
 	}
-	id, err := w.ask("Your coordinator identity ID", "")
+	suffix, err := randomID()
 	if err != nil {
 		return err
 	}
-	display, err := w.ask("Your public display name", "")
+	id := "coordinator-" + suffix
+	fmt.Fprintf(w.output, "Your coordinator identity ID (automatically assigned): %s\n", id)
+	display, err := w.required("Your public display name", "")
 	if err != nil {
 		return err
 	}
@@ -661,7 +760,7 @@ func (w *coordinatorWizard) verify() error {
 }
 
 func (w *coordinatorWizard) storage() error {
-	provider, err := w.ask("Storage provider: aws or r2", w.d.Storage["provider"])
+	provider, err := w.choose("Storage provider", w.d.Storage["provider"], []setupChoice{{"aws", "Amazon S3 (AWS)"}, {"r2", "Cloudflare R2"}})
 	if err != nil {
 		return err
 	}
@@ -677,7 +776,7 @@ func (w *coordinatorWizard) storage() error {
 	values := map[string]string{"provider": provider}
 	fmt.Fprintln(w.output, "Use the administrator's provisioned resource details. Never paste secret keys or tokens here.")
 	for _, field := range fields {
-		value, err := w.ask(field, w.d.Storage[field])
+		value, err := w.required(field, w.d.Storage[field])
 		if err != nil {
 			return err
 		}
@@ -686,7 +785,7 @@ func (w *coordinatorWizard) storage() error {
 		}
 		values[field] = value
 	}
-	credential, err := w.ask("Absolute path to local AWS-format credentials FILE, not its contents", w.d.Credentials)
+	credential, err := w.required("Absolute path to local AWS-format credentials FILE, not its contents", w.d.Credentials)
 	if err != nil {
 		return err
 	}
@@ -722,7 +821,25 @@ func (w *coordinatorWizard) configureStorage() error {
 
 func (w *coordinatorWizard) menu() error {
 	for {
-		fmt.Fprintf(w.output, "\nCoordinator preparation — %s (%s)\n1 Basics\n2 Generate my identity\n3 Import/replace public identity\n4 Orders, minimum contributions and reviewed beacon policy\n5 Add approved binary for another architecture\n6 Storage settings\n7 Review draft\n8 Approve and initialize\n9 Verify existing definition (also after interruption)\n10 Configure storage\n11 Remove an identity assignment\n0 Save and exit\n", w.d.Name, w.d.Status)
+		if w.d.Status == "draft" {
+			fmt.Fprintf(w.output, "\nCoordinator preparation — %s (%s)\n1 Basics\n2 Generate my identity\n3 Import/replace public identity\n4 Orders, minimum contributions and reviewed beacon policy\n5 Add approved binary for another architecture\n6 Storage settings\n7 Review draft\n8 Approve and initialize\n9 Verify existing definition (also after interruption)\n10 Configure storage\n11 Remove an identity assignment\n0 Save and exit\n", w.d.Name, w.d.Status)
+		} else {
+			if w.d.Status == "definition-verified" {
+				fmt.Fprintf(w.output, "\nInitialization complete — %s\nThe signed ceremony definition has been verified. Identities and policy are frozen.\nThis does not verify all initialization artifacts or start participant contributions.\n", w.d.Name)
+				if w.localAction != nil {
+					fmt.Fprintln(w.output, "Local setup test complete. Choose 0 to exit; your files are saved. This helper does not run contributions or configure cloud storage.")
+				} else {
+					fmt.Fprintln(w.output, "Next: distribute the signed public definition for assignment review, collect witness/mirror enrollments, and continue with the coordinator role guide. Storage can be configured below.")
+				}
+			} else {
+				fmt.Fprintf(w.output, "\nInitialization needs verification — %s\nSettings are frozen after an initialization attempt. Preserve the files and error output; use 9 to verify an existing definition. Do not initialize again.\n", w.d.Name)
+			}
+			fmt.Fprintln(w.output, "7 Review identities and policy\n9 Verify existing definition")
+			if w.localAction == nil && w.d.Status == "definition-verified" {
+				fmt.Fprintln(w.output, "6 Storage settings\n10 Configure storage")
+			}
+			fmt.Fprintln(w.output, "0 Save and exit")
+		}
 		choice, err := w.ask("Choose", "0")
 		if err == io.EOF {
 			return nil
@@ -732,6 +849,10 @@ func (w *coordinatorWizard) menu() error {
 		}
 		if choice == "0" {
 			return w.save()
+		}
+		if w.d.Status != "draft" && (choice == "6" || choice == "10") && (w.localAction != nil || w.d.Status != "definition-verified") {
+			fmt.Fprintln(w.output, "Storage setup is unavailable here. Choose one of the displayed actions.")
+			continue
 		}
 		if w.d.Status != "draft" && (choice == "1" || choice == "2" || choice == "3" || choice == "4" || choice == "5" || choice == "8" || choice == "11") {
 			fmt.Fprintln(w.output, "Ceremony draft frozen after initialization attempt. Do not edit signed settings or delete output to force a retry.")

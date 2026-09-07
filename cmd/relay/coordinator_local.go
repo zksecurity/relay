@@ -4,13 +4,11 @@ package main
 
 import (
 	"bufio"
-	"crypto/ed25519"
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,10 +48,12 @@ func localTestCommandAllowed(role string, command []string, credentials bool) bo
 func runCoordinatorLocal(args []string) error {
 	flags := flag.NewFlagSet("prepare-local", flag.ContinueOnError)
 	root := flags.String("root", "", "dedicated local-test directory")
+	newIdentity := flags.Bool("new-identity", false, "generate a separate TEST role identity for manual import")
+	clearMocks := flags.Bool("clear-mocks", false, "remove only legacy mock assignments from an unsigned local draft")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if len(flags.Args()) != 0 || !filepath.IsAbs(*root) || filepath.Clean(*root) != *root {
+	if len(flags.Args()) != 0 || !filepath.IsAbs(*root) || filepath.Clean(*root) != *root || (*newIdentity && *clearMocks) {
 		return errors.New("absolute clean --root required")
 	}
 	if err := ensurePrivateDirectory(*root); err != nil {
@@ -86,6 +86,20 @@ func runCoordinatorLocal(args []string) error {
 		}
 		images[role] = id
 	}
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	run := func(args []string) error {
+		cmd := exec.Command(executable, args...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+	if *newIdentity {
+		return generateLocalRoleIdentity(*root, images["offline"], run, os.Stdin, os.Stdout)
+	}
 	d := coordinatorDraft{Schema: "relay-coordinator-draft-v1", Name: "local-test", Release: "LOCAL-REHEARSAL", Work: filepath.Join(*root, "work"), Trust: filepath.Join(*root, "trust"), Keys: filepath.Join(*root, "keys"), Status: "draft", Mode: "rehearsal", Circuit: "rehearsal-tiny-v1", Storage: map[string]string{}, PolicyTemplate: filepath.Join(*root, "ceremony-policy.json")}
 	for _, path := range []string{d.Work, d.Trust, d.Keys, filepath.Join(d.Work, "coordinator-setup")} {
 		if err := ensurePrivateDirectory(path); err != nil {
@@ -111,50 +125,29 @@ func runCoordinatorLocal(args []string) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	} else {
-		// Mock public identities are only for initialization. Their signing keys
-		// are discarded; they cannot be used to conduct a complete real ceremony.
-		mock := func(id string) (setupIdentity, error) {
-			public, _, err := ed25519.GenerateKey(rand.Reader)
-			if err != nil {
-				return setupIdentity{}, err
-			}
-			hash := sha256.Sum256(public)
-			return setupIdentity{ID: id, DisplayName: "MOCK " + id, KeyID: id + "-key", PublicKey: hex.EncodeToString(public), Fingerprint: fmt.Sprintf("sha256:%x", hash)}, nil
-		}
-		signer, err := mock("signer")
-		if err != nil {
-			return err
-		}
-		d.Identities.ReleaseSigner = signer
-		for _, id := range []string{"auditor1", "auditor2"} {
-			i, err := mock(id)
-			if err != nil {
-				return err
-			}
-			d.Identities.Auditors = append(d.Identities.Auditors, i)
-		}
-		i, err := mock("participant1")
-		if err != nil {
-			return err
-		}
-		d.Identities.Roster = []setupParticipant{{Identity: i}}
-		fmt.Println("Added MOCK public identities for two auditors, one final-parameter signer, and one participant. Generate/import your TEST coordinator identity using the menu.")
+		fmt.Println("Starting with an empty roster. Generate separate TEST role identities and manually import their public identity.json files.")
 		if err := saveCoordinatorDraft(draftPath, d); err != nil {
 			return err
 		}
 	}
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	run := func(args []string) error {
-		cmd := exec.Command(executable, args...)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
-	}
 	w := coordinatorWizard{d: d, input: bufio.NewReader(os.Stdin), output: os.Stdout, draftPath: draftPath}
+	if *clearMocks {
+		if d.Status != "draft" {
+			return errors.New("cannot remove assignments after initialization was attempted")
+		}
+		if err := w.confirm("Remove legacy mock assignments and affected phase orders? Your coordinator identity, real imports, keys and other files are preserved", "REMOVE MOCK ASSIGNMENTS"); err != nil {
+			return err
+		}
+		count, err := clearLocalMockAssignments(&w.d)
+		if err != nil {
+			return err
+		}
+		if err := w.save(); err != nil {
+			return err
+		}
+		fmt.Printf("Removed %d mock assignments from the unsigned draft. No files or keys were deleted. Import your test identities, then review both phase orders.\n", count)
+		return nil
+	}
 	settings := filepath.Join(*root, "launcher-settings")
 	w.localAction = func(name, role string, command []string, credentials bool) error {
 		if !localTestCommandAllowed(role, command, credentials) {
@@ -203,4 +196,103 @@ func runCoordinatorLocal(args []string) error {
 		return run(open)
 	}
 	return w.menu()
+}
+
+func clearLocalMockAssignments(d *coordinatorDraft) (int, error) {
+	if d.Release != "LOCAL-REHEARSAL" || d.Status != "draft" {
+		return 0, errors.New("only unsigned local drafts can be changed")
+	}
+	removed := map[string]bool{}
+	mock := func(i setupIdentity) bool {
+		if (i.ID == "signer" || i.ID == "auditor1" || i.ID == "auditor2" || i.ID == "participant1") && i.DisplayName == "MOCK "+i.ID && i.KeyID == i.ID+"-key" {
+			removed[i.ID] = true
+			return true
+		}
+		return false
+	}
+	if mock(d.Identities.ReleaseSigner) {
+		d.Identities.ReleaseSigner = setupIdentity{}
+	}
+	auditors := []setupIdentity{}
+	for _, i := range d.Identities.Auditors {
+		if !mock(i) {
+			auditors = append(auditors, i)
+		}
+	}
+	d.Identities.Auditors = auditors
+	roster := []setupParticipant{}
+	for _, p := range d.Identities.Roster {
+		if !mock(p.Identity) {
+			roster = append(roster, p)
+		}
+	}
+	d.Identities.Roster = roster
+	for _, phase := range []*setupPhase{&d.Policy.Phase1, &d.Policy.Phase2} {
+		for _, id := range phase.Participants {
+			if removed[id] {
+				*phase = setupPhase{}
+				break
+			}
+		}
+	}
+	return len(removed), nil
+}
+
+func generateLocalRoleIdentity(root, image string, run func([]string) error, input io.Reader, output io.Writer) error {
+	w := coordinatorWizard{input: bufio.NewReader(input), output: output}
+	fmt.Fprintln(output, "TEST IDENTITY ONLY. This simulates a separate role's machine; do not use these keys for production.")
+	role, err := w.choose("Test role", "", []setupChoice{{"participant", "Participant"}, {"auditor", "Auditor"}, {"release-signer", "Final-parameter signer"}})
+	if err != nil {
+		return err
+	}
+	switch role {
+	case "participant", "auditor", "release-signer":
+	default:
+		return errors.New("choose participant, auditor or release-signer")
+	}
+	display, err := w.required("Public display name", "")
+	if err != nil {
+		return err
+	}
+	suffix, err := randomID()
+	if err != nil {
+		return err
+	}
+	id := role + "-" + suffix
+	roleRoot := filepath.Join(root, "test-roles", id)
+	keys := filepath.Join(roleRoot, "keys")
+	fmt.Fprintf(output, "Identity ID: %s\nSeparate role folder: %s\n", id, roleRoot)
+	if err := w.confirm("Generate a test keypair in the offline Docker image", "GENERATE"); err != nil {
+		return err
+	}
+	if err := ensurePrivateDirectory(filepath.Join(root, "test-roles")); err != nil {
+		return err
+	}
+	if err := os.Mkdir(roleRoot, 0700); err != nil {
+		return err
+	}
+	if err := os.Mkdir(keys, 0700); err != nil {
+		return err
+	}
+	alias := "test-identity-" + suffix
+	settings := filepath.Join(root, "test-role-settings")
+	args := []string{"ceremony", "setup", alias, "--role", "keygen", "--settings-root", settings, "--image", image, "--download=false", "--work", keys, "--", "mpc-ceremony", "identity", "generate", "--identity-id", id, "--display-name", display, "--private-key-out", "/work/signing.hex", "--public-identity-out", "/work/identity.json"}
+	if err := run(args); err != nil {
+		return err
+	}
+	if err := run([]string{"ceremony", "open", alias, "--role", "keygen", "--settings-root", settings}); err != nil {
+		return err
+	}
+	var identity setupIdentity
+	if err := setupReadJSON(filepath.Join(keys, "identity.json"), &identity); err != nil {
+		return err
+	}
+	if err := identity.check(); err != nil {
+		return err
+	}
+	if identity.ID != id || identity.DisplayName != display {
+		return errors.New("generated public identity does not match the requested values")
+	}
+	fmt.Fprintf(output, "\nSend/import ONLY this public file as %s:\n%s\nFingerprint to confirm through the independent channel:\n%s\nKeep signing.hex in this separate role folder; never copy it to the coordinator.\n", role, filepath.Join(keys, "identity.json"), identity.Fingerprint)
+	return nil
 }

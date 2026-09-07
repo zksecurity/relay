@@ -22,18 +22,22 @@ cannot run the helper. Install a matching new release rather than mixing binarie
 ## Fill in the draft
 
 1. Choose **Basics**: explicitly select rehearsal or production and the circuit.
+   Select from the numbered choices; no internal names need to be typed.
    `rehearsal-tiny-v1` is only for testing; `ownership-destination-v2` is the
    supported production circuit.
 2. Generate your coordinator identity, or keep your existing keypair.
+   The helper assigns an ID automatically; you only enter a public display name.
    Send only `identity.json` to the ceremony roles through your agreed channel.
 3. Import your public identity, the final-parameter signer's identity, at least
-   two auditors, and the participants. Confirm each fingerprint with its owner.
+   two auditors, and the participants. Compare each full fingerprint with its
+   owner's copy through your independent channel, then type `VERIFIED` if it matches.
    Reimport the same ID to replace its draft entry; remove mistaken assignments
    with **Remove an identity assignment**. Private keys stay with their owners.
 4. Choose **Orders, minimum contributions and reviewed beacon policy**.
    The supplied template uses drand Quicknet and a 180-second witness lead time.
    Review this choice with the roles. Adjust both participant orders and minimum
    contribution counts; the helper initially suggests the import order.
+   Enter participant numbers such as `2,1,3`, not their generated identity IDs.
 5. For mixed Linux AMD64/ARM64 participation, add the other approved proof-tool
    binary and confirm its SHA-256 against the reviewed release.
    These are Linux binaries even when operators use Macs.
@@ -49,6 +53,7 @@ different people or organizations are not established by software.
 Choose **Review draft**. Check the mode, circuit, public identities, both orders,
 minimum counts, software selection and beacon policy with your ceremony roles.
 You can save and exit without signing anything.
+Required prompts repeat when left blank unless a valid default is shown.
 
 Choose **Approve and initialize** only when ready. Type the full displayed
 confirmation, then review the Docker command and confirm again.
