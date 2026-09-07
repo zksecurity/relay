@@ -235,10 +235,10 @@ jobs:
               "$GITHUB_SHA:scripts/three-machine-rehearsal" | tar -t
             git archive --format=tar --prefix=three-machine-rehearsal/ \
               "$GITHUB_SHA" \
-              docs/INSTALL.md \
-              docs/AWS_SETUP.md \
-              docs/R2_SETUP.md \
-              docs/STORAGE.md | tar -t
+              docs/setup/INSTALL.md \
+              docs/setup/AWS_SETUP.md \
+              docs/setup/R2_SETUP.md \
+              docs/setup/STORAGE.md | tar -t
           } >"$RUNNER_TEMP/expected-rehearsal-assets.txt"
           tar -tzf "$RELEASE_DIR/three-machine-rehearsal.tar.gz" \
             >"$RUNNER_TEMP/actual-rehearsal-assets.txt"
@@ -248,11 +248,11 @@ jobs:
           tar -tzf "$RELEASE_DIR/three-machine-rehearsal.tar.gz" | grep -Fx \
             three-machine-rehearsal/00-coordinator-initialize.sh
           tar -tzf "$RELEASE_DIR/three-machine-rehearsal.tar.gz" | grep -Fx \
-            three-machine-rehearsal/docs/INSTALL.md
+            three-machine-rehearsal/docs/setup/INSTALL.md
           tar -tzf "$RELEASE_DIR/three-machine-rehearsal.tar.gz" | grep -Fx \
-            three-machine-rehearsal/docs/AWS_SETUP.md
+            three-machine-rehearsal/docs/setup/AWS_SETUP.md
           tar -tzf "$RELEASE_DIR/three-machine-rehearsal.tar.gz" | grep -Fx \
-            three-machine-rehearsal/docs/R2_SETUP.md
+            three-machine-rehearsal/docs/setup/R2_SETUP.md
           tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
             storage-setup/scripts/storage-setup/setup-aws.sh
           tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
@@ -260,9 +260,9 @@ jobs:
           tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
             storage-setup/scripts/storage-setup/setup-r2-wrangler.sh
           tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
-            storage-setup/docs/AWS_SETUP.md
+            storage-setup/docs/setup/AWS_SETUP.md
           tar -tzf "$RELEASE_DIR/storage-setup.tar.gz" | grep -Fx \
-            storage-setup/docs/R2_SETUP.md
+            storage-setup/docs/setup/R2_SETUP.md
 
       - name: Build and exercise standalone ceremony kit
         run: |
@@ -334,8 +334,8 @@ jobs:
           test -x "$RUNNER_TEMP/ceremony-kit-install/mpc-ceremony"
           test -x "$RUNNER_TEMP/ceremony-kit-operator/storage-setup/scripts/storage-setup/setup-aws.sh"
           test -x "$RUNNER_TEMP/ceremony-kit-operator/storage-setup/scripts/storage-setup/setup-r2.sh"
-          test -f "$RUNNER_TEMP/ceremony-kit-operator/storage-setup/docs/AWS_SETUP.md"
-          test -f "$RUNNER_TEMP/ceremony-kit-operator/storage-setup/docs/R2_SETUP.md"
+          test -f "$RUNNER_TEMP/ceremony-kit-operator/storage-setup/docs/setup/AWS_SETUP.md"
+          test -f "$RUNNER_TEMP/ceremony-kit-operator/storage-setup/docs/setup/R2_SETUP.md"
           test -f "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/machine-3/.env"
           test -x \
             "$RUNNER_TEMP/ceremony-kit-operator/three-machine-rehearsal/00-coordinator-initialize.sh"
