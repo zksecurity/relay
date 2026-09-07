@@ -79,7 +79,7 @@ This sets `$RELAY_COMMIT`, `$RELAY_RELEASE`, `$RELAY`, and the `$ROLE_*` paths
 used by the role guides. You do not need to fill them in manually. Only source
 your own installer-created file: sourcing a file executes shell code.
 The private role folder contains `work`, `trust` (public trust files), and
-`keys` (private signing keys). Keep grants in `work`, never command arguments.
+`keys` (private signing keys).
 
 ## Follow your role guide
 
