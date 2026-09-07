@@ -14,8 +14,10 @@ exception is the rehearsal's optional evidence-upload transport test (steps
 and therefore needs a Go toolchain and a proof-tool checkout at the approved
 tag; every required rehearsal step runs from the kit alone.
 
-Release maintainers and independent build auditors use
-[RELEASE.md](../release/release.md) instead.
+Production software delivery is described in
+[software delivery and audit](../release/release.md). Source-level auditors
+may use the local rehearsal/audit scripts; they are not a production
+publication path.
 
 ## Platform scope
 
