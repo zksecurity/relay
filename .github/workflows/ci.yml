@@ -91,7 +91,11 @@ jobs:
             scripts/three-machine-rehearsal/machine-*/.env.example
 
       - name: Test host prerequisite setup safeguards
-        run: bash scripts/setup/test.sh
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zsh
+          ./scripts/setup/test.sh
+          ./scripts/test-install-launcher.sh
 
       - name: Test rehearsal configuration defaults
         run: |

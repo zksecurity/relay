@@ -13,13 +13,13 @@ Do not pipe an unverified download into a shell or run the entire script with su
 Check your setup without installing or changing anything:
 
 ```bash
-bash scripts/setup/macos.sh --check
+./scripts/setup/macos.sh --check
 ```
 
 To offer installation of missing tools:
 
 ```bash
-bash scripts/setup/macos.sh --install
+./scripts/setup/macos.sh --install
 ```
 
 Already-installed tools are kept. On a prepared Mac, the installer may have
@@ -43,13 +43,13 @@ It requires a systemd host and `sudo` for individually approved installation ste
 Other distributions, WSL, and custom setups need administrator review.
 
 ```bash
-bash scripts/setup/linux.sh --check --participant
+./scripts/setup/linux.sh --check --participant
 ```
 
 If checks report missing prerequisites, offer installation and swap preparation:
 
 ```bash
-bash scripts/setup/linux.sh --install --participant
+./scripts/setup/linux.sh --install --participant
 ```
 
 Omit `--participant` for coordinator, witness, mirror, auditor, or signer setup;

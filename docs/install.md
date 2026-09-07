@@ -13,16 +13,36 @@ If your prerequisites are already ready, continue to **Download and verify**.
   setup guide explains how to check this and offers a prompted swap-off step.
 - **GitHub CLI:** install a current version of `gh` and sign in with
   `gh auth login`. Relay uses it to download and verify release files.
-- **Shell tools:** have Bash and `shasum` available for the commands below.
+- **Shell tools:** have Bash and `shasum` installed. You can keep using Zsh;
+  Executable scripts select Bash automatically; no shell switch is needed.
 - **No Go installation needed:** you will use prebuilt release binaries.
 - **Agreed release:** get the exact release commit through the authenticated
   channel agreed with your coordinator, so you can confirm who supplied it.
   The release must include the launcher installer and the image map with
   GitHub build provenance used to verify its origin.
 
-## Download and verify
+## Guided installation
 
-Run in Bash, replacing the commit placeholder:
+From the authenticated source checkout used for computer setup, run:
+
+```bash
+./scripts/install-launcher.sh --guided
+```
+
+The installer asks for the exact release URL or tag from your coordinator,
+your ceremony name, role, and a fresh role folder. It verifies the downloaded
+launcher, selects your machine type, and saves your settings after confirmation.
+It does not start a ceremony, generate keys, or configure storage/profiles.
+
+Use a reviewed source version supplied through your agreed authenticated channel,
+not an arbitrary downloaded script. If using the published installer instead,
+verify it before running it as shown below. Guided mode requires an installer
+containing this change; older published installers accept only a release tag.
+
+<details>
+<summary>Alternative: download and verify the published installer</summary>
+
+Run in Bash or Zsh, replacing the placeholder with the coordinator's release commit:
 
 ```bash
 set -euo pipefail
@@ -36,34 +56,30 @@ gh attestation verify "$RELAY_DOWNLOAD/install-launcher.sh" \
   --signer-workflow zksecurity/relay/.github/workflows/publish-role-images.yml \
   --source-ref refs/heads/main --source-digest "$RELAY_COMMIT" \
   --deny-self-hosted-runners
-bash "$RELAY_DOWNLOAD/install-launcher.sh" "$RELAY_RELEASE"
-RELAY="$HOME/.local/share/relay/releases/$RELAY_COMMIT/relay"
+chmod u+x "$RELAY_DOWNLOAD/install-launcher.sh"
+"$RELAY_DOWNLOAD/install-launcher.sh" --guided
 ```
 
-Success prints the installed versioned path. The installer selects your machine,
-verifies provenance and checksums, and checks Docker. It refuses to overwrite
-an existing installation. If already installed, use that exact versioned path.
-The Mac binary is GitHub-attested, not Apple-notarized.
+</details>
 
-## Prepare your role's directories
+An existing launcher is reused only if its hash matches the verified release.
+Existing role folders are never overwritten. The Mac binary is GitHub-attested,
+not Apple-notarized.
 
-Choose a fresh, narrow directory for this ceremony and role.
-Replace the example names; do not reuse another role's folder:
+## Load your saved settings
+
+The installer prints one `source` command. Run it in your current Bash or Zsh
+terminal, including whenever you open a new terminal. No shell switch is needed:
 
 ```bash
-ROLE_ROOT="$HOME/ceremonies/example-ceremony/participant-03"
-mkdir -p "$(dirname "$ROLE_ROOT")"
-mkdir -m 0700 "$ROLE_ROOT"
-ROLE_WORK="$ROLE_ROOT/work"
-ROLE_TRUST="$ROLE_ROOT/trust"
-ROLE_KEYS="$ROLE_ROOT/keys"
-mkdir -m 0700 "$ROLE_WORK" "$ROLE_TRUST" "$ROLE_KEYS"
+source "$HOME/ceremonies/example-ceremony/coordinator/relay-env.sh"
 ```
 
-Keep these paths and the release ID with your private local settings.
-Public trust files go in `trust`; signing keys stay in `keys`.
-Grants are private files in `work`, never pasted into command arguments.
-These directories must be disjoint and contain no sockets or symlinks.
+This sets `$RELAY_COMMIT`, `$RELAY_RELEASE`, `$RELAY`, and the `$ROLE_*` paths
+used by the role guides. You do not need to fill them in manually. Only source
+your own installer-created file: sourcing a file executes shell code.
+The private role folder contains `work`, `trust` (public trust files), and
+`keys` (private signing keys). Keep grants in `work`, never command arguments.
 
 ## Follow your role guide
 

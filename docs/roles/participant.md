@@ -53,7 +53,7 @@ binary policy if setup rejects it.
 ## Each turn
 
 - [ ] On Linux, recheck that host swap is disabled, especially after a reboot.
-      Run `bash scripts/setup/linux.sh --check --participant` from the source
+      Run `./scripts/setup/linux.sh --check --participant` from the source
       checkout used during setup. Relay also checks before contributing.
 - [ ] Wait for the coordinator's notice and a fresh grant addressed to you.
 - [ ] Confirm the ceremony, phase, next participant, and head shown by Relay.

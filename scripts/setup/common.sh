@@ -21,7 +21,7 @@ parse_setup_args() {
       --install) SETUP_INSTALL=true ;;
       --participant) SETUP_PARTICIPANT=true ;;
       --check) check_requested=true ;;
-      --help) printf 'Usage: bash %s [--check | --install] [--participant]\nDefault: read-only checks. --install prompts before changes.\n' "$0"; exit 0 ;;
+      --help) printf 'Usage: %s [--check | --install] [--participant]\nDefault: read-only checks. --install prompts before changes.\n' "$0"; exit 0 ;;
       *) fail "Unknown option: $arg"; return 1 ;;
     esac
   done
