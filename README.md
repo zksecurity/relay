@@ -19,7 +19,8 @@ purpose:
   [AWS](docs/setup/AWS_SETUP.md), and [R2](docs/setup/R2_SETUP.md)
 - **Understand and release:** [participant isolation design](docs/design/participant-isolation.md),
   [automation control matrix](docs/design/automation-control-matrix.md), and
-  [release procedure](docs/release/release.md)
+  [release procedure](docs/release/release.md), including
+  [published role images](docs/release/role-images.md)
 - **Rehearse:** [three-machine tiny rehearsal](scripts/three-machine-rehearsal/README.md)
 
 ## What it is not
