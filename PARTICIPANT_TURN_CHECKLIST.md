@@ -7,6 +7,10 @@
 > credential into this document or the coordination website.
 > See [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md) for the complete participant
 > status, contribution, and interrupted-upload recipes.
+> For a saved Docker participant profile, open it through
+> `relay ceremony open NAME --role participant --grant GRANT.json`; that command
+> performs the same underlying participant action after showing it and asking
+> for confirmation.
 
 Use the evidence labels in [CHECKLISTS.md](CHECKLISTS.md). In particular,
 **MANUAL — PLATFORM TODO** means a mechanical record must be attached manually

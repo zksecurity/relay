@@ -5,6 +5,12 @@ with the ceremony record. The runbooks remain authoritative; the checklists are
 execution aids, and [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md) contains the
 copy-oriented commands.
 
+Before using a command, choose the operator path in
+[docs/OPERATOR_PATHS.md](docs/OPERATOR_PATHS.md). Docker users should save a
+reviewed action with [guided setup](docs/GUIDED_SETUP.md) or use the explicit
+role launcher; the checklists do not make a saved action an approved ceremony
+step. The low-level recipes remain the reference for what that action does.
+
 ## Checklist labels
 
 - **MANUAL — PLATFORM TODO** — the check is mechanical, but the coordination
@@ -33,7 +39,7 @@ TODO** item can leave the human checklist and move into that matrix.
 | Assignment | Checklist | Scope |
 | --- | --- | --- |
 | Coordinator | [Coordinator checklist](COORDINATOR_CHECKLIST.md) | Roster, storage, grants, acceptance, phase transitions, evidence, release, and archive |
-| Participant | [Participant lifecycle checklist](PARTICIPANT_CHECKLIST.md) and one [turn checklist](PARTICIPANT_TURN_CHECKLIST.md) per phase | Identity, native contribution, erasure, resumable upload, and acceptance |
+| Participant | [Participant lifecycle checklist](PARTICIPANT_CHECKLIST.md) and one [turn checklist](PARTICIPANT_TURN_CHECKLIST.md) per phase | Identity, contribution, erasure, resumable upload, and acceptance |
 | Public witness | [Public-witness checklist](PUBLIC_WITNESS_CHECKLIST.md) | Independent pre-beacon observation and signed witness receipt |
 | Mirror operator | [Mirror-operator checklist](MIRROR_OPERATOR_CHECKLIST.md) | Independent transcript retention and signed mirror receipt |
 | Auditor | [Auditor checklist](AUDITOR_CHECKLIST.md) | Independent source acquisition, full replay, and signed audit |

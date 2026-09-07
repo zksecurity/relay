@@ -6,6 +6,11 @@
 > [ROLE_RUNBOOK.md](ROLE_RUNBOOK.md). The runbooks explain why and when each
 > operation is performed; this document shows the current Relay commands.
 
+For Docker-packaged roles, use [saved setup and guided opening](docs/GUIDED_SETUP.md)
+or the [role launcher](docker/roles/README.md) to supply these commands. The
+recipes below remain the explicit/reference form. They do not mean users must
+retype Docker image names and mount paths for every task.
+
 ## Safety and placeholder rules
 
 Use only the Relay, `mpc-ceremony`, and provider CLI binaries from the

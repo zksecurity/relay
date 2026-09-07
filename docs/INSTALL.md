@@ -1,5 +1,11 @@
 # Installing ceremony tools
 
+For a role's normal Docker workflow after installation, first read
+[operator paths](OPERATOR_PATHS.md). It explains when to use saved guided setup
+instead of retyping a low-level command, and what image availability does—and
+does not—verify. This page remains the authenticated direct-installation and
+participant-profile reference.
+
 This is the Linux/amd64 installation path for coordinators, participants, witnesses,
 mirrors, auditors, and release operators. It installs a coordinated Relay and
 `mpc-ceremony` kit; it does not require Go or either source repository. The one
@@ -14,7 +20,7 @@ Release maintainers and independent build auditors use
 ## Platform scope
 
 The current Relay release builder and ceremony-kit installer package Linux/amd64
-executables. The commands below are not a native macOS or Linux/arm64 installer.
+host executables. The commands below are not a native macOS or Linux/arm64 installer.
 Docker participant execution supports both Linux image architectures, including
 Apple-silicon Macs using `linux/arm64`, but that capability is separate from kit
 distribution. Such hosts need a separately approved host-compatible Relay build,
@@ -310,10 +316,13 @@ work starts.
 
 ## Install storage setup prerequisites
 
-The kit does not redistribute AWS CLI. Install `unzip` and `gpg`, follow the
+The kit does not redistribute AWS CLI for host-side provider setup. Install `unzip`
+and `gpg`, follow the
 [official AWS CLI signature verification procedure](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html#install-linux-verify-signature),
 and install AWS CLI v2. Coordinators running the provider setup scripts also
-need `jq` and `curl` from the operating system. Do not configure a provider
+need `jq` and `curl` from the operating system. For Docker-packaged online
+roles, the role image includes AWS CLI for Relay transport; the host still needs
+the provider setup tools when running setup scripts. Do not configure a provider
 credential until the coordinator assigns the machine's role-specific profile
 or temporary grant.
 

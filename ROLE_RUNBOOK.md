@@ -27,6 +27,14 @@ identities, and evidence.
 
 ## 1. Install and verify the tools
 
+To use Docker-packaged tools, start with [operator paths](docs/OPERATOR_PATHS.md).
+Prefer [guided setup](docs/GUIDED_SETUP.md) to save one reviewed action, or use
+the explicit [role launcher guide](docker/roles/README.md). Those guides explain
+which image to use and how to prefix the commands below. Participant turns keep
+Relay on the host; offline signing stays on a disconnected machine. The recipes
+below remain the actions to review, not instructions to paste host paths into a
+container.
+
 Follow the role-machine path in [docs/INSTALL.md](docs/INSTALL.md). It contains
 the official AWS CLI v2 installation procedure and exact steps for verifying
 and installing published `relay` and `mpc-ceremony` binaries. Release
@@ -40,6 +48,12 @@ identifiers, compatibility evidence, and hashes. Every `init-config` command
 below consumes that receipt, independently hashes the running Relay and
 `mpc-ceremony` executables, and prints the resolved identities it accepted.
 Stop if either hash or the ceremony mode differs.
+
+When using Docker-packaged tools, this receipt authenticates the host Relay and
+proof-tool materials supplied for the role. Docker image availability is a
+separate check: matching a supplied digest and platform does not prove that a
+publisher or coordinator signed the image approval. Obtain image digests through
+the coordinator's independent authenticated channel.
 
 ### Register your public identity
 
