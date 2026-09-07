@@ -82,9 +82,11 @@ func usage() {
              --signing-key FILE --environment FILE [--grant FILE] [--out FILE]
   relay ceremony init-config --home DIR --role ROLE --coordinator-key FILE \
              --tool-identity-receipt FILE [--storage FILE] \
-             [role authentication flags] [--out FILE]
+             [role authentication flags] \
+             [--execution-mode native|docker] [Docker flags] [--out FILE]
   relay participant status [--config FILE | status flags]
   relay participant run [--config FILE] --grant FILE [--resume-candidate DIR]
+  relay participant attest-host-wipe --config FILE --grant FILE --out-dir DIR
   relay witness run --config FILE [--interval D] [--once]
   relay witness submit --config FILE --grant FILE (--file FILE | --dir DIR)
   relay mirror run --config FILE
@@ -147,7 +149,7 @@ func runCoordinator(args []string) error {
 
 func runParticipant(args []string) error {
 	if len(args) == 0 {
-		return errors.New("participant requires enroll, status, or run")
+		return errors.New("participant requires enroll, status, run, or attest-host-wipe")
 	}
 	switch args[0] {
 	case "enroll":
@@ -156,6 +158,8 @@ func runParticipant(args []string) error {
 		return runParticipantStatus(args[1:])
 	case "run":
 		return runParticipate(args[1:])
+	case "attest-host-wipe":
+		return runParticipantHostWipe(args[1:])
 	default:
 		return fmt.Errorf("unknown participant command %q", args[0])
 	}

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -34,6 +35,7 @@ type candidateObjectStore interface {
 func runEnroll(args []string) error {
 	set := flag.NewFlagSet("enroll", flag.ContinueOnError)
 	var storagePath, grantPath, phase, root, ceremony, ceremonySignature, coordinatorKey, ceremonyBinary string
+	var executionMode, dockerImage, dockerPlatform, dockerCLI string
 	var signingKey, environment, candidateParent, out string
 	set.StringVar(&storagePath, "storage", "", "storage configuration supplied by the coordinator")
 	set.StringVar(&grantPath, "grant", "", "optional temporary participant grant supplied by the coordinator")
@@ -43,12 +45,25 @@ func runEnroll(args []string) error {
 	set.StringVar(&ceremonySignature, "ceremony-signature", "", "local definition signature")
 	set.StringVar(&coordinatorKey, "coordinator-key", "", "out-of-band coordinator public key")
 	set.StringVar(&ceremonyBinary, "ceremony-binary", "mpc-ceremony", "trusted ceremony executable")
+	set.StringVar(&executionMode, "execution-mode", nativeExecutionMode, "native or docker")
+	set.StringVar(&dockerImage, "docker-image", "", "locally preloaded ceremony image pinned by immutable SHA-256")
+	set.StringVar(&dockerPlatform, "docker-platform", "linux/amd64", "approved image platform: linux/amd64 or linux/arm64")
+	set.StringVar(&dockerCLI, "docker-cli", "docker", "Docker command used by the native Relay supervisor")
 	set.StringVar(&signingKey, "signing-key", "", "participant Ed25519 private key")
 	set.StringVar(&environment, "environment", "", "canonical environment.json")
 	set.StringVar(&candidateParent, "candidate-parent", "", "directory in which a fresh candidate will be created")
 	set.StringVar(&out, "out", defaultParticipantConfigPath(), "fresh participant configuration file")
 	if err := set.Parse(args); err != nil {
 		return err
+	}
+	if err := rejectDockerFlagsWithoutDockerMode(args, executionMode); err != nil {
+		return err
+	}
+	if executionMode == dockerExecutionMode && !hasNamedFlag(args, "ceremony-binary") {
+		ceremonyBinary = "/usr/local/bin/mpc-ceremony"
+	}
+	if executionMode == nativeExecutionMode {
+		dockerImage, dockerPlatform, dockerCLI = "", "", ""
 	}
 	if candidateParent == "" && out != "" {
 		candidateParent = filepath.Join(filepath.Dir(out), "candidates")
@@ -60,9 +75,27 @@ func runEnroll(args []string) error {
 	if err != nil {
 		return err
 	}
+	config := access.ParticipantConfig{
+		Schema: access.ParticipantConfigSchema, Phase: phase, Root: root,
+		Ceremony: ceremony, CeremonySignature: ceremonySignature,
+		CoordinatorKey: coordinatorKey, CeremonyBinary: ceremonyBinary,
+		SigningKey: signingKey, Environment: environment, CandidateParentDir: candidateParent,
+		PublishedBaseURL: storageConfig.PublishedBaseURL, PublishedBucket: storageConfig.PublishedBucket,
+		GrantPath: grantPath, ExecutionMode: executionMode, DockerImage: dockerImage,
+		DockerPlatform: dockerPlatform, DockerCLI: dockerCLI,
+	}
+	if err := config.Validate(); err != nil {
+		return err
+	}
 	inspector := transcript.Inspector{Executable: ceremonyBinary, CeremonyPath: ceremony,
-		CeremonySignaturePath: ceremonySignature, CoordinatorPublicKeyPath: coordinatorKey,
-		TranscriptRoot: root}
+		CeremonySignaturePath: ceremonySignature, CoordinatorPublicKeyPath: coordinatorKey, TranscriptRoot: root}
+	if executionMode == dockerExecutionMode {
+		driver := dockerDriverForParticipant(config)
+		if err := driver.preflight(); err != nil {
+			return err
+		}
+		inspector = driver.inspector()
+	}
 	participant, err := inspector.Participant(signingKey)
 	if err != nil {
 		return err
@@ -89,17 +122,6 @@ func runEnroll(args []string) error {
 	}
 	if slot == nil {
 		return fmt.Errorf("participant %s is not scheduled in %s", participant.ParticipantID, phase)
-	}
-	config := access.ParticipantConfig{
-		Schema: access.ParticipantConfigSchema, Phase: phase, Root: root,
-		Ceremony: ceremony, CeremonySignature: ceremonySignature,
-		CoordinatorKey: coordinatorKey, CeremonyBinary: ceremonyBinary,
-		SigningKey: signingKey, Environment: environment, CandidateParentDir: candidateParent,
-		PublishedBaseURL: storageConfig.PublishedBaseURL, PublishedBucket: storageConfig.PublishedBucket,
-		GrantPath: grantPath,
-	}
-	if err := config.Validate(); err != nil {
-		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(out), 0o700); err != nil {
 		return err
@@ -145,6 +167,21 @@ func runParticipate(args []string) error {
 	if err != nil {
 		return err
 	}
+	runLock, err := acquireParticipantRunLock(configPath, config.CandidateParentDir)
+	if err != nil {
+		return err
+	}
+	defer runLock.release()
+	var preparedDocker *dockerDriver
+	if effectiveExecutionMode(config.ExecutionMode) == dockerExecutionMode {
+		preparedDocker = dockerDriverForParticipant(config)
+		if err := preparedDocker.preflight(); err != nil {
+			return err
+		}
+		if err := preparedDocker.cleanupOrphan(); err != nil {
+			return err
+		}
+	}
 	grantPath := config.GrantPath
 	if grantOverride != "" {
 		grantPath = grantOverride
@@ -163,6 +200,9 @@ func runParticipate(args []string) error {
 		return errors.New("participant configuration refers to a non-participant grant")
 	}
 	o := participantRoleOptions(config, grant.IdentityID)
+	if preparedDocker != nil {
+		o.docker = preparedDocker
+	}
 	participant, err := o.inspector().Participant(config.SigningKey)
 	if err != nil {
 		return err
@@ -203,7 +243,7 @@ func runParticipate(args []string) error {
 	if err := runNext(o, pos); err != nil {
 		return err
 	}
-	if err := confirmErasure(); err != nil {
+	if err := confirmErasure(o); err != nil {
 		return err
 	}
 	destroyedAt, err := runErasure(o)
@@ -370,12 +410,16 @@ func uploadCandidate(client candidateObjectStore, grantPrefix, candidateDir, loc
 }
 
 func participantRoleOptions(config access.ParticipantConfig, identity string) roleOpts {
-	return roleOpts{
+	o := roleOpts{
 		root: config.Root, definition: config.Ceremony, definitionSig: config.CeremonySignature,
 		coordinatorKey: config.CoordinatorKey, ceremonyBinary: config.CeremonyBinary,
 		phase: config.Phase, role: identity, signingKey: config.SigningKey, envPath: config.Environment,
 		client: store.Client{Bucket: config.PublishedBucket, PublicBaseURL: config.PublishedBaseURL},
 	}
+	if effectiveExecutionMode(config.ExecutionMode) == dockerExecutionMode {
+		o.docker = dockerDriverForParticipant(config)
+	}
+	return o
 }
 
 func fetchForContribution(o roleOpts, pos position) error {
@@ -417,7 +461,10 @@ func fetchForContribution(o roleOpts, pos position) error {
 	return nil
 }
 
-func confirmErasure() error {
+func confirmErasure(o roleOpts) error {
+	if o.docker != nil {
+		return confirmDockerNoCopies(o)
+	}
 	// The prompt goes to stdout so that a logged or tee'd transcript of the
 	// run contains it: operators and automation watch that transcript, and a
 	// prompt that only ever reaches the terminal's stderr is invisible to
@@ -432,6 +479,47 @@ func confirmErasure() error {
 		return errors.New("erasure was not confirmed; candidate remains local and was not uploaded")
 	}
 	return nil
+}
+
+func confirmDockerNoCopies(o roleOpts) error {
+	path := filepath.Join(o.outDir, dockerLifecycleLogName)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read Docker lifecycle record: %w", err)
+	}
+	var receipt dockerLifecycleReceipt
+	if err := json.Unmarshal(raw, &receipt); err != nil || receipt.Schema != dockerLifecycleSchema ||
+		!receipt.RemovalVerified || !verifiedDaemonFacts(receipt.Daemon) ||
+		!verifiedLifecycleFacts(receipt.Security) || !verifiedHostSwapStatus(runtime.GOOS, receipt.HostSwapStatus) {
+		return errors.New("Docker lifecycle record does not prove the required measured cleanup")
+	}
+	shortID := shortContainerID(receipt.ContainerID)
+	fmt.Printf(`Contribution completed.
+
+Relay verified:
+  ✓ Docker daemon %s was reached through local endpoint %s
+  ✓ contributor exited
+  ✓ container %s was removed
+  ✓ container %s no longer exists
+  ✓ its writable layer and tmpfs were removed
+
+Confirm that you:
+  • did not create or retain a VM/container snapshot;
+  • did not dump or copy the contributor's memory;
+  • did not retain any other copy of the contribution randomness; and
+  • did not configure the disposable environment for backup.
+
+Type NO COPIES RETAINED to continue: `, receipt.Daemon.ID, receipt.Daemon.Endpoint, shortID, shortID)
+	line, readErr := bufio.NewReader(os.Stdin).ReadString('\n')
+	if readErr != nil && len(line) == 0 {
+		return readErr
+	}
+	if strings.TrimSpace(line) != "NO COPIES RETAINED" {
+		return errors.New("no-copy confirmation was not given; candidate remains local and was not uploaded")
+	}
+	receipt.ParticipantConfirmation = "NO COPIES RETAINED"
+	receipt.ConfirmedAt = time.Now().UTC().Format(time.RFC3339)
+	return writeJSONAtomic(path, receipt, 0o600)
 }
 
 // erasureTimestamp returns a destroyed_at that proof-tool will accept:
@@ -472,6 +560,11 @@ func runErasure(o roleOpts) (time.Time, error) {
 }
 
 func runErasureAt(o roleOpts, destroyedAt time.Time) error {
+	if o.docker != nil {
+		return runWithProgress("creating erasure attestation", func() error {
+			return o.docker.attestErasure(o, destroyedAt)
+		})
+	}
 	argv := []string{o.phase, "attest-erasure", "--ceremony", o.definition,
 		"--ceremony-signature", o.definitionSig, "--coordinator-public-key-file", o.coordinatorKey,
 		"--participant-id", o.role, "--participant-signing-key", o.signingKey,
@@ -559,6 +652,115 @@ func (values *stringList) Set(value string) error { *values = append(*values, va
 
 func runSubmitEvidence(args []string) error {
 	return runSubmitEvidenceForRole(args, "")
+}
+
+func runParticipantHostWipe(args []string) error {
+	set := flag.NewFlagSet("participant attest-host-wipe", flag.ContinueOnError)
+	var configPath, grantPath, outDir string
+	set.StringVar(&configPath, "config", defaultParticipantConfigPath(), "participant configuration restored from separate storage")
+	set.StringVar(&grantPath, "grant", "", "fresh temporary host-wipe grant")
+	set.StringVar(&outDir, "out-dir", "", "fresh directory for the signed host-wipe evidence")
+	if err := set.Parse(args); err != nil {
+		return err
+	}
+	if configPath == "" || grantPath == "" || outDir == "" {
+		return errors.New("--config, --grant, and --out-dir are required")
+	}
+	if !filepath.IsAbs(outDir) || filepath.Clean(outDir) != outDir {
+		return errors.New("--out-dir must be an absolute clean path")
+	}
+	config, configuredIdentity, err := loadParticipantProfile(configPath)
+	if err != nil {
+		return err
+	}
+	runLock, err := acquireParticipantRunLock(configPath, config.CandidateParentDir)
+	if err != nil {
+		return err
+	}
+	defer runLock.release()
+	grant, err := loadGrant(grantPath)
+	if err != nil {
+		return err
+	}
+	if err := grant.CheckUsable(time.Now()); err != nil {
+		return err
+	}
+	if grant.Role != access.RoleHostWipe {
+		return fmt.Errorf("grant role is %s, want %s", grant.Role, access.RoleHostWipe)
+	}
+	o := participantRoleOptions(config, grant.IdentityID)
+	if o.docker != nil {
+		if err := o.docker.preflight(); err != nil {
+			return err
+		}
+	}
+	definition, err := o.inspector().Definition()
+	if err != nil {
+		return err
+	}
+	participant, err := o.inspector().Participant(config.SigningKey)
+	if err != nil {
+		return err
+	}
+	if configuredIdentity != "" && participant.ParticipantID != configuredIdentity {
+		return errors.New("configured participant identity does not match the local signing key")
+	}
+	if participant.CeremonyID != grant.CeremonyID || participant.ParticipantID != grant.IdentityID ||
+		definition.CeremonyID != grant.CeremonyID {
+		return errors.New("local participant key and ceremony do not match the host-wipe grant")
+	}
+	if definition.Mode != "production" || !definition.RequiresHostWipe(participant.ParticipantID) {
+		return errors.New("authenticated ceremony does not require this participant to attest a production Mac host wipe")
+	}
+	if err := confirmMacHostWipe(); err != nil {
+		return err
+	}
+	wipedAt := time.Now().UTC().Truncate(time.Second)
+	if o.docker != nil {
+		if err := o.docker.attestHostWipe(o, wipedAt, outDir); err != nil {
+			return err
+		}
+	} else {
+		command := exec.Command(o.ceremonyExecutable(),
+			"ops", "attest-host-wipe",
+			"--ceremony", o.definition,
+			"--ceremony-signature", o.definitionSig,
+			"--coordinator-public-key-file", o.coordinatorKey,
+			"--participant-id", participant.ParticipantID,
+			"--participant-signing-key", config.SigningKey,
+			"--wiped-at", wipedAt.Format(time.RFC3339),
+			"--out-dir", outDir,
+		)
+		command.Stdout, command.Stderr = os.Stdout, os.Stderr
+		if err := command.Run(); err != nil {
+			return fmt.Errorf("create host-wipe attestation: %w", err)
+		}
+	}
+	if err := validateHostWipeHandoff(outDir); err != nil {
+		return err
+	}
+	if err := runSubmitEvidenceForRole(
+		[]string{"--grant", grantPath, "--dir", outDir},
+		access.RoleHostWipe,
+	); err != nil {
+		return fmt.Errorf("upload host-wipe evidence; signed evidence remains at %s: %w", outDir, err)
+	}
+	return nil
+}
+
+func confirmMacHostWipe() error {
+	fmt.Fprintln(os.Stderr, "Production Mac wipe confirmation:")
+	fmt.Fprintln(os.Stderr, "- The whole Mac was erased and macOS was cleanly reinstalled.")
+	fmt.Fprintln(os.Stderr, "- No pre-wipe backup, snapshot, Docker Desktop state, private contribution environment, or contribution-randomness copy was restored.")
+	fmt.Fprint(os.Stderr, "Type MAC WIPED AND CLEANLY REINSTALLED to sign and upload the attestation: ")
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && len(line) == 0 {
+		return fmt.Errorf("read host-wipe confirmation: %w", err)
+	}
+	if strings.TrimSpace(line) != "MAC WIPED AND CLEANLY REINSTALLED" {
+		return errors.New("host wipe was not confirmed; no attestation was created or uploaded")
+	}
+	return nil
 }
 
 func runReleaseEvidence(args []string) error {

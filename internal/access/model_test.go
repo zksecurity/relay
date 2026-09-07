@@ -22,6 +22,33 @@ func TestGrantPrefixIsIdentityScoped(t *testing.T) {
 	}
 }
 
+func TestHostWipeGrantAndEvidenceAreIdentityScoped(t *testing.T) {
+	want := "host-wipes/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/participant-03/"
+	prefix, err := Prefix(testCeremony, RoleHostWipe, "participant-03")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prefix != want {
+		t.Fatalf("host-wipe prefix = %q, want %q", prefix, want)
+	}
+	manifest := SubmissionManifest{
+		Schema: SubmissionManifestSchema, CeremonyID: testCeremony,
+		Role: RoleHostWipe, IdentityID: "participant-03", AttemptID: strings.Repeat("b", 32),
+		Files: []FileRef{
+			{Name: "host-wipe.json", SHA256: testCeremony, Size: 1},
+			{Name: "host-wipe.sig", SHA256: testCeremony, Size: 1},
+		},
+		CompletedAt: "2026-09-04T12:00:00Z",
+	}
+	if err := manifest.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	manifest.Files = manifest.Files[:1]
+	if err := manifest.Validate(); err == nil {
+		t.Fatal("incomplete host-wipe evidence accepted")
+	}
+}
+
 func TestGrantUsabilityChecksMinimumWindow(t *testing.T) {
 	now := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
 	prefix, _ := Prefix(testCeremony, RoleParticipant, "participant-03")
@@ -85,7 +112,7 @@ func TestParticipantConfigV2DefersTemporaryGrant(t *testing.T) {
 		CoordinatorKey: "/trusted/coordinator.hex", CeremonyBinary: "/usr/local/bin/mpc-ceremony",
 		SigningKey: "/keys/participant.hex", Environment: "/config/environment.json",
 		CandidateParentDir: "/work/candidates", PublishedBaseURL: "https://ceremony.example",
-		PublishedBucket: "published",
+		PublishedBucket: "published", ExecutionMode: "native",
 	}
 	if err := config.Validate(); err != nil {
 		t.Fatalf("v2 profile without temporary grant: %v", err)
@@ -93,6 +120,38 @@ func TestParticipantConfigV2DefersTemporaryGrant(t *testing.T) {
 	config.Schema = ParticipantConfigSchemaV1
 	if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "grant_path") {
 		t.Fatalf("v1 profile without grant error = %v", err)
+	}
+}
+
+func TestParticipantConfigRequiresImmutableDockerImage(t *testing.T) {
+	config := ParticipantConfig{
+		Schema: ParticipantConfigSchema, Phase: "phase1", Root: "/ceremony",
+		Ceremony: "/ceremony/ceremony.json", CeremonySignature: "/ceremony/ceremony.sig",
+		CoordinatorKey: "/trusted/coordinator.hex", CeremonyBinary: "/usr/local/bin/mpc-ceremony",
+		SigningKey: "/keys/participant.hex", Environment: "/config/environment.json",
+		CandidateParentDir: "/work/candidates", PublishedBaseURL: "https://ceremony.example",
+		PublishedBucket: "published", ExecutionMode: "docker", DockerPlatform: "linux/arm64",
+		DockerCLI: "docker", DockerImage: "ceremony-tool:latest",
+	}
+	if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "immutable sha256") {
+		t.Fatalf("mutable image error = %v", err)
+	}
+	config.DockerImage = "sha256:" + strings.Repeat("a", 64)
+	if err := config.Validate(); err != nil {
+		t.Fatalf("immutable local image ID: %v", err)
+	}
+	config.Schema = ParticipantConfigSchemaV2
+	if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "latest configuration schema") {
+		t.Fatalf("legacy Docker profile error = %v", err)
+	}
+	config.Schema = ParticipantConfigSchema
+	config.DockerImage = "registry.example/ceremony-tool@sha256:" + strings.Repeat("b", 64)
+	if err := config.Validate(); err != nil {
+		t.Fatalf("immutable repository digest: %v", err)
+	}
+	config.DockerPlatform = "linux/s390x"
+	if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "linux/amd64 or linux/arm64") {
+		t.Fatalf("unsupported platform error = %v", err)
 	}
 }
 
@@ -105,7 +164,7 @@ func TestRoleConfigSeparatesPersistentPathsFromTemporaryAccess(t *testing.T) {
 		CoordinatorKey:    "/trusted/coordinator.hex", CeremonyBinary: "/usr/local/bin/mpc-ceremony",
 		SigningKey: "/secure/participant-01.hex", Environment: "/secure/environment.json",
 		RunRoot: "/ceremonies/example/run", StorageConfig: "/ceremonies/example/config/relay-storage.json",
-		PublishedBaseURL: "https://ceremony.example", PublishedBucket: "published",
+		PublishedBaseURL: "https://ceremony.example", PublishedBucket: "published", ExecutionMode: "native",
 	}
 	if err := participant.Validate(); err != nil {
 		t.Fatal(err)
@@ -123,5 +182,19 @@ func TestRoleConfigSeparatesPersistentPathsFromTemporaryAccess(t *testing.T) {
 	witness.SigningKey = "/secure/witness-01.hex"
 	if err := witness.Validate(); err == nil || !strings.Contains(err.Error(), "must not retain") {
 		t.Fatalf("non-participant retained signing key error = %v", err)
+	}
+}
+
+func TestLatestConfigsRequireExplicitExecutionMode(t *testing.T) {
+	participant := ParticipantConfig{
+		Schema: ParticipantConfigSchema, Phase: "phase1", Root: "/ceremony",
+		Ceremony: "/ceremony/ceremony.json", CeremonySignature: "/ceremony/ceremony.sig",
+		CoordinatorKey: "/trusted/coordinator.hex", CeremonyBinary: "mpc-ceremony",
+		SigningKey: "/keys/participant.hex", Environment: "/config/environment.json",
+		CandidateParentDir: "/work/candidates", PublishedBaseURL: "https://ceremony.example",
+		PublishedBucket: "published",
+	}
+	if err := participant.Validate(); err == nil || !strings.Contains(err.Error(), "execution_mode is required") {
+		t.Fatalf("missing participant execution mode error = %v", err)
 	}
 }

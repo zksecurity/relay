@@ -38,3 +38,18 @@ func TestFormatParticipantAssignment(t *testing.T) {
 		}
 	}
 }
+
+func TestDockerFlagsRequireExplicitDockerMode(t *testing.T) {
+	for _, name := range []string{"docker-image", "docker-platform", "docker-cli"} {
+		args := []string{"--" + name, "value"}
+		err := rejectDockerFlagsWithoutDockerMode(args, nativeExecutionMode)
+		if err == nil || !strings.Contains(err.Error(), "requires --execution-mode docker") {
+			t.Fatalf("--%s with native mode error = %v", name, err)
+		}
+	}
+	if err := rejectDockerFlagsWithoutDockerMode(
+		[]string{"--docker-image=sha256:" + strings.Repeat("a", 64)}, dockerExecutionMode,
+	); err != nil {
+		t.Fatalf("explicit Docker mode rejected Docker flag: %v", err)
+	}
+}

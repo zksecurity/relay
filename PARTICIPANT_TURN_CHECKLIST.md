@@ -85,7 +85,9 @@ not a completion percentage or an ETA.
       are public and intentionally retained for verification and interrupted
       upload recovery; they are not the contribution randomness.
 - [ ] **HUMAN** I entered the exact confirmation requested by the approved
-      native tool only after the preceding statements were true.
+      Relay workflow only after the preceding statements were true. Docker
+      mode requests `NO COPIES RETAINED` after measured removal; native mode
+      follows the ceremony kit's `DESTROYED` procedure.
 
 If cleanup is incomplete or uncertain, stop without uploading and contact the
 coordinator. Do not make an erasure statement you cannot honestly support.
@@ -145,6 +147,11 @@ relay participant run \
       approved procedure.
 - [ ] **HUMAN** I retained or removed the public candidate and secret-free log according
       to the ceremony's stated evidence and retention policy.
+- [ ] **HUMAN — PRODUCTION MAC ONLY** If this was my final scheduled
+      contribution, I completed the separate whole-device erase, clean
+      reinstall, and `relay participant attest-host-wipe` steps in
+      [PARTICIPANT_CHECKLIST.md](PARTICIPANT_CHECKLIST.md). Until then, my
+      accepted contribution remains provisional for final release.
 - [ ] **HUMAN** I reported every interruption, deviation, retry, or suspected exposure.
 - [ ] **MANUAL — PLATFORM TODO** Record administrative checklist completion.
       This is not a ceremony signature.

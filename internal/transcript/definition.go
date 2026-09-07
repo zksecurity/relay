@@ -4,12 +4,13 @@ import "fmt"
 
 // Definition is the authenticated projection emitted by mpc-ceremony inspect.
 type Definition struct {
-	Schema             string      `json:"schema"`
-	CeremonyID         string      `json:"ceremony_id"`
-	Mode               string      `json:"mode"`
-	Phase1Participants []string    `json:"phase1_participants"`
-	Phase2Participants []string    `json:"phase2_participants"`
-	R1CSRef            ArtifactRef `json:"r1cs"`
+	Schema               string      `json:"schema"`
+	CeremonyID           string      `json:"ceremony_id"`
+	Mode                 string      `json:"mode"`
+	Phase1Participants   []string    `json:"phase1_participants"`
+	Phase2Participants   []string    `json:"phase2_participants"`
+	HostWipeParticipants []string    `json:"host_wipe_participants,omitempty"`
+	R1CSRef              ArtifactRef `json:"r1cs"`
 }
 
 // Schedule returns the ordered participant list for a phase.
@@ -55,6 +56,18 @@ func (d Definition) SlotOf(phase, participantID string) (int, error) {
 		}
 	}
 	return 0, fmt.Errorf("%q is not scheduled in %s", participantID, phase)
+}
+
+// RequiresHostWipe reports whether the signed ceremony policy makes this
+// participant's accepted contributions provisional for final release until a
+// post-wipe Mac attestation is verified.
+func (d Definition) RequiresHostWipe(participantID string) bool {
+	for _, id := range d.HostWipeParticipants {
+		if id == participantID {
+			return true
+		}
+	}
+	return false
 }
 
 // R1CS returns the compiled constraint system reference.

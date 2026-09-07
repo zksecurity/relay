@@ -35,6 +35,7 @@ Google login do not replace your Ed25519 ceremony identity.
       identity ID, key ID, public-key fingerprint, and Phase 1/2 positions from
       the canonical roster. The platform should populate these values and later
       bind them to the authenticated `init-config` receipt without transcription.
+- [ ] **HUMAN** Signed policy requires my post-wipe Mac attestation: `yes / no`
 - [ ] **HUMAN** Coordinator and emergency contact:
       `________________________________`
 - [ ] **HUMAN** Authenticated out-of-band channel:
@@ -107,12 +108,24 @@ grant contents, or cloud secrets in this checklist.
 - [ ] **HUMAN** Keep the signing key and environment declaration at separately
       approved protected paths.
 
-The participant isolation design is being developed in
+Relay's Docker participant isolation is documented in
 [docs/PARTICIPANT_ISOLATION_DESIGN.md](docs/PARTICIPANT_ISOLATION_DESIGN.md).
-Until that design is implemented and approved, follow the production isolation
-and destruction procedure supplied with the authenticated ceremony kit. Do not
-claim that Relay has automatically erased a container or VM unless the
-approved implementation actually measured and recorded that result.
+It provides container-level isolation on Linux and macOS. For a production Mac,
+the signed definition must list your identity in `host_wipe_participants`, and
+the final parameters cannot be released until you complete the separate
+whole-device wipe flow. Native profiles must continue to follow the production
+isolation and destruction procedure supplied with the authenticated ceremony
+kit.
+
+If you are a production Mac participant:
+
+- [ ] **HUMAN** Before contributing, place only the approved participant
+      signing/config material, coordinator trust key, and public ceremony-kit
+      recovery material on separately protected storage. Do not preserve the
+      contribution environment or Docker Desktop data.
+- [ ] **HUMAN** Confirm you can cleanly reinstall macOS and reinstall the
+      approved Relay/proof-tool image without restoring a whole-machine backup
+      or snapshot.
 
 ## 4. Initialize once per phase
 
@@ -132,6 +145,20 @@ relay ceremony init-config \
 relay participant status \
   --config /var/lib/mpc-ceremonies/CEREMONY_ID/config/participant-phase1.json
 ```
+
+For Docker execution, the coordinator-supplied profile command also includes
+`--execution-mode docker`, a locally preloaded immutable `--docker-image`, and
+the ceremony's exact `--docker-platform`.
+
+- **AUTO** `init-config` must authenticate the local ceremony, coordinator
+  trust key, participant signing key, environment, identity, and frozen roster
+  positions, then print the ceremony mode, identity, key ID, fingerprint, and
+  both phase assignments.
+- **AUTO** The persistent role config must contain validated public metadata
+  and approved paths, but no private-key bytes, cloud credentials, or temporary
+  grant.
+- **AUTO** `participant status` must authenticate the public head and report
+  the expected phase, index, and next identity.
 
 - [ ] **MANUAL — PLATFORM TODO** Attach the secret-free Phase 1 and Phase 2
       profile/assignment receipts to this participant record. Do not copy their
@@ -179,6 +206,25 @@ result.
 - [ ] **MANUAL — PLATFORM TODO** Confirm from authenticated public state that
       both required turns were accepted, or attach the signed assignment showing
       why a phase did not apply. Future platform automation should derive this.
+- [ ] **HUMAN — PRODUCTION MAC ONLY** After my final scheduled contribution, I
+      used the supported whole-device erase and clean macOS reinstall.
+- [ ] **HUMAN — PRODUCTION MAC ONLY** I did not restore a pre-wipe backup,
+      snapshot, Docker Desktop state, private contribution environment, or copy
+      of contribution randomness. Public candidates may follow the approved
+      public-evidence retention policy.
+- [ ] **HUMAN — PRODUCTION MAC ONLY** I received an authenticated `host-wipe`
+      grant and successfully ran:
+
+      ```sh
+      relay participant attest-host-wipe \
+        --config ROLE_CONFIG \
+        --grant HOST_WIPE_GRANT.json \
+        --out-dir /absolute/path/to/fresh/host-wipe-evidence
+      ```
+
+- [ ] **HUMAN — PRODUCTION MAC ONLY** I entered `MAC WIPED AND CLEANLY
+      REINSTALLED` only after every displayed statement was true, and recorded
+      the returned evidence manifest key: `_______________________________`
 - [ ] **HUMAN** Delete expired grant files and any local credential copies only
       under the approved retention and destruction procedure.
 - [ ] **HUMAN** Destroy the disposable contribution environment and any

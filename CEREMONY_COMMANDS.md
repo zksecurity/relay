@@ -136,6 +136,11 @@ release. It must produce the canonical signed `ceremony.json`, circuit and
 constraint-system bindings, initial phase material, participant order, auditor
 identities, release signer, and beacon policies.
 
+For production, the canonical participant input must also contain a sorted
+`host_wipe_participants` list naming exactly the participants who will
+contribute from macOS. This freezes the release-time wipe obligation into the
+signed ceremony ID; it cannot be added after contributions begin.
+
 Start by confirming the installed command family rather than guessing flags:
 
 ```sh
@@ -357,7 +362,8 @@ Revoke or expire suspected leaks under the incident procedure.
 
 ## 8. Run a participant contribution
 
-**Run by:** the participant on the approved native contribution machine.
+**Run by:** the participant using the execution mode already frozen in the
+validated profile.
 
 ```sh
 relay participant run \
@@ -369,6 +375,13 @@ Relay checks grant lifetime and scope, authenticates the public head, refuses
 an out-of-turn attempt before expensive work, downloads and verifies the
 accepted transcript, invokes proof-tool contribution, guides erasure
 attestation, rechecks the head, and uploads `manifest.json` last.
+
+In Docker mode, Relay requires the pinned image to be locally present, creates
+and inspects a networkless read-only contributor, runs it with only
+authenticated read-only inputs and one fresh public-output handoff, removes
+the exact container ID, verifies it is absent, and only then validates the
+handoff and asks for `NO COPIES RETAINED`. Native mode retains the ceremony
+kit's manual destruction procedure and `DESTROYED` confirmation.
 
 **Success evidence:** successful process exit plus:
 
@@ -748,6 +761,38 @@ manifest. Inspect the error and grant lifetime before retrying. The generic
 evidence command does not currently expose participant-style saved-candidate
 resume semantics.
 
+### Production Mac host-wipe submission
+
+After a required Mac participant's final contribution is accepted and the
+participant reports completing the whole-device erase and clean reinstall, the
+coordinator issues a roster-authenticated grant (no enrollment flags):
+
+```sh
+relay coordinator grant \
+  --storage "$STORAGE_CONFIG" \
+  --role host-wipe \
+  --identity participant-03 \
+  --credential-ttl 2h \
+  --minimum-remaining 30m \
+  --out participant-03.host-wipe.grant.json
+```
+
+On the cleanly reinstalled Mac, after restoring only approved public and
+separately protected signing/config material:
+
+```sh
+relay participant attest-host-wipe \
+  --config "$CEREMONY_HOME/config/participant-$PHASE.json" \
+  --grant participant-03.host-wipe.grant.json \
+  --out-dir "$CEREMONY_HOME/run/host-wipe-evidence"
+```
+
+The participant must type `MAC WIPED AND CLEANLY REINSTALLED` only when every
+displayed assertion is true. Successful output includes the evidence manifest
+key. A storage submission alone is not acceptance; proof-tool verifies the
+participant signature and the timestamp against the participant's final
+accepted contribution when it verifies operational evidence and release.
+
 ## 19. Discover and review role evidence
 
 **Run by:** coordinator.
@@ -758,7 +803,8 @@ List every supported evidence role:
 relay coordinator evidence --storage "$STORAGE_CONFIG"
 ```
 
-Or filter to one of `witness`, `mirror`, `auditor`, `release`, or `decision`:
+Or filter to one of `witness`, `mirror`, `auditor`, `release`, `decision`, or
+`host-wipe`:
 
 ```sh
 relay coordinator evidence \

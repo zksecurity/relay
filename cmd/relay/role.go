@@ -30,6 +30,7 @@ type roleOpts struct {
 	outDir         string
 	phase1Seal     string
 	phase1SealSig  string
+	docker         *dockerDriver
 }
 
 // registerRole declares the shared flags without parsing, so a command can add
@@ -69,6 +70,9 @@ func checkRole(o roleOpts) error {
 }
 
 func (o roleOpts) inspector() transcript.Inspector {
+	if o.docker != nil {
+		return o.docker.inspector()
+	}
 	return transcript.Inspector{
 		Executable:               o.ceremonyBinary,
 		CeremonyPath:             o.definition,
@@ -264,6 +268,11 @@ func runParticipantStatus(args []string) error {
 		return err
 	}
 	o := participantRoleOptions(config, "")
+	if o.docker != nil {
+		if err := o.docker.preflight(); err != nil {
+			return err
+		}
+	}
 	participant, err := o.inspector().Participant(config.SigningKey)
 	if err != nil {
 		return err
@@ -344,8 +353,42 @@ func runNext(o roleOpts, pos position) error {
 }
 
 func runNextAt(o roleOpts, pos position, contributedAt time.Time) error {
+	if o.docker != nil {
+		receipt, err := o.docker.contribution(o, pos, contributedAt)
+		if err != nil {
+			return err
+		}
+		return writeJSONAtomic(filepath.Join(o.outDir, dockerLifecycleLogName), receipt, 0o600)
+	}
+	command := append([]string{o.ceremonyExecutable()}, contributionCommandArgs(o, pos, contributedAt)...)
+
+	// The trust inputs are never derived from a path and never fetched from the
+	// bucket. The coordinator public key decides whether any signature counts,
+	// so taking it from the same place as the artifacts it checks would prove
+	// only that the bucket agrees with itself. It has to be supplied.
+	if o.definitionSig == "" || o.coordinatorKey == "" {
+		return errors.New(
+			"--ceremony-signature and --coordinator-key are required to run: " +
+				"the coordinator public key is the out-of-band trust anchor and is " +
+				"deliberately not fetched from the bucket")
+	}
+	if o.signingKey == "" || o.envPath == "" || o.outDir == "" {
+		return errors.New("participant signing key, environment and candidate directory are required")
+	}
+	// contribute requires the directory itself to be absent but will not create
+	// its parent.
+	if err := os.MkdirAll(filepath.Dir(o.outDir), 0o700); err != nil {
+		return err
+	}
+	fmt.Printf("\nrunning: %s\n\n", strings.Join(command[:3], " "))
+	cmd := exec.Command(command[0], command[1:]...)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	return runWithProgress(o.phase+" contribution", cmd.Run)
+}
+
+func contributionCommandArgs(o roleOpts, pos position, contributedAt time.Time) []string {
 	command := []string{
-		o.ceremonyExecutable(), o.phase, "contribute",
+		o.phase, "contribute",
 		"--ceremony", o.definition,
 		"--ceremony-signature", o.definitionSig,
 		"--coordinator-public-key-file", o.coordinatorKey,
@@ -371,29 +414,7 @@ func runNextAt(o roleOpts, pos position, contributedAt time.Time) error {
 		}
 		command = append(command, "--phase1-seal", seal, "--phase1-seal-signature", sealSig)
 	}
-
-	// The trust inputs are never derived from a path and never fetched from the
-	// bucket. The coordinator public key decides whether any signature counts,
-	// so taking it from the same place as the artifacts it checks would prove
-	// only that the bucket agrees with itself. It has to be supplied.
-	if o.definitionSig == "" || o.coordinatorKey == "" {
-		return errors.New(
-			"--ceremony-signature and --coordinator-key are required to run: " +
-				"the coordinator public key is the out-of-band trust anchor and is " +
-				"deliberately not fetched from the bucket")
-	}
-	if o.signingKey == "" || o.envPath == "" || o.outDir == "" {
-		return errors.New("participant signing key, environment and candidate directory are required")
-	}
-	// contribute requires the directory itself to be absent but will not create
-	// its parent.
-	if err := os.MkdirAll(filepath.Dir(o.outDir), 0o700); err != nil {
-		return err
-	}
-	fmt.Printf("\nrunning: %s\n\n", strings.Join(command[:3], " "))
-	cmd := exec.Command(command[0], command[1:]...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	return runWithProgress(o.phase+" contribution", cmd.Run)
+	return command
 }
 
 // runPublish is the coordinator's write path: push the transcript, then move

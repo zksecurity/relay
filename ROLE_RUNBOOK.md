@@ -141,11 +141,15 @@ lifetime and public head. If it is not your turn, it exits before expensive
 work. Otherwise it:
 
 1. downloads and verifies the accepted transcript;
-2. invokes the proof-tool contribution;
-3. asks you to destroy the contribution environment;
-4. requires you to type `DESTROYED` before creating the signed erasure record;
-5. confirms that the public head has not changed; and
-6. uploads the candidate manifest last for coordinator review.
+2. invokes the proof-tool contribution using the profile's approved execution
+   mode;
+3. in Docker mode, removes the exact contributor container and verifies it is
+   absent before accepting the public handoff;
+4. asks only about cleanup it cannot observe: Docker mode requires
+   `NO COPIES RETAINED`; native mode retains the kit's `DESTROYED` procedure;
+5. creates the signed erasure record;
+6. confirms that the public head has not changed; and
+7. uploads the candidate manifest last for coordinator review.
 
 Long operations print UTC start, completion, and failure times, plus a
 one-minute elapsed-time heartbeat while otherwise silent. Proof-tool replay
@@ -158,6 +162,35 @@ same out-of-turn check before expensive work.
 The grant's minimum remaining window must cover the whole operation when
 starting a new contribution: transcript download, computation, erasure, and
 upload. It is not merely an estimate for the final upload.
+
+### Production Mac final wipe
+
+If the authenticated definition lists your identity in
+`host_wipe_participants`, the coordinator may accept each candidate while your
+whole-device wipe is pending, but the final parameters cannot be approved or
+released. After your final scheduled contribution:
+
+1. Preserve only the approved public ceremony material and participant
+   signing/config material on separately protected storage.
+2. Erase the whole Mac using the supported procedure and cleanly reinstall
+   macOS.
+3. Do not restore a pre-wipe backup, snapshot, Docker Desktop state,
+   private contribution environment, or copy of contribution randomness.
+   Public candidates are not toxic waste and may follow the approved public
+   evidence retention policy.
+4. Reinstall and authenticate the approved Relay and pinned proof-tool image,
+   then restore only the approved material from step 1.
+5. Obtain a fresh identity-scoped `host-wipe` grant and run:
+
+       relay participant attest-host-wipe \
+         --config "$ROLE_CONFIG" \
+         --grant participant-03.host-wipe.grant.json \
+         --out-dir "$CEREMONY_HOME/run/host-wipe-evidence"
+
+Type `MAC WIPED AND CLEANLY REINSTALLED` only if every displayed assertion is
+true. Relay creates and uploads `host-wipe.json` and `host-wipe.sig`. This is
+your authenticated statement, not mathematical proof that a malicious operator
+kept no earlier copy.
 
 ## 4. Public witness
 
@@ -274,7 +307,8 @@ record and ceremony signatures.
 ## 8. Submit evidence
 
 Witnesses, mirrors, auditors, release upload stations, and decision signers all
-use the same transport command after producing signed proof-tool output:
+use the same transport command after producing signed proof-tool output.
+Production Mac participants use the guided host-wipe command above instead:
 
     relay witness submit \
       --config "$ROLE_CONFIG" \
