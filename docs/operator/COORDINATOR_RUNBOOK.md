@@ -32,6 +32,7 @@ file you downloaded, not merely the GitHub Release page. Install the current
 [GitHub CLI](https://cli.github.com/) and authenticate it to GitHub first.
 
 ```bash
+set -euo pipefail
 : "${ROLE_IMAGES_TAG:?Set role-images-<full-commit-sha> from the authenticated channel}"
 : "${RELAY_PLATFORM:?Set linux/amd64 or linux/arm64 for this coordinator machine}"
 case "$RELAY_PLATFORM" in linux/amd64|linux/arm64) ;; *) exit 2;; esac
