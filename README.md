@@ -27,4 +27,4 @@ Never send a role's private key to the coordinator or website.
 
 Relay is written in Go; use the version in `go.mod`.
 Run `go test ./...` for the ordinary suite.
-Real Docker smoke tests are described beside the [image sources](docker/roles/README.md).
+Real Docker smoke tests are described in the [role image guide](docs/maintainer/role-images.md).

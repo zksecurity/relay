@@ -159,9 +159,6 @@ func runGuidedSetup(args []string) error {
 			return fmt.Errorf("no approved immutable image supplied for %s", p.Platform)
 		}
 		p.Command = append([]string(nil), set.Args()...)
-		if len(p.Command) == 0 {
-			return errors.New("supply the role's reviewed tool command after --; it will be shown before each execution")
-		}
 		if err := checkSavedCommand(p.Command); err != nil {
 			return err
 		}
@@ -177,7 +174,11 @@ func runGuidedSetup(args []string) error {
 				}
 			}
 		}
-		if _, err := dockerRoleArgs(p.options(), p.Command, os.Getuid(), os.Getgid()); err != nil {
+		validationCommand := p.Command
+		if len(validationCommand) == 0 {
+			validationCommand = []string{"mpc-ceremony", "identity", "generate"}
+		}
+		if _, err := dockerRoleArgs(p.options(), validationCommand, os.Getuid(), os.Getgid()); err != nil {
 			return err
 		}
 		if err := prepareGuidedImage(p.Image, p.Platform, "docker", pull); err != nil {
@@ -191,6 +192,9 @@ func runGuidedSetup(args []string) error {
 		return err
 	}
 	fmt.Printf("Setup ready for %s / %s. Configured image is available.\nSaved settings: %s\nOpen with: relay ceremony open %s --role %s\n", p.Name, p.Role, dir, p.Name, p.Role)
+	if p.Role != "participant" && len(p.Command) == 0 {
+		fmt.Println("Shared settings saved. Add --action NAME -- TOOL ARGS... when opening a new action.")
+	}
 	return nil
 }
 
@@ -320,6 +324,51 @@ type guidedAttempt struct {
 	Success     bool   `json:"success"`
 }
 
+// Caller holds the shared profile lock. Action commands are immutable so retry
+// history cannot accidentally refer to a different signing or upload operation.
+func prepareGuidedAction(dir, action string, command []string) ([]string, string, error) {
+	if !guidedName.MatchString(action) {
+		return nil, "", errors.New("action must be a short lowercase name, not a path")
+	}
+	if err := checkSavedCommand(command); err != nil {
+		return nil, "", err
+	}
+	if err := ensurePrivateDirectory(filepath.Join(dir, "actions")); err != nil {
+		return nil, "", err
+	}
+	actionDir := filepath.Join(dir, "actions", action)
+	if err := ensurePrivateDirectory(actionDir); err != nil {
+		return nil, "", err
+	}
+	path := filepath.Join(actionDir, "profile.json")
+	saved, err := readGuidedProfile(path, action, "action")
+	if errors.Is(err, os.ErrNotExist) && len(command) != 0 {
+		saved = guidedProfile{Schema: guidedSchema, Name: action, Role: "action", Command: command}
+		err = writeJSONNoReplace(path, saved, 0o600)
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("load action (new actions require a command after --): %w", err)
+	}
+	if len(saved.Command) == 0 {
+		return nil, "", errors.New("saved action has no command")
+	}
+	if len(command) != 0 {
+		if len(command) != len(saved.Command) {
+			return nil, "", errors.New("action already names a different command; use a new action name")
+		}
+		for i := range command {
+			if command[i] != saved.Command[i] {
+				return nil, "", errors.New("action already names a different command; use a new action name")
+			}
+		}
+	}
+	activity := filepath.Join(actionDir, "activity")
+	if err := ensurePrivateDirectory(activity); err != nil {
+		return nil, "", err
+	}
+	return saved.Command, activity, nil
+}
+
 func runGuidedOpen(args []string) error {
 	if len(args) == 0 {
 		return errors.New("usage: relay ceremony open NAME --role ROLE")
@@ -328,11 +377,12 @@ func runGuidedOpen(args []string) error {
 	if err != nil {
 		return err
 	}
-	var role, grant, resume string
+	var role, grant, resume, action string
 	var status, retry bool
 	set := flag.NewFlagSet("ceremony open", flag.ContinueOnError)
 	set.StringVar(&root, "settings-root", root, "saved-settings root")
 	set.StringVar(&role, "role", "", "assigned role")
+	set.StringVar(&action, "action", "", "named action using shared settings; supply its command after --")
 	set.StringVar(&grant, "grant", "", "fresh participant grant file")
 	set.StringVar(&resume, "resume-candidate", "", "public candidate to verify and resume, never recompute")
 	set.BoolVar(&status, "status", false, "participant: verify/report public position without contributing")
@@ -340,8 +390,8 @@ func runGuidedOpen(args []string) error {
 	if err := set.Parse(args[1:]); err != nil {
 		return err
 	}
-	if len(set.Args()) != 0 {
-		return errors.New("unexpected extra arguments")
+	if action == "" && len(set.Args()) != 0 {
+		return errors.New("a command requires --action NAME")
 	}
 	if status && (grant != "" || resume != "") {
 		return errors.New("--status cannot be combined with contribution or resume arguments")
@@ -362,6 +412,26 @@ func runGuidedOpen(args []string) error {
 		return err
 	}
 	defer lock.release()
+	activity := filepath.Join(dir, "activity")
+	if action != "" {
+		if role == "participant" || len(p.Command) != 0 {
+			return errors.New("--action requires shared non-participant settings saved without a command")
+		}
+		if grant != "" || resume != "" || status {
+			return errors.New("--grant, --resume-candidate, and --status here are participant-only")
+		}
+		if len(set.Args()) != 0 {
+			if _, err := dockerRoleArgs(p.options(), set.Args(), os.Getuid(), os.Getgid()); err != nil {
+				return err
+			}
+		}
+		p.Command, activity, err = prepareGuidedAction(dir, action, set.Args())
+		if err != nil {
+			return err
+		}
+	} else if role != "participant" && len(p.Command) == 0 {
+		return errors.New("shared settings require --action NAME -- TOOL ARGS...; reuse the action name without a command to reopen it")
+	}
 	fmt.Printf("Ceremony alias: %s\nRole: %s\n", p.Name, p.Role)
 	var launch []string
 	if role == "participant" {
@@ -423,7 +493,6 @@ func runGuidedOpen(args []string) error {
 		launch = append(launch, "--")
 		launch = append(launch, p.Command...)
 	}
-	activity := filepath.Join(dir, "activity")
 	if err := checkGuidedAttempts(activity); err != nil {
 		if role == "participant" {
 			fmt.Printf("Previous task needs attention: %v\nParticipant status/resume will recheck authenticated state.\n", err)
