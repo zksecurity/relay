@@ -5,6 +5,11 @@ and publish accepted ceremony state. You do not hold other roles' private keys.
 
 ## Prepare once
 
+Use [guided coordinator preparation](../coordinator-setup.md) to save the
+ceremony draft, collect identities, initialize, and configure existing storage.
+The manual steps below remain available for older releases and recovery;
+do not repeat initialization or storage setup if the helper already completed it.
+
 - [ ] Complete [installation](../install.md) and retain the release identifier.
 - [ ] Agree on the circuit, production/rehearsal mode, participant order,
       auditors, witnesses, mirrors, final-parameter signer, and emergency contact.
@@ -36,7 +41,7 @@ private on your machine.
 
 - [ ] Obtain the release-specific proof-tool initialization recipe and reviewed
       circuit/roster/policy inputs. Execute it in the coordinator image.
-      There is no automatic roster-to-ceremony wizard yet.
+      The guided helper prepares these inputs; use a reviewed recipe for manual setup.
 - [ ] Check the signed definition's circuit, identities, order, two-or-more
       auditors, distinct final-parameter signer, software allowlist, and beacon policy.
 - [ ] Return the signed public definition to every role for assignment review.

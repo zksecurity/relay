@@ -79,6 +79,7 @@ func usage() {
   relay ceremony open NAME --role ROLE --action ACTION [-- TOOL ARGS...]
   relay role --role ROLE --image DIGEST --work DIR [mount flags] -- TOOL ARGS...
   relay coordinator configure-storage [provider and ceremony flags] --out FILE
+  relay coordinator prepare --name NAME --release RELEASE --work DIR --trust DIR --keys DIR
   relay coordinator grant --storage FILE --role ROLE --identity ID \
              --credential-ttl D --minimum-remaining D --out FILE
   relay coordinator candidates --storage FILE [--phase P]
@@ -135,9 +136,11 @@ transported bytes against its authenticated artifact projection.
 
 func runCoordinator(args []string) error {
 	if len(args) == 0 {
-		return errors.New("coordinator requires configure-storage, grant, candidates, accept, evidence, or publish")
+		return errors.New("coordinator requires prepare, configure-storage, grant, candidates, accept, evidence, or publish")
 	}
 	switch args[0] {
+	case "prepare":
+		return runCoordinatorPrepare(args[1:])
 	case "configure-storage":
 		return runConfigureStorage(args[1:])
 	case "grant":
