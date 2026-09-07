@@ -1,35 +1,20 @@
 name: Publish role images
 
-# This is deliberately manual. It produces CI-attested *candidates* from a
-# signed Relay tag; an offline release signer must still approve the resulting
+# A signed tag contains release/role-images.json with exact inputs. CI produces
+# attested *candidates*; an offline release signer still approves the resulting
 # platform-to-digest manifest before a coordinator distributes it.
 on:
+  push:
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       relay_tag:
-        description: Signed Relay source tag to build
+        description: Signed Relay source tag to rebuild (defaults to the selected tag on tag pushes)
         required: true
         type: string
-      mpc_amd64_url:
-        description: Exact HTTPS URL for the approved Linux AMD64 mpc-ceremony binary
-        required: true
-        type: string
-      mpc_amd64_sha256:
-        description: Approved SHA-256 for that AMD64 binary
-        required: true
-        type: string
-      mpc_arm64_url:
-        description: Exact HTTPS URL for the approved Linux ARM64 mpc-ceremony binary
-        required: true
-        type: string
-      mpc_arm64_sha256:
-        description: Approved SHA-256 for that ARM64 binary
-        required: true
-        type: string
-      aws_cli_image:
-        description: Approved AWS CLI repository@sha256 digest for the online image
-        required: true
-        type: string
+
+env:
+  RELAY_TAG: ${{ inputs.relay_tag || github.ref_name }}
 
 permissions:
   contents: read
@@ -50,14 +35,14 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
         with:
-          ref: ${{ inputs.relay_tag }}
+          ref: ${{ env.RELAY_TAG }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Verify signed source tag
         shell: bash
         env:
-          RELAY_TAG: ${{ inputs.relay_tag }}
+          RELAY_TAG: ${{ env.RELAY_TAG }}
           EXPECTED_FINGERPRINT: D27746F50177107AF060C35B69375FD4AA575389
         run: |
           set -euo pipefail
@@ -75,28 +60,46 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
+      - name: Read signed release image inputs
+        id: inputs
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          jq -e '
+            .schema == "relay-role-image-inputs/v1" and
+            (.aws_cli_image | test("^[^[:space:]@]+@sha256:[0-9a-f]{64}$")) and
+            (.mpc.linux_amd64.url | test("^https://")) and
+            (.mpc.linux_amd64.sha256 | test("^[0-9a-f]{64}$")) and
+            (.mpc.linux_arm64.url | test("^https://")) and
+            (.mpc.linux_arm64.sha256 | test("^[0-9a-f]{64}$"))
+          ' release/role-images.json >/dev/null
+          case "$PLATFORM" in
+            linux/amd64) key=linux_amd64 ;;
+            linux/arm64) key=linux_arm64 ;;
+            *) exit 1 ;;
+          esac
+          printf 'mpc_url=%s\nmpc_sha256=%s\naws_cli_image=%s\n' \
+            "$(jq -r ".mpc.$key.url" release/role-images.json)" \
+            "$(jq -r ".mpc.$key.sha256" release/role-images.json)" \
+            "$(jq -r '.aws_cli_image' release/role-images.json)" >> "$GITHUB_OUTPUT"
+
       - name: Stage exact architecture inputs
         shell: bash
         env:
           PLATFORM: ${{ matrix.platform }}
-          MPC_AMD64_URL: ${{ inputs.mpc_amd64_url }}
-          MPC_AMD64_SHA256: ${{ inputs.mpc_amd64_sha256 }}
-          MPC_ARM64_URL: ${{ inputs.mpc_arm64_url }}
-          MPC_ARM64_SHA256: ${{ inputs.mpc_arm64_sha256 }}
+          MPC_URL: ${{ steps.inputs.outputs.mpc_url }}
+          MPC_SHA256: ${{ steps.inputs.outputs.mpc_sha256 }}
         run: |
           set -euo pipefail
-          case "$PLATFORM" in
-            linux/amd64) url=$MPC_AMD64_URL; digest=$MPC_AMD64_SHA256 ;;
-            linux/arm64) url=$MPC_ARM64_URL; digest=$MPC_ARM64_SHA256 ;;
-            *) exit 1 ;;
-          esac
-          [[ "$url" =~ ^https:// ]] && [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$MPC_URL" =~ ^https:// ]] && [[ "$MPC_SHA256" =~ ^[0-9a-f]{64}$ ]]
           mkdir image-context
           GOOS=linux GOARCH="${PLATFORM#linux/}" CGO_ENABLED=0 \
             go build -trimpath -buildvcs=true -ldflags=-buildid= -o image-context/relay ./cmd/relay
-          curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error "$url" \
+          curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error "$MPC_URL" \
             --output image-context/mpc-ceremony
-          printf '%s  %s\n' "$digest" image-context/mpc-ceremony | sha256sum --check --strict
+          printf '%s  %s\n' "$MPC_SHA256" image-context/mpc-ceremony | sha256sum --check --strict
           chmod 0555 image-context/relay image-context/mpc-ceremony
           cp docker/roles/Dockerfile image-context/roles.Dockerfile
           cp docker/ceremony-tool/Dockerfile image-context/contributor.Dockerfile
@@ -107,7 +110,7 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           PLATFORM: ${{ matrix.platform }}
-          TAG: ${{ inputs.relay_tag }}
+          TAG: ${{ env.RELAY_TAG }}
         run: |
           set -euo pipefail
           case "$TARGET" in
@@ -130,7 +133,7 @@ jobs:
           push: true
           pull: true
           build-args: |
-            AWS_CLI_IMAGE=${{ inputs.aws_cli_image }}
+            AWS_CLI_IMAGE=${{ steps.inputs.outputs.aws_cli_image }}
           tags: ${{ steps.image.outputs.name }}:${{ steps.image.outputs.tag }}
 
       - name: Attest published image provenance
@@ -147,7 +150,7 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
           IMAGE: ${{ steps.image.outputs.name }}
           DIGEST: ${{ steps.build.outputs.digest }}
-          TAG: ${{ inputs.relay_tag }}
+          TAG: ${{ env.RELAY_TAG }}
         run: |
           set -euo pipefail
           mkdir candidate
@@ -176,7 +179,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          jq -s --arg tag '${{ inputs.relay_tag }}' \
+          jq -s --arg tag '${{ env.RELAY_TAG }}' \
             'map(select(.source_tag == $tag)) as $images |
              ($images | map(.source_commit) | unique) as $commits |
              if ($images | length) == 6 and ($commits | length) == 1 then
