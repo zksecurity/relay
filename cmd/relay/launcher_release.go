@@ -14,7 +14,13 @@ import (
 
 var launcherReleaseTag = regexp.MustCompile(`^role-images-([0-9a-f]{40})$`)
 
+// Set only by the attested release build after checking the checkout commit.
+var releaseCommit string
+
 func launcherCommit() string {
+	if releaseCommit != "" {
+		return releaseCommit
+	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return ""

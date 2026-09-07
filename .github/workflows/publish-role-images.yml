@@ -36,7 +36,7 @@ jobs:
           for os in darwin linux; do
             for arch in amd64 arm64; do
               GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -trimpath -buildvcs=true \
-                -ldflags=-buildid= -o "$RUNNER_TEMP/launchers/relay-$os-$arch" ./cmd/relay
+                -ldflags="-buildid= -X main.releaseCommit=$RELAY_COMMIT" -o "$RUNNER_TEMP/launchers/relay-$os-$arch" ./cmd/relay
             done
           done
           cp scripts/install-launcher.sh "$RUNNER_TEMP/launchers/"
