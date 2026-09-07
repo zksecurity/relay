@@ -1,14 +1,17 @@
 # Install once
 
-You need local Docker, current GitHub CLI (`gh auth login`), Bash, and
-`shasum`. Supported launchers: macOS/Linux, Intel/AMD64 or ARM64.
-Macs use Docker Desktop; Linux participants require native Docker Engine
-and disabled host swap. You do not need Go.
-
-Obtain the exact release commit through the agreed authenticated channel.
-The selected release must include the launcher installer and attested map.
-These commands require the launcher-distribution release introduced by PR #25;
-older releases do not contain those assets.
+- **Supported computer:** macOS or Linux, with an Intel/AMD64 or ARM64 processor
+  (including Apple silicon).
+- **Docker:** install and run Docker locally. On a Mac, use Docker Desktop.
+  Linux participants need native Docker Engine and must disable host swap.
+- **GitHub CLI:** install a current version of `gh` and sign in with
+  `gh auth login`. Relay uses it to download and verify release files.
+- **Shell tools:** have Bash and `shasum` available for the commands below.
+- **No Go installation needed:** you will use prebuilt release binaries.
+- **Agreed release:** get the exact release commit through the authenticated
+  channel agreed with your coordinator, so you can confirm who supplied it.
+  The release must include the launcher installer and the image map with
+  GitHub build provenance used to verify its origin.
 
 ## Download and verify
 
