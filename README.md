@@ -75,6 +75,8 @@ receives only the expiring, prefix-scoped grant—not the parent credential.
 For Docker-packaged tools for every role, see the
 [role launcher guide](docker/roles/README.md). Participants retain the host
 supervisor; offline signers use a separate network-disabled image.
+Use [guided setup](docs/GUIDED_SETUP.md) to save role settings once and reopen
+them with `relay ceremony open NAME --role ROLE`.
 
 The participant creates a validated, grant-free production profile under one
 ceremony home. Relay authenticates the local key and ensures the local ceremony

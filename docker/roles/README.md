@@ -1,5 +1,8 @@
 # Run ceremony role tools with Docker
 
+For a reusable command that remembers these settings and asks for confirmation,
+use [saved setup and guided opening](../../docs/GUIDED_SETUP.md).
+
 `relay role` is a host-side launcher. It runs the tools for your role in a
 preloaded Docker image, so ordinary online roles do not need a host installation
 of AWS CLI or proof-tool. The host still needs Relay and Docker. This is a new
@@ -29,6 +32,10 @@ For each Linux platform, stage the approved static `relay` and `mpc-ceremony`
 binaries in a fresh build directory. Use the Dockerfile here with that directory
 as its build context. Do not build with a directory containing keys or credentials.
 Verify the binaries against their approved release manifests before building.
+Check that proof-tool's `go version -m` output includes its Git revision and
+other required ceremony build settings. A binary that can print help or generate
+a key may still be rejected when it initializes or joins a ceremony. The real
+rehearsal test below covers that stronger boundary.
 
 ```sh
 # IMAGE_BUILD_ROOT contains only the verified binaries.
@@ -185,3 +192,10 @@ This checks all eight container role presets, effective container settings,
 AWS CLI availability, and real key generation with mode-`0600` private output.
 It is not a full ceremony, audit, signing, or upload integration rehearsal. The
 Docker smoke test is opt-in; the normal CI run does not download these images.
+
+To also compute and accept three real tiny-circuit phase-1 contributions, set
+`RELAY_ROLE_REHEARSAL=1` with the same image variables and run
+`go test ./cmd/relay -run TestDockerRolesTinyPhase1Rehearsal -v -count=1`.
+This uses the participant Docker driver and the coordinator role-container policy.
+It remains a same-host rehearsal, not an object-storage, phase-2, audit, or final
+release test.

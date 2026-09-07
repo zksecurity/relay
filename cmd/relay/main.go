@@ -71,6 +71,8 @@ func main() {
 
 func usage() {
 	fmt.Fprint(os.Stderr, `usage:
+  relay ceremony setup NAME --role ROLE [saved launcher settings] -- TOOL ARGS...
+  relay ceremony open NAME --role ROLE [--grant FILE] [--resume-candidate DIR]
   relay role --role ROLE --image DIGEST --work DIR [mount flags] -- TOOL ARGS...
   relay coordinator configure-storage [provider and ceremony flags] --out FILE
   relay coordinator grant --storage FILE --role ROLE --identity ID \
@@ -212,9 +214,13 @@ func runAuditor(args []string) error {
 
 func runCeremony(args []string) error {
 	if len(args) == 0 {
-		return errors.New("ceremony requires enroll or init-config")
+		return errors.New("ceremony requires setup, open, enroll, or init-config")
 	}
 	switch args[0] {
+	case "setup":
+		return runGuidedSetup(args[1:])
+	case "open":
+		return runGuidedOpen(args[1:])
 	case "enroll":
 		return runEnroll(args[1:])
 	case "init-config":
