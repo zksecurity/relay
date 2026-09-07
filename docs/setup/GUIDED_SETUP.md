@@ -5,6 +5,13 @@ Use `relay ceremony setup` once to save a role's Docker settings. Then use
 names, architecture flags, or mount paths.
 
 This is the first guided CLI layer, not the complete Tessera task navigator.
+For installation and automatic verified image selection, follow
+[launcher installation](LAUNCHER.md). Use `--release role-images-COMMIT`
+instead of supplying `--image` or two platform digests. The launcher and map
+must come from the same commit; setup verifies GitHub provenance before pulling.
+The explicit image options below remain available for rehearsals and reviewed
+offline preparation.
+
 The coordinator still supplies reviewed commands and approved image digests
 through an authenticated channel. Setup does not obtain or approve them from a
 registry automatically. The website does not control your signing key.

@@ -20,6 +20,11 @@ are in [README.md](../../README.md).
 
 ## 1. Install and verify the tools
 
+Start with [install Relay and select the role image](../setup/LAUNCHER.md).
+It detects your Mac/Linux architecture and lets setup verify and select the
+coordinator image using `--release`. No manual digest extraction is needed.
+The following manual reference is useful for independently inspecting a map.
+
 ### Authenticate and select the coordinator image
 
 Run this once before creating the ceremony. It verifies the exact release-map

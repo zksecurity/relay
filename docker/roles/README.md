@@ -8,8 +8,9 @@ preloaded Docker image, so ordinary online roles do not need a host installation
 of AWS CLI or proof-tool. The host still needs Relay and Docker. Published
 multi-platform images are produced by the release workflow; see
 [role-image publishing](../../docs/release/role-images.md). A published image
-is still not ceremony-approved until its digest appears in the separately
-signed release approval record.
+is selected from the verified GitHub-attested release map. Follow
+[launcher installation](../../docs/setup/LAUNCHER.md) to install the native
+launcher and select images automatically with `--release`.
 
 | Role | Where the tools run | Network |
 | --- | --- | --- |
@@ -31,6 +32,8 @@ immutable image digest, matching tool-identity receipt, public trust files, and
 prefilled role commands/profile. Image digests must come through the ceremony's
 authenticated channel, not just from the registry being downloaded from.
 
+The production release workflow builds the images; coordinators do not build
+them. The following build instructions are for local rehearsal and development.
 For each Linux platform, stage the approved static `relay` and `mpc-ceremony`
 binaries in a fresh build directory. Use the Dockerfile here with that directory
 as its build context. Do not build with a directory containing keys or credentials.
@@ -61,9 +64,8 @@ may use the full `sha256:...` image ID from `docker image inspect`. Mutable tags
 are for build organization only; the launcher rejects them. Load images before
 disconnecting an offline signer. The launcher never pulls images.
 
-The existing kit packages Linux/amd64 host Relay only; see
-[installation platform limits](../../docs/setup/INSTALL.md#platform-scope). This PR does
-not publish signed Mac/ARM64 host installers or change ceremony binary approval.
+New role-image releases include attested host launchers for macOS and Linux,
+AMD64 and ARM64; see [installation](../../docs/setup/LAUNCHER.md).
 
 ## Directory setup
 

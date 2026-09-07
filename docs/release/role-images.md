@@ -28,6 +28,12 @@ a distribution-only `role-images-<commit>` GitHub Release for the coordinator.
 
 ## Coordinator use
 
+New releases also contain four native Relay launchers, an attested installer,
+and attested launcher checksums. `launcher_commit` in the map binds the native
+launcher to the same commit as the role images. Follow
+[launcher installation](../setup/LAUNCHER.md) to install and automatically
+verify/select the role image without copying digests by hand.
+
 Download the map from the GitHub Release and verify its GitHub provenance
 against the expected repository, this workflow, and its recorded source commit.
 Use only the matching immutable `@sha256:` image for the role and host Linux

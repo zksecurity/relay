@@ -17,6 +17,40 @@ permissions:
   id-token: write
 
 jobs:
+  launchers:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build native launchers
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$RELAY_COMMIT"
+          mkdir -p "$RUNNER_TEMP/launchers"
+          for os in darwin linux; do
+            for arch in amd64 arm64; do
+              GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -trimpath -buildvcs=true \
+                -ldflags=-buildid= -o "$RUNNER_TEMP/launchers/relay-$os-$arch" ./cmd/relay
+            done
+          done
+          cp scripts/install-launcher.sh "$RUNNER_TEMP/launchers/"
+          cd "$RUNNER_TEMP/launchers"
+          sha256sum relay-* > launcher-checksums.sha256
+      - name: Attest launcher assets
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-path: ${{ runner.temp }}/launchers/*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-launchers
+          path: ${{ runner.temp }}/launchers/
+          if-no-files-found: error
   build:
     name: ${{ matrix.target }} / ${{ matrix.platform }}
     runs-on: ubuntu-24.04
@@ -155,8 +189,44 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-  release-manifest:
+  docker-smoke:
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          pattern: release-*
+          path: releases
+          merge-multiple: true
+      - name: Test native Linux launcher against published role images
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          export RELAY_ROLE_ONLINE_IMAGE=$(jq -r .image "releases/online-$ARCH.json")
+          export RELAY_ROLE_OFFLINE_IMAGE=$(jq -r .image "releases/offline-$ARCH.json")
+          export RELAY_ROLE_PLATFORM="linux/$ARCH"
+          docker pull "$RELAY_ROLE_ONLINE_IMAGE"
+          docker pull "$RELAY_ROLE_OFFLINE_IMAGE"
+          go test ./cmd/relay -run 'TestDockerRoleImages|TestGuidedDockerOpen' -count=1 -v
+
+  release-manifest:
+    needs: [build, launchers, docker-smoke]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
@@ -172,7 +242,7 @@ jobs:
             'map(select(.source_commit == $commit)) as $images |
              ($images | map(.source_commit) | unique) as $commits |
              if ($images | length) == 6 and ($commits | length) == 1 then
-               {schema:"relay-role-image-release/v1", approval:"github-attested-ci", source_commit:$commits[0],
+               {schema:"relay-role-image-release/v1", approval:"github-attested-ci", source_commit:$commits[0], launcher_commit:$commits[0],
                 images:($images | sort_by(.target,.platform))}
              else error("incomplete or inconsistent image release records") end' \
             releases/*.json > relay-role-images.release.json
@@ -187,10 +257,16 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: native-launchers
+          path: launchers
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           target_commitish: ${{ env.RELAY_COMMIT }}
           name: Role images ${{ env.RELEASE_TAG }}
           body: GitHub-attested CI role-image release for protected-main commit `${{ env.RELAY_COMMIT }}`.
-          files: relay-role-images.release.json
+          files: |
+            relay-role-images.release.json
+            launchers/*
