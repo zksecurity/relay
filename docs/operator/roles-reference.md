@@ -38,11 +38,12 @@ Relay on the host; offline signing stays on a disconnected machine. The recipes
 below remain the actions to review, not instructions to paste host paths into a
 container.
 
-Follow the role-machine path in [docs/INSTALL.md](../setup/INSTALL.md). It contains
-the official AWS CLI v2 installation procedure and exact steps for verifying
-and installing published `relay` and `mpc-ceremony` binaries. Release
-maintainers and independent build auditors use
-[docs/RELEASE.md](../release/release.md); ceremony roles do not need Go.
+Obtain the role's immutable image digest from the authenticated
+`relay-role-images.release.json` release map, then follow
+[guided Docker setup](../setup/GUIDED_SETUP.md). Ceremony roles do not need Go,
+a source checkout, or a software-signing key. The legacy direct-kit procedure
+in [docs/INSTALL.md](../setup/INSTALL.md) is for rehearsal and source audit,
+not production software delivery.
 
 During installation, run `./setup verify --receipt-out /trusted/tool-identity-receipt.env`.
 Setup authenticates the complete kit and
@@ -52,11 +53,11 @@ below consumes that receipt, independently hashes the running Relay and
 `mpc-ceremony` executables, and prints the resolved identities it accepted.
 Stop if either hash or the ceremony mode differs.
 
-When using Docker-packaged tools, this receipt authenticates the host Relay and
-proof-tool materials supplied for the role. Docker image availability is a
-separate check: matching a supplied digest and platform does not prove that a
-publisher or coordinator signed the image approval. Obtain image digests through
-the coordinator's independent authenticated channel.
+For Docker-packaged tools, a matching image digest and platform proves only
+which local image Docker selected. Also authenticate the release map and verify
+its GitHub provenance so the digest is tied to the expected repository,
+workflow, and source commit. Obtain the map through the coordinator's
+independent authenticated channel.
 
 ### Register your public identity
 
@@ -90,12 +91,13 @@ Relay matches its local key to the participant identity in the signed roster.
 Obtain these trust inputs independently of ceremony storage:
 
 - the coordinator public key;
-- the approved ceremony-kit tag and archive hash.
+- the approved role-image-map GitHub Release URL; and
+- the immutable image digest selected for this role and host architecture.
 
-Verify the kit before installation. Its authenticated `release.json` pins the
-Relay and proof-tool repositories, tags, and binary hashes. Do not accept these
-trust inputs merely because they appeared in the same bucket as the artifacts
-they are meant to check.
+Verify the release map's GitHub provenance before setup. It pins the Relay
+source commit, role-image digests, proof-tool URLs/hashes, and AWS CLI base
+image. Do not accept these trust inputs merely because they appeared in the
+same bucket as the artifacts they are meant to check.
 
 The coordinator also provides `relay-storage.json`, the public ceremony
 material, and each non-participant role's signed enrollment record. Stage them

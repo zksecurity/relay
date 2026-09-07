@@ -88,11 +88,12 @@ grant contents, or cloud secrets in this checklist.
 
 ## 2. Install and authenticate the tools
 
-- [ ] **HUMAN** Obtain the coordinator public key, ceremony-kit tag, and kit
-      archive SHA-256 through the agreed channel independently of ceremony
+- [ ] **HUMAN** Obtain the coordinator public key and approved role-image-map
+      GitHub Release URL through the agreed channel independently of ceremony
       storage.
-- [ ] **HUMAN** Follow [docs/INSTALL.md](../setup/INSTALL.md) on the machine that
-      will perform the contribution.
+- [ ] **HUMAN** Verify the release map's GitHub provenance, select the immutable
+      image digest for this machine, and follow
+      [guided Docker setup](../setup/GUIDED_SETUP.md).
 
 
 ## 3. Prepare the contribution machine
