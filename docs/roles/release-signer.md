@@ -12,7 +12,10 @@ This protocol role is separate from software publishing.
 - [ ] Keep the signing machine offline during key generation, review, and signing.
       Container network isolation alone does not disconnect the machine.
 
-Before disconnecting, save key generation with your assigned public values:
+Setup verifies the release's image list and selects your role/machine's image.
+Before disconnecting, download the images and save each action under a fresh
+name. Prepared actions open without GitHub access or image downloads.
+Save key generation with your assigned public values:
 
 ```bash
 "$RELAY" ceremony setup release-identity --role keygen \

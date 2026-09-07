@@ -29,7 +29,9 @@ enrollment must bind to the initialized ceremony.
 Stage the signed public files, matching tool receipt, and reviewed role profile
 under the installation directories. Authenticate the profile using
 [profile preparation](../maintainer/profiles.md) before running role commands.
-Define this helper in Bash; give each operation a fresh `ACTION` name:
+Define this helper in Bash or Zsh; give each operation a fresh `ACTION` name.
+Setup verifies the release's image list and selects your role/machine's image.
+Open shows the saved command and asks before running it in Docker:
 
 ```bash
 role_action() {

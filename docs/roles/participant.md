@@ -46,7 +46,8 @@ to the absolute path of that phase's prepared profile:
 "$RELAY" ceremony open "$TURN" --role participant
 ```
 
-Success verifies the release/profile match and displays authenticated status.
+Setup selects your machine's image from the verified release and checks it
+against your profile. Success displays authenticated status.
 It does not mean your turn has started. Do not change the image or signed
 binary policy if setup rejects it.
 

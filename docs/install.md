@@ -83,15 +83,8 @@ The private role folder contains `work`, `trust` (public trust files), and
 
 ## Follow your role guide
 
-Open your guide from the [role index](README.md).
-Its `setup --release` command verifies the map and automatically selects the
-image for your role and machine. `open` displays the saved action and asks
-for confirmation before running it in Docker.
+Your installation is ready. Load your saved settings, then follow your
+[role guide](README.md).
 
-One saved name represents one action, not the next step of the whole ceremony.
-Use fresh names for different phases/tasks. Keep using the same launcher path.
-Before disconnecting a signing machine, prepare its images and saved actions;
-opening a prepared action needs no GitHub access or image download.
-
-If installation, identity, or verification fails, preserve the error output and
-contact the coordinator. Do not bypass verification or substitute another build.
+If installation fails, save the error message and contact your coordinator.
+Do not skip verification.

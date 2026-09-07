@@ -60,8 +60,9 @@ CEREMONY=my-ceremony
 STORAGE=/work/ceremony/config/relay-storage.json
 ```
 
-Each command below reuses those settings. Use a new action name for each task
-and review the displayed command before confirming. For initialization before
+Setup verifies the release's image list and selects the Docker image for your
+role and machine. Each command below reuses those settings. Use a new action
+name for each task and review the displayed command before confirming. For initialization before
 storage credentials exist, use a separate setup alias without `--aws-credentials`.
 R2 control/parent secrets need the administrator's
 [credential handoff](../maintainer/r2.md); the launcher does not forward host
