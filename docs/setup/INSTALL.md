@@ -1,21 +1,22 @@
-# Installing ceremony tools
+# Legacy direct-kit installation
 
-For a role's normal Docker workflow after installation, first read
-[operator paths](../operator/paths.md). It explains when to use saved guided setup
-instead of retyping a low-level command, and what image availability does—and
-does not—verify. This page remains the authenticated direct-installation and
-participant-profile reference.
+> **Status:** This direct-kit procedure is retained for rehearsals and
+> source-level audit. It is not the production software-delivery path.
+> Production ceremonies use the immutable Docker role images from the
+> protected-main GitHub Release map; start with
+> [guided Docker setup](GUIDED_SETUP.md) and
+> [software delivery and audit](../release/release.md).
 
-This is the Linux/amd64 installation path for coordinators, participants, witnesses,
-mirrors, auditors, and release operators. It installs a coordinated Relay and
-`mpc-ceremony` kit; it does not require Go or either source repository. The one
-exception is the rehearsal's optional evidence-upload transport test (steps
-33-42), whose fixture generator is built from proof-tool source on Machine 1
-and therefore needs a Go toolchain and a proof-tool checkout at the approved
-tag; every required rehearsal step runs from the kit alone.
+This is the Linux/amd64 direct-installation path for local rehearsals and
+audits. It installs a Relay and `mpc-ceremony` kit. The rehearsal's optional
+evidence-upload transport test (steps 33-42) builds its fixture generator from
+proof-tool source on Machine 1 and therefore needs Go and a proof-tool checkout;
+every required rehearsal step runs from the kit alone.
 
-Release maintainers and independent build auditors use
-[RELEASE.md](../release/release.md) instead.
+Production software delivery is described in
+[software delivery and audit](../release/release.md). Source-level auditors
+may use the local rehearsal/audit scripts; they are not a production
+publication path.
 
 ## Platform scope
 
@@ -107,16 +108,16 @@ production or non-rehearsal setup commands before the three-machine rehearsal
 setup. Every setup path installs the two pinned binaries in `/usr/local/bin`,
 using `sudo` only if necessary, and confirms both programs start.
 
-### Production or non-rehearsal setup
+### Direct-kit setup (rehearsal or audit only)
 
-For a production participant or another machine that needs only the binaries:
+For a local rehearsal participant or audit machine that needs only the binaries:
 
 ```bash
 ./setup
 ```
 
-For a production coordinator, install the binaries and extract the
-authenticated provider guides and setup scripts in one invocation:
+For a local rehearsal coordinator, install the binaries and extract the
+provider guides and setup scripts in one invocation:
 
 ```bash
 ./setup --storage-setup-root "$CEREMONY_TOOLS_ROOT"
@@ -221,12 +222,13 @@ The `.env` is a rehearsal convenience. Keep it at mode `0600`; never put cloud
 secret keys, temporary grants, R2 control-plane or parent tokens, ceremony
 private keys, or build-signing keys in it.
 
-## Production ceremonies
+## Profile-layout reference
 
-A production kit contains only the coordinated binaries and release manifest;
-it does not contain rehearsal identities or scripts. Production uses validated
-JSON profiles, not a shell `.env`. Choose one absolute ceremony home and stage
-the public ceremony material under `public/`, the coordinator-supplied
+Production uses validated JSON profiles, not a shell `.env`. This legacy page
+uses the following layout only as a reference for rehearsal or source audit.
+For production, the Docker setup creates the equivalent private working and
+public-input directories. Choose one absolute ceremony home and stage the
+public ceremony material under `public/`, the coordinator-supplied
 `relay-storage.json` under `config/`, and mutable outputs under `run/`:
 
 ```text

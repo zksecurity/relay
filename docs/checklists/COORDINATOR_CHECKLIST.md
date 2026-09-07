@@ -57,9 +57,9 @@ authoritative.
       `______________________________________________`
 - [ ] **HUMAN** Private inbox bucket:
       `__________________________________________`
-- [ ] **HUMAN** Ceremony-kit tag received through the independent trust
-      channel: `__________________________________________________________`
-- [ ] **HUMAN** Ceremony-kit archive SHA-256 received through that channel:
+- [ ] **HUMAN** Role-image-map GitHub Release URL received through the
+      independent trust channel: `________________________________________`
+- [ ] **HUMAN** Selected immutable image digests and map source commit recorded:
       `__________________________________________________________________`
 
 ### Ceremony evidence record

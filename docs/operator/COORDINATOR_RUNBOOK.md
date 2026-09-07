@@ -27,10 +27,11 @@ or use the explicit [role launcher guide](../../docker/roles/README.md). Use its
 container paths and launcher prefix with the commands below. The recipes below
 still describe the action being saved; do not copy host paths into a container.
 
-Follow [docs/INSTALL.md](../setup/INSTALL.md). It gives exact instructions for
-downloading one coordinated ceremony kit, verifying its independently supplied
-hash, installing Relay and `mpc-ceremony`, and then installing AWS CLI v2. The
-coordinator does not need Go or either project's build-signing private key.
+Follow [guided Docker setup](../setup/GUIDED_SETUP.md) and obtain the approved
+immutable role-image digest from the `relay-role-images.release.json` map
+through the authenticated coordination channel. Verify the map's GitHub
+provenance before using it. The coordinator does not need Go, a source
+checkout, or a software-signing key.
 
 Do not continue until all of these succeed and resolve to the reviewed paths:
 
@@ -39,13 +40,14 @@ Do not continue until all of these succeed and resolve to the reviewed paths:
     aws --version
     command -v relay mpc-ceremony aws
 
-Record the ceremony-kit tag and SHA-256, its pinned Relay and `mpc-ceremony`
-metadata, and the AWS CLI version in the coordinator log. Distribute these
-trust inputs independently of ceremony storage:
+Record the role-image-map release URL, its source commit, the selected image
+digests, the pinned `mpc-ceremony` hashes, and the AWS CLI base-image digest in
+the coordinator log. Distribute these trust inputs independently of ceremony
+storage:
 
 - the coordinator public key;
-- the approved ceremony-kit tag; and
-- the ceremony-kit archive digest.
+- the approved role-image-map release URL; and
+- the selected immutable image digests.
 
 ## 2. Prepare the ceremony
 

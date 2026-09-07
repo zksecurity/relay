@@ -19,7 +19,7 @@ purpose:
   [AWS](docs/setup/AWS_SETUP.md), and [R2](docs/setup/R2_SETUP.md)
 - **Understand and release:** [participant isolation design](docs/design/participant-isolation.md),
   [automation control matrix](docs/design/automation-control-matrix.md), and
-  [release procedure](docs/release/release.md), including
+  [software delivery and audit](docs/release/release.md), including
   [published role images](docs/release/role-images.md)
 - **Rehearse:** [three-machine tiny rehearsal](scripts/three-machine-rehearsal/README.md)
 
@@ -342,7 +342,8 @@ coordinated ceremony kit. Docker-packaged online roles include AWS CLI inside
 their approved image; participants still need the host transport CLI because
 the Relay supervisor remains outside the contributor container.
 Source-free installation is documented in
-[docs/INSTALL.md](docs/setup/INSTALL.md). Release maintainers and independent build
-auditors need Go 1.26.6 and use [docs/RELEASE.md](docs/release/release.md). Relay has no
-third-party Go dependencies; its production builder emits a signed,
-reproducible release package.
+[docs/INSTALL.md](docs/setup/INSTALL.md). Production software delivery uses
+protected-main CI and immutable Docker image digests; see
+[software delivery and audit](docs/release/release.md). Source-level auditors
+may use Go 1.26.6 and the local rehearsal/audit scripts, but those scripts do
+not publish production software.
