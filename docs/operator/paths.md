@@ -27,9 +27,10 @@ different keys do not prove that different people control them.
 
 The guided layer supports native host Relay builds on macOS and Linux,
 AMD64 and ARM64, and chooses a Linux image matching that Relay build. The
-coordinator must supply a reviewed image for that platform. The current kit
-builder only packages Linux/amd64 host tools; see
-[installation scope](../setup/INSTALL.md#platform-scope). Participant Linux machines
+coordinator supplies the selected release identifier. The
+[launcher installer](../setup/LAUNCHER.md) supports all four native platforms;
+guided setup with `--release` verifies the map and selects the image.
+Participant Linux machines
 require a local native Docker Engine and disabled host swap; Linux Docker
 Desktop is unsupported. Production Macs require the signed host-wipe policy
 and the separate release-time wipe gate described in the

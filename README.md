@@ -14,6 +14,7 @@ purpose:
   [role reference](docs/operator/roles-reference.md), and
   [command recipes](docs/operator/CEREMONY_COMMANDS.md)
 - **Set up:** [installation](docs/setup/INSTALL.md),
+  [native launcher installation](docs/setup/LAUNCHER.md),
   [guided Docker setup](docs/setup/GUIDED_SETUP.md),
   [identity key generation](docs/setup/key-generation.md),
   [AWS](docs/setup/AWS_SETUP.md), and [R2](docs/setup/R2_SETUP.md)

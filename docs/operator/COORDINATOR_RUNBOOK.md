@@ -20,6 +20,11 @@ are in [README.md](../../README.md).
 
 ## 1. Install and verify the tools
 
+Start with [install Relay and select the role image](../setup/LAUNCHER.md).
+It detects your Mac/Linux architecture and lets setup verify and select the
+coordinator image using `--release`. No manual digest extraction is needed.
+The following manual reference is useful for independently inspecting a map.
+
 ### Authenticate and select the coordinator image
 
 Run this once before creating the ceremony. It verifies the exact release-map
@@ -27,6 +32,7 @@ file you downloaded, not merely the GitHub Release page. Install the current
 [GitHub CLI](https://cli.github.com/) and authenticate it to GitHub first.
 
 ```bash
+set -euo pipefail
 : "${ROLE_IMAGES_TAG:?Set role-images-<full-commit-sha> from the authenticated channel}"
 : "${RELAY_PLATFORM:?Set linux/amd64 or linux/arm64 for this coordinator machine}"
 case "$RELAY_PLATFORM" in linux/amd64|linux/arm64) ;; *) exit 2;; esac

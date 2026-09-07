@@ -26,17 +26,18 @@ var guidedName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 // Saved commands contain public identifiers and file paths, not file contents.
 // They are operator-selected actions, never inferred from untrusted web status.
 type guidedProfile struct {
-	Schema      string   `json:"schema"`
-	Name        string   `json:"name"`
-	Role        string   `json:"role"`
-	Image       string   `json:"image,omitempty"`
-	Platform    string   `json:"platform,omitempty"`
-	Work        string   `json:"work,omitempty"`
-	Trust       string   `json:"trust,omitempty"`
-	Keys        string   `json:"keys,omitempty"`
-	Credentials string   `json:"aws_credentials,omitempty"`
-	Config      string   `json:"participant_config,omitempty"`
-	Command     []string `json:"command,omitempty"`
+	ReleaseCommit string   `json:"release_commit,omitempty"`
+	Schema        string   `json:"schema"`
+	Name          string   `json:"name"`
+	Role          string   `json:"role"`
+	Image         string   `json:"image,omitempty"`
+	Platform      string   `json:"platform,omitempty"`
+	Work          string   `json:"work,omitempty"`
+	Trust         string   `json:"trust,omitempty"`
+	Keys          string   `json:"keys,omitempty"`
+	Credentials   string   `json:"aws_credentials,omitempty"`
+	Config        string   `json:"participant_config,omitempty"`
+	Command       []string `json:"command,omitempty"`
 }
 
 func (p guidedProfile) options() dockerRoleOptions {
@@ -77,11 +78,12 @@ func runGuidedSetup(args []string) error {
 		return err
 	}
 	p := guidedProfile{Schema: guidedSchema, Name: args[0]}
-	var amd64Image, arm64Image string
+	var amd64Image, arm64Image, releaseTag string
 	var pull bool
 	set := flag.NewFlagSet("ceremony setup", flag.ContinueOnError)
 	set.StringVar(&root, "settings-root", root, "private saved-settings directory")
 	set.StringVar(&p.Role, "role", "", "ceremony role")
+	set.StringVar(&releaseTag, "release", "", "verify release map and automatically select the role image")
 	set.StringVar(&p.Image, "image", "", "approved image digest for this machine")
 	set.StringVar(&amd64Image, "image-amd64", "", "approved Linux AMD64 image digest")
 	set.StringVar(&arm64Image, "image-arm64", "", "approved Linux ARM64 image digest")
@@ -93,6 +95,23 @@ func runGuidedSetup(args []string) error {
 	set.BoolVar(&pull, "download", true, "download the approved digest during setup if absent; use --download=false for offline setup")
 	if err := set.Parse(args[1:]); err != nil {
 		return err
+	}
+	var releaseImage string
+	if releaseTag != "" {
+		if !pull || p.Image != "" || amd64Image != "" || arm64Image != "" {
+			return errors.New("--release requires online verification; do not combine it with image overrides or --download=false")
+		}
+		platform, err := machineDockerPlatform()
+		if err != nil {
+			return err
+		}
+		releaseImage, p.ReleaseCommit, err = verifiedReleaseImage(releaseTag, p.Role, platform)
+		if err != nil {
+			return err
+		}
+		if p.Role != "participant" {
+			p.Image = releaseImage
+		}
 	}
 	dir, err := guidedDirectory(root, p.Name, p.Role)
 	if err != nil {
@@ -111,6 +130,9 @@ func runGuidedSetup(args []string) error {
 		}
 		if config.ExecutionMode != dockerExecutionMode {
 			return errors.New("guided participants require a Docker profile")
+		}
+		if releaseImage != "" && (config.DockerImage != releaseImage || config.DockerPlatform != "linux/"+runtime.GOARCH) {
+			return errors.New("participant profile does not match the verified release image and platform")
 		}
 		p.Config, err = filepath.Abs(p.Config)
 		if err != nil {
@@ -330,6 +352,9 @@ func runGuidedOpen(args []string) error {
 	}
 	p, err := readGuidedProfile(filepath.Join(dir, "profile.json"), args[0], role)
 	if err != nil {
+		return err
+	}
+	if err := checkLauncherRelease(p.ReleaseCommit); err != nil {
 		return err
 	}
 	lock, err := acquireParticipantRunLock(filepath.Join(dir, "profile.json"), filepath.Join(dir, "activity"))

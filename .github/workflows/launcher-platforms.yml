@@ -1,0 +1,25 @@
+name: Launcher platforms
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./cmd/relay -run 'Test(ReleaseImagePolicy|DockerRole|Guided)' -count=1
+      - run: go build -trimpath -buildvcs=true -o relay ./cmd/relay
+      - run: ./relay --help
+      - run: bash -n scripts/install-launcher.sh

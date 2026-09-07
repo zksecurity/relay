@@ -27,6 +27,9 @@ func main() {
 	}
 	var err error
 	switch os.Args[1] {
+	case "version", "--version":
+		fmt.Printf("relay source commit: %s\n", launcherCommit())
+		return
 	case "role":
 		err = runDockerRole(os.Args[2:])
 	case "coordinator":
