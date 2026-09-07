@@ -50,21 +50,19 @@ Inside the container these are `/work`, `/trust`, `/keys`, and
 `/credentials/aws`. Stage `/work/ceremony/config/relay-storage.json`.
 The credentials file must contain the profile named by that storage config.
 
-For each command below, use a new action name. This helper saves and opens it:
+Save these settings once for this ceremony (choose a unique `CEREMONY` name):
 
 ```bash
-coord() {
-  local action="$1"; shift
-  "$RELAY" ceremony setup "$action" --role coordinator \
-    --release "$RELAY_RELEASE" --work "$ROLE_WORK" --trust "$ROLE_TRUST" \
-    --keys "$ROLE_KEYS" --aws-credentials "$AWS_CREDENTIALS" -- "$@" &&
-  "$RELAY" ceremony open "$action" --role coordinator
-}
+CEREMONY=my-ceremony
+"$RELAY" ceremony setup "$CEREMONY" --role coordinator \
+  --release "$RELAY_RELEASE" --work "$ROLE_WORK" --trust "$ROLE_TRUST" \
+  --keys "$ROLE_KEYS" --aws-credentials "$AWS_CREDENTIALS"
 STORAGE=/work/ceremony/config/relay-storage.json
 ```
 
-Review the displayed command before confirming. For initialization before
-storage credentials exist, omit `--aws-credentials` from the setup command.
+Each command below reuses those settings. Use a new action name for each task
+and review the displayed command before confirming. For initialization before
+storage credentials exist, use a separate setup alias without `--aws-credentials`.
 R2 control/parent secrets need the administrator's
 [credential handoff](../maintainer/r2.md); the launcher does not forward host
 environment secrets automatically.
@@ -75,7 +73,8 @@ Before the first turn on AWS, create the storage config after provisioning.
 Set the public resource values from the administrator's output:
 
 ```bash
-coord storage-preflight relay coordinator configure-storage \
+"$RELAY" ceremony open "$CEREMONY" --role coordinator --action storage-preflight -- \
+  relay coordinator configure-storage \
   --home /work/ceremony --provider aws --region "$AWS_REGION" \
   --published-bucket "$PUBLISHED_BUCKET" --published-base-url "$PUBLISHED_BASE_URL" \
   --inbox-bucket "$INBOX_BUCKET" --profile "$AWS_PROFILE" \
@@ -92,7 +91,8 @@ Do not proceed after a failed privacy, freshness, or credential-scope check.
       sufficient for replay, computation, and upload within provider limits.
 
 ```bash
-coord "$ACTION-grant" relay coordinator grant --storage "$STORAGE" \
+"$RELAY" ceremony open "$CEREMONY" --role coordinator --action "$ACTION-grant" -- \
+  relay coordinator grant --storage "$STORAGE" \
   --role participant --identity "$PARTICIPANT_ID" \
   --credential-ttl "$CREDENTIAL_TTL" --minimum-remaining "$MINIMUM_REMAINING" \
   --out "/work/ceremony/run/$ACTION.grant.json"
@@ -102,8 +102,10 @@ coord "$ACTION-grant" relay coordinator grant --storage "$STORAGE" \
 - [ ] Wait for their candidate manifest key; list candidates if needed:
 
 ```bash
-coord "$ACTION-list" relay coordinator candidates --storage "$STORAGE" --phase "$PHASE"
-coord "$ACTION-accept" relay coordinator accept --storage "$STORAGE" \
+"$RELAY" ceremony open "$CEREMONY" --role coordinator --action "$ACTION-list" -- \
+  relay coordinator candidates --storage "$STORAGE" --phase "$PHASE"
+"$RELAY" ceremony open "$CEREMONY" --role coordinator --action "$ACTION-accept" -- \
+  relay coordinator accept --storage "$STORAGE" \
   --candidate-key "$CANDIDATE_KEY" --coordinator-signing-key /keys/signing.hex \
   --verify-publish
 ```
@@ -121,7 +123,8 @@ before notifying the next participant. There is no separate post-wipe gate.
       Add `--closed` only when publishing a closed phase.
 
 ```bash
-coord "$ACTION-publish" relay coordinator publish --storage "$STORAGE" \
+"$RELAY" ceremony open "$CEREMONY" --role coordinator --action "$ACTION-publish" -- \
+  relay coordinator publish --storage "$STORAGE" \
   --chain "$CHAIN" --chain-signature "$CHAIN_SIGNATURE" --verify
 ```
 
@@ -132,7 +135,8 @@ coord "$ACTION-publish" relay coordinator publish --storage "$STORAGE" \
       the evidence-specific proof-tool verification before accepting it:
 
 ```bash
-coord "$ACTION-evidence" relay coordinator evidence --storage "$STORAGE"
+"$RELAY" ceremony open "$CEREMONY" --role coordinator --action "$ACTION-evidence" -- \
+  relay coordinator evidence --storage "$STORAGE"
 ```
 
 - [ ] Have independent auditors replay both phases from independent sources.
@@ -148,4 +152,5 @@ Inspect signed local and public heads before retrying acceptance or publication:
 the previous command may already have advanced the ceremony.
 For leaked keys or grants, contain and revoke access, then agree on recovery.
 Never edit signed files, delete high-water state, or relax validation to continue.
-A failed ordinary saved action needs review before `open --reviewed-retry`.
+After review, reopen the same `--action NAME` with `--reviewed-retry`, omitting
+the command after `--`. Action names cannot be reassigned to different commands.

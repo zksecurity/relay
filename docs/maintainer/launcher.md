@@ -42,8 +42,12 @@ Settings live under the OS user config directory at
 `relay/ceremonies/NAME/ROLE`, with files mode 0600 and directories 0700.
 Use the same `--settings-root` on setup and open if overriding it.
 
-One alias stores one action, not inferred ceremony progress. Setup refuses
-overwrites. Profiles contain paths and public intent, not key/grant contents.
+Omit the command during non-participant setup to save shared role settings.
+Then use `ceremony open NAME --role ROLE --action ACTION -- TOOL ARGS`.
+Each action retains an immutable command and separate attempt history; omit the
+command to reopen it. All actions sharing a profile use the same execution lock.
+The launcher never infers ceremony progress. Setup refuses overwrites.
+Profiles contain paths and public intent, not key/grant contents.
 Existing authentication receipts and [role profiles](profiles.md) are still
 required; image availability alone does not authenticate a role.
 

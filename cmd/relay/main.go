@@ -76,6 +76,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `usage:
   relay ceremony setup NAME --role ROLE [saved launcher settings] -- TOOL ARGS...
   relay ceremony open NAME --role ROLE [--grant FILE] [--resume-candidate DIR]
+  relay ceremony open NAME --role ROLE --action ACTION [-- TOOL ARGS...]
   relay role --role ROLE --image DIGEST --work DIR [mount flags] -- TOOL ARGS...
   relay coordinator configure-storage [provider and ceremony flags] --out FILE
   relay coordinator grant --storage FILE --role ROLE --identity ID \

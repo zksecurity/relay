@@ -1,17 +1,18 @@
 # Role image sources and tests
 
-Operators use [installation](../../docs/install.md) and their
-[role guide](../../docs/README.md). CI builds and publishes production images;
-see [release engineering](../../docs/maintainer/releases.md).
+Operators use [installation](../install.md) and their
+[role guide](../README.md). CI builds and publishes production images;
+see [release engineering](releases.md).
 
-The Dockerfile builds an online image containing Relay, proof-tool, and AWS CLI,
+The [role Dockerfile](../../docker/roles/Dockerfile) builds an online image containing Relay, proof-tool, and AWS CLI,
 and an offline image containing proof-tool. Contributor isolation uses
-[the contributor Dockerfile](../ceremony-tool/Dockerfile).
+[the contributor Dockerfile](../../docker/ceremony-tool/Dockerfile).
 Runtime controls and mounts are documented in the
-[launcher reference](../../docs/maintainer/launcher.md).
+[launcher reference](launcher.md).
 
 ## Local development builds
 
+Run the commands below from the repository root.
 Stage only the reviewed Linux Relay/proof-tool binaries in `IMAGE_BUILD_ROOT`.
 Never use a build context containing keys or credentials.
 Pin the AWS CLI base image by repository digest.

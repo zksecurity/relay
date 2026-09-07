@@ -19,6 +19,48 @@ type guidedDockerFake struct {
 	requested []string
 }
 
+func TestGuidedSharedActions(t *testing.T) {
+	dir := t.TempDir()
+	command := []string{"relay", "coordinator", "candidates"}
+	got, activity, err := prepareGuidedAction(dir, "list", command)
+	if err != nil || strings.Join(got, " ") != strings.Join(command, " ") {
+		t.Fatalf("create action: %v %v", got, err)
+	}
+	got, sameActivity, err := prepareGuidedAction(dir, "list", nil)
+	if err != nil || sameActivity != activity || len(got) != len(command) {
+		t.Fatalf("reopen action: %v %v", got, err)
+	}
+	if _, _, err := prepareGuidedAction(dir, "list", command); err != nil {
+		t.Fatal(err)
+	}
+	for _, changed := range [][]string{{"relay"}, {"relay", "coordinator", "accept"}} {
+		if _, _, err := prepareGuidedAction(dir, "list", changed); err == nil {
+			t.Fatal("reassigned immutable action")
+		}
+	}
+	for _, name := range []string{"../escape", "", "missing"} {
+		if _, _, err := prepareGuidedAction(dir, name, nil); err == nil {
+			t.Fatalf("accepted invalid/missing action %q", name)
+		}
+	}
+	if _, _, err := prepareGuidedAction(dir, "secret", []string{"aws", "configure"}); err == nil {
+		t.Fatal("saved credentials command")
+	}
+	if err := writeJSONNoReplace(filepath.Join(activity, "attempt-1.json"), guidedAttempt{StartedAt: "now"}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkGuidedAttempts(activity); err == nil {
+		t.Fatal("lost interrupted action history")
+	}
+	_, otherActivity, err := prepareGuidedAction(dir, "other", command)
+	if err != nil || otherActivity == activity {
+		t.Fatalf("separate action history: %v", err)
+	}
+	if err := checkGuidedAttempts(otherActivity); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (f *guidedDockerFake) BindHost(host string) dockerCommandClient { f.host = host; return f }
 func (f *guidedDockerFake) Output(args ...string) ([]byte, []byte, error) {
 	if len(args) > 1 && args[0] == "image" {
@@ -256,6 +298,23 @@ func TestGuidedDockerOpen(t *testing.T) {
 	}
 	if _, exists := decoded["private_key"]; exists {
 		t.Fatal("private key contents saved")
+	}
+	sharedSetup := []string{"ceremony", "setup", "shared-demo", "--settings-root", settings, "--role", "coordinator", "--image", image, "--download=false"}
+	if out, err := exec.Command(binary, sharedSetup...).CombinedOutput(); err != nil {
+		t.Fatalf("shared setup: %v %s", err, out)
+	}
+	sharedOpen := []string{"ceremony", "open", "shared-demo", "--settings-root", settings, "--role", "coordinator", "--action", "version"}
+	newAction := append(append([]string(nil), sharedOpen...), "--", "aws", "--version")
+	for _, invocation := range [][]string{newAction, sharedOpen} {
+		child := exec.Command(binary, invocation...)
+		child.Stdin = strings.NewReader("y\n")
+		if out, err := child.CombinedOutput(); err != nil || !bytes.Contains(out, []byte("aws-cli/")) {
+			t.Fatalf("shared action: %v %s", err, out)
+		}
+	}
+	changed := append(append([]string(nil), sharedOpen...), "--", "aws", "help")
+	if out, err := exec.Command(binary, changed...).CombinedOutput(); err == nil || !bytes.Contains(out, []byte("different command")) {
+		t.Fatalf("changed action was not rejected: %v %s", err, out)
 	}
 }
 
