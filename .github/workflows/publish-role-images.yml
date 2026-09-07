@@ -27,6 +27,8 @@ jobs:
     name: ${{ matrix.target }} / ${{ matrix.platform }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      PLATFORM_ARTIFACT_NAME: ${{ matrix.platform == 'linux/amd64' && 'linux-amd64' || 'linux-arm64' }}
     strategy:
       fail-fast: false
       matrix:
@@ -161,7 +163,7 @@ jobs:
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: candidate-${{ matrix.target }}-${{ matrix.platform }}
+          name: candidate-${{ matrix.target }}-${{ env.PLATFORM_ARTIFACT_NAME }}
           path: candidate/
           if-no-files-found: error
           retention-days: 90
