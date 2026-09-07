@@ -180,7 +180,8 @@ released. After your final scheduled contribution:
    evidence retention policy.
 4. Reinstall and authenticate the approved Relay and pinned proof-tool image,
    then restore only the approved material from step 1.
-5. Obtain a fresh identity-scoped `host-wipe` grant and run:
+5. Obtain fresh temporary upload permission for your own wipe confirmation
+   (a `host-wipe` grant), then run:
 
        relay participant attest-host-wipe \
          --config "$ROLE_CONFIG" \
@@ -189,8 +190,9 @@ released. After your final scheduled contribution:
 
 Type `MAC WIPED AND CLEANLY REINSTALLED` only if every displayed assertion is
 true. Relay creates and uploads `host-wipe.json` and `host-wipe.sig`. This is
-your authenticated statement, not mathematical proof that a malicious operator
-kept no earlier copy.
+your signed confirmation that you completed the wipe. It proves who signed
+the statement, not that the machine was actually wiped or that no secret copy
+was kept beforehand.
 
 ## 4. Public witness
 

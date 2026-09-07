@@ -24,12 +24,16 @@
       offline transfer procedure.
 - [ ] **HUMAN** I reviewed the exact ceremony ID, release contents, audit
       identities, operational evidence, warnings, and intended public label.
-- [ ] **HUMAN** For every identity in the signed definition's
-      `host_wipe_participants`, the verified operational-evidence bundle contains
-      exactly one valid participant-signed host-wipe record. Its `wiped_at`
-      strictly postdates that participant's latest `contributed_at` in the
-      accepted chains. An accepted contribution or inbox upload alone is not
-      proof of this release gate; the statement is not physical proof of erasure.
+- [ ] **HUMAN** Before signing the release, I checked that every participant
+      required to wipe their machine has exactly one signed wipe confirmation
+      in the final operational-evidence bundle, and that `mpc-ceremony`
+      successfully verified it. The required participants are listed in the
+      signed definition's `host_wipe_participants`.
+
+      The recorded wipe time (`wiped_at`) must be later than that participant's
+      latest contribution time (`contributed_at`) in the accepted chains.
+      Accepting a contribution or uploading a file is not enough. Verification
+      checks the signer and timing, not whether the machine was actually wiped.
 - [ ] **AUTHORIZE** I authorize my offline release key to sign exactly the
       verified release manifest and no substitute or later-modified bytes.
 
@@ -37,9 +41,10 @@
 
 - [ ] **HUMAN** I transferred only the signed release output to the separate
       online upload station and retained the signing key offline.
-- [ ] **MANUAL — PLATFORM TODO** Bind the offline verification receipt, signed
-      release digest, transfer acknowledgement, upload manifest key, and final
-      coordinator disposition in one append-only release record.
+- [ ] **MANUAL — PLATFORM TODO** Keep the offline verification receipt, signed
+      release hash, transfer acknowledgement, upload manifest key, and
+      coordinator's final decision together in one release record. Add new
+      entries without overwriting earlier ones.
 - [ ] **HUMAN** I reported every failed verification, transfer deviation,
       unexpected role identity, or suspected signing-key exposure.
 - [ ] **HUMAN** I retained or destroyed offline review media according to the

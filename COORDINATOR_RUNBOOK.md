@@ -334,12 +334,22 @@ relying on evidence:
 4. Promote only authenticated, coherent evidence to the published artifact
    set.
 
-For `host-wipe`, verify `host-wipe.json` and `host-wipe.sig` with proof-tool
-and include their exact artifact references in the operational-evidence
-bundle's `host_wipes` list. Proof-tool requires exactly one valid record for
-each identity named by the signed definition, and requires its timestamp to
-postdate that participant's final accepted contribution. Release signing then
-fails closed until the set is complete.
+Before releasing final results, every participant required to wipe their
+machine must provide a signed wipe confirmation. For each participant in the
+signed definition's `host_wipe_participants`:
+
+1. Verify their confirmation (`host-wipe.json`) and signature (`host-wipe.sig`)
+   with `mpc-ceremony`.
+2. Include references to those exact files in the final operational-evidence
+   bundle's `host_wipes` list.
+3. Require successful verification of the complete bundle before release signing.
+
+The tool requires exactly one valid confirmation per required participant.
+The recorded wipe time must be later than that participant's latest contribution
+time in the accepted chains. An accepted contribution or uploaded confirmation
+alone is not enough. Verification checks the signer and recorded timing; it
+cannot prove the machine was actually wiped. Release signing is blocked if any
+required confirmation is missing or fails verification.
 
 Incomplete uploads do not appear because each role uploads `manifest.json`
 last. Never treat possession of a storage credential as a ceremony signature.

@@ -110,10 +110,13 @@ grant contents, or cloud secrets in this checklist.
 
 Relay's Docker participant isolation is documented in
 [docs/PARTICIPANT_ISOLATION_DESIGN.md](docs/PARTICIPANT_ISOLATION_DESIGN.md).
-It provides container-level isolation on Linux and macOS. For a production Mac,
-the signed definition must list your identity in `host_wipe_participants`, and
-the final parameters cannot be released until you complete the separate
-whole-device wipe flow. Native profiles must continue to follow the production
+It runs the contribution inside a restricted, disposable container on Linux
+and macOS. Removing that container does not prove that no secret remains on
+the host. For a production Mac, the signed definition must list your identity
+in `host_wipe_participants`. After your final turn, you must wipe the whole
+machine, cleanly reinstall macOS, and submit a signed confirmation. Final results
+cannot be released until that confirmation passes verification in the final
+evidence bundle. Native profiles must continue to follow the production
 isolation and destruction procedure supplied with the authenticated ceremony
 kit.
 

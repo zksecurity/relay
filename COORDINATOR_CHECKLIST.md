@@ -114,8 +114,8 @@ automatic result in the coordination platform.
 - [ ] **HUMAN** Confirm each participant, auditor, and release signer generated
       its own Ed25519 keypair on its own machine.
 - [ ] **HUMAN** Identify every production participant using macOS and confirm
-      the canonical initialization input lists exactly those identity IDs in
-      sorted `host_wipe_participants`.
+      the initialization input names exactly those participants in
+      `host_wipe_participants`, with the identity IDs sorted as required.
 - [ ] **HUMAN** Confirm no role private key was requested, received, shared, or
       centralized.
 
@@ -210,8 +210,8 @@ Never issue overlapping turns.
 - [ ] **MANUAL — PLATFORM TODO** Participant execution mode and assurance
       level; for Docker record the immutable image digest/ID, selected Linux
       platform, and whether the host is Linux or macOS. For a production Mac,
-      mark candidate acceptance provisional for release until host-wipe
-      evidence is verified.
+      record that the contribution can be accepted, but final results cannot
+      be released until the required signed wipe confirmation is verified.
 - [ ] **MANUAL — PLATFORM TODO** Attempt ID and candidate manifest key.
 - [ ] **MANUAL — PLATFORM TODO** Candidate manifest and digests, erasure timestamp, acceptance
   timestamp, publication timestamp, and accepted chain index.
@@ -223,9 +223,10 @@ the coordinator to copy these values between systems.
 
 - [ ] **HUMAN** Confirm the intended participant is available through the
       authenticated contact channel and both clocks are synchronized.
-- [ ] **AUTHORIZE** Approve one identity-scoped grant with a TTL and
-      `--minimum-remaining` window that covers download, replay, contribution,
-      erasure, and upload.
+- [ ] **AUTHORIZE** Approve temporary upload permission (a grant) for this
+      participant only. Set its lifetime (TTL) and `--minimum-remaining`
+      window to allow enough time for download, replay verification,
+      contribution, erasure, and upload.
 - [ ] **AUTHORIZE** After Relay and proof-tool verify the exact candidate,
       review the candidate digest and permit `relay coordinator accept
       --verify-publish` to use the protected coordinator signing key.
@@ -304,10 +305,16 @@ the coordinator to copy these values between systems.
       offline signer through the approved procedure.
 - [ ] **HUMAN** Confirm the signer reviewed the exact artifact and ceremony
       evidence set required by proof-tool.
-- [ ] **HUMAN** For all signed-policy `host_wipe_participants`, include the
-      participant-signed host-wipe records in the operational-evidence bundle
-      and require successful proof-tool verification before release. Provisional
-      acceptance and host-wipe inbox uploads do not satisfy this gate by themselves.
+- [ ] **HUMAN** Before releasing the final ceremony results, check that every
+      participant required to wipe their machine has submitted a signed
+      confirmation, and that `mpc-ceremony` has successfully verified those
+      confirmations in the final operational-evidence bundle. The required
+      participants are listed in the signed definition's `host_wipe_participants`.
+
+      Accepting a contribution or uploading a confirmation file is not enough.
+      The file must be included in the bundle and pass verification. Verification
+      checks the signer and recorded timing; it cannot prove the machine was
+      actually wiped.
 - [ ] **HUMAN** Transfer only signed output back to the separate online upload
       station. Give upload credentials to the station, never the offline
       signer.

@@ -136,13 +136,13 @@ relay participant run \
 ## Acceptance and cleanup
 
 - [ ] **MANUAL — PLATFORM TODO** Deliver the coordinator's acceptance reminder
-      through the authenticated channel. The reminder triggers a native status
-      check; it is not itself acceptance evidence.
+      through the authenticated channel. On receiving it, check status with
+      Relay; the reminder alone does not prove the contribution was accepted.
 - [ ] **MANUAL — PLATFORM TODO** Attach the complete secret-free status output
-      and correlate it with the submitted candidate. Future Relay/platform
-      integration should emit an acceptance receipt binding the participant,
-      index, accepted output digest, chain digest, and `accepted_at` without
-      manual transcription.
+      and record which submitted candidate it describes. Future Relay/platform
+      integration should produce one acceptance receipt containing the
+      participant, index, accepted output hash, chain hash, and acceptance time
+      (`accepted_at`), without anyone copying those values by hand.
 - [ ] **HUMAN** I removed expired grant files and temporary credentials under the
       approved procedure.
 - [ ] **HUMAN** I retained or removed the public candidate and secret-free log according
@@ -151,7 +151,9 @@ relay participant run \
       contribution, I completed the separate whole-device erase, clean
       reinstall, and `relay participant attest-host-wipe` steps in
       [PARTICIPANT_CHECKLIST.md](PARTICIPANT_CHECKLIST.md). Until then, my
-      accepted contribution remains provisional for final release.
+      contribution can remain accepted, but final ceremony results cannot be
+      released until my signed wipe confirmation passes verification in the
+      final evidence bundle.
 - [ ] **HUMAN** I reported every interruption, deviation, retry, or suspected exposure.
 - [ ] **MANUAL — PLATFORM TODO** Record administrative checklist completion.
       This is not a ceremony signature.
