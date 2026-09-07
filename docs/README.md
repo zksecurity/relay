@@ -13,8 +13,7 @@ Commands, checkboxes, success results, and recovery instructions live together.
 | Final-parameter signer | [Review and sign the final parameters](roles/release-signer.md) |
 
 Only read these tasks when assigned:
-[production decision](tasks/decision.md), [upload signed evidence](tasks/upload.md),
-[Mac wipe confirmation](tasks/mac-wipe.md).
+[production decision](tasks/decision.md), [upload signed evidence](tasks/upload.md).
 
 The coordinator supplies ceremony-specific public files and reviewed command
 arguments. Keep private keys on the machine that owns them.

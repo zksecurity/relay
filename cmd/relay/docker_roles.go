@@ -72,8 +72,8 @@ func runDockerRoleParticipant(o dockerRoleOptions, args []string) error {
 	if o.config == "" || o.image != "" || o.work != "" || o.trust != "" || o.keys != "" || o.credentials != "" {
 		return errors.New("participant requires --config only; image, mounts, and platform belong in its Docker profile")
 	}
-	if len(args) == 0 || (args[0] != "run" && args[0] != "status" && args[0] != "attest-host-wipe") {
-		return errors.New("participant command must be run, status, or attest-host-wipe")
+	if len(args) == 0 || (args[0] != "run" && args[0] != "status") {
+		return errors.New("participant command must be run, status")
 	}
 	for _, arg := range args[1:] {
 		if arg == "--config" || arg == "-config" || strings.HasPrefix(arg, "--config=") || strings.HasPrefix(arg, "-config=") {

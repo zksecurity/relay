@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -98,8 +99,40 @@ func TestDockerRolesTinyPhase1Rehearsal(t *testing.T) {
 		if err := runNextAt(o, pos, contributed); err != nil {
 			t.Fatal(err)
 		}
+		// Exercise the actual participant confirmation after measured removal,
+		// not just the lower-level signing command.
+		read, write, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, writeErr := write.WriteString("CLEANUP PRECAUTIONS CONFIRMED\n")
+		_ = write.Close()
+		if writeErr != nil {
+			_ = read.Close()
+			t.Fatal(writeErr)
+		}
+		originalInput := os.Stdin
+		os.Stdin = read
+		confirmErr := confirmDockerNoCopies(o)
+		os.Stdin = originalInput
+		_ = read.Close()
+		if confirmErr != nil {
+			t.Fatal(confirmErr)
+		}
 		if err := runErasureAt(o, contributed.Add(time.Second)); err != nil {
 			t.Fatal(err)
+		}
+		cleanupBytes, err := os.ReadFile(filepath.Join(o.outDir, "erasure.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cleanup struct {
+			Schema                      string `json:"schema"`
+			HostRemnantsNotExcluded     bool   `json:"host_remnants_not_excluded"`
+			NoDeliberateCopiesConfirmed bool   `json:"no_deliberate_copies_confirmed"`
+		}
+		if err := json.Unmarshal(cleanupBytes, &cleanup); err != nil || cleanup.Schema != "proof-tool-mpc-erasure-attestation-v2" || !cleanup.HostRemnantsNotExcluded || !cleanup.NoDeliberateCopiesConfirmed {
+			t.Fatalf("cleanup claims are not scoped: %s (%v)", cleanupBytes, err)
 		}
 		runCoordinator("phase1", "verify",
 			"--ceremony", "/work/rehearsal/public/ceremony.json", "--ceremony-signature", "/work/rehearsal/public/ceremony.sig",

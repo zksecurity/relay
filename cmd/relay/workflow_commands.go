@@ -174,6 +174,7 @@ func runParticipate(args []string) error {
 	defer runLock.release()
 	var preparedDocker *dockerDriver
 	if effectiveExecutionMode(config.ExecutionMode) == dockerExecutionMode {
+		fmt.Println("Docker cleanup limits: Relay removes the contributor container, but cannot rule out host/VM memory, swap, snapshot, or backup remnants. Do not copy/dump memory or snapshot/back up the contribution environment. A later host compromise could recover an unnoticed copy; whole-machine wiping is not required by this workflow.")
 		preparedDocker = dockerDriverForParticipant(config)
 		if err := preparedDocker.preflight(); err != nil {
 			return err
@@ -470,6 +471,7 @@ func confirmErasure(o roleOpts) error {
 	// prompt that only ever reaches the terminal's stderr is invisible to
 	// both after the fact.
 	fmt.Println("Contribution complete. Destroy the contribution environment now.")
+	fmt.Println("This is logical cleanup, not proof of physical erasure. Host/VM remnants are not excluded. Confirm that the contributor process has terminated, its ephemeral environment was removed, and you did not deliberately retain snapshots, memory dumps, secret copies, or configure environment backups.")
 	fmt.Print("After it is destroyed, type DESTROYED and press Enter: ")
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil && len(line) == 0 {
@@ -491,7 +493,7 @@ func confirmDockerNoCopies(o roleOpts) error {
 	if err := json.Unmarshal(raw, &receipt); err != nil || receipt.Schema != dockerLifecycleSchema ||
 		!receipt.RemovalVerified || !verifiedDaemonFacts(receipt.Daemon) ||
 		!verifiedLifecycleFacts(receipt.Security) || !verifiedHostSwapStatus(runtime.GOOS, receipt.HostSwapStatus) {
-		return errors.New("Docker lifecycle record does not prove the required measured cleanup")
+		return errors.New("Docker lifecycle record does not contain the required cleanup checks")
 	}
 	shortID := shortContainerID(receipt.ContainerID)
 	fmt.Printf(`Contribution completed.
@@ -501,7 +503,13 @@ Relay verified:
   ✓ contributor exited
   ✓ container %s was removed
   ✓ container %s no longer exists
-  ✓ its writable layer and tmpfs were removed
+  ✓ Docker-level container removal completed (not physical erasure)
+
+Not verified: erasure of host/VM RAM, swap, disk remnants, snapshots, or
+backups. Even after these cleanup steps, an unnoticed secret copy could remain
+and become recoverable in a later compromise. Whole-machine wiping is not
+required by this workflow; using a dedicated controlled environment can reduce
+this risk but cannot undo an earlier leak.
 
 Confirm that you:
   • did not create or retain a VM/container snapshot;
@@ -509,15 +517,15 @@ Confirm that you:
   • did not retain any other copy of the contribution randomness; and
   • did not configure the disposable environment for backup.
 
-Type NO COPIES RETAINED to continue: `, receipt.Daemon.ID, receipt.Daemon.Endpoint, shortID, shortID)
+Type CLEANUP PRECAUTIONS CONFIRMED to acknowledge these limitations and continue: `, receipt.Daemon.ID, receipt.Daemon.Endpoint, shortID, shortID)
 	line, readErr := bufio.NewReader(os.Stdin).ReadString('\n')
 	if readErr != nil && len(line) == 0 {
 		return readErr
 	}
-	if strings.TrimSpace(line) != "NO COPIES RETAINED" {
+	if strings.TrimSpace(line) != "CLEANUP PRECAUTIONS CONFIRMED" {
 		return errors.New("no-copy confirmation was not given; candidate remains local and was not uploaded")
 	}
-	receipt.ParticipantConfirmation = "NO COPIES RETAINED"
+	receipt.ParticipantConfirmation = "CLEANUP PRECAUTIONS CONFIRMED"
 	receipt.ConfirmedAt = time.Now().UTC().Format(time.RFC3339)
 	return writeJSONAtomic(path, receipt, 0o600)
 }
@@ -652,115 +660,6 @@ func (values *stringList) Set(value string) error { *values = append(*values, va
 
 func runSubmitEvidence(args []string) error {
 	return runSubmitEvidenceForRole(args, "")
-}
-
-func runParticipantHostWipe(args []string) error {
-	set := flag.NewFlagSet("participant attest-host-wipe", flag.ContinueOnError)
-	var configPath, grantPath, outDir string
-	set.StringVar(&configPath, "config", defaultParticipantConfigPath(), "participant configuration restored from separate storage")
-	set.StringVar(&grantPath, "grant", "", "fresh temporary host-wipe grant")
-	set.StringVar(&outDir, "out-dir", "", "fresh directory for the signed host-wipe evidence")
-	if err := set.Parse(args); err != nil {
-		return err
-	}
-	if configPath == "" || grantPath == "" || outDir == "" {
-		return errors.New("--config, --grant, and --out-dir are required")
-	}
-	if !filepath.IsAbs(outDir) || filepath.Clean(outDir) != outDir {
-		return errors.New("--out-dir must be an absolute clean path")
-	}
-	config, configuredIdentity, err := loadParticipantProfile(configPath)
-	if err != nil {
-		return err
-	}
-	runLock, err := acquireParticipantRunLock(configPath, config.CandidateParentDir)
-	if err != nil {
-		return err
-	}
-	defer runLock.release()
-	grant, err := loadGrant(grantPath)
-	if err != nil {
-		return err
-	}
-	if err := grant.CheckUsable(time.Now()); err != nil {
-		return err
-	}
-	if grant.Role != access.RoleHostWipe {
-		return fmt.Errorf("grant role is %s, want %s", grant.Role, access.RoleHostWipe)
-	}
-	o := participantRoleOptions(config, grant.IdentityID)
-	if o.docker != nil {
-		if err := o.docker.preflight(); err != nil {
-			return err
-		}
-	}
-	definition, err := o.inspector().Definition()
-	if err != nil {
-		return err
-	}
-	participant, err := o.inspector().Participant(config.SigningKey)
-	if err != nil {
-		return err
-	}
-	if configuredIdentity != "" && participant.ParticipantID != configuredIdentity {
-		return errors.New("configured participant identity does not match the local signing key")
-	}
-	if participant.CeremonyID != grant.CeremonyID || participant.ParticipantID != grant.IdentityID ||
-		definition.CeremonyID != grant.CeremonyID {
-		return errors.New("local participant key and ceremony do not match the host-wipe grant")
-	}
-	if definition.Mode != "production" || !definition.RequiresHostWipe(participant.ParticipantID) {
-		return errors.New("authenticated ceremony does not require this participant to attest a production Mac host wipe")
-	}
-	if err := confirmMacHostWipe(); err != nil {
-		return err
-	}
-	wipedAt := time.Now().UTC().Truncate(time.Second)
-	if o.docker != nil {
-		if err := o.docker.attestHostWipe(o, wipedAt, outDir); err != nil {
-			return err
-		}
-	} else {
-		command := exec.Command(o.ceremonyExecutable(),
-			"ops", "attest-host-wipe",
-			"--ceremony", o.definition,
-			"--ceremony-signature", o.definitionSig,
-			"--coordinator-public-key-file", o.coordinatorKey,
-			"--participant-id", participant.ParticipantID,
-			"--participant-signing-key", config.SigningKey,
-			"--wiped-at", wipedAt.Format(time.RFC3339),
-			"--out-dir", outDir,
-		)
-		command.Stdout, command.Stderr = os.Stdout, os.Stderr
-		if err := command.Run(); err != nil {
-			return fmt.Errorf("create host-wipe attestation: %w", err)
-		}
-	}
-	if err := validateHostWipeHandoff(outDir); err != nil {
-		return err
-	}
-	if err := runSubmitEvidenceForRole(
-		[]string{"--grant", grantPath, "--dir", outDir},
-		access.RoleHostWipe,
-	); err != nil {
-		return fmt.Errorf("upload host-wipe evidence; signed evidence remains at %s: %w", outDir, err)
-	}
-	return nil
-}
-
-func confirmMacHostWipe() error {
-	fmt.Fprintln(os.Stderr, "Production Mac wipe confirmation:")
-	fmt.Fprintln(os.Stderr, "- The whole Mac was erased and macOS was cleanly reinstalled.")
-	fmt.Fprintln(os.Stderr, "- No pre-wipe backup, snapshot, Docker Desktop state, private contribution environment, or contribution-randomness copy was restored.")
-	fmt.Fprint(os.Stderr, "Type MAC WIPED AND CLEANLY REINSTALLED to sign and upload the attestation: ")
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil && len(line) == 0 {
-		return fmt.Errorf("read host-wipe confirmation: %w", err)
-	}
-	if strings.TrimSpace(line) != "MAC WIPED AND CLEANLY REINSTALLED" {
-		return errors.New("host wipe was not confirmed; no attestation was created or uploaded")
-	}
-	return nil
 }
 
 func runReleaseEvidence(args []string) error {

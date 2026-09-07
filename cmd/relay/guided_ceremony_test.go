@@ -114,12 +114,12 @@ func TestGuidedImagePreparation(t *testing.T) {
 }
 
 func TestGuidedConfirmationPreservesLaterInput(t *testing.T) {
-	input := strings.NewReader("y\nNO COPIES RETAINED\n")
+	input := strings.NewReader("y\nCLEANUP PRECAUTIONS CONFIRMED\n")
 	if err := confirmGuided(input, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	remaining, _ := io.ReadAll(input)
-	if string(remaining) != "NO COPIES RETAINED\n" {
+	if string(remaining) != "CLEANUP PRECAUTIONS CONFIRMED\n" {
 		t.Fatalf("consumed later confirmation: %q", remaining)
 	}
 	for _, value := range []string{"", "y", "n\n", "yes\n", "y               \n"} {

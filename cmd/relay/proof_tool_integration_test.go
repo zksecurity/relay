@@ -340,15 +340,16 @@ func testProofToolContributionCommands(t *testing.T, ceremonyBinary, fixtureRoot
 	}
 	environmentPath := filepath.Join(root, "environment.json")
 	writeTestJSON(t, environmentPath, struct {
-		OS                           string `json:"os"`
-		Architecture                 string `json:"architecture"`
-		EntropySource                string `json:"entropy_source"`
-		SwapDisabled                 bool   `json:"swap_disabled"`
-		CrashDumpsDisabled           bool   `json:"crash_dumps_disabled"`
-		TelemetryDisabled            bool   `json:"telemetry_disabled"`
-		EphemeralEnvironment         bool   `json:"ephemeral_environment"`
-		EphemeralDestructionRequired bool   `json:"ephemeral_destruction_required"`
-	}{"linux", "amd64", "operating-system-csprng", true, true, true, true, true})
+		OS                            string `json:"os"`
+		Architecture                  string `json:"architecture"`
+		EntropySource                 string `json:"entropy_source"`
+		ContributorSwapDisabled       bool   `json:"contributor_swap_disabled"`
+		ContributorCrashDumpsDisabled bool   `json:"contributor_crash_dumps_disabled"`
+		ContributorTelemetryDisabled  bool   `json:"contributor_telemetry_disabled"`
+		EphemeralEnvironment          bool   `json:"ephemeral_environment"`
+		EphemeralCleanupRequired      bool   `json:"ephemeral_cleanup_required"`
+		HostRemnantsNotExcluded       bool   `json:"host_remnants_not_excluded"`
+	}{"linux", "amd64", "operating-system-csprng", true, true, true, true, true, true})
 	participantKey := filepath.Join(fixtureRoot, "identity-keys", "participant-01.ed25519.private.hex")
 	candidateDir := filepath.Join(root, "candidate")
 	o := roleOpts{
