@@ -1,7 +1,7 @@
 # Run ceremony role tools with Docker
 
 For a reusable command that remembers these settings and asks for confirmation,
-use [saved setup and guided opening](../../docs/GUIDED_SETUP.md).
+use [saved setup and guided opening](../../docs/setup/GUIDED_SETUP.md).
 
 `relay role` is a host-side launcher. It runs the tools for your role in a
 preloaded Docker image, so ordinary online roles do not need a host installation
@@ -59,7 +59,7 @@ are for build organization only; the launcher rejects them. Load images before
 disconnecting an offline signer. The launcher never pulls images.
 
 The existing kit packages Linux/amd64 host Relay only; see
-[installation platform limits](../../docs/INSTALL.md#platform-scope). This PR does
+[installation platform limits](../../docs/setup/INSTALL.md#platform-scope). This PR does
 not publish signed Mac/ARM64 host installers or change ceremony binary approval.
 
 ## Directory setup
@@ -125,7 +125,7 @@ relay role --role keygen --image "$OFFLINE_IMAGE" --platform linux/arm64 \
 
 The private key intentionally persists in that protected directory. Send only
 the public identity JSON to the coordinator. See the
-[key-generation guide](../../PARTICIPANT_KEY_GENERATION.md) for custody rules.
+[key-generation guide](../../docs/setup/key-generation.md) for custody rules.
 For offline signers, generate their keys on their offline machines.
 
 ## Sign offline
@@ -140,7 +140,7 @@ Container network isolation does not replace keeping the signing machine offline
 ## Participant turns
 
 Initialize a Docker participant profile using the
-[installation guide](../../docs/INSTALL.md), with host paths and the approved
+[installation guide](../../docs/setup/INSTALL.md), with host paths and the approved
 contributor image/platform. Then use:
 
 ```sh

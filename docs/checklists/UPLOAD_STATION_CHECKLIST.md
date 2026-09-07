@@ -3,9 +3,9 @@
 > Use one prefilled copy for each station transporting already signed witness,
 > mirror, audit, release, or production-decision evidence. The station is not a
 > ceremony signer and must never receive a signer's private key. Follow the
-> evidence labels in [CHECKLISTS.md](CHECKLISTS.md), the authoritative
-> [role runbook](ROLE_RUNBOOK.md), and the submission recipes in
-> [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md).
+> evidence labels in [CHECKLISTS.md](index.md), the authoritative
+> [role reference](../operator/roles-reference.md), and the submission recipes in
+> [CEREMONY_COMMANDS.md](../operator/CEREMONY_COMMANDS.md).
 
 ## Station assignment
 
@@ -23,7 +23,7 @@
 - [ ] **HUMAN** I received only the expected signed public output through the
       approved transfer procedure.
 - [ ] **MANUAL — PLATFORM TODO** Run the evidence-type-specific proof-tool
-      verification from [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md), attach its
+      verification from [CEREMONY_COMMANDS.md](../operator/CEREMONY_COMMANDS.md), attach its
       secret-free result, and require its ceremony and signer identity to match
       this assignment. Relay currently validates transport, not ceremony
       semantics, for generic evidence submissions.

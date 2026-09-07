@@ -1,9 +1,9 @@
 # MPC Ceremony Auditor Checklist
 
 > Use one prefilled copy per independent auditor. Follow the evidence labels in
-> [CHECKLISTS.md](CHECKLISTS.md), the authoritative
-> [role runbook](ROLE_RUNBOOK.md), and the audit recipes in
-> [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md). Audit output is public; private
+> [CHECKLISTS.md](index.md), the authoritative
+> [role reference](../operator/roles-reference.md), and the audit recipes in
+> [CEREMONY_COMMANDS.md](../operator/CEREMONY_COMMANDS.md). Audit output is public; private
 > signing keys and upload grants are not.
 
 ## Assignment and independence

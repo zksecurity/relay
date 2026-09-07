@@ -2,7 +2,7 @@
 
 This guide is for Relay release maintainers and independent build auditors.
 Coordinators and ceremony roles normally install published binaries using
-[INSTALL.md](INSTALL.md); they do not need Go, a source checkout, or a build
+[INSTALL.md](../setup/INSTALL.md); they do not need Go, a source checkout, or a build
 signing key.
 
 ## Trust inputs and prerequisites
@@ -11,7 +11,7 @@ The production build host is Linux/amd64 with Go 1.26.6. Relay's builder and
 the ceremony-kit packaging currently target Linux/amd64. Proof-tool's builder
 also produces `mpc-ceremony-linux-arm64` with its own manifest and checksums;
 this does not make the Relay kit a macOS or ARM64 installer. See
-[installation platform scope](INSTALL.md#platform-scope).
+[installation platform scope](../setup/INSTALL.md#platform-scope).
 Install Go using the [official Go installation guide](https://go.dev/doc/install)
 and confirm:
 

@@ -3,9 +3,9 @@
 > Use one prefilled copy for each accountable signer of a production GO/NO-GO
 > record. An eligible signer acts with its existing coordinator, auditor, or
 > release-signer identity; this checklist does not create a new identity. Follow
-> the evidence labels in [CHECKLISTS.md](CHECKLISTS.md), the authoritative
-> [role runbook](ROLE_RUNBOOK.md), and the decision recipes in
-> [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md).
+> the evidence labels in [CHECKLISTS.md](index.md), the authoritative
+> [role reference](../operator/roles-reference.md), and the decision recipes in
+> [CEREMONY_COMMANDS.md](../operator/CEREMONY_COMMANDS.md).
 
 ## Assignment and custody
 

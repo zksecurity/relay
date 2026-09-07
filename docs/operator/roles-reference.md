@@ -1,24 +1,27 @@
-# Ceremony role runbook
+# Ceremony role reference
 
 > This is the production/manual operator procedure. For the test-only tiny
 > ceremony, use the
-> [scripted three-machine rehearsal](scripts/three-machine-rehearsal/README.md)
+> [scripted three-machine rehearsal](../../scripts/three-machine-rehearsal/README.md)
 > and its machine-specific `.env` files.
 
-This runbook is for participants, public witnesses, mirror operators, auditors,
-release upload stations, and production-decision signers. The coordinator uses
+This is an explanation and recovery reference for participants, public
+witnesses, mirror operators, auditors, release upload stations, and
+production-decision signers. It is not a second live procedure. Use your
+role's checklist as the ordered list of work; use this reference when it links
+to background, an exceptional path, or a command recipe. The coordinator uses
 [COORDINATOR_RUNBOOK.md](COORDINATOR_RUNBOOK.md).
 
-[CHECKLISTS.md](CHECKLISTS.md) indexes the separate live checklist for every
+[CHECKLISTS.md](../checklists/index.md) indexes the separate live checklist for every
 role, including the offline release and decision signers and their distinct
 online upload station.
 
 Participants should also receive a prefilled
-[lifecycle checklist](PARTICIPANT_CHECKLIST.md) and one fresh
-[turn checklist](PARTICIPANT_TURN_CHECKLIST.md) for each phase. These are
-execution aids; [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md) contains
-copy-oriented commands, and this runbook remains authoritative if their
-wording differs.
+[lifecycle checklist](../checklists/PARTICIPANT_CHECKLIST.md) and one fresh
+[turn checklist](../checklists/PARTICIPANT_TURN_CHECKLIST.md) for each phase.
+[CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md) is the copy-oriented command
+reference. The signed ceremony definition and the authenticated proof-tool are
+authoritative if any document differs.
 
 The [proof-tool repository](https://github.com/Emurgo/proof-tool) remains the
 authority for ceremony validity. Relay transports bytes and reports public
@@ -27,19 +30,19 @@ identities, and evidence.
 
 ## 1. Install and verify the tools
 
-To use Docker-packaged tools, start with [operator paths](docs/OPERATOR_PATHS.md).
-Prefer [guided setup](docs/GUIDED_SETUP.md) to save one reviewed action, or use
-the explicit [role launcher guide](docker/roles/README.md). Those guides explain
+To use Docker-packaged tools, start with [operator paths](paths.md).
+Prefer [guided setup](../setup/GUIDED_SETUP.md) to save one reviewed action, or use
+the explicit [role launcher guide](../../docker/roles/README.md). Those guides explain
 which image to use and how to prefix the commands below. Participant turns keep
 Relay on the host; offline signing stays on a disconnected machine. The recipes
 below remain the actions to review, not instructions to paste host paths into a
 container.
 
-Follow the role-machine path in [docs/INSTALL.md](docs/INSTALL.md). It contains
+Follow the role-machine path in [docs/INSTALL.md](../setup/INSTALL.md). It contains
 the official AWS CLI v2 installation procedure and exact steps for verifying
 and installing published `relay` and `mpc-ceremony` binaries. Release
 maintainers and independent build auditors use
-[docs/RELEASE.md](docs/RELEASE.md); ceremony roles do not need Go.
+[docs/RELEASE.md](../release/release.md); ceremony roles do not need Go.
 
 During installation, run `./setup verify --receipt-out /trusted/tool-identity-receipt.env`.
 Setup authenticates the complete kit and
@@ -58,7 +61,7 @@ the coordinator's independent authenticated channel.
 ### Register your public identity
 
 If you are a participant or a role that signs ceremony evidence, follow the
-[ceremony identity key-generation guide](PARTICIPANT_KEY_GENERATION.md) on your
+[ceremony identity key-generation guide](../setup/key-generation.md) on your
 own machine. The approved `mpc-ceremony identity generate` command creates the
 proof-tool-compatible private seed, public identity, fingerprint, and key ID.
 Keep the private key local; never send it to the coordinator or another role.
@@ -210,7 +213,7 @@ was kept beforehand.
 
 ## 4. Public witness
 
-Use one [public-witness checklist](PUBLIC_WITNESS_CHECKLIST.md) per assigned
+Use one [public-witness checklist](../checklists/PUBLIC_WITNESS_CHECKLIST.md) per assigned
 phase.
 
 Initialize the profile using the signed public-witness enrollment:
@@ -239,7 +242,7 @@ must name your signed public-witness enrollment.
 
 ## 5. Mirror operator
 
-Use one [mirror-operator checklist](MIRROR_OPERATOR_CHECKLIST.md) per assigned
+Use one [mirror-operator checklist](../checklists/MIRROR_OPERATOR_CHECKLIST.md) per assigned
 phase and retained head.
 
 Initialize `mirror-phase1.json` as above with `--role mirror` and the signed
@@ -281,7 +284,7 @@ not published or fetched.
 
 ## 6. Auditor
 
-Use one [auditor checklist](AUDITOR_CHECKLIST.md) for each independent audit.
+Use one [auditor checklist](../checklists/AUDITOR_CHECKLIST.md) for each independent audit.
 
 Initialize one authenticated auditor profile per phase using `--role auditor`
 and the signed auditor enrollment.
@@ -297,10 +300,10 @@ audit record using your auditor grant.
 
 ## 7. Release signer and decision signers
 
-The offline roles use the [release-signer checklist](RELEASE_SIGNER_CHECKLIST.md)
-and one [decision-signer checklist](DECISION_SIGNER_CHECKLIST.md) per accountable
+The offline roles use the [release-signer checklist](../checklists/RELEASE_SIGNER_CHECKLIST.md)
+and one [decision-signer checklist](../checklists/DECISION_SIGNER_CHECKLIST.md) per accountable
 decision signature. The separate online operator uses the
-[upload-station checklist](UPLOAD_STATION_CHECKLIST.md).
+[upload-station checklist](../checklists/UPLOAD_STATION_CHECKLIST.md).
 
 The signing machine should remain offline and receive no storage credential.
 Review and sign the proof-tool output there, then move only the signed output

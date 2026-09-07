@@ -2,12 +2,12 @@
 
 Use one checklist for every role assignment and retain its secret-free evidence
 with the ceremony record. The runbooks remain authoritative; the checklists are
-execution aids, and [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md) contains the
+execution aids, and [CEREMONY_COMMANDS.md](../operator/CEREMONY_COMMANDS.md) contains the
 copy-oriented commands.
 
 Before using a command, choose the operator path in
-[docs/OPERATOR_PATHS.md](docs/OPERATOR_PATHS.md). Docker users should save a
-reviewed action with [guided setup](docs/GUIDED_SETUP.md) or use the explicit
+[docs/OPERATOR_PATHS.md](../operator/paths.md). Docker users should save a
+reviewed action with [guided setup](../setup/GUIDED_SETUP.md) or use the explicit
 role launcher; the checklists do not make a saved action an approved ceremony
 step. The low-level recipes remain the reference for what that action does.
 
@@ -27,7 +27,7 @@ Automated controls are not checklist items. The platform presents them as
 non-interactive `passed`, `failed`, or `pending` system status, with blocking
 failures, remediation, and links to secret-free evidence. The requirements are
 maintained separately in the
-[automation control matrix](AUTOMATION_CONTROL_MATRIX.md).
+[automation control matrix](../design/automation-control-matrix.md).
 
 Rendering a mechanical item on a dashboard does not make it automatic. The
 platform must execute or consume the authoritative check, preserve its exact

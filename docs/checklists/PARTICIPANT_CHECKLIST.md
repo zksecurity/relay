@@ -3,17 +3,17 @@
 > Give one prefilled copy of this checklist to every participant. It covers the
 > participant's full ceremony lifecycle; use a fresh
 > [PARTICIPANT_TURN_CHECKLIST.md](PARTICIPANT_TURN_CHECKLIST.md) for each phase.
-> [ROLE_RUNBOOK.md](ROLE_RUNBOOK.md) and the authenticated proof-tool ceremony
+> [role reference](../operator/roles-reference.md) and the authenticated proof-tool ceremony
 > documentation remain authoritative. Stop and ask the coordinator if they
 > differ from this checklist.
 > Exact Relay recipes and their success output are in
-> [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md).
+> [CEREMONY_COMMANDS.md](../operator/CEREMONY_COMMANDS.md).
 > For the Docker participant path, first follow
-> [docs/OPERATOR_PATHS.md](docs/OPERATOR_PATHS.md) and save the profile with
-> [guided setup](docs/GUIDED_SETUP.md). The checklist's contribution commands
+> [docs/OPERATOR_PATHS.md](../operator/paths.md) and save the profile with
+> [guided setup](../setup/GUIDED_SETUP.md). The checklist's contribution commands
 > remain the underlying action that the host supervisor runs.
 > Generate the role key with
-> [PARTICIPANT_KEY_GENERATION.md](PARTICIPANT_KEY_GENERATION.md).
+> [PARTICIPANT_KEY_GENERATION.md](../setup/key-generation.md).
 
 ## How to use this checklist
 
@@ -25,7 +25,7 @@
 - **STOP** — do not continue, retry with altered inputs, or work around the
   failure. Preserve non-secret output and contact the coordinator.
 
-See [CHECKLISTS.md](CHECKLISTS.md) for the shared classification rules. A
+See [CHECKLISTS.md](index.md) for the shared classification rules. A
 dashboard rendering is not automatic verification.
 
 Relay transports and schedules ceremony data. The authenticated
@@ -71,7 +71,7 @@ grant contents, or cloud secrets in this checklist.
 ## 1. Establish your ceremony identity
 
 - [ ] **HUMAN** Follow the authenticated
-      [key-generation guide](PARTICIPANT_KEY_GENERATION.md) on your own trusted
+      [key-generation guide](../setup/key-generation.md) on your own trusted
       machine. The command automatically creates the key ID, public key, and
       fingerprint.
 - [ ] **HUMAN** Protect the private key at the approved local path. Never send
@@ -91,7 +91,7 @@ grant contents, or cloud secrets in this checklist.
 - [ ] **HUMAN** Obtain the coordinator public key, ceremony-kit tag, and kit
       archive SHA-256 through the agreed channel independently of ceremony
       storage.
-- [ ] **HUMAN** Follow [docs/INSTALL.md](docs/INSTALL.md) on the machine that
+- [ ] **HUMAN** Follow [docs/INSTALL.md](../setup/INSTALL.md) on the machine that
       will perform the contribution.
 
 
@@ -113,7 +113,7 @@ grant contents, or cloud secrets in this checklist.
       approved protected paths.
 
 Relay's Docker participant isolation is documented in
-[docs/PARTICIPANT_ISOLATION_DESIGN.md](docs/PARTICIPANT_ISOLATION_DESIGN.md).
+[docs/PARTICIPANT_ISOLATION_DESIGN.md](../design/participant-isolation.md).
 It runs the contribution inside a restricted, disposable container on Linux
 and macOS. Removing that container does not prove that no secret remains on
 the host. For a production Mac, the signed definition must list your identity
@@ -198,7 +198,7 @@ result.
 ## 7. Execute Phase 2
 
 - [ ] **MANUAL — PLATFORM TODO** Before starting Phase 2, run the full
-      prerequisite inspection in [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md)
+      prerequisite inspection in [CEREMONY_COMMANDS.md](../operator/CEREMONY_COMMANDS.md)
       against the complete local transcript and attach its output. Future Relay
       and platform integration should fetch, verify, and record this preflight.
 - [ ] **HUMAN** Complete a fresh prefilled

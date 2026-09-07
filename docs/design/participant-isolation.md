@@ -449,4 +449,4 @@ silently fall back from Docker to native execution.
 The current `init-config` CLI defaults to `native` and writes that mode into
 the profile; supply `--execution-mode docker` to select isolation. Docker-only
 flags without Docker mode are rejected. Runtime platform support does not
-imply a distributed kit for every host; see [INSTALL.md](INSTALL.md#platform-scope).
+imply a distributed kit for every host; see [INSTALL.md](../setup/INSTALL.md#platform-scope).

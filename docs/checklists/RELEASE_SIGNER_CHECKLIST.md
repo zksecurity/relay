@@ -1,9 +1,9 @@
 # MPC Ceremony Release-Signer Checklist
 
 > Use one prefilled copy for the distinct release signer. Follow the evidence
-> labels in [CHECKLISTS.md](CHECKLISTS.md), the authoritative
-> [role runbook](ROLE_RUNBOOK.md), and the release recipes in
-> [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md). The offline signer must never
+> labels in [CHECKLISTS.md](index.md), the authoritative
+> [role reference](../operator/roles-reference.md), and the release recipes in
+> [CEREMONY_COMMANDS.md](../operator/CEREMONY_COMMANDS.md). The offline signer must never
 > receive an S3/R2 grant or expose its private key to the coordination website.
 
 ## Assignment and key custody

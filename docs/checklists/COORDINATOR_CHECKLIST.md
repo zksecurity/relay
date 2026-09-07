@@ -2,14 +2,14 @@
 
 > This is a human execution aid for a production or rehearsal
 > ceremony. The authoritative procedures remain
-> [COORDINATOR_RUNBOOK.md](COORDINATOR_RUNBOOK.md),
-> [ROLE_RUNBOOK.md](ROLE_RUNBOOK.md), and the authenticated proof-tool ceremony
+> [COORDINATOR_RUNBOOK.md](../operator/COORDINATOR_RUNBOOK.md),
+> [role reference](../operator/roles-reference.md), and the authenticated proof-tool ceremony
 > documentation. Stop and consult those sources whenever this checklist and a
 > runbook appear to differ. For the test-only tiny ceremony, use the
-> [scripted rehearsal](scripts/three-machine-rehearsal/README.md).
+> [scripted rehearsal](../../scripts/three-machine-rehearsal/README.md).
 > Copy-oriented Relay commands, expected evidence, and retry rules are in
-> [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md).
-> [CHECKLISTS.md](CHECKLISTS.md) indexes the execution checklist for every
+> [CEREMONY_COMMANDS.md](../operator/CEREMONY_COMMANDS.md).
+> [CHECKLISTS.md](index.md) indexes the execution checklist for every
 > ceremony and operational role.
 
 ## How to use this checklist
@@ -31,7 +31,7 @@ decisions:
 Automated controls are intentionally absent from this checklist. The platform
 shows them as non-interactive `passed`, `failed`, or `pending` system status;
 their requirements and evidence are in the
-[automation control matrix](AUTOMATION_CONTROL_MATRIX.md). A failed or pending
+[automation control matrix](../design/automation-control-matrix.md). A failed or pending
 blocking control cannot be overridden with a checkbox.
 
 A **MANUAL — PLATFORM TODO** item is not automatic merely because a dashboard
@@ -124,7 +124,7 @@ automatic result in the coordination platform.
 ### Human gates
 
 - [ ] **HUMAN** Obtain the kit tag and archive SHA-256 through the independent
-      trust channel described in [docs/INSTALL.md](docs/INSTALL.md).
+      trust channel described in [docs/INSTALL.md](../setup/INSTALL.md).
 - [ ] **HUMAN** Approve the exact release intended for this ceremony.
 - [ ] **HUMAN** Distribute the authenticated kit tag, archive digest, and
       coordinator public key independently of ceremony storage.
@@ -154,7 +154,7 @@ automatic result in the coordination platform.
 ### Human gates
 
 - [ ] **HUMAN** Complete and review exactly one provider guide:
-      [AWS](docs/AWS_SETUP.md) or [R2](docs/R2_SETUP.md).
+      [AWS](../setup/AWS_SETUP.md) or [R2](../setup/R2_SETUP.md).
 - [ ] **HUMAN** Confirm published artifacts and the private inbox use separate
       buckets and separate intended exposure policies.
 - [ ] **HUMAN** Confirm coordinator and credential-issuer permissions follow
@@ -192,7 +192,7 @@ automatic result in the coordination platform.
 - [ ] **MANUAL — PLATFORM TODO** Track acknowledgement of the exact handoff
       digest from every role.
 - [ ] **MANUAL — PLATFORM TODO** Assign every person the applicable checklist
-      from [CHECKLISTS.md](CHECKLISTS.md). Give every participant one lifecycle
+      from [CHECKLISTS.md](index.md). Give every participant one lifecycle
       checklist and a separate turn sheet for each scheduled phase. The future
       platform should prefill only authenticated public assignment data.
 

@@ -8,7 +8,7 @@ login, and the coordinator must never receive the private file.
 ## 1. Authenticate the ceremony tools first
 
 Obtain and verify the approved ceremony kit as described in
-[docs/INSTALL.md](docs/INSTALL.md). Have setup create the receipt that later
+[docs/INSTALL.md](INSTALL.md). Have setup create the receipt that later
 commands use to authenticate the installed Relay and `mpc-ceremony` binaries:
 
 ```sh
@@ -27,7 +27,7 @@ path.
 
 If your role is using the Docker-packaged tools, the same command can be run
 inside the network-disabled key-generation image through the saved launcher;
-see [GUIDED_SETUP.md](docs/GUIDED_SETUP.md). The key remains in your protected
+see [GUIDED_SETUP.md](GUIDED_SETUP.md). The key remains in your protected
 mounted directory. The direct command below is the explicit reference form.
 
 Choose the stable identity ID assigned during onboarding. It may contain only

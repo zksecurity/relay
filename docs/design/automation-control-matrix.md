@@ -8,7 +8,7 @@ that result.
 
 The role checklists contain only human judgment, explicit authorization,
 mechanical work that is not yet integrated, and stop conditions. Commands and
-retry rules remain in [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md).
+retry rules remain in [CEREMONY_COMMANDS.md](../operator/CEREMONY_COMMANDS.md).
 
 ## Status and evidence contract
 

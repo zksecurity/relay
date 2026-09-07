@@ -4,22 +4,23 @@ Moves MPC ceremony transcript artifacts between a local directory and
 S3-compatible object storage (AWS S3, Cloudflare R2), and lets each ceremony
 role discover from the bucket where the ceremony stands.
 
-Operating procedures are split by audience:
+## Documentation
 
-- [Coordinator runbook](COORDINATOR_RUNBOOK.md)
-- [Automation-aware coordinator checklist](COORDINATOR_CHECKLIST.md)
-- [Checklist index for every ceremony role](CHECKLISTS.md)
-- [Automation control matrix](AUTOMATION_CONTROL_MATRIX.md)
-- [Ceremony command recipes](CEREMONY_COMMANDS.md)
-- [Participant and other role runbook](ROLE_RUNBOOK.md)
-- [Participant lifecycle checklist](PARTICIPANT_CHECKLIST.md)
-- [Ceremony identity key-generation guide](PARTICIPANT_KEY_GENERATION.md)
-- [Participant per-phase turn checklist](PARTICIPANT_TURN_CHECKLIST.md)
-- [Participant contribution isolation design](docs/PARTICIPANT_ISOLATION_DESIGN.md)
-  (implemented for Linux and for macOS with a production release-time wipe gate)
-- [Three-machine tiny rehearsal scripts](scripts/three-machine-rehearsal/README.md)
-- [AWS storage setup](docs/AWS_SETUP.md)
-- [Cloudflare R2 storage setup](docs/R2_SETUP.md)
+Start with the [checklist index](docs/checklists/index.md): each role's
+checklist is its live procedure. The supporting documentation is organized by
+purpose:
+
+- **Operate:** [coordinator guide](docs/operator/COORDINATOR_RUNBOOK.md),
+  [role reference](docs/operator/roles-reference.md), and
+  [command recipes](docs/operator/CEREMONY_COMMANDS.md)
+- **Set up:** [installation](docs/setup/INSTALL.md),
+  [guided Docker setup](docs/setup/GUIDED_SETUP.md),
+  [identity key generation](docs/setup/key-generation.md),
+  [AWS](docs/setup/AWS_SETUP.md), and [R2](docs/setup/R2_SETUP.md)
+- **Understand and release:** [participant isolation design](docs/design/participant-isolation.md),
+  [automation control matrix](docs/design/automation-control-matrix.md), and
+  [release procedure](docs/release/release.md)
+- **Rehearse:** [three-machine tiny rehearsal](scripts/three-machine-rehearsal/README.md)
 
 ## What it is not
 
@@ -75,7 +76,7 @@ receives only the expiring, prefix-scoped grant—not the parent credential.
 For Docker-packaged tools for every role, see the
 [role launcher guide](docker/roles/README.md). Participants retain the host
 supervisor; offline signers use a separate network-disabled image.
-Use [guided setup](docs/GUIDED_SETUP.md) to save role settings once and reopen
+Use [guided setup](docs/setup/GUIDED_SETUP.md) to save role settings once and reopen
 them with `relay ceremony open NAME --role ROLE`.
 
 The participant creates a validated, grant-free production profile under one
@@ -104,7 +105,7 @@ Relay never pulls this image during a turn. Preload and authenticate it first.
 The current initializer also requires the approved Linux binary to exist on
 the host at the same absolute path used inside the image (by default,
 `/usr/local/bin/mpc-ceremony`), with its hash matching the tool-identity receipt.
-See [installation prerequisites and platform limits](docs/INSTALL.md).
+See [installation prerequisites and platform limits](docs/setup/INSTALL.md).
 Before any contributor is created, Relay resolves the selected Docker context,
 rejects non-local daemon endpoints, pins every command to the resulting Unix
 socket, and records the daemon ID and actual `userns`/`rootless` security
@@ -168,9 +169,9 @@ Other roles upload their already signed proof-tool outputs with the relevant
 role command or the compatible `relay submit-evidence --grant FILE --dir DIR`;
 the coordinator discovers them
 with `relay coordinator evidence --storage FILE`. See the
-[coordinator runbook](COORDINATOR_RUNBOOK.md) for provider setup and ceremony
-operation, and the [role runbook](ROLE_RUNBOOK.md) for participant and evidence
-workflows.
+[coordinator runbook](docs/operator/COORDINATOR_RUNBOOK.md) for provider setup and ceremony
+operation, and the [role reference](docs/operator/roles-reference.md) for
+participant and evidence workflows.
 
 ### Long-running progress
 
@@ -340,7 +341,7 @@ coordinated ceremony kit. Docker-packaged online roles include AWS CLI inside
 their approved image; participants still need the host transport CLI because
 the Relay supervisor remains outside the contributor container.
 Source-free installation is documented in
-[docs/INSTALL.md](docs/INSTALL.md). Release maintainers and independent build
-auditors need Go 1.26.6 and use [docs/RELEASE.md](docs/RELEASE.md). Relay has no
+[docs/INSTALL.md](docs/setup/INSTALL.md). Release maintainers and independent build
+auditors need Go 1.26.6 and use [docs/RELEASE.md](docs/release/release.md). Relay has no
 third-party Go dependencies; its production builder emits a signed,
 reproducible release package.

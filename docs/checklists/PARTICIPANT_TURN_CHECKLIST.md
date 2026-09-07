@@ -2,17 +2,17 @@
 
 > Use a fresh, prefilled copy for one participant in one phase. This is the
 > short live-turn companion to [PARTICIPANT_CHECKLIST.md](PARTICIPANT_CHECKLIST.md)
-> and [ROLE_RUNBOOK.md](ROLE_RUNBOOK.md). It contains no secret fields. Never
+> and [role reference](../operator/roles-reference.md). It contains no secret fields. Never
 > paste a private key, contribution randomness, grant contents, or cloud
 > credential into this document or the coordination website.
-> See [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md) for the complete participant
+> See [CEREMONY_COMMANDS.md](../operator/CEREMONY_COMMANDS.md) for the complete participant
 > status, contribution, and interrupted-upload recipes.
 > For a saved Docker participant profile, open it through
 > `relay ceremony open NAME --role participant --grant GRANT.json`; that command
 > performs the same underlying participant action after showing it and asking
 > for confirmation.
 
-Use the evidence labels in [CHECKLISTS.md](CHECKLISTS.md). In particular,
+Use the evidence labels in [CHECKLISTS.md](index.md). In particular,
 **MANUAL — PLATFORM TODO** means a mechanical record must be attached manually
 until reviewed platform automation consumes and preserves it.
 

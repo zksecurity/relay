@@ -2,32 +2,32 @@
 
 > This is the production/manual operator procedure. For the test-only tiny
 > ceremony, use the
-> [scripted three-machine rehearsal](scripts/three-machine-rehearsal/README.md)
+> [scripted three-machine rehearsal](../../scripts/three-machine-rehearsal/README.md)
 > and its machine-specific `.env` files.
 
 This is the coordinator runbook for operating `relay`. Use the
-[automation-aware coordinator checklist](COORDINATOR_CHECKLIST.md) as the live
+[automation-aware coordinator checklist](../checklists/COORDINATOR_CHECKLIST.md) as the live
 execution aid and [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md) for copy-oriented
 command recipes. Participants, witnesses, mirrors, auditors, release upload
-stations, and decision signers use [ROLE_RUNBOOK.md](ROLE_RUNBOOK.md) and the
-role-specific checklists indexed by [CHECKLISTS.md](CHECKLISTS.md).
+stations, and decision signers use [role reference](roles-reference.md) and the
+role-specific checklists indexed by [CHECKLISTS.md](../checklists/index.md).
 
 The [proof-tool repository](https://github.com/Emurgo/proof-tool) remains the
 authority for ceremony commands and validity rules. Relay transports bytes and
 asks the trusted `mpc-ceremony` binary to authenticate them; storage state is
 only a scheduling hint. The full trust model and low-level command reference
-are in [README.md](README.md).
+are in [README.md](../../README.md).
 
 ## 1. Install and verify the tools
 
 For Docker-packaged Relay, proof-tool, and AWS CLI, start with
-[operator paths](docs/OPERATOR_PATHS.md). Prefer
-[guided setup](docs/GUIDED_SETUP.md) to save one reviewed coordinator action,
-or use the explicit [role launcher guide](docker/roles/README.md). Use its
+[operator paths](paths.md). Prefer
+[guided setup](../setup/GUIDED_SETUP.md) to save one reviewed coordinator action,
+or use the explicit [role launcher guide](../../docker/roles/README.md). Use its
 container paths and launcher prefix with the commands below. The recipes below
 still describe the action being saved; do not copy host paths into a container.
 
-Follow [docs/INSTALL.md](docs/INSTALL.md). It gives exact instructions for
+Follow [docs/INSTALL.md](../setup/INSTALL.md). It gives exact instructions for
 downloading one coordinated ceremony kit, verifying its independently supplied
 hash, installing Relay and `mpc-ceremony`, and then installing AWS CLI v2. The
 coordinator does not need Go or either project's build-signing private key.
@@ -58,7 +58,7 @@ under its `public/` directory:
 Before initialization, have every participant, auditor, and the release signer
 generate its own Ed25519 keypair on its own machine using
 `mpc-ceremony identity generate`, following the
-[ceremony identity key-generation guide](PARTICIPANT_KEY_GENERATION.md).
+[ceremony identity key-generation guide](../setup/key-generation.md).
 The command generates the private key and public identity JSON, including the
 fingerprint and key ID; no separate key-generation tooling is needed.
 Collect only each role's
@@ -109,10 +109,10 @@ temporary-credential issuer.
 
 Complete one provider guide before continuing:
 
-- [AWS S3, CloudFront, and IAM setup](docs/AWS_SETUP.md)
-- [Cloudflare R2 setup](docs/R2_SETUP.md)
+- [AWS S3, CloudFront, and IAM setup](../setup/AWS_SETUP.md)
+- [Cloudflare R2 setup](../setup/R2_SETUP.md)
 
-[docs/STORAGE.md](docs/STORAGE.md) is the shared security and storage-layout
+[docs/STORAGE.md](../setup/STORAGE.md) is the shared security and storage-layout
 reference. The provider scripts print the exact non-secret values used below.
 
 For R2:
@@ -149,7 +149,7 @@ only to a grant command's process:
 
 For AWS:
 
-The guided path in [docs/AWS_SETUP.md](docs/AWS_SETUP.md) provisions storage
+The guided path in [docs/AWS_SETUP.md](../setup/AWS_SETUP.md) provisions storage
 with one AWS profile and prints every value used below.
 
     relay coordinator configure-storage \
@@ -216,7 +216,7 @@ Send the participant these items through the agreed private channel when their
 turn begins:
 
 - their mode-`0600` grant file;
-- a link or copy of [ROLE_RUNBOOK.md](ROLE_RUNBOOK.md).
+- a link or copy of [role reference](roles-reference.md).
 
 The grant is a bearer credential limited to that participant's candidate
 prefix. Replace it immediately if it leaks. Contact the participant when their
@@ -298,7 +298,7 @@ authenticate the identity's signed enrollment:
       --out witness-01.grant.json
 
 Substitute the appropriate role, identity, enrollment, and TTL. Send the grant
-privately with the role's handoff material and [ROLE_RUNBOOK.md](ROLE_RUNBOOK.md).
+privately with the role's handoff material and [role reference](roles-reference.md).
 Storage access does not make evidence valid; proof-tool records and signatures
 do.
 
@@ -380,5 +380,5 @@ last. Never treat possession of a storage credential as a ceremony signature.
 
 The older one-bucket `relay advanced push` and `relay advanced pull` commands
 remain for recovery and debugging. They use long-lived AWS CLI profiles and
-are documented under “Usage” and “Provider notes” in [README.md](README.md).
+are documented under “Usage” and “Provider notes” in [README.md](../../README.md).
 New ceremonies should use the two-bucket workflow above.

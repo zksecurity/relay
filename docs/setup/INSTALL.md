@@ -1,7 +1,7 @@
 # Installing ceremony tools
 
 For a role's normal Docker workflow after installation, first read
-[operator paths](OPERATOR_PATHS.md). It explains when to use saved guided setup
+[operator paths](../operator/paths.md). It explains when to use saved guided setup
 instead of retyping a low-level command, and what image availability does—and
 does not—verify. This page remains the authenticated direct-installation and
 participant-profile reference.
@@ -15,7 +15,7 @@ and therefore needs a Go toolchain and a proof-tool checkout at the approved
 tag; every required rehearsal step runs from the kit alone.
 
 Release maintainers and independent build auditors use
-[RELEASE.md](RELEASE.md) instead.
+[RELEASE.md](../release/release.md) instead.
 
 ## Platform scope
 
@@ -123,7 +123,7 @@ authenticated provider guides and setup scripts in one invocation:
 cd "$CEREMONY_TOOLS_ROOT/storage-setup"
 ```
 
-Then follow `docs/AWS_SETUP.md` or `docs/R2_SETUP.md`. The extracted scripts
+Then follow `docs/setup/AWS_SETUP.md` or `docs/setup/R2_SETUP.md`. The extracted scripts
 and guides are covered by the ceremony-kit checksum. Do not run this command
 separately for a three-machine rehearsal; its Machine 1 command below already
 performs the same extraction.
@@ -308,7 +308,7 @@ acceptance; final parameter release remains blocked until the participant
 performs a supported whole-device erase, cleanly reinstalls macOS without
 restoring pre-wipe backups, snapshots, or Docker state, and submits the
 separate signed host-wipe attestation. See
-[`PARTICIPANT_ISOLATION_DESIGN.md`](PARTICIPANT_ISOLATION_DESIGN.md).
+[`PARTICIPANT_ISOLATION_DESIGN.md`](../design/participant-isolation.md).
 
 Relay authenticates the local key through `mpc-ceremony`, checks the signed
 published state, and rejects an out-of-turn participant before contribution

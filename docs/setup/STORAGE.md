@@ -2,7 +2,7 @@
 
 This reference describes the infrastructure that must exist before running
 `relay coordinator configure-storage`. The ceremony procedure is in the
-[coordinator runbook](../COORDINATOR_RUNBOOK.md).
+[coordinator runbook](../operator/COORDINATOR_RUNBOOK.md).
 
 For complete provider provisioning instructions and setup scripts, use:
 
@@ -95,7 +95,7 @@ origin differs.
 
 ## Three-machine rehearsal `.env` mapping
 
-The [scripted three-machine rehearsal](../scripts/three-machine-rehearsal/README.md)
+The [scripted three-machine rehearsal](../../scripts/three-machine-rehearsal/README.md)
 records non-secret paths, approved binary digests, and storage names in one
 private `.env` per machine. These files are a rehearsal convenience, not the
 production storage procedure.

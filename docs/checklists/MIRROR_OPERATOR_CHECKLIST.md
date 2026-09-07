@@ -1,9 +1,9 @@
 # MPC Ceremony Mirror-Operator Checklist
 
 > Use one prefilled copy per mirror assignment and phase. Follow the evidence
-> labels in [CHECKLISTS.md](CHECKLISTS.md), the authoritative
-> [role runbook](ROLE_RUNBOOK.md), and the mirror recipes in
-> [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md). Never record a private key,
+> labels in [CHECKLISTS.md](index.md), the authoritative
+> [role reference](../operator/roles-reference.md), and the mirror recipes in
+> [CEREMONY_COMMANDS.md](../operator/CEREMONY_COMMANDS.md). Never record a private key,
 > grant contents, or a private mirror location in this checklist.
 
 ## Assignment and independence

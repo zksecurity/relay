@@ -1,13 +1,13 @@
 # MPC Ceremony Command Recipes
 
 > This is the copy-oriented command companion to
-> [COORDINATOR_CHECKLIST.md](COORDINATOR_CHECKLIST.md),
-> [PARTICIPANT_CHECKLIST.md](PARTICIPANT_CHECKLIST.md), and
-> [ROLE_RUNBOOK.md](ROLE_RUNBOOK.md). The runbooks explain why and when each
+> [COORDINATOR_CHECKLIST.md](../checklists/COORDINATOR_CHECKLIST.md),
+> [PARTICIPANT_CHECKLIST.md](../checklists/PARTICIPANT_CHECKLIST.md), and
+> [role reference](roles-reference.md). The runbooks explain why and when each
 > operation is performed; this document shows the current Relay commands.
 
-For Docker-packaged roles, use [saved setup and guided opening](docs/GUIDED_SETUP.md)
-or the [role launcher](docker/roles/README.md) to supply these commands. The
+For Docker-packaged roles, use [saved setup and guided opening](../setup/GUIDED_SETUP.md)
+or the [role launcher](../../docker/roles/README.md) to supply these commands. The
 recipes below remain the explicit/reference form. They do not mean users must
 retype Docker image names and mount paths for every task.
 
@@ -67,7 +67,7 @@ Do not use `/`, `$HOME`, a repository root, or another broad directory as
 
 **Run by:** every role, once per installed release.
 
-Verify the downloaded kit SHA-256 through [docs/INSTALL.md](docs/INSTALL.md),
+Verify the downloaded kit SHA-256 through [docs/INSTALL.md](../setup/INSTALL.md),
 then have the authenticated setup command write a fresh receipt:
 
 ```sh
@@ -85,7 +85,7 @@ ceremony action while any identity or compatibility check fails.
 
 ### Generate a signing identity when your role requires one
 
-Follow [PARTICIPANT_KEY_GENERATION.md](PARTICIPANT_KEY_GENERATION.md). The core
+Follow [PARTICIPANT_KEY_GENERATION.md](../setup/key-generation.md). The core
 command is:
 
 ```sh
@@ -170,8 +170,8 @@ signed definition manually or overwrite a partially reviewed definition.
 
 Complete exactly one provider guide before running these commands:
 
-- [AWS S3 and CloudFront](docs/AWS_SETUP.md)
-- [Cloudflare R2](docs/R2_SETUP.md)
+- [AWS S3 and CloudFront](../setup/AWS_SETUP.md)
+- [Cloudflare R2](../setup/R2_SETUP.md)
 
 ### Cloudflare R2
 
@@ -201,7 +201,7 @@ unset RELAY_R2_CONTROL_TOKEN
 ```
 
 The token requires the permission and isolation described in
-[docs/R2_SETUP.md](docs/R2_SETUP.md). The inbox must have neither `r2.dev`
+[docs/R2_SETUP.md](../setup/R2_SETUP.md). The inbox must have neither `r2.dev`
 access nor a public custom domain.
 
 ### AWS
@@ -870,4 +870,4 @@ approved explicitly for that completed ceremony.
 
 For anything not covered here, use the failure procedures in
 [COORDINATOR_RUNBOOK.md](COORDINATOR_RUNBOOK.md#8-failure-and-recovery) and
-[ROLE_RUNBOOK.md](ROLE_RUNBOOK.md#9-failure-and-recovery).
+[role reference](roles-reference.md#9-failure-and-recovery).

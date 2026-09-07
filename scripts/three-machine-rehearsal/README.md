@@ -3,7 +3,7 @@
 This directory turns the tiny Relay rehearsal into explicit machine steps.
 All three machines use the same reviewed Relay and `mpc-ceremony` binaries.
 This is the detailed rehearsal walkthrough; production operators instead use
-the Relay coordinator or role runbook from the authenticated source release.
+the Relay coordinator or role reference from the authenticated source release.
 
 The role split is:
 
@@ -25,8 +25,8 @@ This rehearsal deliberately co-locates roles and takes two shortcuts so the
 whole flow runs quickly on three hosts. A real ceremony where every role is a
 separate, independently operated machine drops those shortcuts. The numbered
 scripts still apply — each already takes the identity as an argument — but three
-things change. The [coordinator runbook](../../COORDINATOR_RUNBOOK.md) and
-[role runbook](../../ROLE_RUNBOOK.md) are the authority for the distributed
+things change. The [coordinator runbook](../../docs/operator/COORDINATOR_RUNBOOK.md) and
+[role reference](../../docs/operator/roles-reference.md) are the authority for the distributed
 procedure; this table maps each rehearsal shortcut to what replaces it.
 
 | Rehearsal shortcut | Fully distributed replacement |
@@ -47,9 +47,9 @@ This README is Machine 1's master process guide. Complete the coordinated-tool
 installation first, then complete exactly one storage-provider guide before
 the first numbered ceremony step:
 
-- [installation guide](../../docs/INSTALL.md)
-- [AWS setup guide](../../docs/AWS_SETUP.md)
-- [Cloudflare R2 setup guide](../../docs/R2_SETUP.md)
+- [installation guide](../../docs/setup/INSTALL.md)
+- [AWS setup guide](../../docs/setup/AWS_SETUP.md)
+- [Cloudflare R2 setup guide](../../docs/setup/R2_SETUP.md)
 
 Those links are for a source checkout. An authenticated downloaded rehearsal
 contains copies under its own `docs/` directory. From the downloaded directory,
@@ -58,9 +58,9 @@ Machine 1 can review them with:
 ```bash
 cd "$HOME/ceremony-tools/three-machine-rehearsal"
 S=$PWD
-less "$S/docs/INSTALL.md"
-less "$S/docs/AWS_SETUP.md"    # choose AWS
-less "$S/docs/R2_SETUP.md"     # or choose R2
+less "$S/docs/setup/INSTALL.md"
+less "$S/docs/setup/AWS_SETUP.md"    # choose AWS
+less "$S/docs/setup/R2_SETUP.md"     # or choose R2
 ```
 
 The Machine 1 installation command from `INSTALL.md` also extracts the provider
@@ -255,9 +255,9 @@ machine.
 
 If the storage does not exist yet, run the provider setup first:
 
-- Downloaded kit: `$S/docs/AWS_SETUP.md` or `$S/docs/R2_SETUP.md`
-- Source checkout: [AWS setup](../../docs/AWS_SETUP.md) or
-  [Cloudflare R2 setup](../../docs/R2_SETUP.md)
+- Downloaded kit: `$S/docs/setup/AWS_SETUP.md` or `$S/docs/setup/R2_SETUP.md`
+- Source checkout: [AWS setup](../../docs/setup/AWS_SETUP.md) or
+  [Cloudflare R2 setup](../../docs/setup/R2_SETUP.md)
 
 The provider scripts are in the same relative location in a source checkout
 and in the extracted kit. Resolve that directory first:

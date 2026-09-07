@@ -33,7 +33,7 @@ Use `--download=false` for an already-disconnected signing machine.
 The command creates private `work` and public-input `trust` directories and
 prints their location. Stage the authenticated files and create the existing
 role profile with container paths as described in the
-[role launcher guide](../docker/roles/README.md). Setup does not invent missing
+[role launcher guide](../../docker/roles/README.md). Setup does not invent missing
 ceremony files, role enrollments, or signing keys. Image readiness is not a claim
 that these later role-specific prerequisites are complete.
 

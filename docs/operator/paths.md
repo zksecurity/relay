@@ -1,8 +1,8 @@
 # Choose how to run your role
 
 For the Docker launcher introduced in PR #18, prefer
-[saved setup and guided opening](GUIDED_SETUP.md): save a reviewed action once,
-then reopen it and confirm before it runs. The [role launcher](../docker/roles/README.md)
+[saved setup and guided opening](../setup/GUIDED_SETUP.md): save a reviewed action once,
+then reopen it and confirm before it runs. The [role launcher](../../docker/roles/README.md)
 is the explicit alternative when you need to supply every option yourself.
 Neither interface is a complete ceremony navigator or a published installer.
 Use a release that actually contains these commands; older signed kits do not
@@ -29,11 +29,11 @@ The guided layer supports native host Relay builds on macOS and Linux,
 AMD64 and ARM64, and chooses a Linux image matching that Relay build. The
 coordinator must supply a reviewed image for that platform. The current kit
 builder only packages Linux/amd64 host tools; see
-[installation scope](INSTALL.md#platform-scope). Participant Linux machines
+[installation scope](../setup/INSTALL.md#platform-scope). Participant Linux machines
 require a local native Docker Engine and disabled host swap; Linux Docker
 Desktop is unsupported. Production Macs require the signed host-wipe policy
 and the separate release-time wipe gate described in the
-[isolation design](PARTICIPANT_ISOLATION_DESIGN.md).
+[isolation design](../design/participant-isolation.md).
 
 ## Three different setup operations
 
@@ -120,6 +120,6 @@ coordinator review. Status does not remove orphan containers.
 The opt-in Docker tests cover role launches, a guided saved action, and a tiny
 three-contribution Phase 1 rehearsal. They do not establish a full Docker
 Phase 1/2, storage, audit, and final-release ceremony. The separate
-[three-machine scripts](../scripts/three-machine-rehearsal/README.md) remain a
+[three-machine scripts](../../scripts/three-machine-rehearsal/README.md) remain a
 direct-CLI rehearsal, not an all-role Docker test. Normal CI does not run the
 opt-in real-image tests.

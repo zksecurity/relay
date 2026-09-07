@@ -1,9 +1,9 @@
 # MPC Ceremony Public-Witness Checklist
 
 > Use one prefilled copy per witness and phase. Follow the evidence labels in
-> [CHECKLISTS.md](CHECKLISTS.md), the authoritative
-> [role runbook](ROLE_RUNBOOK.md), and the public-witness recipes in
-> [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md). Never place a signing key or
+> [CHECKLISTS.md](index.md), the authoritative
+> [role reference](../operator/roles-reference.md), and the public-witness recipes in
+> [CEREMONY_COMMANDS.md](../operator/CEREMONY_COMMANDS.md). Never place a signing key or
 > grant contents in this document or the coordination website.
 
 ## Assignment and trust
