@@ -10,7 +10,8 @@ and publish accepted ceremony state. You do not hold other roles' private keys.
       auditors, witnesses, mirrors, final-parameter signer, and emergency contact.
 - [ ] Agree on an authenticated channel independent of ceremony storage.
 - [ ] Collect public identities only; confirm fingerprints with their owners.
-      Distinct keys are enforced; independent people and organizations are not.
+      Relay checks that roles required to use different signing keys do so.
+      It cannot check whether those keys belong to different people or organizations.
 - [ ] Explain the Docker cleanup precautions and remaining host/VM storage
       risk to participants before they begin; whole-machine wiping is optional.
 
@@ -27,7 +28,9 @@ Create your identity on your own machine. Set `IDENTITY_ID` and
 ```
 
 Success creates `signing.hex` and `identity.json` in `ROLE_KEYS`.
-Share only the public JSON. Never share the private file.
+Send `identity.json` to the ceremony roles through your agreed coordination
+channel so they can recognize your coordinator identity. Keep `signing.hex`
+private on your machine.
 
 ## Initialize the ceremony and storage
 
