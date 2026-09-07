@@ -27,6 +27,10 @@ identities, and evidence.
 
 ## 1. Install and verify the tools
 
+To use Docker-packaged tools, follow the [role launcher guide](docker/roles/README.md).
+It explains which image to use and how to prefix the commands below. Participant
+turns keep Relay on the host; offline signing stays on a disconnected machine.
+
 Follow the role-machine path in [docs/INSTALL.md](docs/INSTALL.md). It contains
 the official AWS CLI v2 installation procedure and exact steps for verifying
 and installing published `relay` and `mpc-ceremony` binaries. Release

@@ -20,6 +20,10 @@ are in [README.md](README.md).
 
 ## 1. Install and verify the tools
 
+For Docker-packaged Relay, proof-tool, and AWS CLI, follow the
+[role launcher guide](docker/roles/README.md). Use its container paths and
+coordinator launcher prefix with the commands below.
+
 Follow [docs/INSTALL.md](docs/INSTALL.md). It gives exact instructions for
 downloading one coordinated ceremony kit, verifying its independently supplied
 hash, installing Relay and `mpc-ceremony`, and then installing AWS CLI v2. The

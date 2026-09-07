@@ -27,6 +27,8 @@ func main() {
 	}
 	var err error
 	switch os.Args[1] {
+	case "role":
+		err = runDockerRole(os.Args[2:])
 	case "coordinator":
 		err = runCoordinator(os.Args[2:])
 	case "ceremony":
@@ -69,6 +71,7 @@ func main() {
 
 func usage() {
 	fmt.Fprint(os.Stderr, `usage:
+  relay role --role ROLE --image DIGEST --work DIR [mount flags] -- TOOL ARGS...
   relay coordinator configure-storage [provider and ceremony flags] --out FILE
   relay coordinator grant --storage FILE --role ROLE --identity ID \
              --credential-ttl D --minimum-remaining D --out FILE

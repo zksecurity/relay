@@ -72,6 +72,10 @@ For R2, Relay signs the temporary session credential locally on the trusted
 coordinator with an inbox-only parent Secret Access Key. The participant
 receives only the expiring, prefix-scoped grant—not the parent credential.
 
+For Docker-packaged tools for every role, see the
+[role launcher guide](docker/roles/README.md). Participants retain the host
+supervisor; offline signers use a separate network-disabled image.
+
 The participant creates a validated, grant-free production profile under one
 ceremony home. Relay authenticates the local key and ensures the local ceremony
 matches `relay-storage.json`:
