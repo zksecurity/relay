@@ -49,7 +49,12 @@ under its `public/` directory:
     install -d -m 0700 "$CEREMONY_HOME/public" "$CEREMONY_HOME/config" "$CEREMONY_HOME/run"
 
 Before initialization, have every participant, auditor, and the release signer
-generate its own Ed25519 keypair on its own machine. Collect only each role's
+generate its own Ed25519 keypair on its own machine using
+`mpc-ceremony identity generate`, following the
+[ceremony identity key-generation guide](PARTICIPANT_KEY_GENERATION.md).
+The command generates the private key and public identity JSON, including the
+fingerprint and key ID; no separate key-generation tooling is needed.
+Collect only each role's
 public identity: its identity ID, key ID, public key, public-key fingerprint,
 and agreed display name. Authenticate the fingerprint with that role through
 the ceremony's agreed independent channel before adding it to the input roster.
