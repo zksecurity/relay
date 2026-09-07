@@ -335,7 +335,10 @@ bucket agrees with itself.
 
 ## Requirements
 
-Operators need the AWS CLI and the authenticated coordinated ceremony kit.
+Operators using host-side provider setup need the AWS CLI and the authenticated
+coordinated ceremony kit. Docker-packaged online roles include AWS CLI inside
+their approved image; participants still need the host transport CLI because
+the Relay supervisor remains outside the contributor container.
 Source-free installation is documented in
 [docs/INSTALL.md](docs/INSTALL.md). Release maintainers and independent build
 auditors need Go 1.26.6 and use [docs/RELEASE.md](docs/RELEASE.md). Relay has no

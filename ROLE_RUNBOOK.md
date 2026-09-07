@@ -45,6 +45,12 @@ below consumes that receipt, independently hashes the running Relay and
 `mpc-ceremony` executables, and prints the resolved identities it accepted.
 Stop if either hash or the ceremony mode differs.
 
+When using Docker-packaged tools, this receipt authenticates the host Relay and
+proof-tool materials supplied for the role. Docker image availability is a
+separate check: matching a supplied digest and platform does not prove that a
+publisher or coordinator signed the image approval. Obtain image digests through
+the coordinator's independent authenticated channel.
+
 ### Register your public identity
 
 If you are a participant or a role that signs ceremony evidence, follow the

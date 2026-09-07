@@ -25,6 +25,11 @@ path.
 
 ## 2. Generate the key and public identity
 
+If your role is using the Docker-packaged tools, the same command can be run
+inside the network-disabled key-generation image through the saved launcher;
+see [GUIDED_SETUP.md](docs/GUIDED_SETUP.md). The key remains in your protected
+mounted directory. The direct command below is the explicit reference form.
+
 Choose the stable identity ID assigned during onboarding. It may contain only
 lowercase letters, digits, `-`, `_`, `.`, or `:`. The display name is public
 and will appear in ceremony records.
