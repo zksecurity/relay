@@ -1,23 +1,17 @@
 name: Publish role images
 
-# A signed tag contains release/role-images.json with exact inputs. CI produces
-# attested *candidates*; an offline release signer still approves the resulting
-# platform-to-digest manifest before a coordinator distributes it.
+# Protected-main review is the release gate. CI publishes the exact
+# platform-to-digest map, authenticated by GitHub build provenance.
 on:
   push:
-    tags: ["v*"]
-  workflow_dispatch:
-    inputs:
-      relay_tag:
-        description: Signed Relay source tag to rebuild (defaults to the selected tag on tag pushes)
-        required: true
-        type: string
+    branches: [main]
 
 env:
-  RELAY_TAG: ${{ inputs.relay_tag || github.ref_name }}
+  RELAY_COMMIT: ${{ github.sha }}
+  RELEASE_TAG: role-images-${{ github.sha }}
 
 permissions:
-  contents: read
+  contents: write
   packages: write
   attestations: write
   id-token: write
@@ -37,22 +31,15 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
         with:
-          ref: ${{ env.RELAY_TAG }}
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
-      - name: Verify signed source tag
+      - name: Verify protected-main release inputs
         shell: bash
-        env:
-          RELAY_TAG: ${{ env.RELAY_TAG }}
-          EXPECTED_FINGERPRINT: D27746F50177107AF060C35B69375FD4AA575389
         run: |
           set -euo pipefail
-          [[ "$RELAY_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$ ]]
-          gpg --batch --import release/keys/relay-tag-signing-public.asc
-          verify=$(git verify-tag --raw "$RELAY_TAG" 2>&1)
-          printf '%s\n' "$verify" | grep -F "[GNUPG:] VALIDSIG $EXPECTED_FINGERPRINT "
-          test "$(git rev-parse "$RELAY_TAG^{commit}")" = "$(git rev-parse HEAD)"
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$RELAY_COMMIT"
 
       - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
@@ -62,7 +49,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Read signed release image inputs
+      - name: Read protected-main release image inputs
         id: inputs
         shell: bash
         env:
@@ -112,7 +99,7 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           PLATFORM: ${{ matrix.platform }}
-          TAG: ${{ env.RELAY_TAG }}
+          TAG: ${{ env.RELAY_COMMIT }}
         run: |
           set -euo pipefail
           case "$TARGET" in
@@ -124,7 +111,7 @@ jobs:
           suffix=${PLATFORM#linux/}
           printf 'name=%s\nfile=%s\ntarget=%s\ntag=%s-%s\n' "$name" "$file" "$target" "$TAG" "$suffix" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push immutable candidate
+      - name: Build and push immutable release image
         id: build
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
@@ -145,53 +132,61 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
 
-      - name: Write candidate record
+      - name: Write release record
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
           PLATFORM: ${{ matrix.platform }}
           IMAGE: ${{ steps.image.outputs.name }}
           DIGEST: ${{ steps.build.outputs.digest }}
-          TAG: ${{ env.RELAY_TAG }}
+          COMMIT: ${{ env.RELAY_COMMIT }}
         run: |
           set -euo pipefail
           mkdir candidate
           jq -n --arg target "$TARGET" --arg platform "$PLATFORM" --arg image "$IMAGE" \
-            --arg digest "$DIGEST" --arg tag "$TAG" --arg commit "$(git rev-parse HEAD)" \
-            '{target:$target, platform:$platform, image:($image+"@"+$digest), source_tag:$tag, source_commit:$commit}' \
+            --arg digest "$DIGEST" --arg commit "$COMMIT" \
+            '{target:$target, platform:$platform, image:($image+"@"+$digest), source_commit:$commit}' \
             > "candidate/$TARGET-${PLATFORM#linux/}.json"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: candidate-${{ matrix.target }}-${{ env.PLATFORM_ARTIFACT_NAME }}
+          name: release-${{ matrix.target }}-${{ env.PLATFORM_ARTIFACT_NAME }}
           path: candidate/
           if-no-files-found: error
           retention-days: 90
 
-  candidate-manifest:
+  release-manifest:
     needs: build
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
-          pattern: candidate-*
-          path: candidates
+          pattern: release-*
+          path: releases
           merge-multiple: true
-      - name: Create unapproved platform-to-digest candidate
+      - name: Create approved platform-to-digest map
         shell: bash
         run: |
           set -euo pipefail
-          jq -s --arg tag '${{ env.RELAY_TAG }}' \
-            'map(select(.source_tag == $tag)) as $images |
+          jq -s --arg commit '${{ env.RELAY_COMMIT }}' \
+            'map(select(.source_commit == $commit)) as $images |
              ($images | map(.source_commit) | unique) as $commits |
              if ($images | length) == 6 and ($commits | length) == 1 then
-               {schema:"relay-role-image-candidate/v1", status:"unapproved", source_tag:$tag,
-                source_commit:$commits[0], images:($images | sort_by(.target,.platform))}
-             else error("incomplete or inconsistent image candidate records") end' \
-            candidates/*.json > relay-role-images.candidate.json
+               {schema:"relay-role-image-release/v1", approval:"github-attested-ci", source_commit:$commits[0],
+                images:($images | sort_by(.target,.platform))}
+             else error("incomplete or inconsistent image release records") end' \
+            releases/*.json > relay-role-images.release.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: relay-role-images-candidate
-          path: relay-role-images.candidate.json
+          name: relay-role-images-release
+          path: relay-role-images.release.json
           if-no-files-found: error
           retention-days: 90
+
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ env.RELAY_COMMIT }}
+          name: Role images ${{ env.RELEASE_TAG }}
+          body: GitHub-attested CI role-image release for protected-main commit `${{ env.RELAY_COMMIT }}`.
+          files: relay-role-images.release.json
