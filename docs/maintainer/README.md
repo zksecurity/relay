@@ -6,6 +6,7 @@ These references support release engineering, profile preparation, and recovery.
 | Task | Reference |
 | --- | --- |
 | Publish launchers and images | [Software releases](releases.md) |
+| Build and test Docker images locally | [Role images](role-images.md) |
 | Prepare authenticated role profiles | [Profiles](profiles.md) |
 | Understand mounts and saved actions | [Launcher reference](launcher.md) |
 | Provision AWS | [AWS setup](aws.md) |
