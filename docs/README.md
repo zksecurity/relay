@@ -1,6 +1,7 @@
 # Run a ceremony role
 
 Start with [installation](install.md), then follow your assigned role guide.
+Installation includes [guided computer setup](setup-host.md) for Mac and Linux.
 Commands, checkboxes, success results, and recovery instructions live together.
 
 | Your assignment | Guide |

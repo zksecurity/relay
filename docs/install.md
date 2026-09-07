@@ -1,9 +1,16 @@
 # Install once
 
+## Prepare your computer
+
+Start with [guided Mac or Linux setup](setup-host.md). It checks your computer
+without changing it, then offers installation with your approval if needed.
+If your prerequisites are already ready, continue to **Download and verify**.
+
 - **Supported computer:** macOS or Linux, with an Intel/AMD64 or ARM64 processor
   (including Apple silicon).
 - **Docker:** install and run Docker locally. On a Mac, use Docker Desktop.
-  Linux participants need native Docker Engine and must disable host swap.
+  Linux participants need native Docker Engine and disabled host swap; the
+  setup guide explains how to check this and offers a prompted swap-off step.
 - **GitHub CLI:** install a current version of `gh` and sign in with
   `gh auth login`. Relay uses it to download and verify release files.
 - **Shell tools:** have Bash and `shasum` available for the commands below.
