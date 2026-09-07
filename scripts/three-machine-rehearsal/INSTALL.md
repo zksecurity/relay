@@ -1,11 +1,11 @@
-# Legacy direct-kit installation
+# Legacy rehearsal kit installation
 
 > **Status:** This direct-kit procedure is retained for rehearsals and
 > source-level audit. It is not the production software-delivery path.
 > Production ceremonies use the immutable Docker role images from the
 > protected-main GitHub Release map; start with
-> [guided Docker setup](GUIDED_SETUP.md) and
-> [software delivery and audit](../release/release.md).
+> [guided Docker setup](../../docs/maintainer/launcher.md) and
+> [software delivery and audit](../../docs/maintainer/releases.md).
 
 This is the Linux/amd64 direct-installation path for local rehearsals and
 audits. It installs a Relay and `mpc-ceremony` kit. The rehearsal's optional
@@ -14,7 +14,7 @@ proof-tool source on Machine 1 and therefore needs Go and a proof-tool checkout;
 every required rehearsal step runs from the kit alone.
 
 Production software delivery is described in
-[software delivery and audit](../release/release.md). Source-level auditors
+[software delivery and audit](../../docs/maintainer/releases.md). Source-level auditors
 may use the local rehearsal/audit scripts; they are not a production
 publication path.
 
@@ -124,7 +124,7 @@ provider guides and setup scripts in one invocation:
 cd "$CEREMONY_TOOLS_ROOT/storage-setup"
 ```
 
-Then follow `docs/setup/AWS_SETUP.md` or `docs/setup/R2_SETUP.md`. The extracted scripts
+Then follow `docs/maintainer/aws.md` or `docs/maintainer/r2.md`. The extracted scripts
 and guides are covered by the ceremony-kit checksum. Do not run this command
 separately for a three-machine rehearsal; its Machine 1 command below already
 performs the same extraction.
@@ -221,121 +221,3 @@ After those prerequisites exist on the selected machine, run:
 The `.env` is a rehearsal convenience. Keep it at mode `0600`; never put cloud
 secret keys, temporary grants, R2 control-plane or parent tokens, ceremony
 private keys, or build-signing keys in it.
-
-## Profile-layout reference
-
-Production uses validated JSON profiles, not a shell `.env`. This legacy page
-uses the following layout only as a reference for rehearsal or source audit.
-For production, the Docker setup creates the equivalent private working and
-public-input directories. Choose one absolute ceremony home and stage the
-public ceremony material under `public/`, the coordinator-supplied
-`relay-storage.json` under `config/`, and mutable outputs under `run/`:
-
-```text
-/var/lib/mpc-ceremonies/CEREMONY_ID/
-├── public/
-│   ├── ceremony.json
-│   └── ceremony.sig
-├── config/
-│   └── relay-storage.json
-└── run/
-```
-
-The independently authenticated coordinator public key and private signing
-keys may live outside this tree. Pass their absolute paths explicitly. Initialize
-one role profile after staging the authenticated material:
-
-```bash
-CEREMONY_HOME=/var/lib/mpc-ceremonies/CEREMONY_ID
-TOOL_IDENTITY_RECEIPT=/trusted/tool-identity-receipt.env
-relay ceremony init-config \
-  --home "$CEREMONY_HOME" \
-  --role participant \
-  --phase phase1 \
-  --execution-mode native \
-  --coordinator-key /trusted/coordinator-public-key.hex \
-  --tool-identity-receipt "$TOOL_IDENTITY_RECEIPT" \
-  --signing-key /secure/participant.ed25519.private.hex \
-  --environment /secure/environment.json
-```
-
-For a witness, mirror, auditor, or release operator, replace the participant
-key flags with that identity's authenticated `--enrollment` and
-`--enrollment-signature`. Relay verifies the local ceremony, storage ceremony,
-and role identity before writing the mode-`0600` profile. It stores paths only:
-no key bytes, cloud secrets, or temporary grant is written to it. Enrollment is
-long-lived and does not require temporary upload credentials. The coordinator
-supplies a short-lived grant only when a role is authorized to write.
-
-For participants, the resulting flow is:
-
-```bash
-ROLE_CONFIG="$CEREMONY_HOME/config/participant-phase1.json"
-relay participant status --config "$ROLE_CONFIG"
-relay participant run --config "$ROLE_CONFIG" \
-  --grant /secure/handoff/participant.grant.json
-```
-
-For Docker-backed participant isolation, preload the coordinator-approved
-ceremony-tool image, replace `--execution-mode native` with
-`--execution-mode docker`, and add the image/platform flags below:
-
-```bash
-  --execution-mode docker \
-  --docker-image registry.example/ceremony-tool@sha256:DIGEST \
-  --docker-platform linux/amd64
-```
-
-Keep the `--tool-identity-receipt` flag. The current initializer hashes a
-host-local `mpc-ceremony` file even in Docker mode, then uses its resolved
-absolute path inside the container. Stage the approved Linux binary at the
-same absolute path on the host and in the image (default:
-`/usr/local/bin/mpc-ceremony`); its hash must match the receipt. Avoid a symlink
-that resolves to a different path. This file is hashed on the host; Docker
-executes the Linux binary inside the image. A binary present only in the image
-is not enough for `init-config` today.
-
-Use a platform present in the signed ceremony definition's exact binary
-allowlist. A v2 ceremony can mix `linux/amd64` participants with Apple-silicon
-Mac participants using `linux/arm64`; a legacy v1 ceremony cannot. Relay
-refuses mutable image tags, never pulls during a participant turn, and does not
-fall back to native execution. Relay also resolves the active Docker context,
-rejects remote daemon endpoints, pins subsequent commands to the inspected
-local Unix socket, and records the daemon ID and actual user-namespace security
-options. Docker Desktop on Linux is unsupported because its hidden VM prevents
-Relay from validating daemon-host swap. Docker Desktop on macOS may be used for
-production only when the signed ceremony policy names that participant in
-`host_wipe_participants`. Container cleanup permits provisional contribution
-acceptance; final parameter release remains blocked until the participant
-performs a supported whole-device erase, cleanly reinstalls macOS without
-restoring pre-wipe backups, snapshots, or Docker state, and submits the
-separate signed host-wipe attestation. See
-[`PARTICIPANT_ISOLATION_DESIGN.md`](../design/participant-isolation.md).
-
-Relay authenticates the local key through `mpc-ceremony`, checks the signed
-published state, and rejects an out-of-turn participant before contribution
-work starts.
-
-## Install storage setup prerequisites
-
-The kit does not redistribute AWS CLI for host-side provider setup. Install `unzip`
-and `gpg`, follow the
-[official AWS CLI signature verification procedure](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html#install-linux-verify-signature),
-and install AWS CLI v2. Coordinators running the provider setup scripts also
-need `jq` and `curl` from the operating system. For Docker-packaged online
-roles, the role image includes AWS CLI for Relay transport; the host still needs
-the provider setup tools when running setup scripts. Do not configure a provider
-credential until the coordinator assigns the machine's role-specific profile
-or temporary grant.
-
-Create storage using [AWS_SETUP.md](AWS_SETUP.md) or [R2_SETUP.md](R2_SETUP.md)
-before running `relay coordinator configure-storage`.
-
-## Final verification
-
-The setup receipt is the authoritative Relay/proof-tool path, version, release,
-and binary-hash record. `init-config` re-hashes the running Relay executable and
-the host-local proof-tool file against
-it, so no manual `command -v` transcript is needed. Coordinators using S3 or R2
-must still let the provider setup procedure check its own CLI prerequisites;
-those tools are not part of the ceremony kit.

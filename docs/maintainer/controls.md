@@ -6,9 +6,8 @@ storage adapter. Automated checks must not appear as operator checkboxes: the
 software reports `passed`, `failed`, or `pending`, and a person cannot override
 that result.
 
-The role checklists contain only human judgment, explicit authorization,
-mechanical work that is not yet integrated, and stop conditions. Commands and
-retry rules remain in [CEREMONY_COMMANDS.md](../operator/CEREMONY_COMMANDS.md).
+The [role guides](../README.md) combine today's actions, human decisions,
+commands, and recovery. Future automation belongs here, not in operator labels.
 
 ## Status and evidence contract
 
