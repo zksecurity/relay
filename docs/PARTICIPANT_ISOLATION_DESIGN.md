@@ -29,7 +29,7 @@ Relay is the **participant supervisor**. It runs on the participant's host and:
 - downloads and authenticates ceremony inputs;
 - creates and validates the contributor container;
 - starts the contribution and validates its public output;
-- terminates and removes the contributor on every exit path;
+- attempts contributor removal on normal/error exits and handled SIGINT/SIGTERM;
 - verifies that the exact container ID no longer exists;
 - asks the participant only about copies Relay cannot observe;
 - invokes the existing signed erasure command; and
@@ -82,8 +82,9 @@ engine directly.
 - cryptographic proof that no copy exists.
 
 Production operators that need a shorter retention window or stronger physical
-boundary should use a dedicated disposable Linux VM and destroy that VM after
-copying out the public candidate.
+boundary can plan a dedicated disposable Linux VM and destroy it after copying
+out the public candidate. Relay does not yet implement the VM lifecycle driver
+described below; this is not an automated alternative supplied by this release.
 
 ## Image and binary model
 
@@ -161,14 +162,15 @@ is still required for production.
 ```text
 host                                  contributor
 ────────────────────────────────────────────────────────────
-authenticated ceremony inputs  ─RO─> /input
-environment.json              ─RO─> /config/environment.json
-participant signing key       ─RO─> /key/participant.key
-fresh candidate handoff       ─RW─> /output
+authenticated ceremony inputs  ─RO─> /relay/input
+definition/signature/trust key ─RO─> /relay/trust/<file>
+environment.json              ─RO─> /relay/config/environment.json
+participant signing key       ─RO─> /relay/key/participant.key
+fresh candidate handoff       ─RW─> /relay/output
                                       /tmp  (bounded tmpfs)
 ```
 
-Only public candidate files may cross from `/output` to the host. Relay must
+Only public candidate files may cross from `/relay/output` to the host. Relay must
 reject symlinks, devices, sockets, unexpected filenames, files outside the
 handoff directory, and outputs that fail the existing proof-tool verification
 and digest checks.
@@ -217,11 +219,11 @@ Relay must inspect the effective container configuration before starting it.
 It must not infer safety merely from the arguments it intended to pass.
 
 The persisted cleanup record contains the container ID and non-secret
-lifecycle state. If Relay or the host restarts, the next participant command
+lifecycle state. If Relay or the host restarts, the next `participant run`
 must finish cleanup for any recorded container before starting or resuming
 other work.
 
-All error and signal paths after container creation must attempt termination
+All handled error and signal paths after container creation must attempt termination
 and removal. Failure to verify removal is terminal: Relay must not attest or
 upload.
 
@@ -232,6 +234,12 @@ volumes, verifies that both `inspect` and an all-containers query find no such
 ID, removes the matching lifecycle state, and only then exits without
 attesting or uploading. If absence cannot be verified, Relay fails closed and
 retains the lifecycle state for recovery.
+
+SIGKILL, power loss, and kernel/daemon failure cannot run Relay's signal handler.
+Immediate removal is not guaranteed in these cases. Recover with the same
+profile's `participant run`, which checks recorded orphan state before further
+work; a status query alone does not perform this recovery. Do not attest or
+upload while container absence remains unverified.
 
 ## Measured facts and participant assertion
 
@@ -258,6 +266,7 @@ this exact production confirmation:
 Contribution completed.
 
 Relay verified:
+  ✓ Docker daemon <daemon-id> was reached through local endpoint <endpoint>
   ✓ contributor exited
   ✓ container <short-id> was removed
   ✓ container <short-id> no longer exists
@@ -272,11 +281,12 @@ Confirm that you:
 Type NO COPIES RETAINED to continue:
 ```
 
-Any other input, EOF, or uncertainty stops the workflow without producing an
+Any other input, EOF without a confirmation, or uncertainty stops the workflow without producing an
 erasure attestation or uploading. There is no non-interactive bypass in
 production mode.
 
-This replaces the current ambiguous `DESTROYED` prompt. The participant does
+For Docker execution this replaces the native `DESTROYED` prompt; native
+execution retains that prompt and its manual destruction procedure. The Docker participant does
 not manually remove the container at the prompt; Relay has already done and
 verified the mechanical cleanup.
 
@@ -334,7 +344,9 @@ After that participant's final scheduled contribution:
 The proof tool signs a separate `host-wipe.json` record with the participant's
 ceremony key. Operational-evidence verification requires exactly one valid
 record for every participant named by the signed policy and checks that its
-`wiped_at` is later than that participant's final accepted contribution. The
+`wiped_at` is later than that participant's latest `contributed_at` among the
+accepted chains (not the coordinator's `accepted_at`). Operationally, wait for
+final-turn acceptance before wiping, as above. The
 release signer therefore cannot sign or release final parameters while a
 required wipe is missing, invalid, duplicated, or too early.
 
@@ -352,8 +364,9 @@ the secret before wiping and then sign a false statement. The design here is
 for honest participants and primarily prevents an accidental long-lived copy
 from remaining on a Mac that is compromised later.
 
-A dedicated disposable Linux VM remains the stronger option when the delay
-between contribution and whole-host destruction is unacceptable. It should not
+A dedicated disposable Linux VM is a potential stronger boundary when the delay
+between contribution and whole-host destruction is unacceptable. It requires a
+separately reviewed lifecycle procedure; no VM driver ships here. It should not
 be configured for snapshots, backups, hibernation, or swap.
 
 A future VM-backed execution design must keep a trusted Relay supervisor and
@@ -433,3 +446,7 @@ of embedding Docker command construction throughout the participant workflow.
 Native Linux execution remains available, but
 production profiles must state their execution mode explicitly and must not
 silently fall back from Docker to native execution.
+The current `init-config` CLI defaults to `native` and writes that mode into
+the profile; supply `--execution-mode docker` to select isolation. Docker-only
+flags without Docker mode are rejected. Runtime platform support does not
+imply a distributed kit for every host; see [INSTALL.md](INSTALL.md#platform-scope).

@@ -304,6 +304,10 @@ the coordinator to copy these values between systems.
       offline signer through the approved procedure.
 - [ ] **HUMAN** Confirm the signer reviewed the exact artifact and ceremony
       evidence set required by proof-tool.
+- [ ] **HUMAN** For all signed-policy `host_wipe_participants`, include the
+      participant-signed host-wipe records in the operational-evidence bundle
+      and require successful proof-tool verification before release. Provisional
+      acceptance and host-wipe inbox uploads do not satisfy this gate by themselves.
 - [ ] **HUMAN** Transfer only signed output back to the separate online upload
       station. Give upload credentials to the station, never the offline
       signer.

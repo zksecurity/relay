@@ -1,6 +1,6 @@
 # Installing ceremony tools
 
-This is the normal installation path for coordinators, participants, witnesses,
+This is the Linux/amd64 installation path for coordinators, participants, witnesses,
 mirrors, auditors, and release operators. It installs a coordinated Relay and
 `mpc-ceremony` kit; it does not require Go or either source repository. The one
 exception is the rehearsal's optional evidence-upload transport test (steps
@@ -10,6 +10,18 @@ tag; every required rehearsal step runs from the kit alone.
 
 Release maintainers and independent build auditors use
 [RELEASE.md](RELEASE.md) instead.
+
+## Platform scope
+
+The current Relay release builder and ceremony-kit installer package Linux/amd64
+executables. The commands below are not a native macOS or Linux/arm64 installer.
+Docker participant execution supports both Linux image architectures, including
+Apple-silicon Macs using `linux/arm64`, but that capability is separate from kit
+distribution. Such hosts need a separately approved host-compatible Relay build,
+the approved Linux proof-tool binary/image, and a matching tool-identity receipt.
+Do not run the kit's Linux Relay executable directly on macOS or substitute an
+unverified build. Coordinators must provide and validate those installation
+materials before assigning these hosts; this guide does not provide that kit.
 
 ## Obtain two authenticated values
 
@@ -232,6 +244,7 @@ relay ceremony init-config \
   --home "$CEREMONY_HOME" \
   --role participant \
   --phase phase1 \
+  --execution-mode native \
   --coordinator-key /trusted/coordinator-public-key.hex \
   --tool-identity-receipt "$TOOL_IDENTITY_RECEIPT" \
   --signing-key /secure/participant.ed25519.private.hex \
@@ -256,13 +269,23 @@ relay participant run --config "$ROLE_CONFIG" \
 ```
 
 For Docker-backed participant isolation, preload the coordinator-approved
-ceremony-tool image and add these flags to `ceremony init-config`:
+ceremony-tool image, replace `--execution-mode native` with
+`--execution-mode docker`, and add the image/platform flags below:
 
 ```bash
   --execution-mode docker \
   --docker-image registry.example/ceremony-tool@sha256:DIGEST \
   --docker-platform linux/amd64
 ```
+
+Keep the `--tool-identity-receipt` flag. The current initializer hashes a
+host-local `mpc-ceremony` file even in Docker mode, then uses its resolved
+absolute path inside the container. Stage the approved Linux binary at the
+same absolute path on the host and in the image (default:
+`/usr/local/bin/mpc-ceremony`); its hash must match the receipt. Avoid a symlink
+that resolves to a different path. This file is hashed on the host; Docker
+executes the Linux binary inside the image. A binary present only in the image
+is not enough for `init-config` today.
 
 Use a platform present in the signed ceremony definition's exact binary
 allowlist. A v2 ceremony can mix `linux/amd64` participants with Apple-silicon
@@ -300,7 +323,8 @@ before running `relay coordinator configure-storage`.
 ## Final verification
 
 The setup receipt is the authoritative Relay/proof-tool path, version, release,
-and binary-hash record. `init-config` re-hashes both running executables against
+and binary-hash record. `init-config` re-hashes the running Relay executable and
+the host-local proof-tool file against
 it, so no manual `command -v` transcript is needed. Coordinators using S3 or R2
 must still let the provider setup procedure check its own CLI prerequisites;
 those tools are not part of the ceremony kit.

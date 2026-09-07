@@ -24,6 +24,12 @@
       offline transfer procedure.
 - [ ] **HUMAN** I reviewed the exact ceremony ID, release contents, audit
       identities, operational evidence, warnings, and intended public label.
+- [ ] **HUMAN** For every identity in the signed definition's
+      `host_wipe_participants`, the verified operational-evidence bundle contains
+      exactly one valid participant-signed host-wipe record. Its `wiped_at`
+      strictly postdates that participant's latest `contributed_at` in the
+      accepted chains. An accepted contribution or inbox upload alone is not
+      proof of this release gate; the statement is not physical proof of erasure.
 - [ ] **AUTHORIZE** I authorize my offline release key to sign exactly the
       verified release manifest and no substitute or later-modified bytes.
 

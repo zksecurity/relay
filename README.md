@@ -79,6 +79,7 @@ matches `relay-storage.json`:
     relay ceremony init-config --home /ceremony --role participant --phase phase1 \
       --coordinator-key /trusted/coordinator-public-key.hex \
       --tool-identity-receipt /trusted/tool-identity-receipt.env \
+      --execution-mode native \
       --signing-key /secure/key --environment /secure/environment.json
     relay participant status --config /ceremony/config/participant-phase1.json
 
@@ -87,12 +88,17 @@ digest for this participant's platform:
 
     relay ceremony init-config --home /ceremony --role participant --phase phase1 \
       --coordinator-key /trusted/coordinator-public-key.hex \
+      --tool-identity-receipt /trusted/tool-identity-receipt.env \
       --signing-key /secure/key --environment /secure/environment.json \
       --execution-mode docker \
       --docker-image registry.example/ceremony-tool@sha256:DIGEST \
       --docker-platform linux/amd64
 
 Relay never pulls this image during a turn. Preload and authenticate it first.
+The current initializer also requires the approved Linux binary to exist on
+the host at the same absolute path used inside the image (by default,
+`/usr/local/bin/mpc-ceremony`), with its hash matching the tool-identity receipt.
+See [installation prerequisites and platform limits](docs/INSTALL.md).
 Before any contributor is created, Relay resolves the selected Docker context,
 rejects non-local daemon endpoints, pins every command to the resulting Unix
 socket, and records the daemon ID and actual `userns`/`rootless` security

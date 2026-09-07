@@ -7,7 +7,11 @@ signing key.
 
 ## Trust inputs and prerequisites
 
-Production Relay and `mpc-ceremony` releases target Linux/amd64 with Go 1.26.6.
+The production build host is Linux/amd64 with Go 1.26.6. Relay's builder and
+the ceremony-kit packaging currently target Linux/amd64. Proof-tool's builder
+also produces `mpc-ceremony-linux-arm64` with its own manifest and checksums;
+this does not make the Relay kit a macOS or ARM64 installer. See
+[installation platform scope](INSTALL.md#platform-scope).
 Install Go using the [official Go installation guide](https://go.dev/doc/install)
 and confirm:
 
@@ -27,6 +31,11 @@ Before a production build, agree through authenticated channels on:
 - the approved signed tag and tag-signer fingerprint;
 - the exact source commit referenced by that tag; and
 - the independently trusted build-package signing public key.
+
+The approved GPG tag-signer fingerprint is an independently supplied build
+input, not a hardcoded Relay runtime identity. The scripts verify the tag
+signature and expected fingerprint; a valid signature alone does not establish
+that the key was kept offline. Offline custody below is an operational policy.
 
 ## CI and offline-signing boundary
 
