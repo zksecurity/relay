@@ -20,9 +20,12 @@ are in [README.md](README.md).
 
 ## 1. Install and verify the tools
 
-For Docker-packaged Relay, proof-tool, and AWS CLI, follow the
-[role launcher guide](docker/roles/README.md). Use its container paths and
-coordinator launcher prefix with the commands below.
+For Docker-packaged Relay, proof-tool, and AWS CLI, start with
+[operator paths](docs/OPERATOR_PATHS.md). Prefer
+[guided setup](docs/GUIDED_SETUP.md) to save one reviewed coordinator action,
+or use the explicit [role launcher guide](docker/roles/README.md). Use its
+container paths and launcher prefix with the commands below. The recipes below
+still describe the action being saved; do not copy host paths into a container.
 
 Follow [docs/INSTALL.md](docs/INSTALL.md). It gives exact instructions for
 downloading one coordinated ceremony kit, verifying its independently supplied

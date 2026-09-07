@@ -56,8 +56,8 @@ setup instead requires an existing Docker role config on the host. The kit's
 immutable image reference supplied by the operator and that its platform
 matches. It does not verify a publisher signature or a coordinator-signed image
 approval manifest. Obtain approved digests through the independent authenticated
-coordinator channel. The current CLI phrase “Approved image available” means
-the supplied image is available, not that setup established its approval.
+coordinator channel. The CLI phrase “Configured image is available” means only
+that the supplied image is available; setup did not establish its approval.
 Separately, the participant workflow checks the proof-tool binary against the
 signed ceremony binary policy. A signed release tag does not sign a Docker image.
 

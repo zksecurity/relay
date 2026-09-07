@@ -8,6 +8,10 @@
 > differ from this checklist.
 > Exact Relay recipes and their success output are in
 > [CEREMONY_COMMANDS.md](CEREMONY_COMMANDS.md).
+> For the Docker participant path, first follow
+> [docs/OPERATOR_PATHS.md](docs/OPERATOR_PATHS.md) and save the profile with
+> [guided setup](docs/GUIDED_SETUP.md). The checklist's contribution commands
+> remain the underlying action that the host supervisor runs.
 > Generate the role key with
 > [PARTICIPANT_KEY_GENERATION.md](PARTICIPANT_KEY_GENERATION.md).
 

@@ -1,5 +1,11 @@
 # Installing ceremony tools
 
+For a role's normal Docker workflow after installation, first read
+[operator paths](OPERATOR_PATHS.md). It explains when to use saved guided setup
+instead of retyping a low-level command, and what image availability does—and
+does not—verify. This page remains the authenticated direct-installation and
+participant-profile reference.
+
 This is the Linux/amd64 installation path for coordinators, participants, witnesses,
 mirrors, auditors, and release operators. It installs a coordinated Relay and
 `mpc-ceremony` kit; it does not require Go or either source repository. The one

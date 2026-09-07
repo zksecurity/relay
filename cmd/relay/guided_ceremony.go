@@ -168,7 +168,7 @@ func runGuidedSetup(args []string) error {
 	if err := writeJSONNoReplace(filepath.Join(dir, "profile.json"), p, 0o600); err != nil {
 		return err
 	}
-	fmt.Printf("Setup ready for %s / %s. Approved image is available.\nSaved settings: %s\nOpen with: relay ceremony open %s --role %s\n", p.Name, p.Role, dir, p.Name, p.Role)
+	fmt.Printf("Setup ready for %s / %s. Configured image is available.\nSaved settings: %s\nOpen with: relay ceremony open %s --role %s\n", p.Name, p.Role, dir, p.Name, p.Role)
 	return nil
 }
 
@@ -409,7 +409,7 @@ func runGuidedOpen(args []string) error {
 			return fmt.Errorf("%w; review outputs and ceremony state before using --reviewed-retry; do not blindly rerun signing/upload tasks", err)
 		}
 	}
-	fmt.Println("Docker: ready. Approved image available. No image download will occur during this task.")
+	fmt.Println("Docker: ready. Configured image is available. No image download will occur during this task.")
 	if err := confirmGuided(os.Stdin, os.Stdout); err != nil {
 		return err
 	}
