@@ -195,9 +195,6 @@ func runAcceptCandidate(args []string) error {
 		return err
 	}
 	fmt.Printf("accepted candidate %s and advanced the published head\n", candidateKey)
-	if pos.definition.RequiresHostWipe(manifest.ParticipantID) {
-		fmt.Printf("release status: accepted provisionally; %s must submit verified post-wipe Mac evidence after their final contribution\n", manifest.ParticipantID)
-	}
 	return nil
 }
 
@@ -236,14 +233,14 @@ func runEvidenceInbox(args []string) error {
 	set := flag.NewFlagSet("coordinator evidence", flag.ContinueOnError)
 	var storagePath, role string
 	set.StringVar(&storagePath, "storage", "", "storage configuration")
-	set.StringVar(&role, "role", "", "optional witness, mirror, auditor, release, decision, or host-wipe filter")
+	set.StringVar(&role, "role", "", "optional witness, mirror, auditor, release, decision filter")
 	if err := set.Parse(args); err != nil {
 		return err
 	}
 	if storagePath == "" {
 		return errors.New("--storage is required")
 	}
-	roles := []string{access.RoleWitness, access.RoleMirror, access.RoleAuditor, access.RoleRelease, access.RoleDecision, access.RoleHostWipe}
+	roles := []string{access.RoleWitness, access.RoleMirror, access.RoleAuditor, access.RoleRelease, access.RoleDecision}
 	if role != "" {
 		valid := false
 		for _, candidate := range roles {

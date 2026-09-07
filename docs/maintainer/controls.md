@@ -53,8 +53,6 @@ remain append-only evidence even when the default UI shows only a summary.
 | `COORD-BEACON-01` | Witness and beacon | Verify witness identities, signatures, observed head, round, and lead; fetch only the pinned future beacon; verify the seal transition. | Passing witness-quorum, beacon, and seal receipts. |
 | `COORD-PHASE2-01` | Phase transition | Verify authenticated Phase 1 closure, seal, and Phase 2 initialization before any Phase 2 grant; after Phase 2, require both complete chains and beacon transitions. | Passing phase-transition or completion receipt. |
 | `COORD-EVIDENCE-01` | Operational evidence | Authenticate evidence enrollments, constrain grants, discover manifest-last submissions, and verify signed mirror receipts against exact heads, file sets, location digests, and identities. | Passing evidence inventory and verification receipts. |
-| `COORD-HOST-WIPE-01` | Production Mac cleanup | Relay issues an identity-scoped `host-wipe` grant only when the authenticated signed definition names that production participant; operational enrollment cannot substitute for roster policy. | Grant and submission receipts bound to the exact ceremony and participant. |
-| `COORD-HOST-WIPE-02` | Operational evidence | Proof-tool requires exactly one valid participant-signed host-wipe record for each policy identity and rejects missing, duplicate, invalid, or too-early evidence. | Passing operational-evidence verification; the wipe timestamp postdates that participant's final accepted contribution. |
 | `COORD-RELEASE-01` | Release decision | Verify uploaded release and decision records, one coherent ceremony evidence set, required artifacts and signatures, and valid production labeling. | Passing release/decision verification receipt; reject rehearsal or incomplete evidence as production. |
 
 ## Participant controls
@@ -66,7 +64,6 @@ remain append-only evidence even when the default UI shows only a summary.
 | `PART-SUBMIT-01` | Submission | Relay reports successful candidate submission only after required objects and manifest-last upload complete. | Submission receipt binding attempt, manifest key, public candidate directory, signed erasure time, and starting head. |
 | `PART-RESUME-01` | Upload recovery | Relay verifies an unchanged head, re-hashes and rebinds saved files, compares remote bytes, and uploads the manifest last. | Passing resume receipt; stale head or conflicting bytes is a blocking failure. |
 | `PART-ACCEPT-01` | Acceptance | `relay participant status` independently authenticates the new public head and identifies accepted position, next position, or phase closure. | Acceptance-status receipt bound to the submitted candidate. |
-| `PART-HOST-WIPE-01` | Production Mac cleanup | After the final contribution, `relay participant attest-host-wipe` requires the exact human confirmation and invokes proof-tool to sign explicit erase, reinstall, no-restore, and no-retained-copy assertions before uploading manifest-last. | Participant-signed `host-wipe.json` and `host-wipe.sig`; this authenticates the claim but does not prove physical erasure. |
 
 ## Witness, mirror, and auditor controls
 
@@ -85,7 +82,7 @@ All three roles use `SYS-SUBMIT-01` when transporting their signed evidence.
 | ID | Role | Authoritative behavior | Required result and evidence |
 | --- | --- | --- | --- |
 | `RELEASE-ROLE-01` | Release signer | The signed definition identifies a distinct release signer and rejects prohibited overlap. | Passing assignment receipt. |
-| `RELEASE-SIGN-01` | Release signer | `mpc-ceremony release sign` verifies the candidate, two distinct enrolled auditor reports, both phases, witness quorum, independent mirrors, beacon evidence, required host-wipe evidence, and ceremony coherence before loading the signing key. | Fresh signed release directory and verification receipt. |
+| `RELEASE-SIGN-01` | Release signer | `mpc-ceremony release sign` verifies the candidate, two distinct enrolled auditor reports, both phases, witness quorum, independent mirrors, beacon evidence, and ceremony coherence before loading the signing key. | Fresh signed release directory and verification receipt. |
 | `RELEASE-VERIFY-01` | Release signer | `mpc-ceremony release verify` authenticates the completed release with the independently trusted release key and key ID. | Passing release-verification receipt. |
 | `DECISION-PREPARE-01` | Decision signer | `mpc-ceremony decision prepare` strictly parses the draft, derives release and decision IDs, and verifies ceremony, production circuit, source, and role bindings. | Canonical decision digest and evidence-inventory digest. |
 | `DECISION-SIGN-01` | Decision signer | For `GO`, `mpc-ceremony decision sign` hashes and semantically verifies the complete local evidence set before loading the signing key and rejects an identity or role mismatch. | Detached role signature over the exact canonical decision. |

@@ -10,8 +10,8 @@ each assigned phase.
 - [ ] Receive the coordinator key, release ID, signed assignment, phase positions,
       emergency contact, and profile-preparation instructions through the agreed channel.
 - [ ] Confirm your public identity and position match the assignment.
-- [ ] For production on a Mac, agree to the later whole-device wipe before
-      starting. Your identity must appear in the signed wipe policy.
+- [ ] Understand that Docker cleanup cannot rule out host/VM secret remnants
+      or later recovery. No whole-machine wipe is required by this workflow.
 - [ ] Use the dedicated machine and backup/snapshot policy agreed for this ceremony.
       Linux participants need native Docker Engine and disabled host swap.
 
@@ -60,7 +60,8 @@ binary policy if setup rejects it.
 
 Review the action and confirm. Relay verifies the inputs, computes in the
 isolated contributor, removes it, checks removal, and asks about retained copies.
-Only type `NO COPIES RETAINED` if the displayed assertions are true:
+Only type `CLEANUP PRECAUTIONS CONFIRMED` if the displayed assertions are true.
+This acknowledges precautions, not proof that every secret copy was erased:
 you retained no snapshots, memory dumps, contribution randomness, or backup copy.
 Uncertainty is a reason to stop.
 
@@ -90,7 +91,5 @@ the same profile's run/recovery path must verify cleanup before proceeding.
 
 ## Finish
 
-- [ ] If required, complete [Mac wipe confirmation](../tasks/mac-wipe.md)
-      after your final accepted contribution and before final parameter release.
 - [ ] Retain approved public evidence and protect your signing key according to
       the agreed retention plan. Never upload your key or grant contents.

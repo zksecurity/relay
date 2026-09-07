@@ -4,12 +4,11 @@ import "testing"
 
 func testDefinition() Definition {
 	return Definition{
-		Schema:               definitionInspectionSchema,
-		CeremonyID:           "ceremony-id",
-		Mode:                 "production",
-		Phase1Participants:   []string{"participant-01", "participant-02", "participant-03"},
-		Phase2Participants:   []string{"participant-02", "participant-03"},
-		HostWipeParticipants: []string{"participant-03"},
+		Schema:             definitionInspectionSchema,
+		CeremonyID:         "ceremony-id",
+		Mode:               "production",
+		Phase1Participants: []string{"participant-01", "participant-02", "participant-03"},
+		Phase2Participants: []string{"participant-02", "participant-03"},
 		R1CSRef: ArtifactRef{
 			Name: "ownership-destination.ccs",
 			Digest: Digest{
@@ -51,12 +50,5 @@ func TestSlotOfUsesInspectedPerPhaseSchedule(t *testing.T) {
 	}
 	if _, err := d.SlotOf("phase2", "participant-01"); err == nil {
 		t.Error("SlotOf found a participant that is not scheduled in phase2")
-	}
-}
-
-func TestRequiresHostWipeUsesSignedInspectionPolicy(t *testing.T) {
-	d := testDefinition()
-	if !d.RequiresHostWipe("participant-03") || d.RequiresHostWipe("participant-01") {
-		t.Fatalf("unexpected host-wipe policy result: %#v", d.HostWipeParticipants)
 	}
 }

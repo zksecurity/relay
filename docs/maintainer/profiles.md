@@ -43,7 +43,8 @@ through Docker. Use `docker pull REPOSITORY@sha256:DIGEST` with the authenticate
 map's contributor digest. Image approval never replaces the signed binary policy.
 
 Use the participant's own key; the coordinator must not receive it.
-Production Mac participants must already appear in `host_wipe_participants`.
+Use the matching proof-tool v2 environment input with contributor-scoped
+controls and `host_remnants_not_excluded: true`; do not reuse old environment JSON.
 Remote Docker contexts and Docker Desktop on Linux are rejected.
 
 ## Other roles: container paths

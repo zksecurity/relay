@@ -35,9 +35,8 @@ Never bring storage credentials or an online upload profile onto this machine.
 - [ ] Review the exact candidate, ceremony, auditor identities, both phases,
       beacon evidence, independent witness/mirror requirements, and incidents.
 - [ ] Run the pinned proof-tool verification recipe over the entire evidence set.
-- [ ] Require exactly one verified wipe confirmation for each signed-policy Mac
-      participant, with wipe time later than their final contribution time.
-      Provisional acceptance or an uploaded record is insufficient.
+- [ ] Verify contribution-bound cleanup statements and understand their scope:
+      they do not exclude host/VM remnants or prove physical erasure.
 - [ ] Authorize signing only the exact verified release manifest.
 
 Prepare each reviewed command before disconnecting using:
@@ -56,7 +55,7 @@ On the disconnected machine, review and open that action:
 ```
 
 Success produces the signed public release output. Verification authenticates
-wipe statements and their timing; it does not physically prove erasure.
+cleanup statements and their timing; it does not physically prove erasure.
 
 ## Handoff and recovery
 

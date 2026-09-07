@@ -58,7 +58,7 @@ role_action "$ACTION-phase2" relay auditor run \
 - [ ] Require replay and re-hashing of the entire local file set.
       Relay synchronization alone does not re-check every pre-existing artifact.
 - [ ] Review the audit scope, both phases, warnings, operational evidence,
-      required Mac wipe records, and final result.
+      signed cleanup claims and their limitations, and final result.
 - [ ] Authorize only the exact successful audit report and signature.
 
 The profile and full audit arguments must be supplied and reviewed before

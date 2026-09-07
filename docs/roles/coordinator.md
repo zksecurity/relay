@@ -11,8 +11,8 @@ and publish accepted ceremony state. You do not hold other roles' private keys.
 - [ ] Agree on an authenticated channel independent of ceremony storage.
 - [ ] Collect public identities only; confirm fingerprints with their owners.
       Distinct keys are enforced; independent people and organizations are not.
-- [ ] Include every production Mac participant in the signed
-      `host_wipe_participants` policy before initialization.
+- [ ] Explain the Docker cleanup precautions and remaining host/VM storage
+      risk to participants before they begin; whole-machine wiping is optional.
 
 Create your identity on your own machine. Set `IDENTITY_ID` and
 `DISPLAY_NAME` to your agreed public values; use the directories from installation:
@@ -110,8 +110,7 @@ coord "$ACTION-accept" relay coordinator accept --storage "$STORAGE" \
 
 A listing is only a discovery result. Acceptance verifies the actual candidate.
 Success reports an advanced published head; independently authenticate it
-before notifying the next participant. A production Mac may be accepted
-provisionally while its later wipe remains outstanding.
+before notifying the next participant. There is no separate post-wipe gate.
 
 ## Close phases and collect evidence
 
@@ -136,12 +135,8 @@ coord "$ACTION-publish" relay coordinator publish --storage "$STORAGE" \
 coord "$ACTION-evidence" relay coordinator evidence --storage "$STORAGE"
 ```
 
-- [ ] After each required Mac's final accepted turn, arrange its
-      [wipe and signed confirmation](../tasks/mac-wipe.md).
 - [ ] Have independent auditors replay both phases from independent sources.
 - [ ] Give the final-parameter signer the exact candidate, audits, and evidence.
-- [ ] Require valid post-wipe records for every signed-policy participant;
-      an inbox upload or provisional acceptance does not satisfy this gate.
 - [ ] Verify final release/decision signatures, record authorization, and
       preserve the complete transcript and evidence on the required mirrors.
 - [ ] Verify the archive before retiring grants or storage access.

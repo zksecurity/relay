@@ -32,7 +32,7 @@ const (
 	dockerLifecycleLogName    = "relay-lifecycle.json"
 	dockerActiveStateFileName = ".relay-active-container.json"
 	dockerLinuxSwapDisabled   = "disabled-relay-linux-host-local-unix-daemon"
-	dockerMacSwapUnassessed   = "not-assessed-macos-host-wipe-required"
+	dockerMacSwapUnassessed   = "not-assessed-macos-host"
 )
 
 type dockerCommandClient interface {
@@ -541,87 +541,6 @@ func (d *dockerDriver) attestErasure(o roleOpts, destroyedAt time.Time) error {
 	command = append(command, d.image)
 	command = append(command, rewritten...)
 	return d.client.Attached(os.Stdout, os.Stderr, command...)
-}
-
-// attestHostWipe creates only public, participant-signed evidence. It runs
-// after the whole Mac has been erased and cleanly reinstalled, so it does not
-// share the contributor container's lifecycle or generate toxic waste.
-func (d *dockerDriver) attestHostWipe(o roleOpts, wipedAt time.Time, outDir string) error {
-	if err := d.preflight(); err != nil {
-		return err
-	}
-	if _, err := os.Lstat(outDir); err == nil {
-		return fmt.Errorf("host-wipe output already exists: %s", outDir)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	parent := filepath.Dir(outDir)
-	if err := ensurePrivateDirectory(parent); err != nil {
-		return fmt.Errorf("host-wipe output parent: %w", err)
-	}
-	staging, err := os.MkdirTemp(parent, ".relay-host-wipe-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(staging)
-
-	containerOut := "/relay/output/evidence"
-	args := []string{"ops", "attest-host-wipe",
-		"--ceremony", "/relay/trust/ceremony.json",
-		"--ceremony-signature", "/relay/trust/ceremony.sig",
-		"--coordinator-public-key-file", "/relay/trust/coordinator.hex",
-		"--participant-id", o.role,
-		"--participant-signing-key", "/relay/key/participant.key",
-		"--wiped-at", wipedAt.UTC().Format(time.RFC3339),
-		"--out-dir", containerOut,
-	}
-	mounts := []dockerMount{
-		{Source: d.definition, Destination: "/relay/trust/ceremony.json", ReadOnly: true},
-		{Source: d.definitionSig, Destination: "/relay/trust/ceremony.sig", ReadOnly: true},
-		{Source: d.coordinatorKey, Destination: "/relay/trust/coordinator.hex", ReadOnly: true},
-		{Source: d.signingKey, Destination: "/relay/key/participant.key", ReadOnly: true},
-		{Source: staging, Destination: "/relay/output", ReadOnly: false},
-	}
-	if err := validateMountSources(mounts); err != nil {
-		return err
-	}
-	command := d.baseRunArgs(true, mounts)
-	command = append(command, d.image)
-	command = append(command, args...)
-	if err := d.client.Attached(os.Stdout, os.Stderr, command...); err != nil {
-		return fmt.Errorf("create host-wipe attestation in Docker: %w", err)
-	}
-	evidence := filepath.Join(staging, "evidence")
-	if err := validateHostWipeHandoff(evidence); err != nil {
-		return err
-	}
-	if err := os.Rename(evidence, outDir); err != nil {
-		return fmt.Errorf("promote host-wipe evidence: %w", err)
-	}
-	return nil
-}
-
-func validateHostWipeHandoff(directory string) error {
-	entries, err := os.ReadDir(directory)
-	if err != nil {
-		return fmt.Errorf("read host-wipe evidence handoff: %w", err)
-	}
-	wanted := map[string]bool{"host-wipe.json": false, "host-wipe.sig": false}
-	if len(entries) != len(wanted) {
-		return fmt.Errorf("host-wipe evidence contains %d entries, want exactly %d", len(entries), len(wanted))
-	}
-	for _, entry := range entries {
-		seen, ok := wanted[entry.Name()]
-		if !ok || seen || entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("unexpected host-wipe evidence entry %q", entry.Name())
-		}
-		info, err := entry.Info()
-		if err != nil || !info.Mode().IsRegular() {
-			return fmt.Errorf("host-wipe evidence entry %q is not a regular file", entry.Name())
-		}
-		wanted[entry.Name()] = true
-	}
-	return nil
 }
 
 func (d *dockerDriver) contributionArgs(o roleOpts, pos position, contributedAt time.Time, handoff, output string) ([]string, []dockerMount, error) {

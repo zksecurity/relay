@@ -1,8 +1,8 @@
 # Participant contribution isolation
 
 Status: implemented by Relay's explicit `docker` participant execution mode.
-On macOS, production use additionally requires a delayed whole-device wipe
-attestation before the final parameters may be approved or released.
+Production Mac and Linux participation use guided container cleanup and signed
+participant confirmation, without mandatory whole-machine wiping.
 
 This document defines the Docker-backed participant workflow that Relay
 implements for Groth16 ceremonies. It narrows the design to the threat we care
@@ -154,8 +154,8 @@ remote `tcp://` and `ssh://` Docker endpoints before checking Linux host swap,
 then pins all commands to the resolved local Unix endpoint. Native Docker
 Engine on Linux must have host swap disabled. Docker Desktop on Linux is
 rejected because Relay cannot apply that host check to its hidden VM. On macOS,
-VM and host swap remain explicitly unassessed and the later whole-device wipe
-is still required for production.
+VM and host swap remain explicitly unassessed. The workflow accepts residual
+host-remnant risk; logical container removal does not establish physical erasure.
 
 ## Mount contract
 
