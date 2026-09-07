@@ -5,8 +5,11 @@ use [saved setup and guided opening](../../docs/setup/GUIDED_SETUP.md).
 
 `relay role` is a host-side launcher. It runs the tools for your role in a
 preloaded Docker image, so ordinary online roles do not need a host installation
-of AWS CLI or proof-tool. The host still needs Relay and Docker. This is a new
-launcher, not a published multi-platform installer or production-approved image.
+of AWS CLI or proof-tool. The host still needs Relay and Docker. Published
+multi-platform images are produced by the release workflow; see
+[role-image publishing](../../docs/release/role-images.md). A published image
+is still not ceremony-approved until its digest appears in the separately
+signed release approval record.
 
 | Role | Where the tools run | Network |
 | --- | --- | --- |

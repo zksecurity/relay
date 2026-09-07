@@ -1,0 +1,14 @@
+{
+  "schema": "relay-role-image-inputs/v1",
+  "aws_cli_image": "public.ecr.aws/aws-cli/aws-cli@sha256:REPLACE_WITH_64_LOWERCASE_HEX",
+  "mpc": {
+    "linux_amd64": {
+      "url": "https://github.com/Emurgo/proof-tool/releases/download/APPROVED_TAG/mpc-ceremony-linux-amd64",
+      "sha256": "REPLACE_WITH_64_LOWERCASE_HEX"
+    },
+    "linux_arm64": {
+      "url": "https://github.com/Emurgo/proof-tool/releases/download/APPROVED_TAG/mpc-ceremony-linux-arm64",
+      "sha256": "REPLACE_WITH_64_LOWERCASE_HEX"
+    }
+  }
+}

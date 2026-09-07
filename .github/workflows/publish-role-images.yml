@@ -1,0 +1,195 @@
+name: Publish role images
+
+# A signed tag contains release/role-images.json with exact inputs. CI produces
+# attested *candidates*; an offline release signer still approves the resulting
+# platform-to-digest manifest before a coordinator distributes it.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      relay_tag:
+        description: Signed Relay source tag to rebuild (defaults to the selected tag on tag pushes)
+        required: true
+        type: string
+
+env:
+  RELAY_TAG: ${{ inputs.relay_tag || github.ref_name }}
+
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+
+jobs:
+  build:
+    name: ${{ matrix.target }} / ${{ matrix.platform }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+        target: [online, offline, contributor]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+        with:
+          ref: ${{ env.RELAY_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify signed source tag
+        shell: bash
+        env:
+          RELAY_TAG: ${{ env.RELAY_TAG }}
+          EXPECTED_FINGERPRINT: D27746F50177107AF060C35B69375FD4AA575389
+        run: |
+          set -euo pipefail
+          [[ "$RELAY_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$ ]]
+          gpg --batch --import release/keys/relay-tag-signing-public.asc
+          verify=$(git verify-tag --raw "$RELAY_TAG" 2>&1)
+          printf '%s\n' "$verify" | grep -F "[GNUPG:] VALIDSIG $EXPECTED_FINGERPRINT "
+          test "$(git rev-parse "$RELAY_TAG^{commit}")" = "$(git rev-parse HEAD)"
+
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Read signed release image inputs
+        id: inputs
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          jq -e '
+            .schema == "relay-role-image-inputs/v1" and
+            (.aws_cli_image | test("^[^[:space:]@]+@sha256:[0-9a-f]{64}$")) and
+            (.mpc.linux_amd64.url | test("^https://")) and
+            (.mpc.linux_amd64.sha256 | test("^[0-9a-f]{64}$")) and
+            (.mpc.linux_arm64.url | test("^https://")) and
+            (.mpc.linux_arm64.sha256 | test("^[0-9a-f]{64}$"))
+          ' release/role-images.json >/dev/null
+          case "$PLATFORM" in
+            linux/amd64) key=linux_amd64 ;;
+            linux/arm64) key=linux_arm64 ;;
+            *) exit 1 ;;
+          esac
+          printf 'mpc_url=%s\nmpc_sha256=%s\naws_cli_image=%s\n' \
+            "$(jq -r ".mpc.$key.url" release/role-images.json)" \
+            "$(jq -r ".mpc.$key.sha256" release/role-images.json)" \
+            "$(jq -r '.aws_cli_image' release/role-images.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Stage exact architecture inputs
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          MPC_URL: ${{ steps.inputs.outputs.mpc_url }}
+          MPC_SHA256: ${{ steps.inputs.outputs.mpc_sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$MPC_URL" =~ ^https:// ]] && [[ "$MPC_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          mkdir image-context
+          GOOS=linux GOARCH="${PLATFORM#linux/}" CGO_ENABLED=0 \
+            go build -trimpath -buildvcs=true -ldflags=-buildid= -o image-context/relay ./cmd/relay
+          curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error "$MPC_URL" \
+            --output image-context/mpc-ceremony
+          printf '%s  %s\n' "$MPC_SHA256" image-context/mpc-ceremony | sha256sum --check --strict
+          chmod 0555 image-context/relay image-context/mpc-ceremony
+          cp docker/roles/Dockerfile image-context/roles.Dockerfile
+          cp docker/ceremony-tool/Dockerfile image-context/contributor.Dockerfile
+
+      - name: Select image name
+        id: image
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          PLATFORM: ${{ matrix.platform }}
+          TAG: ${{ env.RELAY_TAG }}
+        run: |
+          set -euo pipefail
+          case "$TARGET" in
+            online) name=ghcr.io/${{ github.repository }}/relay-role-online; file=roles.Dockerfile; target=online ;;
+            offline) name=ghcr.io/${{ github.repository }}/relay-role-offline; file=roles.Dockerfile; target=offline ;;
+            contributor) name=ghcr.io/${{ github.repository }}/relay-ceremony-tool; file=contributor.Dockerfile; target= ;;
+            *) exit 1 ;;
+          esac
+          suffix=${PLATFORM#linux/}
+          printf 'name=%s\nfile=%s\ntarget=%s\ntag=%s-%s\n' "$name" "$file" "$target" "$TAG" "$suffix" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push immutable candidate
+        id: build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: image-context
+          file: image-context/${{ steps.image.outputs.file }}
+          target: ${{ steps.image.outputs.target }}
+          platforms: ${{ matrix.platform }}
+          push: true
+          pull: true
+          build-args: |
+            AWS_CLI_IMAGE=${{ steps.inputs.outputs.aws_cli_image }}
+          tags: ${{ steps.image.outputs.name }}:${{ steps.image.outputs.tag }}
+
+      - name: Attest published image provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Write candidate record
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          PLATFORM: ${{ matrix.platform }}
+          IMAGE: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAG: ${{ env.RELAY_TAG }}
+        run: |
+          set -euo pipefail
+          mkdir candidate
+          jq -n --arg target "$TARGET" --arg platform "$PLATFORM" --arg image "$IMAGE" \
+            --arg digest "$DIGEST" --arg tag "$TAG" --arg commit "$(git rev-parse HEAD)" \
+            '{target:$target, platform:$platform, image:($image+"@"+$digest), source_tag:$tag, source_commit:$commit}' \
+            > "candidate/$TARGET-${PLATFORM#linux/}.json"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: candidate-${{ matrix.target }}-${{ matrix.platform }}
+          path: candidate/
+          if-no-files-found: error
+          retention-days: 90
+
+  candidate-manifest:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: candidate-*
+          path: candidates
+          merge-multiple: true
+      - name: Create unapproved platform-to-digest candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -s --arg tag '${{ env.RELAY_TAG }}' \
+            'map(select(.source_tag == $tag)) as $images |
+             ($images | map(.source_commit) | unique) as $commits |
+             if ($images | length) == 6 and ($commits | length) == 1 then
+               {schema:"relay-role-image-candidate/v1", status:"unapproved", source_tag:$tag,
+                source_commit:$commits[0], images:($images | sort_by(.target,.platform))}
+             else error("incomplete or inconsistent image candidate records") end' \
+            candidates/*.json > relay-role-images.candidate.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: relay-role-images-candidate
+          path: relay-role-images.candidate.json
+          if-no-files-found: error
+          retention-days: 90
