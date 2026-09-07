@@ -1,0 +1,25 @@
+# Run a ceremony role
+
+Start with [installation](install.md), then follow your assigned role guide.
+Commands, checkboxes, success results, and recovery instructions live together.
+
+| Your assignment | Guide |
+| --- | --- |
+| Coordinator | [Coordinate the ceremony](roles/coordinator.md) |
+| Participant | [Contribute in each phase](roles/participant.md) |
+| Public witness | [Observe the closure](roles/witness.md) |
+| Mirror operator | [Retain an independent copy](roles/mirror.md) |
+| Auditor | [Replay and audit](roles/auditor.md) |
+| Final-parameter signer | [Review and sign the final parameters](roles/release-signer.md) |
+
+Only read these tasks when assigned:
+[production decision](tasks/decision.md), [upload signed evidence](tasks/upload.md),
+[Mac wipe confirmation](tasks/mac-wipe.md).
+
+The coordinator supplies ceremony-specific public files and reviewed command
+arguments. Keep private keys on the machine that owns them.
+A website status or successful upload does not replace proof-tool verification.
+
+Infrastructure administrators and developers use [maintainer reference](maintainer/README.md).
+The [scripted rehearsal](../scripts/three-machine-rehearsal/README.md) is a
+separate developer exercise, not a prerequisite for every operator.

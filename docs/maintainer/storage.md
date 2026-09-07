@@ -2,12 +2,12 @@
 
 This reference describes the infrastructure that must exist before running
 `relay coordinator configure-storage`. The ceremony procedure is in the
-[coordinator runbook](../operator/COORDINATOR_RUNBOOK.md).
+[coordinator runbook](../roles/coordinator.md).
 
 For complete provider provisioning instructions and setup scripts, use:
 
-- [AWS S3, CloudFront, and IAM setup](AWS_SETUP.md)
-- [Cloudflare R2 setup](R2_SETUP.md)
+- [AWS S3, CloudFront, and IAM setup](aws.md)
+- [Cloudflare R2 setup](r2.md)
 
 ## Storage model
 
@@ -144,7 +144,7 @@ receive general write access to either bucket.
 
 ## Cloudflare R2
 
-Use [R2_SETUP.md](R2_SETUP.md) to create both buckets, attach the published
+Use [R2_SETUP.md](r2.md) to create both buckets, attach the published
 custom domain, configure the coordinator profile, validate the parent and
 control-plane credentials, and update the rehearsal `.env` automatically.
 
@@ -198,7 +198,7 @@ R2 grants must not exceed `168h`.
 
 ## AWS S3
 
-Use [AWS_SETUP.md](AWS_SETUP.md) to create both buckets, CloudFront OAC and
+Use [AWS_SETUP.md](aws.md) to create both buckets, CloudFront OAC and
 distribution, the scoped grant role, runtime policies, and print the rehearsal
 `.env` values.
 

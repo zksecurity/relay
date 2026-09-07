@@ -289,10 +289,10 @@ git archive \
   --mtime="@$SOURCE_DATE_EPOCH" \
   --prefix=three-machine-rehearsal/ \
   "$SOURCE_COMMIT" \
-  docs/setup/INSTALL.md \
-  docs/setup/AWS_SETUP.md \
-  docs/setup/R2_SETUP.md \
-  docs/setup/STORAGE.md >"$REHEARSAL_GUIDES_TAR"
+  docs/maintainer/aws.md \
+  docs/maintainer/r2.md \
+  docs/maintainer/r2-rehearsal.md \
+  docs/maintainer/storage.md >"$REHEARSAL_GUIDES_TAR"
 tar --concatenate --file="$REHEARSAL_TAR" "$REHEARSAL_GUIDES_TAR"
 gzip -n -c "$REHEARSAL_TAR" >"$STAGING/three-machine-rehearsal.tar.gz"
 git archive \
@@ -301,9 +301,10 @@ git archive \
   --prefix=storage-setup/ \
   "$SOURCE_COMMIT" \
   scripts/storage-setup \
-  docs/setup/AWS_SETUP.md \
-  docs/setup/R2_SETUP.md \
-  docs/setup/STORAGE.md |
+  docs/maintainer/aws.md \
+  docs/maintainer/r2.md \
+  docs/maintainer/r2-rehearsal.md \
+  docs/maintainer/storage.md |
   gzip -n >"$STAGING/storage-setup.tar.gz"
 
 (

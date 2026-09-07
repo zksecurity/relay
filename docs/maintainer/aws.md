@@ -20,8 +20,8 @@ account for a rehearsal when possible.
 
 ## 1. Prepare one AWS profile
 
-Install AWS CLI v2 as described in [INSTALL.md](INSTALL.md), and install `jq`
-through the operating system. Then create or select one short-lived profile.
+Install AWS CLI v2 and `jq` through the administrator's approved package
+channel. Then create or select one short-lived profile.
 For AWS IAM Identity Center:
 
 ```bash
@@ -184,7 +184,7 @@ credential lifetime before starting expensive work.
 - Enable CloudTrail data events or equivalent object-access logging according
   to the ceremony's audit policy.
 - S3 versioning is not immutable retention. Use the independent Object Lock
-  mirror described in [STORAGE.md](STORAGE.md) when administrators must not be
+  mirror described in [STORAGE.md](storage.md) when administrators must not be
   able to silently shorten retention.
 - The default CloudFront behavior does not cache mutable `state/*`; the
   `blob/*` behavior uses AWS's managed optimized cache policy.

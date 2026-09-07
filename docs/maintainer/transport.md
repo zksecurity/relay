@@ -1,0 +1,176 @@
+# Relay transport and developer CLI reference
+
+Operators use the [role guides](../README.md).
+
+## What it is not
+
+It is deliberately outside the ceremony's trust boundary.
+
+`internal/mpcceremony` in the [ceremony repository](https://github.com/Emurgo/proof-tool) imports no networking, and its
+verification "never fetches a URI or trusts mutable network state". Putting
+fetch inside that binary would delete a property the design currently
+guarantees. So this is a separate program: it moves bytes and reports position,
+the ceremony CLI decides what is authentic.
+
+Concretely, this tool:
+
+- asks the trusted ceremony CLI to authenticate and interpret definitions and chains;
+- checks transported bytes against the authenticated artifact digests it returns;
+- contains no independent ceremony parser or signature implementation;
+- never reads or holds signing-key material. Participant commands pass a key
+  *path* to proof-tool for identity inspection and contribution; only the
+  trusted ceremony binary opens the key.
+
+Every artifact is digest-pinned in the coordinator-signed chain, so a hostile
+bucket can make this tool fail loudly. It cannot make it lie. The one mutable
+object it reads, the position pointer, is an unsigned scheduling hint: it can
+waste a round trip or a replay, never corrupt a transcript.
+
+Relay invokes `mpc-ceremony --format json inspect definition|chain|participant|enrollment` for the
+security-sensitive boundary. Those read-only commands verify exact canonical
+bytes, detached signatures, ceremony binding, and frozen participant order,
+then return a versioned transport projection. Relay only resolves those names,
+hashes local bytes, and moves them.
+
+## Published layout
+
+Two prefixes:
+
+    blob/sha256/<hex>                         immutable, content-addressed
+    state/<ceremony-id>/<phase>/head.json     mutable pointer, moved by the coordinator
+
+Every transcript file lives under `blob/`, keyed by its own hash. A location is
+therefore derivable from the signed chain rather than trusted, and two uploads
+of the same bytes collide on one key instead of racing. Uploads use
+`If-None-Match: *`, the object-storage equivalent of the ceremony's
+`RENAME_NOREPLACE`: a retry that would overwrite fails instead of silently
+replacing published bytes.
+
+This matters because the transcript is publish-once audit evidence: once an
+object is up, auditors may already have fetched and verified it, so those bytes
+must never change. Create-only PUTs mean a retry, a re-run against a stale
+chain, or a second racing uploader gets a 412 instead of silently replacing
+what is published. Content addressing makes the guard precise: an honest retry
+of identical bytes losing a race is harmless, so the only write it can block is
+one that would have changed published bytes — a loud failure, never a success.
+
+`state/` is the single deliberate exception. The pointer names the current
+chain head and every object the last publish uploaded, all by content hash, so
+it can be rewritten freely: nothing it names can change, and everything it names
+is re-hashed on arrival. It is namespaced by ceremony id so two ceremonies in
+one bucket cannot overwrite each other's head. Delete the whole prefix and the
+transcript is still verifiable; you just have to ask a person where to look.
+
+## Usage
+
+Recovery/debugging commands, given a chain document:
+
+    relay advanced push --chain FILE --chain-signature FILE --root DIR --bucket B --endpoint U [--verify]
+    relay advanced pull --chain FILE --chain-signature FILE --root DIR --bucket B --endpoint U
+    relay mirror receipt --chain FILE --chain-signature FILE --root DIR --index N \
+                    --location URI --stored-at TIME [--out FILE]
+
+All commands that inspect ceremony documents also require:
+
+    --ceremony FILE --ceremony-signature FILE --coordinator-key FILE
+
+`--ceremony-binary` defaults to `mpc-ceremony`; set it to an explicitly trusted
+binary path when `PATH` is not part of the operator's trust setup.
+
+Role-scoped commands normally consume a validated config created by `relay
+ceremony init-config`. The raw transport flags remain available for recovery
+and compatibility:
+
+    relay coordinator publish --chain FILE --chain-signature FILE [--closed] [--verify]
+    relay participant status [--config FILE]              report your authenticated position
+    relay participant run [--config FILE] --grant FILE [--resume-candidate DIR]
+                                                        contribute or resume an upload
+    relay witness run --config FILE [--interval D] [--once]  wait for a published closure
+    relay mirror run --config FILE                           pull the authenticated transcript
+    relay mirror receipt --config FILE --chain FILE ...      draft mirror evidence
+    relay auditor run --config FILE                          pull the authenticated transcript
+    relay witness|mirror|auditor submit --config FILE --grant FILE ...
+    relay release run --config FILE --grant FILE ...
+
+The production role config stores only validated ceremony metadata and paths.
+It never stores private key bytes, cloud credentials, or temporary grants.
+
+`advanced push` and `coordinator publish` upload what the chain names plus what
+it cannot name: the
+chain document and its signature, `ceremony.json` and its signature, the
+compiled constraint system, and whichever closure, beacon and seal records exist
+on disk. Every name is checked against an allowlist of the ceremony's published
+layout, so a mis-pointed `--root` is refused rather than uploaded.
+
+`--verify` re-downloads every object after upload and re-hashes it, rather than
+trusting the upload response. It costs a full round trip of the transcript and
+is off by default. On `coordinator publish` it instead re-derives what a reader will ask
+for and confirms the bucket holds all of it.
+
+`advanced pull`, `mirror run` and `auditor run` refuse to overwrite an existing local file. If one is
+present it is hashed and compared, and a mismatch is an error rather than a
+silent replacement.
+
+`participant status` and `participant run` refuse when it is not your turn. That refusal is the point:
+discovering you were early after a multi-hour replay is the expensive way to
+find out. Each machine also records the furthest index it has seen under
+`~/.relay` and refuses a pointer that has moved backwards. On first use for a
+ceremony, existing high-water state from `~/.mpc-sync` is migrated automatically.
+
+`mirror receipt` drafts an `ImmutableMirrorReceipt` for the head of the exact chain
+prefix passed to it. It stops at a draft: `mpc-ceremony ops
+prepare-mirror-receipt` authenticates the chain and mirror enrollment,
+recomputes the file set, and exports canonical bytes for the mirror operator to
+sign offline with their own key.
+
+### Credentials for advanced commands
+
+The advanced one-bucket commands use an AWS CLI profile. The brokerless flow
+instead reads short-lived credentials from a mode-`0600` grant and exposes them
+only to the child AWS CLI process; it never prints their values.
+
+    aws configure set aws_access_key_id     <key>    --profile r2
+    aws configure set aws_secret_access_key <secret> --profile r2
+    aws configure set region                auto     --profile r2
+
+R2 endpoints are `https://<account-id>.r2.cloudflarestorage.com`. Region is
+`auto`: R2 has no regions, but SigV4 requires the field.
+
+If uploads fail with a checksum error on AWS CLI v2.23 or later:
+
+    aws configure set request_checksum_calculation when_required --profile r2
+    aws configure set response_checksum_validation when_required --profile r2
+
+### Example
+
+    relay coordinator publish \
+      --root     /ceremony/public \
+      --ceremony /ceremony/public/ceremony.json \
+      --ceremony-signature /ceremony/public/ceremony.sig \
+      --coordinator-key /trusted/coordinator-public-key.hex \
+      --chain    /ceremony/public/phase1/chain-0003.json \
+      --chain-signature /ceremony/public/phase1/chain-0003.sig \
+      --bucket   my-mirror \
+      --endpoint https://<account-id>.r2.cloudflarestorage.com \
+      --profile  r2 \
+      --verify
+
+## Provider notes
+
+The data plane is identical across S3 and R2, so one code path serves both. The
+difference is immutability.
+
+S3 Object Lock in COMPLIANCE mode cannot be shortened or removed by anyone,
+including the root account, until retention expires. That is what makes a mirror
+evidence against the party who runs it.
+
+R2 does not implement the S3 Object Lock API at all: `PutObjectLockConfiguration`,
+`PutObjectRetention`, `PutObjectLegalHold` and `PutBucketVersioning` are
+unimplemented. It has prefix-scoped "bucket locks" configured through
+Cloudflare's own API, with no documented mode that an account admin cannot
+remove, and no per-object retention or legal hold.
+
+So R2 suits the high-egress distribution copy, where its zero egress matters
+because every participant pulls the full accepted prefix before contributing.
+S3 with Object Lock suits the evidentiary mirror. Two mirrors also need to be
+two operators, so running both is not redundant.
