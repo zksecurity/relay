@@ -13,6 +13,8 @@ Complete [installation](install.md), then run from your authenticated checkout:
 ```
 
 Select your own installer-created `relay-env.sh` and a local ceremony name.
+If exactly one coordinator settings file is found under `~/ceremonies`, press
+Enter to accept its suggested path; otherwise choose the file for this ceremony.
 Reuse that file and name when returning. Do not load settings sent by someone else.
 The installed Relay release must include `coordinator prepare`; older launchers
 cannot run the helper. Install a matching new release rather than mixing binaries.

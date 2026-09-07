@@ -12,8 +12,22 @@ if [[ $# -gt 1 || ! -t 0 ]]; then
 fi
 settings=${1:-}
 if [[ -z "$settings" ]]; then
-  printf 'Path to your own installer-created relay-env.sh: '
+  shopt -s nullglob
+  candidates=("$HOME"/ceremonies/*/coordinator/relay-env.sh)
+  suggested=''
+  if [[ ${#candidates[@]} -eq 1 ]]; then
+    suggested=${candidates[0]}
+  elif [[ ${#candidates[@]} -gt 1 ]]; then
+    printf 'Found multiple coordinator settings files; choose the one for this ceremony:\n'
+    printf '  %s\n' "${candidates[@]}"
+  fi
+  if [[ -n "$suggested" ]]; then
+    printf 'Path to your own installer-created relay-env.sh [%s]: ' "$suggested"
+  else
+    printf 'Path to your own installer-created relay-env.sh: '
+  fi
   IFS= read -r settings
+  settings=${settings:-$suggested}
 fi
 [[ "$settings" == /* && -f "$settings" && ! -L "$settings" ]] || {
   printf 'Use an absolute path to your own regular settings file, not a symlink.\n' >&2

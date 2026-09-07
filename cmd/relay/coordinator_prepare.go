@@ -119,8 +119,11 @@ func (i setupIdentity) check() error {
 }
 
 func (d coordinatorDraft) validate() error {
-	if d.Schema != "relay-coordinator-draft-v1" || !guidedName.MatchString(d.Name) || !launcherReleaseTag.MatchString(d.Release) {
+	if d.Schema != "relay-coordinator-draft-v1" || !guidedName.MatchString(d.Name) || (!launcherReleaseTag.MatchString(d.Release) && d.Release != "LOCAL-REHEARSAL") {
 		return errors.New("invalid draft identity or release")
+	}
+	if d.Release == "LOCAL-REHEARSAL" && (d.Mode != "rehearsal" || d.Circuit != "rehearsal-tiny-v1") {
+		return errors.New("local testing permits only the tiny rehearsal circuit")
 	}
 	if d.Mode != "rehearsal" && d.Mode != "production" {
 		return errors.New("choose rehearsal or production explicitly")
@@ -216,11 +219,12 @@ func setupWriteNew(path string, v any) error {
 }
 
 type coordinatorWizard struct {
-	d         coordinatorDraft
-	input     *bufio.Reader
-	output    io.Writer
-	draftPath string
-	run       func([]string) error
+	d           coordinatorDraft
+	input       *bufio.Reader
+	output      io.Writer
+	draftPath   string
+	run         func([]string) error
+	localAction func(string, string, []string, bool) error
 }
 
 func (w *coordinatorWizard) ask(label, current string) (string, error) {
@@ -289,6 +293,9 @@ func (w *coordinatorWizard) basics() error {
 	}
 	if circuit != "ownership-destination-v2" && !(mode == "rehearsal" && circuit == "rehearsal-tiny-v1") {
 		return errors.New("tiny circuit is rehearsal-only")
+	}
+	if w.localAction != nil && (mode != "rehearsal" || circuit != "rehearsal-tiny-v1") {
+		return errors.New("this local test build only permits rehearsal / rehearsal-tiny-v1")
 	}
 	w.d.Mode, w.d.Circuit = mode, circuit
 	return w.save()
@@ -422,6 +429,9 @@ func (w *coordinatorWizard) binary() error {
 }
 
 func (w *coordinatorWizard) action(name, role string, command []string, credentials bool) error {
+	if w.localAction != nil {
+		return w.localAction(name, role, command, credentials)
+	}
 	// Each action gets a content-derived alias; existing launcher activity records
 	// remain authoritative for replay/uncertain-attempt handling.
 	raw, _ := json.Marshal(struct {
@@ -537,6 +547,9 @@ func (w *coordinatorWizard) generateIdentity() error {
 }
 
 func (w *coordinatorWizard) initialize() error {
+	if w.localAction != nil && (w.d.Mode != "rehearsal" || w.d.Circuit != "rehearsal-tiny-v1" || len(w.d.Binaries) != 0) {
+		return errors.New("local tests require the tiny rehearsal circuit and the supplied local images only")
+	}
 	if w.d.Status != "draft" {
 		return errors.New("initialization already attempted; edits and automatic retry are blocked")
 	}
@@ -684,6 +697,9 @@ func (w *coordinatorWizard) storage() error {
 	return w.save()
 }
 func (w *coordinatorWizard) configureStorage() error {
+	if w.localAction != nil {
+		return errors.New("cloud storage operations are disabled in the local test harness")
+	}
 	if w.d.Status != "definition-verified" {
 		return errors.New("verify the initialized definition before configuring storage")
 	}

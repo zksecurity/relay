@@ -139,6 +139,11 @@ func runCoordinator(args []string) error {
 		return errors.New("coordinator requires prepare, configure-storage, grant, candidates, accept, evidence, or publish")
 	}
 	switch args[0] {
+	case "prepare-local":
+		if coordinatorLocalRunner == nil {
+			return errors.New("local coordinator testing is available only in a relaylocal development build")
+		}
+		return coordinatorLocalRunner(args[1:])
 	case "prepare":
 		return runCoordinatorPrepare(args[1:])
 	case "configure-storage":
@@ -157,6 +162,9 @@ func runCoordinator(args []string) error {
 		return fmt.Errorf("unknown coordinator command %q", args[0])
 	}
 }
+
+// Registered only by a file excluded from ordinary builds.
+var coordinatorLocalRunner func([]string) error
 
 func runParticipant(args []string) error {
 	if len(args) == 0 {
