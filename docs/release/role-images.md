@@ -17,9 +17,9 @@ The workflow builds and pushes these public GHCR images for `linux/amd64` and
 
 It reads the exact HTTPS URLs and SHA-256 hashes for each `mpc-ceremony` binary,
 plus the immutable AWS CLI base-image reference, from that protected-main
-file. Each pushed image receives a GitHub build-provenance attestation. A
-missing or malformed `release/role-images.json` fails closed—CI never
-substitutes “latest.”
+file. Each pushed image and the released map receive a GitHub build-provenance
+attestation. A missing or malformed `release/role-images.json` fails
+closed—CI never substitutes “latest.”
 
 The result is an approved, GitHub-attested release asset named
 `relay-role-images.release.json`. It maps each target and Linux platform to an
@@ -32,7 +32,9 @@ Download the map from the GitHub Release and verify its GitHub provenance
 against the expected repository, this workflow, and its recorded source commit.
 Use only the matching immutable `@sha256:` image for the role and host Linux
 architecture. Do not take an image digest from a mutable registry tag or an
-unattested CI log.
+unattested CI log. The [coordinator runbook](../operator/COORDINATOR_RUNBOOK.md#authenticate-and-select-the-coordinator-image)
+contains the exact download, attestation-verification, and image-selection
+commands.
 
 Protected-main review, required CI checks, CODEOWNERS review of release
 workflows and inputs, no direct pushes, and no force pushes are mandatory in

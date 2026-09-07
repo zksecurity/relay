@@ -20,6 +20,38 @@ are in [README.md](../../README.md).
 
 ## 1. Install and verify the tools
 
+### Authenticate and select the coordinator image
+
+Run this once before creating the ceremony. It verifies the exact release-map
+file you downloaded, not merely the GitHub Release page. Install the current
+[GitHub CLI](https://cli.github.com/) and authenticate it to GitHub first.
+
+```bash
+: "${ROLE_IMAGES_TAG:?Set role-images-<full-commit-sha> from the authenticated channel}"
+: "${RELAY_PLATFORM:?Set linux/amd64 or linux/arm64 for this coordinator machine}"
+case "$RELAY_PLATFORM" in linux/amd64|linux/arm64) ;; *) exit 2;; esac
+
+ROLE_IMAGES_COMMIT=${ROLE_IMAGES_TAG#role-images-}
+echo "$ROLE_IMAGES_COMMIT" | grep -Eq '^[0-9a-f]{40}$'
+ROLE_IMAGES_DIR=$(mktemp -d)
+gh release download "$ROLE_IMAGES_TAG" --repo zksecurity/relay --pattern relay-role-images.release.json --dir "$ROLE_IMAGES_DIR"
+gh attestation verify "$ROLE_IMAGES_DIR/relay-role-images.release.json" --repo zksecurity/relay --signer-workflow zksecurity/relay/.github/workflows/publish-role-images.yml --source-digest "$ROLE_IMAGES_COMMIT" --deny-self-hosted-runners
+jq -e --arg commit "$ROLE_IMAGES_COMMIT" '.schema == "relay-role-image-release/v1" and .approval == "github-attested-ci" and .source_commit == $commit' "$ROLE_IMAGES_DIR/relay-role-images.release.json"
+COORDINATOR_IMAGE=$(jq -er --arg platform "$RELAY_PLATFORM" '.images[] | select(.target == "online" and .platform == $platform) | .image' "$ROLE_IMAGES_DIR/relay-role-images.release.json")
+echo "Approved coordinator image: $COORDINATOR_IMAGE"
+docker pull "$COORDINATOR_IMAGE"
+```
+
+Save the downloaded map in the coordinator evidence directory. Give every role
+the same release-map URL and the exact immutable image digest selected for its
+role and platform. Do not substitute a registry tag. If the attestation,
+source commit, JSON checks, or `docker pull` fails, stop and contact the
+software maintainer through the independent coordination channel.
+
+Use `COORDINATOR_IMAGE` as the approved image in
+[guided Docker setup](../setup/GUIDED_SETUP.md). The remaining runbook uses
+the saved coordinator action; it does not change the authenticated image.
+
 For Docker-packaged Relay, proof-tool, and AWS CLI, start with
 [operator paths](paths.md). Prefer
 [guided setup](../setup/GUIDED_SETUP.md) to save one reviewed coordinator action,
@@ -27,11 +59,8 @@ or use the explicit [role launcher guide](../../docker/roles/README.md). Use its
 container paths and launcher prefix with the commands below. The recipes below
 still describe the action being saved; do not copy host paths into a container.
 
-Follow [guided Docker setup](../setup/GUIDED_SETUP.md) and obtain the approved
-immutable role-image digest from the `relay-role-images.release.json` map
-through the authenticated coordination channel. Verify the map's GitHub
-provenance before using it. The coordinator does not need Go, a source
-checkout, or a software-signing key.
+The coordinator does not need Go, a source checkout, or a software-signing
+key.
 
 Do not continue until all of these succeed and resolve to the reviewed paths:
 

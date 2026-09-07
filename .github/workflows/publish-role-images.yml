@@ -176,6 +176,10 @@ jobs:
                 images:($images | sort_by(.target,.platform))}
              else error("incomplete or inconsistent image release records") end' \
             releases/*.json > relay-role-images.release.json
+      - name: Attest release-map provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: relay-role-images.release.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: relay-role-images-release
