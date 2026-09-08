@@ -193,9 +193,9 @@ func (f *roleFlow) collectedEnrollments() (bool, error) {
 
 func (f *roleFlow) collectEnrollment(task flowTask) error {
 	if _, err := f.collectedEnrollments(); err != nil {
-		return err
+		fmt.Fprintf(f.ui.output, "Collection not verified: %v\nInspect or archive incorrect imports; no completion is recorded.\n", err)
 	}
-	choice, err := f.ui.choose("Enrollment collection", "", []setupChoice{{"import", "Import and verify one public enrollment folder"}, {"request", "Show what to request from each role"}, {"cancel", "Return to ceremony actions"}})
+	choice, err := f.ui.choose("Enrollment collection", "", []setupChoice{{"import", "Import and verify one public enrollment folder"}, {"request", "Show what to request from each role"}, {"archive", "Inspect and archive an incorrect or duplicate import"}, {"cancel", "Return to ceremony actions"}})
 	if err != nil {
 		return err
 	}
@@ -205,6 +205,9 @@ func (f *roleFlow) collectEnrollment(task flowTask) error {
 	}
 	if choice == "cancel" {
 		return nil
+	}
+	if choice == "archive" {
+		return f.archiveEnrollmentImport()
 	}
 	source, err := f.ui.required("Absolute path to the received PUBLIC enrollment folder", "")
 	if err != nil {
@@ -234,4 +237,54 @@ func (f *roleFlow) collectEnrollment(task flowTask) error {
 	}
 	f.state.Attempts = append(f.state.Attempts, flowAttempt{ID: id, Task: task.ID, Stage: f.stages[f.state.Stage].ID, Status: status, FinishedAt: time.Now().UTC().Format(time.RFC3339Nano), Note: "Public enrollment collection checked; revalidation is required before leaving this stage."})
 	return f.save()
+}
+
+func (f *roleFlow) archiveEnrollmentImport() error {
+	root := filepath.Join(f.state.Profile.Work, "ceremony", "public", "collected-enrollments")
+	dirs, err := os.ReadDir(root)
+	if err != nil {
+		return err
+	}
+	choices := []setupChoice{}
+	for _, dir := range dirs {
+		if dir.IsDir() {
+			choices = append(choices, setupChoice{dir.Name(), fmt.Sprintf("Import %q", dir.Name())})
+		}
+	}
+	choices = append(choices, setupChoice{"cancel", "Return without changing files"})
+	selected, err := f.ui.choose("Select the retained import to inspect; these labels are not verification results", "", choices)
+	if err != nil || selected == "cancel" {
+		return err
+	}
+	source := filepath.Join(root, selected)
+	fmt.Fprintf(f.ui.output, "Selected public import: %s\n", source)
+	if raw, err := readEnrollmentPublicFile(source, "canonical.json"); err == nil {
+		var summary struct {
+			Role     string                    `json:"role"`
+			Identity transcript.PublicIdentity `json:"identity"`
+		}
+		if json.Unmarshal(raw, &summary) == nil {
+			fmt.Fprintf(f.ui.output, "Unverified file label: %q, %q (%q). Archiving is not signature verification.\n", summary.Role, summary.Identity.DisplayName, summary.Identity.ID)
+		}
+	}
+	if err := f.ui.confirm("Move this import out of the active collection, preserving all its public files in an archive. Its enrollment will no longer count until a valid replacement is imported", "ARCHIVE IMPORT"); err != nil {
+		return err
+	}
+	archive := filepath.Join(f.state.Profile.Work, "ceremony", "public", "enrollment-import-archive")
+	if err := ensurePrivateDirectory(archive); err != nil {
+		return err
+	}
+	id, err := randomID()
+	if err != nil {
+		return err
+	}
+	destination := filepath.Join(archive, id)
+	if _, err := os.Lstat(destination); !errors.Is(err, os.ErrNotExist) {
+		return errors.New("archive destination is not fresh")
+	}
+	if err := os.Rename(source, destination); err != nil {
+		return err
+	}
+	fmt.Fprintf(f.ui.output, "Import archived at %s; no public files deleted. Re-import a corrected public enrollment through the collection menu.\n", destination)
+	return nil
 }

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/zksecurity/relay/internal/transcript"
@@ -31,6 +33,34 @@ func enrollmentImportFixture(t *testing.T) (string, string) {
 		}
 	}
 	return root, filepath.Join(t.TempDir(), "received")
+}
+
+func TestEnrollmentArchivePreservesIncorrectPublicImport(t *testing.T) {
+	f := flowFixture(t)
+	f.state.Profile.Work = t.TempDir()
+	root := filepath.Join(f.state.Profile.Work, "ceremony/public/collected-enrollments")
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	source, _ := enrollmentImportFixture(t)
+	if err := importPublicEnrollment(source, filepath.Join(root, "incorrect")); err != nil {
+		t.Fatal(err)
+	}
+	f.ui.input = bufio.NewReader(strings.NewReader("1\nARCHIVE IMPORT\n"))
+	if err := f.archiveEnrollmentImport(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "incorrect")); !os.IsNotExist(err) {
+		t.Fatal("import still active")
+	}
+	archive := filepath.Join(f.state.Profile.Work, "ceremony/public/enrollment-import-archive")
+	dirs, err := os.ReadDir(archive)
+	if err != nil || len(dirs) != 1 {
+		t.Fatal("archive missing", err)
+	}
+	if _, err := os.Stat(filepath.Join(archive, dirs[0].Name(), "canonical.json")); err != nil {
+		t.Fatal("public record was lost")
+	}
 }
 
 func TestEnrollmentImportCopiesOnlyNamedPublicFiles(t *testing.T) {
