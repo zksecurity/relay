@@ -97,12 +97,20 @@ XDG_CONFIG_HOME="$TEST_ROOT/config" \
   "$STORAGE_SETUP_SCRIPT_ROOT/setup-r2-wrangler.sh" \
     --wrangler-bin "$TEST_ROOT/bin/wrangler" \
     --machine-env "$TEST_ROOT/machine-1.env" \
+    --coordinator-settings "$TEST_ROOT/coordinator-settings.json" \
     >"$TEST_ROOT/stdout" 2>"$TEST_ROOT/stderr" <<<"$input"
 
 parent_file="$TEST_ROOT/config/relay/relay-ceremony-r2/inbox-parent-api-token"
 [[ -f "$parent_file" && ! -L "$parent_file" ]]
 [[ "$(stat -c '%a' -- "$parent_file")" == 600 ]]
 [[ "$(<"$parent_file")" == parent-token ]]
+
+jq -e '.schema == "relay-coordinator-storage-settings-v1" and
+  .settings.provider == "r2" and .settings.region == "auto" and
+  .settings["parent-access-key-id"] == "parent-access" and
+  (.settings | length) == 9' "$TEST_ROOT/coordinator-settings.json" >/dev/null
+! grep -Fq 'parent-token' "$TEST_ROOT/coordinator-settings.json"
+[[ "$(stat -c '%a' -- "$TEST_ROOT/coordinator-settings.json")" == 600 ]]
 
 grep -Fx 'STORAGE_PROVIDER=r2' "$TEST_ROOT/machine-1.env"
 grep -Fx 'PUBLISHED_BUCKET=relay-ceremony-111111111111-published' "$TEST_ROOT/machine-1.env"

@@ -119,7 +119,8 @@ jobs:
           [[ "$MPC_URL" =~ ^https:// ]] && [[ "$MPC_SHA256" =~ ^[0-9a-f]{64}$ ]]
           mkdir image-context
           GOOS=linux GOARCH="${PLATFORM#linux/}" CGO_ENABLED=0 \
-            go build -trimpath -buildvcs=true -ldflags=-buildid= -o image-context/relay ./cmd/relay
+            go build -trimpath -buildvcs=true \
+              -ldflags="-buildid= -X main.releaseCommit=$RELAY_COMMIT" -o image-context/relay ./cmd/relay
           curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error "$MPC_URL" \
             --output image-context/mpc-ceremony
           printf '%s  %s\n' "$MPC_SHA256" image-context/mpc-ceremony | sha256sum --check --strict
@@ -221,9 +222,10 @@ jobs:
           export RELAY_ROLE_ONLINE_IMAGE=$(jq -r .image "releases/online-$ARCH.json")
           export RELAY_ROLE_OFFLINE_IMAGE=$(jq -r .image "releases/offline-$ARCH.json")
           export RELAY_ROLE_PLATFORM="linux/$ARCH"
+          export RELAY_IMAGE_SOURCE_COMMIT="$RELAY_COMMIT"
           docker pull "$RELAY_ROLE_ONLINE_IMAGE"
           docker pull "$RELAY_ROLE_OFFLINE_IMAGE"
-          go test ./cmd/relay -run 'TestDockerRoleImages|TestGuidedDockerOpen' -count=1 -v
+          go test ./cmd/relay -run 'TestDockerRoleImages|TestGuidedDockerOpen|TestReleaseImageToolReceipt' -count=1 -v
 
   release-manifest:
     needs: [build, launchers, docker-smoke]

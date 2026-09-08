@@ -231,6 +231,8 @@ func runCeremony(args []string) error {
 		return errors.New("ceremony requires prepare, setup, open, guide, enroll, or init-config")
 	}
 	switch args[0] {
+	case "inspect-tools":
+		return runInspectReleaseTools(args[1:])
 	case "prepare":
 		return runRolePrepare(args[1:])
 	case "guide":

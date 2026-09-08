@@ -14,9 +14,11 @@ parse_release() {
   commit=${BASH_REMATCH[1]}
 }
 
+default_role_folder() { printf '%s/ceremonies/%s/%s' "$HOME" "$1" "$2"; }
+
 prepare_guided_settings() {
-  local name role folder answer ancestor
-  printf 'Ceremony name (lowercase letters, numbers, hyphens): '
+  local name role folder answer ancestor instance=1 suggested folder_hash
+  printf 'Ceremony label (use the same label for all roles): '
   IFS= read -r name
   [[ "$name" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]] || { echo 'Invalid ceremony name.' >&2; return 1; }
   printf 'Role: 1 coordinator, 2 participant, 3 witness, 4 mirror, 5 auditor, 6 release-signer, 7 upload-station\n'
@@ -30,9 +32,30 @@ prepare_guided_settings() {
     esac
     break
   done
-  printf 'Role folder [press Enter for %s/ceremonies/%s/%s]: ' "$HOME" "$name" "$role"
+  suggested=$(default_role_folder "$name" "$role")
+  if [[ -e "$suggested" || -L "$suggested" ]]; then
+    printf 'A %s setup already exists for %s.\n1. Resume it (keeps its existing release)\n2. Create another %s with separate keys and progress\n' "$role" "$name" "$role"
+    while :; do
+      printf 'Choose 1 or 2: '; IFS= read -r answer || return 1
+      case "$answer" in
+        1)
+          [[ -d "$suggested" && ! -L "$suggested" && -f "$suggested/start.sh" && ! -L "$suggested/start.sh" ]] || { echo 'Existing setup needs review; nothing changed.' >&2; return 1; }
+          resume_start="$suggested/start.sh"
+          return 0;;
+        2) break;;
+        *) printf 'Choose a listed number.\n';;
+      esac
+    done
+    instance=2
+    suggested=$(default_role_folder "$name" "$role-$instance")
+    while [[ -e "$suggested" || -L "$suggested" ]]; do
+      instance=$((instance+1))
+      suggested=$(default_role_folder "$name" "$role-$instance")
+    done
+  fi
+  printf 'Role folder [press Enter for %s]: ' "$suggested"
   IFS= read -r folder
-  folder=${folder:-"$HOME/ceremonies/$name/$role"}
+  folder=${folder:-$suggested}
   # Require a fresh, unambiguous path; never reuse another role's data.
   case "$folder" in /*) ;; *) echo 'Use an absolute folder path.' >&2; return 1 ;; esac
   case "$folder/" in *'/../'*|*'/./'*|*'//'*) echo 'Use a clean folder path without dot components or repeated slashes.' >&2; return 1 ;; esac
@@ -50,6 +73,8 @@ prepare_guided_settings() {
   role_folder=$folder
   guided_role=$role
   guided_name=$name
+  folder_hash=$(printf '%s' "$folder" | shasum -a 256)
+  guided_local_name="${name:0:24}-$role-$instance-${folder_hash:0:8}"
 }
 
 shell_quote() {
@@ -81,6 +106,7 @@ save_guided_settings() {
       write_setting ROLE_KEYS "$role_folder/keys"
       write_setting ROLE_NAME "${guided_role:-}"
       write_setting CEREMONY_NAME "${guided_name:-}"
+      write_setting ROLE_LOCAL_NAME "${guided_local_name:-${guided_name:-}}"
     } > "$role_folder/relay-env.sh"
   )
   # A self-contained entry point avoids asking operators to source settings or
@@ -90,7 +116,7 @@ save_guided_settings() {
     {
       printf '#!/usr/bin/env bash\nset -euo pipefail\n'
       write_setting relay_launcher "$destination/relay"
-      write_setting ceremony_name "${guided_name:-}"
+      write_setting ceremony_name "${guided_local_name:-${guided_name:-}}"
       write_setting ceremony_role "${guided_role:-}"
       write_setting ceremony_release "$tag"
       write_setting ceremony_work "$role_folder/work"
@@ -127,7 +153,7 @@ install_verified_launcher() {
 }
 
 main() {
-local tag commit guided=false role_folder='' selection
+local tag commit guided=false role_folder='' selection resume_start='' guided_local_name=''
 if [[ $# -eq 0 || ( $# -eq 1 && "$1" == --guided ) ]]; then
   [[ -t 0 ]] || { echo 'Guided setup needs an interactive terminal.' >&2; return 1; }
   guided=true
@@ -135,6 +161,10 @@ if [[ $# -eq 0 || ( $# -eq 1 && "$1" == --guided ) ]]; then
   IFS= read -r selection
   parse_release "$selection"
   prepare_guided_settings
+  if [[ -n "$resume_start" ]]; then
+    printf 'Resume the existing role with:\n  '; shell_quote "$resume_start"; printf '\nNo files or release settings were changed.\n'
+    return 0
+  fi
 elif [[ $# -eq 1 ]]; then
   parse_release "$1"
 else

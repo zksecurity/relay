@@ -78,6 +78,39 @@ EOF
 [[ ! -e "$test_root/fresh" ]]
 printf 'PASS: existing folders, unknown roles and declined consent are rejected\n'
 
+# Isolate role-instance selection without changing HOME or running a launcher.
+(
+  default_role_folder() { printf '%s/roles/%s/%s' "$test_root" "$1" "$2"; }
+  prepare_guided_settings >/dev/null <<EOF
+shared
+5
+
+yes
+EOF
+  first_name=$guided_local_name
+  [[ "$guided_name" == shared && "$role_folder" == "$test_root/roles/shared/auditor" ]]
+  save_guided_settings >/dev/null
+  original=$(shasum -a 256 "$role_folder/start.sh")
+  prepare_guided_settings >/dev/null <<EOF
+shared
+5
+1
+EOF
+  [[ "$resume_start" == "$test_root/roles/shared/auditor/start.sh" ]]
+  [[ "$(shasum -a 256 "$resume_start")" == "$original" ]]
+  resume_start=''
+  prepare_guided_settings >/dev/null <<EOF
+shared
+5
+2
+
+yes
+EOF
+  [[ -z "$resume_start" && "$guided_name" == shared && "$guided_local_name" != "$first_name" ]]
+  [[ "$role_folder" == "$test_root/roles/shared/auditor-2" && ! -e "$role_folder" ]]
+)
+printf 'PASS: same-ceremony role instances stay separate and resume preserves settings\n'
+
 printf 'fixture launcher\n' > "$test_root/candidate"
 digest=$(shasum -a 256 "$test_root/candidate")
 digest=${digest%% *}

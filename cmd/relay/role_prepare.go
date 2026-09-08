@@ -1,7 +1,7 @@
 package main
 
 // Onboarding collects paths and invokes existing authenticated commands. It
-// does not issue enrollments, invent tool receipts, or implement protocol crypto.
+// measures pinned tools but does not issue enrollments or implement protocol crypto.
 import (
 	"bufio"
 	"crypto/sha256"
@@ -21,14 +21,18 @@ type rolePreparation struct {
 	Values                                         map[string]string
 }
 type rolePreparer struct {
-	d                  rolePreparation
-	path, settingsRoot string
-	ui                 coordinatorWizard
-	run                func([]string) error
+	d                    rolePreparation
+	path, settingsRoot   string
+	ui                   coordinatorWizard
+	run                  func([]string) error
+	environmentPreflight func() error // test seam; nil uses the actual Docker preflight
 }
 
 func (p *rolePreparer) save() error { return saveJSONAtomic(p.path, p.d) }
 func (p *rolePreparer) alias(role string) string {
+	if role == "decision-signer" {
+		return offlineRoleAlias(p.d.Name, p.d.Role)
+	}
 	if role == "keygen" {
 		// Several roles may share a local ceremony name, but never a key profile.
 		return fmt.Sprintf("identity-%x", sha256.Sum256([]byte(p.d.Name+"\x00"+p.d.Role+"\x00"+p.d.Keys)))[:49]
@@ -120,6 +124,9 @@ func (p *rolePreparer) images() error {
 		if err := p.setup("keygen"); err != nil {
 			return err
 		}
+		if err := p.setup("decision-signer"); err != nil {
+			return err
+		}
 	}
 	if p.d.Role == "participant" {
 		platform, err := machineDockerPlatform()
@@ -134,9 +141,12 @@ func (p *rolePreparer) images() error {
 			return err
 		}
 		p.d.Values["image"], p.d.Values["platform"] = image, platform
-		return p.save()
+		return p.prepareToolReceipt()
 	}
-	return p.setup(p.d.Role)
+	if err := p.setup(p.d.Role); err != nil {
+		return err
+	}
+	return p.prepareToolReceipt()
 }
 func (p *rolePreparer) identity() error {
 	if p.d.Role == "upload-station" {
@@ -190,7 +200,7 @@ func (p *rolePreparer) identity() error {
 // Fixed destinations prevent a received filename from selecting a key or saved
 // settings path. Importing public bytes is not authenticating their signatures.
 func preparationImports() []setupChoice {
-	return []setupChoice{{"definition", "Signed ceremony definition"}, {"signature", "Definition signature"}, {"coordinator", "Independently obtained coordinator public key"}, {"storage", "Public storage configuration (not credentials)"}, {"enrollment", "Your reviewed public enrollment"}, {"enrollment-signature", "Your enrollment signature"}, {"receipt", "Approved matching tool-identity receipt"}}
+	return []setupChoice{{"definition", "Signed ceremony definition"}, {"signature", "Definition signature"}, {"coordinator", "Independently obtained coordinator public key"}, {"storage", "Public storage configuration (not credentials)"}, {"enrollment", "Your reviewed public enrollment"}, {"enrollment-signature", "Your enrollment signature"}, {"receipt", "Advanced: existing tool record for this exact installation"}}
 }
 func preparationDestination(d rolePreparation, kind string) string {
 	switch kind {
@@ -299,6 +309,16 @@ func (p *rolePreparer) initProfile() error {
 	if role == "upload-station" {
 		role = "release"
 	}
+	if role != "participant" {
+		for _, name := range []string{"enrollment.json", "enrollment.sig"} {
+			if _, err := readPreparationInput(filepath.Join(p.d.Work, name)); err != nil {
+				if role == "release" {
+					return errors.New("import the final signer's public enrollment and signature using option 3 first; this upload station must not sign them")
+				}
+				return errors.New("prepare and sign your own enrollment with option 7 first, after importing the signed definition and trusted coordinator key")
+			}
+		}
+	}
 	phase, err := p.ui.choose("Phase for this profile", "phase1", []setupChoice{{"phase1", "Phase 1"}, {"phase2", "Phase 2"}})
 	if err != nil {
 		return err
@@ -324,12 +344,11 @@ func (p *rolePreparer) initProfile() error {
 		if !roleImagePattern.MatchString(image) || (platform != "linux/amd64" && platform != "linux/arm64") {
 			return errors.New("prepare and verify the contributor image first")
 		}
-		fmt.Fprintln(p.ui.output, "Use the approved Linux proof-tool file at the SAME absolute path on this host and inside the image. On macOS it is hashed, not executed natively. The tool receipt must match this native launcher and that Linux file. Never create a receipt by guessing hashes.")
-		binary, err := p.value("binary", "Approved host-local Linux proof-tool file", "/usr/local/bin/mpc-ceremony")
-		if err != nil {
-			return err
+		binary := p.d.Values["binary"]
+		if binary == "" {
+			return errors.New("prepare approved images and tools first")
 		}
-		env, err := p.value("environment", "Your reviewed v2 environment JSON file", filepath.Join(p.d.Work, "environment.json"))
+		env, err := p.environment()
 		if err != nil {
 			return err
 		}
@@ -356,7 +375,19 @@ func (p *rolePreparer) workflow() error {
 }
 func (p *rolePreparer) menu() error {
 	for {
-		fmt.Fprintf(p.ui.output, "\n%s — %s onboarding\n1 Prepare approved images (online; before disconnecting a signer)\n2 Generate/review MY identity and public handoff\n3 Import a received public file\n4 Authenticate and create a phase profile\n5 Continue the ceremony workflow\n6 Show folders and remaining input requirements\n0 Save and exit\n", p.d.Name, p.d.Role)
+		fmt.Fprintf(p.ui.output, "\n%s — %s onboarding\n1 Prepare approved images (online; before disconnecting a signer)\n", p.d.Name, p.d.Role)
+		if p.d.Role != "upload-station" {
+			fmt.Fprintln(p.ui.output, "2 Generate/review MY identity and public handoff")
+		}
+		fmt.Fprintln(p.ui.output, "3 Import a received public file")
+		if p.d.Role != "release-signer" {
+			fmt.Fprintln(p.ui.output, "4 Authenticate and create a phase profile")
+		}
+		fmt.Fprintln(p.ui.output, "5 Continue the ceremony workflow\n6 Show folders and remaining input requirements")
+		if p.d.Role != "upload-station" {
+			fmt.Fprintln(p.ui.output, "7 Prepare, review and sign MY enrollment (after receiving the signed definition)")
+		}
+		fmt.Fprintln(p.ui.output, "0 Save and exit")
 		choice, err := p.ui.ask("Choose", "0")
 		if err != nil {
 			return err
@@ -375,7 +406,9 @@ func (p *rolePreparer) menu() error {
 		case "5":
 			err = p.workflow()
 		case "6":
-			fmt.Fprintf(p.ui.output, "Work/public outputs: %s\nTrusted public files: %s\nPRIVATE keys: %s\nObtain signed ceremony files, public storage configuration and the exact-tool receipt through the agreed channel. Enrollments require your own reviewed signature; do not accept a coordinator's signature as your consent. Participant environment JSON and offline enrollment/receipt signing still require the agreed preparation/signing procedure. Complete phase transcripts and operational evidence are exchanged separately; importing a definition does not fetch them.\n", p.d.Work, p.d.Trust, p.d.Keys)
+			fmt.Fprintf(p.ui.output, "Work/public outputs: %s\nTrusted public files: %s\nPRIVATE keys: %s\nObtain signed ceremony files and public storage configuration through the agreed channel. Prepare approved images to create your local tool record. Participant environment questions are included in profile setup. Use option 7 for your own enrollment; upload stations instead import the final signer's public enrollment. Witness/mirror receipts are reviewed and signed with the offline image in the workflow. Disconnect the signing host when prompted. Complete phase transcripts and operational evidence are exchanged separately; importing a definition does not fetch them.\n", p.d.Work, p.d.Trust, p.d.Keys)
+		case "7":
+			err = p.enroll()
 		default:
 			err = errors.New("choose a listed number")
 		}

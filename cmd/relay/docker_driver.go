@@ -650,7 +650,7 @@ func (d *dockerDriver) securityArgs(mounts []dockerMount) []string {
 	uid, gid := os.Getuid(), os.Getgid()
 	args := []string{
 		"--pull", "never", "--platform", d.platform,
-		"--entrypoint", d.ceremonyBinary,
+		"--entrypoint", "/usr/local/bin/mpc-ceremony",
 		"--network", "none", "--read-only",
 		"--user", fmt.Sprintf("%d:%d", uid, gid),
 		"--cap-drop", "ALL", "--security-opt", "no-new-privileges=true",

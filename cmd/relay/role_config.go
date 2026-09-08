@@ -144,7 +144,7 @@ func runInitRoleConfig(args []string) error {
 	if definition.CeremonyID != storageConfig.CeremonyID {
 		return errors.New("local ceremony does not match relay-storage.json")
 	}
-	if definition.Mode != verifiedTools.Receipt.KitMode {
+	if verifiedTools.Receipt.Schema == toolIdentityReceiptSchema && definition.Mode != verifiedTools.Receipt.KitMode {
 		return fmt.Errorf(
 			"authenticated ceremony mode %q does not match approved %s kit",
 			definition.Mode,

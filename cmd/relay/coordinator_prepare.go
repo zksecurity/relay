@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	releaseassets "github.com/zksecurity/relay/release"
 )
 
 type setupIdentity struct {
@@ -60,6 +62,7 @@ type setupPolicy struct {
 }
 type setupBinary struct{ Path, SHA256 string }
 type coordinatorDraft struct {
+	ArchitecturePolicy                       string `json:"architecture_policy,omitempty"`
 	Schema, Name, Release, Work, Trust, Keys string
 	Mode, Circuit, Status, CreatedAt         string
 	Identities                               setupRoster
@@ -145,6 +148,9 @@ func (d coordinatorDraft) validate() error {
 		}
 		seenID[i.ID], seenKey[i.KeyID], seenPub[i.Fingerprint] = true, true, true
 	}
+	if d.ArchitecturePolicy != "" && d.ArchitecturePolicy != "both" && d.ArchitecturePolicy != "single" && d.ArchitecturePolicy != "custom" {
+		return errors.New("invalid architecture policy")
+	}
 	if len(d.Identities.Auditors) < 2 || len(d.Identities.Roster) == 0 {
 		return errors.New("assign at least two auditors, a final-parameter signer and one participant")
 	}
@@ -218,13 +224,14 @@ func setupWriteNew(path string, v any) error {
 }
 
 type coordinatorWizard struct {
-	d            coordinatorDraft
-	input        *bufio.Reader
-	output       io.Writer
-	draftPath    string
-	run          func([]string) error
-	localAction  func(string, string, []string, bool) error
-	continueFlow func() error
+	d               coordinatorDraft
+	input           *bufio.Reader
+	output          io.Writer
+	draftPath       string
+	run             func([]string) error
+	localAction     func(string, string, []string, bool) error
+	continueFlow    func() error
+	prepareBinaries func() error
 }
 
 func (w *coordinatorWizard) ask(label, current string) (string, error) {
@@ -358,8 +365,10 @@ func (w *coordinatorWizard) summary() {
 	for _, b := range w.d.Binaries {
 		fmt.Fprintf(w.output, "Additional allowed proof-tool binary: %s SHA-256 %s\n", b.Path, b.SHA256)
 	}
-	if len(w.d.Binaries) == 0 {
-		fmt.Fprintln(w.output, "Software: only the selected machine's proof-tool binary will be allowed. Add reviewed binaries for mixed-architecture participation.")
+	if w.d.ArchitecturePolicy == "both" || (w.d.ArchitecturePolicy == "" && len(w.d.Binaries) == 0 && w.localAction == nil) {
+		fmt.Fprintln(w.output, "Supported computers: Intel/AMD and ARM64, including Apple silicon through Docker. Exact release builds are authenticated before initialization.")
+	} else if len(w.d.Binaries) == 0 {
+		fmt.Fprintln(w.output, "Supported computers: this machine's Linux architecture only.")
 	}
 	fmt.Fprintln(w.output, "Witness/mirror enrollments happen AFTER initialization. Identity distribution is manual. Storage setup does not create buckets or grant cloud permissions.")
 }
@@ -432,13 +441,33 @@ func (w *coordinatorWizard) identity() error {
 	return w.save()
 }
 func (w *coordinatorWizard) policy() error {
-	path, err := w.required("Path to reviewed init policy.json (review the beacon preset before signing)", w.d.PolicyTemplate)
+	choices := []setupChoice{{"standard", "Use the standard beacon settings included with this Relay release"}, {"custom", "Advanced: load a custom policy file"}}
+	defaultChoice := "standard"
+	if w.d.Policy.Beacon.Provider != "" {
+		choices = append([]setupChoice{{"current", "Keep the saved beacon settings"}}, choices...)
+		defaultChoice = "current"
+	}
+	selection, err := w.choose("Beacon settings", defaultChoice, choices)
 	if err != nil {
 		return err
 	}
 	var policy setupPolicy
-	if err := setupReadJSON(path, &policy); err != nil {
-		return err
+	path := ""
+	switch selection {
+	case "current":
+		policy, path = w.d.Policy, w.d.PolicyTemplate
+	case "standard":
+		if err := json.Unmarshal(releaseassets.CeremonyPolicy(), &policy); err != nil {
+			return fmt.Errorf("invalid built-in policy: %w", err)
+		}
+	case "custom":
+		path, err = w.required("Path to your reviewed custom policy JSON", w.d.PolicyTemplate)
+		if err != nil {
+			return err
+		}
+		if err := setupReadJSON(path, &policy); err != nil {
+			return err
+		}
 	}
 	suggested := []string{}
 	for _, p := range w.d.Identities.Roster {
@@ -459,14 +488,25 @@ func (w *coordinatorWizard) policy() error {
 		if previous.Minimum > 0 {
 			defaultMinimum = previous.Minimum
 		}
-		minimum, err := w.required(fmt.Sprintf("Phase %d minimum contributions required before closure", n+1), strconv.Itoa(defaultMinimum))
-		if err != nil {
-			return err
+		if defaultMinimum > len(order) {
+			defaultMinimum = len(order)
 		}
-		p.Minimum, err = strconv.Atoi(minimum)
-		if err != nil {
-			return err
+		for {
+			minimum, err := w.required(fmt.Sprintf("Phase %d minimum contributions required before closure", n+1), strconv.Itoa(defaultMinimum))
+			if err != nil {
+				return err
+			}
+			p.Minimum, err = strconv.Atoi(minimum)
+			if err == nil && p.Minimum >= 1 && p.Minimum <= len(order) {
+				break
+			}
+			fmt.Fprintf(w.output, "Enter a number from 1 to %d.\n", len(order))
 		}
+	}
+	b := policy.Beacon
+	fmt.Fprintf(w.output, "Beacon: %s / %s. Witnesses must observe at least %d seconds before the beacon round. Future round required: %t.\nThe beacon provides public randomness after contributions close; Relay does not substitute another round.\nChain hash: %s\nPublic key: %s\n", b.Provider, b.Network, b.Lead, b.Future, b.ChainHash, b.PublicKey)
+	if err := w.confirm("Review these beacon settings and the participant orders/minimums you selected; proof-tool still validates the complete policy before signing", "REVIEWED"); err != nil {
+		return err
 	}
 	w.d.Policy = policy
 	w.d.PolicyTemplate = path
@@ -492,6 +532,25 @@ func setupFileHash(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 func (w *coordinatorWizard) binary() error {
+	current := w.d.ArchitecturePolicy
+	if current == "" {
+		current = "both"
+		if len(w.d.Binaries) > 0 {
+			current = "custom"
+		}
+	}
+	choice, err := w.choose("Supported computers", current, []setupChoice{{"both", "Intel/AMD and ARM64 — verified builds from this release"}, {"single", "Advanced: this machine's architecture only"}, {"custom", "Advanced: add another reviewed binary file"}})
+	if err != nil {
+		return err
+	}
+	if choice != "custom" {
+		if w.localAction != nil && choice == "both" {
+			return errors.New("this legacy local harness only supports its current architecture")
+		}
+		w.d.ArchitecturePolicy = choice
+		w.d.Binaries = nil
+		return w.save()
+	}
 	path, err := w.required("Additional approved Linux proof-tool binary, absolute path", "")
 	if err != nil {
 		return err
@@ -508,6 +567,7 @@ func (w *coordinatorWizard) binary() error {
 		return err
 	}
 	w.d.Binaries = append(w.d.Binaries, setupBinary{path, digest})
+	w.d.ArchitecturePolicy = "custom"
 	return w.save()
 }
 
@@ -641,7 +701,26 @@ func (w *coordinatorWizard) generateIdentity() error {
 	if err := w.action("identity", "keygen", []string{"mpc-ceremony", "identity", "generate", "--identity-id", id, "--display-name", display, "--private-key-out", "/work/signing.hex", "--public-identity-out", "/work/identity.json"}, false); err != nil {
 		return err
 	}
-	fmt.Fprintf(w.output, "Send ONLY %s to the ceremony roles through your agreed channel. Keep signing.hex private. Import this public identity next.\n", filepath.Join(w.d.Keys, "identity.json"))
+	publicPath := filepath.Join(w.d.Keys, "identity.json")
+	fmt.Fprintf(w.output, "Send ONLY %s to the ceremony roles through your agreed channel. Keep signing.hex private.\n", publicPath)
+	var generated setupIdentity
+	if err := setupReadJSON(publicPath, &generated); err != nil {
+		return err
+	}
+	if err := generated.check(); err != nil {
+		return err
+	}
+	if generated.ID != id || generated.DisplayName != display {
+		return errors.New("generated identity differs from the requested identity")
+	}
+	choice, err := w.choose("Assign this new identity to your coordinator role?", "assign", []setupChoice{{"assign", "Yes — use my new coordinator identity"}, {"later", "Not yet — keep the files without assigning"}})
+	if err != nil {
+		return err
+	}
+	if choice == "assign" {
+		w.d.Identities.Coordinator = generated
+		return w.save()
+	}
 	return nil
 }
 
@@ -661,6 +740,11 @@ func (w *coordinatorWizard) initialize() error {
 	}
 	if st, err := os.Lstat(filepath.Join(w.d.Keys, "signing.hex")); err != nil || !st.Mode().IsRegular() {
 		return errors.New("coordinator signing.hex is missing or unsafe")
+	}
+	if w.prepareBinaries != nil {
+		if err := w.prepareBinaries(); err != nil {
+			return err
+		}
 	}
 	w.summary()
 	fmt.Fprintln(w.output, "This signs the definition and computes Phase 1 genesis. Production can require substantial RAM, disk and time. It does NOT publish or start participant turns.")
@@ -760,6 +844,13 @@ func (w *coordinatorWizard) verify() error {
 }
 
 func (w *coordinatorWizard) storage() error {
+	choice, err := w.choose("Storage settings", "import", []setupChoice{{"import", "Import the administrator's settings file"}, {"advanced", "Advanced: enter infrastructure fields individually"}})
+	if err != nil {
+		return err
+	}
+	if choice == "import" {
+		return w.importStorageSettings()
+	}
 	provider, err := w.choose("Storage provider", w.d.Storage["provider"], []setupChoice{{"aws", "Amazon S3 (AWS)"}, {"r2", "Cloudflare R2"}})
 	if err != nil {
 		return err
@@ -767,12 +858,7 @@ func (w *coordinatorWizard) storage() error {
 	if provider != "aws" && provider != "r2" {
 		return errors.New("choose aws or r2")
 	}
-	fields := []string{"region", "published-bucket", "published-base-url", "inbox-bucket", "profile"}
-	if provider == "aws" {
-		fields = append(fields, "issuer-profile", "grant-role-arn", "grant-role-max-ttl")
-	} else {
-		fields = append(fields, "account-id", "endpoint", "parent-access-key-id")
-	}
+	fields := storageSettingFields(provider)
 	values := map[string]string{"provider": provider}
 	fmt.Fprintln(w.output, "Use the administrator's provisioned resource details. Never paste secret keys or tokens here.")
 	for _, field := range fields {
@@ -822,7 +908,7 @@ func (w *coordinatorWizard) configureStorage() error {
 func (w *coordinatorWizard) menu() error {
 	for {
 		if w.d.Status == "draft" {
-			fmt.Fprintf(w.output, "\nCoordinator preparation — %s (%s)\n1 Basics\n2 Generate my identity\n3 Import/replace public identity\n4 Orders, minimum contributions and reviewed beacon policy\n5 Add approved binary for another architecture\n6 Storage settings\n7 Review draft\n8 Approve and initialize\n9 Verify existing definition (also after interruption)\n10 Configure storage\n11 Remove an identity assignment\n0 Save and exit\n", w.d.Name, w.d.Status)
+			fmt.Fprintf(w.output, "\nCoordinator preparation — %s (%s)\n1 Basics\n2 Generate my identity\n3 Import/replace public identity\n4 Orders, minimum contributions and reviewed beacon policy\n5 Supported computers (both architectures by default)\n6 Storage settings\n7 Review draft\n8 Approve and initialize\n9 Verify existing definition (also after interruption)\n10 Configure storage\n11 Remove an identity assignment\n0 Save and exit\n", w.d.Name, w.d.Status)
 		} else {
 			if w.d.Status == "definition-verified" {
 				fmt.Fprintf(w.output, "\nInitialization complete — %s\nThe signed ceremony definition has been verified. Identities and policy are frozen.\nThis does not verify all initialization artifacts or start participant contributions.\n", w.d.Name)
@@ -840,6 +926,9 @@ func (w *coordinatorWizard) menu() error {
 			}
 			if w.d.Status == "definition-verified" {
 				fmt.Fprintln(w.output, "12 Continue the guided coordinator workflow")
+				if w.localAction == nil {
+					fmt.Fprintln(w.output, "13 Prepare, review and sign MY coordinator enrollment")
+				}
 			}
 			fmt.Fprintln(w.output, "0 Save and exit")
 		}
@@ -862,6 +951,12 @@ func (w *coordinatorWizard) menu() error {
 			continue
 		}
 		switch choice {
+		case "13":
+			if w.d.Status != "definition-verified" || w.localAction != nil {
+				err = errors.New("coordinator enrollment requires the verified definition and approved release")
+			} else {
+				err = w.enrollCoordinator()
+			}
 		case "12":
 			if w.d.Status != "definition-verified" {
 				err = errors.New("verify the definition first")
@@ -978,5 +1073,6 @@ func runCoordinatorPrepare(args []string) error {
 		}
 	}
 	w := coordinatorWizard{d: d, input: bufio.NewReader(os.Stdin), output: os.Stdout, draftPath: path, run: executeGuidedChild}
+	w.prepareBinaries = w.prepareApprovedArchitectures
 	return w.menu()
 }

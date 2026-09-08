@@ -91,7 +91,9 @@ func importReceiptFlow(role, phase string) flowTask {
 	if role == "mirror" {
 		kind = "mirror-receipt"
 	}
-	return withFields(flowProof("import-signature", "Verify and import your offline receipt signature", "The tool checks the raw signature over the exact canonical record before producing a detached signature. A coordinator-provided signature is not your observation.", "ops", "import-signature"), ft("record-type", "Receipt type", kind), ff("canonical", "Exact reviewed canonical receipt", "/work/"+phase+"-receipt/canonical.json"), ff("signer-public-key-file", "Your public signing key", "/trust/my-public-key.hex"), ff("raw-signature", "Returned raw offline signature", "/work/"+phase+"-receipt/raw-signature.hex"), ff("out", "Fresh verified detached signature", "/work/"+phase+"-receipt/receipt.sig"))
+	task := withFields(flowProof("sign-receipt", "Review and sign YOUR receipt offline", "The offline image checks the authenticated ceremony, record binding and owner key before signing. You must personally confirm the observation; the program cannot observe it for you.", "ops", "sign", "--reviewed"), ft("record-type", "Receipt type", kind), ff("record", "Exact public receipt to review", "/work/"+phase+"-receipt/canonical.json"), ff("signing-key", "Your private signing key (offline image only)", "/keys/signing.hex"), ff("out", "Fresh verified detached signature", "/work/"+phase+"-receipt/receipt.sig"))
+	task.Offline = true
+	return task
 }
 
 func mirrorDraftFlow(phase string) flowTask {
@@ -205,7 +207,13 @@ func roleFlowStages(role string) []flowStage {
 			if role == "mirror" {
 				tasks = append(tasks, mirrorDraftFlow(phase))
 			}
-			tasks = append(tasks, prepare, handoff("sign", "Review and sign the exact canonical receipt offline", "Use the approved offline signing process, then import and verify its raw signature with proof-tool. Transfer only signed public output to this online station. Never sign an observation you did not make."), importReceiptFlow(role, phase), submitFlow(role, phase))
+			submit := submitFlow(role, phase)
+			for n := range submit.Fields {
+				if submit.Fields[n].Flag == "dir" {
+					submit.Fields[n].Default = "/work/" + phase + "-receipt"
+				}
+			}
+			tasks = append(tasks, prepare, importReceiptFlow(role, phase), handoff("reconnect", "Reconnect only after offline signing finishes", "Only public receipt files are uploaded. Keep your private signing key out of the online container."), submit)
 			stages = append(stages, flowStage{ID: phase, Label: phase + " observation and signed receipt", Tasks: tasks})
 		}
 	case "auditor":

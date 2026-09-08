@@ -10,7 +10,7 @@ authenticated source checkout.
 
 Follow [role onboarding](../role-onboarding.md): prepare images, generate your
 identity, send only `identity.json` to the coordinator, import your public
-ceremony/enrollment files, and create the phase profiles.
+ceremony files, review/sign your enrollment, and create the phase profiles.
 
 Choose **Continue the ceremony workflow** for the numbered witness steps.
 
@@ -23,9 +23,9 @@ Choose **Continue the ceremony workflow** for the numbered witness steps.
    Polling alone does not preserve all observation evidence.
 4. Enter when **you actually observed** publication. Check that it precedes
    the beacon round by the required lead time; do not copy someone else's time.
-5. Prepare and review the canonical receipt. Use the agreed offline signing
-   procedure, then return the raw signature when the helper asks for it.
-   The helper verifies/imports the signature; it does not perform that signing.
+5. Prepare and review your receipt. Disconnect the signing host when prompted;
+   the helper uses the prepared offline image to sign with your own key and
+   verify the signature. Reconnect only after signing finishes.
 6. Upload the signed public output using your private grant.
    Send the manifest key to the coordinator and retain the observation evidence.
 

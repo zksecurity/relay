@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Run directly from Bash or Zsh. Source only your own installer-created settings.
 set -euo pipefail
-SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 if [[ ${1:-} == --help ]]; then
   printf 'Usage: ./scripts/coordinator.sh [absolute-path-to-relay-env.sh]\n'
   exit 0
@@ -47,5 +46,4 @@ fi
 printf 'Local ceremony name (reuse the same name when resuming): '
 IFS= read -r ceremony_name
 exec "$RELAY" coordinator prepare --name "$ceremony_name" --release "$RELAY_RELEASE" \
-  --work "$ROLE_WORK" --trust "$ROLE_TRUST" --keys "$ROLE_KEYS" \
-  --policy-template "$SCRIPT_DIR/../release/ceremony-policy.json"
+  --work "$ROLE_WORK" --trust "$ROLE_TRUST" --keys "$ROLE_KEYS"

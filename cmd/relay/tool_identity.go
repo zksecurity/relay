@@ -110,8 +110,19 @@ func loadToolIdentityReceipt(path string) (toolIdentityReceipt, error) {
 		return toolIdentityReceipt{}, errors.New("tool identity receipt changed while being opened")
 	}
 	limited := io.LimitReader(file, maxToolIdentityReceipt+1)
+	reader := bufio.NewReader(limited)
+	if first, err := reader.Peek(1); err == nil && first[0] == '{' {
+		raw, err := io.ReadAll(reader)
+		if err != nil {
+			return toolIdentityReceipt{}, err
+		}
+		if len(raw) > maxToolIdentityReceipt {
+			return toolIdentityReceipt{}, errors.New("tool receipt too large")
+		}
+		return decodeReleaseToolReceipt(raw)
+	}
 	values := make(map[string]string)
-	scanner := bufio.NewScanner(limited)
+	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		line := strings.TrimSuffix(scanner.Text(), "\r")
 		if line == "" {
@@ -248,6 +259,9 @@ func resolveAndHashExecutable(name string) (string, string, error) {
 }
 
 func formatToolIdentityVerification(verified verifiedToolIdentities) string {
+	if verified.Receipt.Schema == releaseToolReceiptSchema {
+		return fmt.Sprintf("Release tools match the local preparation record.\nRelay: %s\n  release: %s\n  sha256: %s\nmpc-ceremony: %s\n  release: %s\n  sha256: %s\nThis record measures tool identities; it does not claim a ceremony compatibility test or physical erasure. Ceremony policy is checked separately against its signed definition.\n", verified.RelayPath, verified.Receipt.Relay.ReleaseID, verified.Receipt.Relay.SHA256, verified.MPCCeremonyPath, verified.Receipt.MPCCeremony.ReleaseID, verified.Receipt.MPCCeremony.SHA256)
+	}
 	return fmt.Sprintf(
 		"tool identity receipt: %s (%s)\nkit root: %s\nRelay: %s\n  release: %s\n  version: %s\n  sha256: %s\nmpc-ceremony: %s\n  release: %s\n  version: %s\n  sha256: %s\ncompatibility: %s\n",
 		verified.Receipt.Schema,
