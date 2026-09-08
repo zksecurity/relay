@@ -7,6 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/zksecurity/relay/internal/access"
+	"github.com/zksecurity/relay/internal/store"
 )
 
 // Reuses only public artifacts from a completed tiny rehearsal. Issuance,
@@ -84,7 +88,24 @@ func TestAWSLiveRoleEvidenceChild(t *testing.T) {
 	requireAWSLiveConfiguration(t, config)
 	if stage == "verify-release" {
 		key := os.Getenv("RELAY_AWS_EVIDENCE_RECEIVE_KEY")
-		client := coordinatorClient(config, config.InboxBucket)
+		prefix, e := access.Prefix(config.CeremonyID, "release", id)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if !strings.HasPrefix(key, prefix) || len(strings.Split(strings.TrimPrefix(key, prefix), "/")) != 2 {
+			t.Fatal("unexpected release manifest scope")
+		}
+		enrollment := "/work/ceremony/public/operational/enrollments/" + id
+		if err := authenticateGrantIdentity(config, "release", id, enrollment+".json", enrollment+".sig"); err != nil {
+			t.Fatal(err)
+		}
+		// Browser-login exports may have only minutes left. An explicit scoped
+		// role session has its own full lifetime for this long read-only test.
+		credentials, _, err := issueAWS(config, id, strings.TrimSuffix(key, "manifest.json"), time.Hour)
+		if err != nil {
+			t.Fatal("could not issue long-lived scoped test read session")
+		}
+		client := store.Client{Region: config.Region, Bucket: config.InboxBucket, Credentials: &store.Credentials{AccessKeyID: credentials.AccessKeyID, SecretAccessKey: credentials.SecretAccessKey, SessionToken: credentials.SessionToken}}
 		m, err := downloadSubmissionManifest(client, key)
 		if err != nil {
 			t.Fatal(err)

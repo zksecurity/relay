@@ -98,3 +98,12 @@ Evidence transport uses `relay-evidence-submission-v2`: payload objects are unde
 a release bundle's own `manifest.json` from colliding with the transport marker.
 The coordinator requires the v2 layout; do not mix old and new role releases.
 Failed partial uploads remain unaccepted; preserve their exact prefix for review.
+
+On 2026-09-08, the v2 witness/mirror/auditor upload-and-download retest passed
+in 67.08 seconds; the release-bundle transport subtest passed in 863.76 seconds.
+These are separate runs, not one uninterrupted all-role ceremony. A dedicated
+downloaded-release cryptographic verification lane uses an independently supplied
+public signer anchor. Long downloads need credentials with sufficient remaining
+lifetime; an exported browser login can expire during the operation. This test
+can issue a one-hour session restricted to the selected test release prefix;
+ordinary coordinator commands do not automatically renew credentials.
