@@ -54,6 +54,8 @@ func main() {
 		err = runParticipate(os.Args[2:])
 	case "submit-evidence":
 		err = runSubmitEvidence(os.Args[2:])
+	case "tessera":
+		err = runTessera(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 		return
@@ -106,6 +108,9 @@ func usage() {
   relay auditor run --config FILE
   relay auditor submit --config FILE --grant FILE (--file FILE | --dir DIR)
   relay release run --config FILE --grant FILE (--file FILE | --dir DIR)
+  relay tessera capabilities --json
+  relay tessera export-setup --context FILE --ceremony FILE --ceremony-signature FILE --coordinator-key-file FILE --release TAG --storage-public FILE --out FRESH_FILE
+  relay tessera confirm --request FILE --identity FILE --signing-key FILE --out FRESH_FILE
 
 recovery and debugging:
   relay advanced push --chain FILE --chain-signature FILE --root DIR --ceremony FILE \

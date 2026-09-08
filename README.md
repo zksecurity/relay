@@ -23,6 +23,7 @@ Never send a role's private key to the coordinator or website.
 - [Maintainer reference](docs/maintainer/README.md)
 - [Transport layout and developer CLI](docs/maintainer/transport.md)
 - [Software releases](docs/maintainer/releases.md)
+- [Tessera roster import and setup export](docs/tessera.md)
 - [Legacy three-machine rehearsal](scripts/three-machine-rehearsal/README.md)
 
 Relay is written in Go; use the version in `go.mod`.
