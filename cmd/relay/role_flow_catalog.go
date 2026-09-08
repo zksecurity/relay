@@ -166,6 +166,7 @@ func coordinatorFlowStages() []flowStage {
 	for i := range stages {
 		if stages[i].ID == "phase1-close" || stages[i].ID == "phase2-close" {
 			stages[i].Tasks = append(stages[i].Tasks, optional(evidenceGrantFlow()), optional(flowTask{ID: "evidence-inbox", Label: "List submitted evidence for review", Help: "Download into fresh review directories and verify each record with proof-tool. Listing an inbox does not validate its contents.", Command: []string{"relay", "coordinator", "evidence"}, Fields: []flowField{storageField()}}))
+			stages[i].Tasks = append(stages[i].Tasks, optional(flowTask{ID: "evidence-receive", Label: "Download submitted evidence for verification", Help: "Choose the exact manifest key reported by the sender. Downloads into a fresh directory and checks file hashes; this is not signature verification or acceptance.", Command: []string{"relay", "coordinator", "evidence"}, Fields: []flowField{storageField(), ft("manifest-key", "Exact submitted manifest key", ""), ff("out-dir", "Fresh public evidence review folder", "/work/received-evidence")}}))
 		}
 	}
 	// Preserve the final archive handoff until after the production decision.

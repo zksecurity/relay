@@ -113,6 +113,10 @@ func preflightStorage(config access.StorageConfig) (result error) {
 			return err
 		}
 	}
+	return checkStorageObjects(config, newScopeProbeStore, time.Sleep)
+}
+
+func checkStorageObjects(config access.StorageConfig, clientFor func(store.Client) scopeProbeStore, pause func(time.Duration)) (result error) {
 	attempt, err := randomID()
 	if err != nil {
 		return err
@@ -131,7 +135,7 @@ func preflightStorage(config access.StorageConfig) (result error) {
 	if err := os.WriteFile(source, payload, 0o600); err != nil {
 		return err
 	}
-	published := coordinatorClient(config, config.PublishedBucket)
+	published := clientFor(coordinatorClient(config, config.PublishedBucket))
 	if err := published.PutNoReplace(key, source); err != nil {
 		return probeWriteFailure(config.PublishedBucket, key, err)
 	}
@@ -150,7 +154,7 @@ func preflightStorage(config access.StorageConfig) (result error) {
 	if got, err := os.ReadFile(authenticated); err != nil || !bytes.Equal(got, payload) {
 		return errors.New("authenticated published read returned different probe bytes")
 	}
-	public := store.Client{PublicBaseURL: config.PublishedBaseURL}
+	public := clientFor(store.Client{PublicBaseURL: config.PublishedBaseURL})
 	var publicErr error
 	for attemptNumber := 0; attemptNumber < 5; attemptNumber++ {
 		publicPath := filepath.Join(dir, "public-"+strconv.Itoa(attemptNumber))
@@ -162,13 +166,13 @@ func preflightStorage(config access.StorageConfig) (result error) {
 			}
 			break
 		}
-		time.Sleep(time.Second)
+		pause(time.Second)
 	}
 	if publicErr != nil {
 		return fmt.Errorf("anonymous published read probe: %w", publicErr)
 	}
 
-	inbox := coordinatorClient(config, config.InboxBucket)
+	inbox := clientFor(coordinatorClient(config, config.InboxBucket))
 	if err := inbox.PutNoReplace(key, source); err != nil {
 		return probeWriteFailure(config.InboxBucket, key, err)
 	}
@@ -181,13 +185,13 @@ func preflightStorage(config access.StorageConfig) (result error) {
 		}
 	}()
 	if config.Provider != "r2" {
-		unsigned := store.Client{Endpoint: config.Endpoint, Region: config.Region, Bucket: config.InboxBucket, NoSign: true}
+		unsigned := clientFor(store.Client{Endpoint: config.Endpoint, Region: config.Region, Bucket: config.InboxBucket, NoSign: true})
 		publiclyVisible, headErr := unsigned.Head(key)
 		if headErr == nil && publiclyVisible {
 			return errors.New("private inbox probe was anonymously readable")
 		}
-		if headErr != nil && !isAccessDenied(headErr) {
-			return fmt.Errorf("anonymous inbox privacy probe was inconclusive: %w", headErr)
+		if headErr == nil || !isAccessDenied(headErr) {
+			return errors.New("anonymous inbox privacy probe was inconclusive: require an explicit access denial for the probe object")
 		}
 	}
 	if err := inbox.Delete(key); err != nil {
@@ -453,6 +457,18 @@ func issueR2Locally(config access.StorageConfig, prefix string, ttl time.Duratio
 }
 
 func issueAWS(config access.StorageConfig, identity, prefix string, ttl time.Duration) (access.SessionCredentials, time.Time, error) {
+	return issueAWSWithRunner(config, identity, prefix, ttl, func(args ...string) ([]byte, error) {
+		command := exec.Command("aws", args...)
+		var stdout, stderr bytes.Buffer
+		command.Stdout, command.Stderr = &stdout, &stderr
+		if err := command.Run(); err != nil {
+			return nil, fmt.Errorf("AWS STS assume-role: %w: %s", err, strings.TrimSpace(stderr.String()))
+		}
+		return stdout.Bytes(), nil
+	})
+}
+
+func issueAWSWithRunner(config access.StorageConfig, identity, prefix string, ttl time.Duration, run func(...string) ([]byte, error)) (access.SessionCredentials, time.Time, error) {
 	maximum, _ := time.ParseDuration(config.GrantRoleMaxTTL)
 	if ttl < 15*time.Minute || ttl > maximum {
 		return access.SessionCredentials{}, time.Time{}, fmt.Errorf("AWS --credential-ttl must be between 15m and %s", maximum)
@@ -478,14 +494,12 @@ func issueAWS(config access.StorageConfig, identity, prefix string, ttl time.Dur
 	if len(session) > 64 {
 		session = session[:64]
 	}
-	command := exec.Command("aws", "--profile", config.IssuerProfile, "--region", config.Region,
+	raw, err := run("--profile", config.IssuerProfile, "--region", config.Region,
 		"sts", "assume-role", "--role-arn", config.GrantRoleARN,
 		"--role-session-name", session, "--duration-seconds", strconv.FormatInt(int64(ttl/time.Second), 10),
 		"--policy", string(policy), "--output", "json")
-	var stdout, stderr bytes.Buffer
-	command.Stdout, command.Stderr = &stdout, &stderr
-	if err := command.Run(); err != nil {
-		return access.SessionCredentials{}, time.Time{}, fmt.Errorf("AWS STS assume-role: %w: %s", err, strings.TrimSpace(stderr.String()))
+	if err != nil {
+		return access.SessionCredentials{}, time.Time{}, err
 	}
 	var result struct {
 		Credentials struct {
@@ -495,7 +509,7 @@ func issueAWS(config access.StorageConfig, identity, prefix string, ttl time.Dur
 			Expiration      string `json:"Expiration"`
 		} `json:"Credentials"`
 	}
-	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+	if err := json.Unmarshal(raw, &result); err != nil {
 		return access.SessionCredentials{}, time.Time{}, fmt.Errorf("decode AWS STS credentials: %w", err)
 	}
 	expires, err := time.Parse(time.RFC3339, result.Credentials.Expiration)

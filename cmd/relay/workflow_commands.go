@@ -729,7 +729,7 @@ func runSubmitEvidenceForRole(args []string, expectedRole string) error {
 			}
 			manifest.Files = append(manifest.Files, ref)
 			fmt.Fprintf(os.Stderr, "  uploading %s (%s)\n", ref.Name, formatBytes(ref.Size))
-			if err := putFresh(client, prefix+ref.Name, input.local); err != nil {
+			if err := putFresh(client, prefix+"files/"+ref.Name, input.local); err != nil {
 				return err
 			}
 		}

@@ -414,6 +414,9 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 			}
 			var answers strings.Builder
 			for _, field := range task.Fields {
+				if p.d.Role == "mirror" && task.ID == "draft-receipt" && field.Flag == "chain" {
+					answers.WriteString("1\n")
+				}
 				value := ""
 				switch field.Flag {
 				case "location":

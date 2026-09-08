@@ -4,8 +4,13 @@ Status: agreed design, not a description of the released UI. Updated 2026-09-08.
 Implementation is in progress. Local changes cover enrollment confirmation,
 numbered prompts, authenticated roster collection and timing, production-decision
 applicability, scheduled-turn checks, storage preparation, and R2 credential handling.
-The complete readiness/navigation model, per-head evidence tracking, recovery
-coverage and final released-pair rehearsal remain release prerequisites.
+The named-action overview, cross-area navigation, per-head mirror receipt matching,
+and file-bound progress invalidation are now implemented locally. Local readiness
+labels cover each recipe's inputs; signed schedules still govern coordinator turns.
+Public directory/output snapshots and fresh evidence downloads are implemented.
+All-role cloud transport testing and final released-pair validation remain in progress.
+Live R2 infrastructure,
+grant scope and real expiry validation passed locally; no release approval is implied.
 
 ## Entry point and navigation
 

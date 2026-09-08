@@ -18,6 +18,9 @@ func flowIndependentOutput(task flowTask, field flowField) bool {
 	if field.Flag == "out" {
 		return true
 	}
+	if field.Flag == "out-dir" && len(task.Command) > 2 && task.Command[0] == "relay" && task.Command[1] == "coordinator" && task.Command[2] == "evidence" {
+		return true
+	}
 	if field.Flag == "out-dir" && len(task.Command) > 2 && task.Command[1] == "ops" {
 		return task.Command[2] == "prepare-public-witness-receipt" || task.Command[2] == "prepare-mirror-receipt"
 	}

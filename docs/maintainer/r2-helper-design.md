@@ -5,8 +5,9 @@ Status: implementation and testing in progress; not released. Part of the
 
 The helper now supports existing-resource discovery, manual configuration,
 hidden credential entry, dedicated file mounts and session-file cleanup.
-Infrastructure and scoped-grant probes are implemented but have not been
-validated against live R2 in this change. Credential recovery, refreshed-login
+Infrastructure and scoped-grant probes passed live R2 validation on 2026-09-08,
+including the same temporary credential working before expiry and being rejected
+after expiry while a fresh control grant still worked. Credential recovery, refreshed-login
 handling and complete probe failure coverage still need release review.
 
 ## Entry and resource selection

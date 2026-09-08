@@ -25,7 +25,7 @@ const (
 	RoleConfigSchemaV1        = "relay-role-config-v1"
 	RoleConfigSchema          = "relay-role-config-v2"
 	CandidateManifestSchema   = "relay-candidate-manifest-v1"
-	SubmissionManifestSchema  = "relay-evidence-submission-v1"
+	SubmissionManifestSchema  = "relay-evidence-submission-v2"
 )
 
 const (

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/zksecurity/relay/internal/transcript"
 )
@@ -92,6 +93,7 @@ func (f *roleFlow) decisionRequirement() (string, error) {
 
 func (f *roleFlow) checkScheduledTurns() error {
 	phase := strings.TrimSuffix(f.stages[f.state.Stage].ID, "-turns")
+	phase = strings.TrimSuffix(phase, "-close")
 	d, err := f.authenticatedDefinition()
 	if err != nil {
 		return err
@@ -108,4 +110,41 @@ func (f *roleFlow) checkScheduledTurns() error {
 		return fmt.Errorf("waiting for scheduled contributions: authenticated local %s head has %d of %d; the signed minimum does not silently cancel the remaining participants", phase, len(head.Chain.Records), len(schedule))
 	}
 	return nil
+}
+
+func (f *roleFlow) nextTurnAction() (string, error) {
+	phase := strings.TrimSuffix(f.stages[f.state.Stage].ID, "-turns")
+	d, err := f.authenticatedDefinition()
+	if err != nil {
+		return "", err
+	}
+	schedule, err := d.Schedule(phase)
+	if err != nil {
+		return "", err
+	}
+	head, err := f.discoverHead(phase, nil)
+	if err != nil {
+		return "", err
+	}
+	if len(head.Chain.Records) >= len(schedule) {
+		return "", nil
+	}
+	next := schedule[len(head.Chain.Records)]
+	fmt.Fprintf(f.ui.output, "Next scheduled participant: %s (%d/%d). Acceptance must be independently verified.\n", next, len(head.Chain.Records)+1, len(schedule))
+	for _, task := range f.stages[f.state.Stage].Tasks {
+		if task.ID == "grant" {
+			if a := f.last(task); a != nil && a.Status == "succeeded" && commandValue(a.Command, "identity") == next {
+				local, err := f.publicHostPath(commandValue(a.Command, "out"))
+				if err != nil {
+					return "grant", nil
+				}
+				grant, err := loadGrant(local)
+				if err != nil || grant.CheckUsable(time.Now()) != nil {
+					return "grant", nil
+				}
+				return "accept", nil
+			}
+		}
+	}
+	return "grant", nil
 }

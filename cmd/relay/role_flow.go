@@ -47,6 +47,9 @@ type flowAttempt struct {
 	Command                 []string
 	StartedAt, FinishedAt   string
 	Note                    string
+	InputBindings           map[string]string `json:",omitempty"`
+	DirectoryBindings       map[string]string `json:",omitempty"`
+	ReceiptScope            *flowReceiptScope `json:",omitempty"`
 }
 type roleFlowState struct {
 	Schema, Name, Role string
@@ -182,6 +185,10 @@ func (f *roleFlow) command(task flowTask) ([]string, error) {
 			if err != nil {
 				return nil, err
 			}
+			head, err = f.chooseMirrorHead(task, head)
+			if err != nil {
+				return nil, err
+			}
 			current = flowContainerPath(f.state.Profile, head.Chain.ChainPath)
 			authenticatedHead = current
 		}
@@ -200,6 +207,9 @@ func (f *roleFlow) command(task flowTask) ([]string, error) {
 					current = strconv.Itoa(checkpoint.Count)
 				}
 			}
+			if selected := f.state.Values["mirror-index/"+f.stages[f.state.Stage].ID]; selected != "" {
+				current = selected
+			}
 		}
 		if current == "NOW" {
 			current = time.Now().UTC().Format(time.RFC3339Nano)
@@ -217,6 +227,20 @@ func (f *roleFlow) command(task flowTask) ([]string, error) {
 		identities, err := f.identityChoices(task, field)
 		if err != nil {
 			return nil, fmt.Errorf("read local public identity choices: %w", err)
+		}
+		var grantMaximum, grantTTL time.Duration
+		if field.Flag == "credential-ttl" || field.Flag == "minimum-remaining" {
+			grantMaximum, err = f.awsGrantMaximum(command)
+			if err != nil {
+				return nil, err
+			}
+			if grantMaximum > 0 {
+				grantTTL, _ = time.ParseDuration(commandValue(command, "credential-ttl"))
+				if grantTTL == 0 {
+					grantTTL = grantMaximum
+				}
+				current = grantDurationDefault(field.Flag, current, grantMaximum, grantTTL)
+			}
 		}
 		for {
 			label := field.Label
@@ -253,6 +277,12 @@ func (f *roleFlow) command(task flowTask) ([]string, error) {
 			if err := validateFlowValue(field, value); err != nil {
 				fmt.Fprintln(f.ui.output, err)
 				continue
+			}
+			if grantMaximum > 0 {
+				if err := validateAWSGrantDuration(field.Flag, value, grantMaximum, grantTTL); err != nil {
+					fmt.Fprintln(f.ui.output, err)
+					continue
+				}
 			}
 			if authenticatedHead != "" && value != authenticatedHead {
 				fmt.Fprintln(f.ui.output, "Use the authenticated local head shown above. Resolve missing or conflicting transcript files before continuing; historical inspection is a separate read-only action.")
@@ -320,14 +350,14 @@ func (f *roleFlow) execute(task flowTask) error {
 			return errors.New("production decision tasks do not apply to this authenticated rehearsal")
 		}
 	}
-	if task.ID == "turns-complete" && f.state.Profile.Work != "" {
+	if (task.ID == "turns-complete" || (f.state.Role == "coordinator" && task.ID == "close")) && f.state.Profile.Work != "" {
 		if err := f.checkScheduledTurns(); err != nil {
 			return err
 		}
 	}
 	fmt.Fprintln(f.ui.output, "\n"+task.Label+"\n"+task.Help)
 	previous := f.last(task)
-	retry := previous != nil && (previous.Status == "running" || previous.Status == "failed")
+	retry := previous != nil && (previous.Status == "running" || previous.Status == "failed" || f.checkAttemptEvidence(previous) != nil)
 	var command []string
 	id := ""
 	if retry {
@@ -403,7 +433,17 @@ func (f *roleFlow) execute(task flowTask) error {
 		if err := f.bindPublicInputs(command); err != nil {
 			return fmt.Errorf("required input unavailable; return to setup or import the indicated public files before running: %w", err)
 		}
+		if _, err := f.captureEvidence(task, command); err != nil {
+			return err
+		}
+		directories, err := f.captureDirectories(task, command)
+		if err != nil {
+			return err
+		}
 		if err := f.confirmAction(command); err != nil {
+			return err
+		}
+		if err := f.checkDirectoryBindings(directories); err != nil {
 			return err
 		}
 		id, err = randomID()
@@ -424,13 +464,53 @@ func (f *roleFlow) execute(task flowTask) error {
 	if err := f.checkObservationWindow(task); err != nil {
 		return err
 	}
+	inputBindings, err := f.captureEvidence(task, command)
+	if err != nil {
+		return err
+	}
+	directoryBindings, err := f.captureDirectories(task, command)
+	if err != nil {
+		return err
+	}
+	receiptScope, err := f.mirrorReceiptScope(task, command)
+	if err != nil {
+		return err
+	}
 	// Persist before invoking Docker. A crash is an uncertain attempt, not success.
-	f.state.Attempts = append(f.state.Attempts, flowAttempt{ID: id, Task: task.ID, Stage: f.stages[f.state.Stage].ID, Status: "running", Command: append([]string(nil), command...), StartedAt: time.Now().UTC().Format(time.RFC3339Nano)})
+	f.state.Attempts = append(f.state.Attempts, flowAttempt{ID: id, Task: task.ID, Stage: f.stages[f.state.Stage].ID, Status: "running", Command: append([]string(nil), command...), StartedAt: time.Now().UTC().Format(time.RFC3339Nano), InputBindings: inputBindings})
 	index := len(f.state.Attempts) - 1
+	f.state.Attempts[index].ReceiptScope = receiptScope
+	f.state.Attempts[index].DirectoryBindings = directoryBindings
 	if err := f.save(); err != nil {
 		return err
 	}
-	err := f.run(task, command, id, retry)
+	err = f.run(task, command, id, retry)
+	if err == nil {
+		err = f.checkDirectoryBindings(directoryBindings)
+	}
+	if err == nil {
+		// Some commands append authenticated transcript artifacts. Record their
+		// resulting tree rather than treating those expected writes as tampering.
+		f.state.Attempts[index].DirectoryBindings, err = f.captureDirectories(task, command)
+	}
+	if err == nil && receiptScope != nil && task.ID == "sign-receipt" {
+		value := commandValue(command, "out")
+		var local, digest string
+		local, err = f.publicHostPath(value)
+		if err == nil {
+			digest, err = setupFileHash(local)
+		}
+		if err == nil {
+			f.state.Attempts[index].InputBindings[value] = digest
+			f.state.Attempts[index].ReceiptScope.SignatureDigest = digest
+		}
+	}
+	if err == nil {
+		err = f.checkAttemptEvidence(&f.state.Attempts[index])
+	}
+	if err == nil {
+		err = f.bindSuccessfulOutputs(task, command, &f.state.Attempts[index])
+	}
 	f.state.Attempts[index].Status = "succeeded"
 	if err != nil {
 		f.state.Attempts[index].Status = "failed"
@@ -516,7 +596,26 @@ func (f *roleFlow) publicHostPath(value string) (string, error) {
 	}
 	for _, mount := range []struct{ container, host string }{{"/work", f.state.Profile.Work}, {"/trust", f.state.Profile.Trust}} {
 		if mount.host != "" && strings.HasPrefix(value, mount.container+"/") {
-			return mount.host + strings.TrimPrefix(value, mount.container), nil
+			root, err := filepath.EvalSymlinks(mount.host)
+			if err != nil {
+				return "", err
+			}
+			relative := strings.TrimPrefix(value, mount.container+"/")
+			current := root
+			for _, component := range strings.Split(relative, "/") {
+				current = filepath.Join(current, component)
+				st, err := os.Lstat(current)
+				if errors.Is(err, os.ErrNotExist) {
+					break
+				}
+				if err != nil {
+					return "", err
+				}
+				if st.Mode()&os.ModeSymlink != 0 {
+					return "", errors.New("public evidence paths must not contain symlinks")
+				}
+			}
+			return filepath.Join(root, relative), nil
 		}
 	}
 	return "", errors.New("public ceremony/trust inputs must be inside your work or trust folder")
@@ -524,6 +623,9 @@ func (f *roleFlow) publicHostPath(value string) (string, error) {
 
 func flowRepeatable(task flowTask) bool {
 	c := task.Command
+	if len(c) > 2 && c[0] == "relay" && c[1] == "coordinator" && c[2] == "grant" {
+		return true
+	}
 	if len(c) > 0 && c[0] == "status" {
 		return true
 	}
@@ -579,6 +681,9 @@ func validateFlowCommand(task flowTask, command []string) error {
 }
 
 func (f *roleFlow) advance() error {
+	if err := f.checkMirrorCoverage(); err != nil {
+		return err
+	}
 	if f.state.Profile.Work != "" && f.state.Role == "coordinator" && f.stages[f.state.Stage].ID == "enrollments" {
 		complete, err := f.collectedEnrollments()
 		if err != nil {
@@ -608,10 +713,13 @@ func (f *roleFlow) advance() error {
 	}
 	for _, task := range f.stages[f.state.Stage].Tasks {
 		last := f.last(task)
+		if err := f.checkAttemptEvidence(last); err != nil {
+			return err
+		}
 		if last != nil && (last.Status == "running" || last.Status == "failed") {
 			return errors.New("resolve the interrupted/failed action before moving on")
 		}
-		if (decisionRequired || !task.Optional) && (last == nil || (last.Status != "reported" && last.Status != "succeeded")) {
+		if (decisionRequired || !task.Optional) && (last == nil || (last.Status != "succeeded" && !(task.Handoff && last.Status == "reported"))) {
 			return fmt.Errorf("complete %q first", task.Label)
 		}
 	}
@@ -622,10 +730,10 @@ func (f *roleFlow) advance() error {
 	return f.save()
 }
 
-func (f *roleFlow) menu() error {
+func (f *roleFlow) stageMenu() error {
 	for {
 		if f.state.Stage == len(f.stages) {
-			fmt.Fprintln(f.ui.output, "Guided role workflow complete. Keep the verified public evidence and follow the agreed retention plan. This local checklist is not a release authorization.")
+			fmt.Fprintln(f.ui.output, "End of the selected ceremony areas. Review recorded results and any unfinished earlier work; reaching this screen does not establish ceremony completion or release authorization.")
 			fmt.Fprintln(f.ui.output, "1) Review an earlier stage\n0) Save and exit")
 			choice, err := f.ui.ask("Choose", "0")
 			if err == io.EOF || choice == "0" {
@@ -695,8 +803,12 @@ func (f *roleFlow) menu() error {
 				if a.FinishedAt != "" {
 					status += " (" + a.FinishedAt + ")"
 				}
+				if err := f.checkAttemptEvidence(a); err != nil {
+					status = "Needs attention — " + err.Error()
+				}
 			}
 			label := task.Label
+			status = f.taskProgress(task)
 			reason := "Required by the role's operating procedure; commands enforce cryptographic checks"
 			if task.Optional {
 				reason = "Conditional helper; required evidence and production gates still apply"

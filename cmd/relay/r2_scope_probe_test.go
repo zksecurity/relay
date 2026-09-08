@@ -14,8 +14,9 @@ import (
 )
 
 func TestR2ScopeProbesRejectExcessAccessAndCleanConfirmedWrites(t *testing.T) {
-	for _, fault := range []string{"", "parent-overprivileged", "grant-overprivileged", "expired-usable", "allowed-denied", "cleanup-failed", "uncertain-write"} {
+	for _, fault := range []string{"", "expiry-signature-rejection", "expiry-control-failed", "parent-overprivileged", "grant-overprivileged", "expired-usable", "allowed-denied", "cleanup-failed", "uncertain-write"} {
 		t.Run(fault, func(t *testing.T) {
+			now := time.Now()
 			c := access.StorageConfig{Provider: "r2", AccountID: strings.Repeat("a", 32), ParentAccessKeyID: strings.Repeat("b", 32), Endpoint: "https://account.r2.cloudflarestorage.com", InboxBucket: "inbox", PublishedBucket: "published", CoordinatorProfile: "coordinator"}
 			objects := map[string][]byte{}
 			factory := func(client store.Client) scopeProbeStore {
@@ -44,7 +45,7 @@ func TestR2ScopeProbesRejectExcessAccessAndCleanConfirmedWrites(t *testing.T) {
 					if err := json.Unmarshal(payload, &claims); err != nil {
 						t.Fatal(err)
 					}
-					if claims.Exp < time.Now().Unix() {
+					if claims.Exp < now.Unix() {
 						return fault == "expired-usable"
 					}
 					if fault == "grant-overprivileged" {
@@ -75,6 +76,12 @@ func TestR2ScopeProbesRejectExcessAccessAndCleanConfirmedWrites(t *testing.T) {
 						return nil
 					},
 					Get: func(key, path string) error {
+						if strings.HasSuffix(path, "/expiry-control") && fault == "expiry-control-failed" {
+							return errors.New("AccessDenied")
+						}
+						if strings.HasSuffix(path, "/expired") && fault == "expiry-signature-rejection" {
+							return errors.New("An error occurred (SignatureDoesNotMatch) when calling the GetObject operation: hidden response")
+						}
 						if !allow(key) {
 							return errors.New("AccessDenied")
 						}
@@ -93,8 +100,8 @@ func TestR2ScopeProbesRejectExcessAccessAndCleanConfirmedWrites(t *testing.T) {
 					},
 				}
 			}
-			err := checkR2GrantScope(c, strings.Repeat("c", 64), factory)
-			if (err == nil) != (fault == "") {
+			err := checkR2GrantScopeWithClock(c, strings.Repeat("c", 64), factory, func() time.Time { return now }, func(d time.Duration) { now = now.Add(d) })
+			if (err == nil) != (fault == "" || fault == "expiry-signature-rejection") {
 				t.Fatalf("fault %q: %v", fault, err)
 			}
 			if fault == "uncertain-write" {
@@ -116,5 +123,14 @@ func TestProbeCollisionIsNotReportedAsErased(t *testing.T) {
 	err := probeWriteFailure("bucket", "setup-probes/collision", store.ErrExists)
 	if !strings.Contains(err.Error(), "not replaced or deleted") {
 		t.Fatal(err)
+	}
+}
+
+func TestProbeErrorCodeDoesNotExposeResponse(t *testing.T) {
+	if got := safeProbeErrorCode(errors.New("An error occurred (SignatureDoesNotMatch) when calling the GetObject operation: secret response")); got != "SignatureDoesNotMatch" {
+		t.Fatal(got)
+	}
+	if got := safeProbeErrorCode(errors.New("secret response without a provider code")); got != "unclassified" {
+		t.Fatal(got)
 	}
 }
