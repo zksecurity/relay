@@ -8,7 +8,8 @@ The named-action overview, cross-area navigation, per-head mirror receipt matchi
 and file-bound progress invalidation are now implemented locally. Local readiness
 labels cover each recipe's inputs; signed schedules still govern coordinator turns.
 Public directory/output snapshots and fresh evidence downloads are implemented.
-All-role cloud transport testing and final released-pair validation remain in progress.
+All-role AWS evidence transport passed across separate test runs; final
+released-pair validation remains pending approval, merge and automatic release.
 Live R2 infrastructure,
 grant scope and real expiry validation passed locally; no release approval is implied.
 
