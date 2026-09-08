@@ -440,7 +440,8 @@ func (f *roleFlow) execute(task flowTask) error {
 		if err := f.bindPublicInputs(command); err != nil {
 			return fmt.Errorf("required input unavailable; return to setup or import the indicated public files before running: %w", err)
 		}
-		if _, err := f.captureEvidence(task, command); err != nil {
+		reviewedInputs, err := f.captureEvidence(task, command)
+		if err != nil {
 			return err
 		}
 		directories, err := f.captureDirectories(task, command)
@@ -448,6 +449,9 @@ func (f *roleFlow) execute(task flowTask) error {
 			return err
 		}
 		if err := f.confirmAction(command); err != nil {
+			return err
+		}
+		if err := f.checkAttemptEvidence(&flowAttempt{InputBindings: reviewedInputs}); err != nil {
 			return err
 		}
 		if err := f.checkDirectoryBindings(directories); err != nil {

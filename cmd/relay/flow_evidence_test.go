@@ -57,3 +57,39 @@ func TestFlowEvidenceMissingInputStopsBeforeConfirmation(t *testing.T) {
 		t.Fatal("missing input accepted")
 	}
 }
+
+type confirmationMutationWriter struct {
+	t    *testing.T
+	path string
+}
+
+func (w confirmationMutationWriter) Write(p []byte) (int, error) {
+	if strings.Contains(string(p), "type RUN to proceed") {
+		if err := os.WriteFile(w.path, []byte("changed during review"), 0600); err != nil {
+			w.t.Fatal(err)
+		}
+	}
+	return len(p), nil
+}
+
+func TestFlowInputChangedDuringConfirmationStopsBeforeRun(t *testing.T) {
+	f := flowFixture(t)
+	f.state.Profile.Work = t.TempDir()
+	path := filepath.Join(f.state.Profile.Work, "record.json")
+	if err := os.WriteFile(path, []byte("reviewed input"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f.ui.input = bufio.NewReader(strings.NewReader("\nRUN\n"))
+	f.ui.output = confirmationMutationWriter{t: t, path: path}
+	f.run = func(flowTask, []string, string, bool) error {
+		t.Fatal("changed input reached execution")
+		return nil
+	}
+	task := flowTask{ID: "verify", Command: []string{"relay", "coordinator", "evidence"}, Fields: []flowField{ff("record", "Public input", "/work/record.json")}}
+	if err := f.execute(task); err == nil || !strings.Contains(err.Error(), "changed") {
+		t.Fatal("input replacement during confirmation was not rejected", err)
+	}
+	if len(f.state.Attempts) != 0 {
+		t.Fatal("changed input was recorded as a running attempt")
+	}
+}
