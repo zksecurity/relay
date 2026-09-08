@@ -102,3 +102,43 @@ func TestStorageInfrastructureDoesNotInventCeremony(t *testing.T) {
 		t.Fatal("preinitialization settings accepted as ceremony configuration")
 	}
 }
+
+func TestSessionReplacementCannotOrphanCredentialGeneration(t *testing.T) {
+	w := r2WizardFixture(t, "2")
+	if err := w.setupR2(); err != nil {
+		t.Fatal(err)
+	}
+	old := w.d.R2Parent
+	if err := w.requirePreviousSessionClosed(); err == nil {
+		t.Fatal("allowed active session replacement")
+	}
+	if err := w.setupR2(); err == nil {
+		t.Fatal("orphaned active session credentials")
+	}
+	if w.d.R2Parent != old {
+		t.Fatal("lost original session reference")
+	}
+	if err := w.cleanupSessionCredentials(); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.requirePreviousSessionClosed(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSessionCleanupPreservesUnexpectedFiles(t *testing.T) {
+	w := r2WizardFixture(t, "2")
+	if err := w.setupR2(); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(filepath.Dir(w.d.R2Parent), "unexpected.txt")
+	if err := os.WriteFile(other, []byte("preserve this"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.cleanupSessionCredentials(); err == nil {
+		t.Fatal("cleanup failure was hidden")
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Fatal("unrelated file removed")
+	}
+}

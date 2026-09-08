@@ -800,6 +800,12 @@ func runRoleFlow(args []string) error {
 	if err != nil {
 		return err
 	}
+	if len(p.Command) != 0 {
+		return errors.New("saved settings changed to a single action; reopen the matching workflow settings")
+	}
+	if err := checkLauncherRelease(p.ReleaseCommit); err != nil {
+		return err
+	}
 	catalogBytes, err := json.Marshal(stages)
 	if err != nil {
 		return err

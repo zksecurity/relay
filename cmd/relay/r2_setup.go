@@ -53,6 +53,9 @@ func validR2Hex(value string, size int) bool {
 // A new generation is staged outside work/trust/keys. It never replaces an
 // existing credential file, and the draft changes only after every input passes.
 func (w *coordinatorWizard) setupR2() (result error) {
+	if err := w.requirePreviousSessionClosed(); err != nil {
+		return err
+	}
 	fmt.Fprintln(w.output, "Set up existing Cloudflare R2 storage. No buckets, policies, tokens or objects are created by this step. You choose when to run live storage checks.")
 	v := map[string]string{"provider": "r2", "region": "auto", "profile": "relay-coordinator"}
 	method, err := w.choose("Select existing R2 storage", "", []setupChoice{{"login", "Find accounts and buckets using my authorized Wrangler login"}, {"manual", "Enter the account and bucket details manually"}})
@@ -178,6 +181,26 @@ func (w *coordinatorWizard) setupR2() (result error) {
 		w.sessionCredentialDirs = append(w.sessionCredentialDirs, dir)
 	}
 	fmt.Fprintln(w.output, "Settings saved. Next: Check storage. Old credential files were left untouched; no cloud credentials were revoked.")
+	return nil
+}
+
+// A session generation must not be orphaned by replacing its only durable
+// references. Closing the wizard first runs cleanup; a restart inspects any
+// leftovers before another generation can be saved.
+func (w *coordinatorWizard) requirePreviousSessionClosed() error {
+	if !w.d.SessionCredentials {
+		return nil
+	}
+	for _, path := range []string{w.d.Credentials, w.d.R2Parent, w.d.R2Control} {
+		if path == "" {
+			continue
+		}
+		if _, err := os.Lstat(path); err == nil {
+			return errors.New("session credentials are still present: save and exit to clean up this session, then reopen before replacing storage settings")
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
 	return nil
 }
 

@@ -133,7 +133,7 @@ func preflightStorage(config access.StorageConfig) (result error) {
 	}
 	published := coordinatorClient(config, config.PublishedBucket)
 	if err := published.PutNoReplace(key, source); err != nil {
-		return fmt.Errorf("published bucket write probe: %w", err)
+		return probeWriteFailure(config.PublishedBucket, key, err)
 	}
 	publishedPending := true
 	defer func() {
@@ -170,7 +170,7 @@ func preflightStorage(config access.StorageConfig) (result error) {
 
 	inbox := coordinatorClient(config, config.InboxBucket)
 	if err := inbox.PutNoReplace(key, source); err != nil {
-		return fmt.Errorf("inbox write probe: %w", err)
+		return probeWriteFailure(config.InboxBucket, key, err)
 	}
 	inboxPending := true
 	defer func() {

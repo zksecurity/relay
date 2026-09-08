@@ -895,6 +895,9 @@ func (w *coordinatorWizard) verify() error {
 }
 
 func (w *coordinatorWizard) storage() error {
+	if err := w.requirePreviousSessionClosed(); err != nil {
+		return err
+	}
 	choice, err := w.choose("Storage settings", "", []setupChoice{{"r2", "Set up Cloudflare R2 and credentials"}, {"import", "Import the administrator's settings file"}, {"advanced", "Advanced settings: enter infrastructure fields individually"}})
 	if err != nil {
 		return err
@@ -933,6 +936,7 @@ func (w *coordinatorWizard) storage() error {
 		return errors.New("absolute credential-file path required")
 	}
 	w.d.Storage, w.d.Credentials = values, credential
+	w.d.R2Parent, w.d.R2Control, w.d.SessionCredentials = "", "", false
 	return w.save()
 }
 func (w *coordinatorWizard) configureStorage() error {

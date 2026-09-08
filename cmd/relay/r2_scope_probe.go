@@ -59,13 +59,13 @@ func preflightR2GrantScope(config access.StorageConfig) (result error) {
 	public := coordinatorClient(config, config.PublishedBucket)
 	for _, p := range []probe{{coordinator, outsideKey}, {public, outsideKey}} {
 		if err := p.client.PutNoReplace(p.key, source); err != nil {
-			return errors.New("cannot create isolated scope probe; check coordinator bucket permissions")
+			return probeWriteFailure(p.client.Bucket, p.key, err)
 		}
 		created = append(created, p)
 	}
 	scoped := store.Client{Endpoint: config.Endpoint, Region: config.Region, Bucket: config.InboxBucket, Credentials: &store.Credentials{AccessKeyID: credentials.AccessKeyID, SecretAccessKey: credentials.SecretAccessKey, SessionToken: credentials.SessionToken}}
 	if err := scoped.PutNoReplace(allowedKey, source); err != nil {
-		return errors.New("temporary inbox grant cannot write its allowed prefix; check the parent credential and endpoint")
+		return probeWriteFailure(scoped.Bucket, allowedKey, err)
 	}
 	created = append(created, probe{coordinator, allowedKey})
 	if err := scoped.Get(allowedKey, filepath.Join(dir, "allowed")); err != nil {
@@ -94,7 +94,7 @@ func preflightR2GrantScope(config access.StorageConfig) (result error) {
 			return errors.New("temporary grant wrote outside its allowed inbox prefix; do not issue grants")
 		}
 		if !isAccessDenied(err) {
-			return errors.New("temporary grant write-denial probe inconclusive")
+			return probeWriteFailure(p.client.Bucket, key, err)
 		}
 	}
 	expired, _, err := issueR2Locally(config, base+"allowed/", time.Minute, time.Now().UTC().Add(-time.Hour), secret)
@@ -110,4 +110,11 @@ func preflightR2GrantScope(config access.StorageConfig) (result error) {
 		return errors.New("temporary grant expiration probe inconclusive")
 	}
 	return nil
+}
+
+func probeWriteFailure(bucket, key string, err error) error {
+	if errors.Is(err, store.ErrExists) {
+		return fmt.Errorf("probe key already exists in bucket %s at %s; it was not replaced or deleted", bucket, key)
+	}
+	return fmt.Errorf("probe write did not complete reliably in bucket %s at %s; inspect this exact key before retrying because a lost response can leave an object behind", bucket, key)
 }
