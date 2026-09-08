@@ -292,7 +292,26 @@ func readTesseraRegularFile(path string, limit int64, secret bool) ([]byte, erro
 	if secret && info.Mode().Perm()&0o077 != 0 {
 		return nil, errors.New("private signing key permissions must be 0600 or stricter")
 	}
-	return os.ReadFile(path)
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(info, opened) || (secret && opened.Mode().Perm()&0o077 != 0) {
+		return nil, errors.New("input changed while opening it")
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(raw)) > limit {
+		return nil, errors.New("file is too large")
+	}
+	return raw, nil
 }
 func readTesseraSeed(path string) ([]byte, error) {
 	raw, err := readTesseraRegularFile(path, 128, true)
