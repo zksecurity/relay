@@ -2,6 +2,8 @@
 
 Your task is to independently observe a phase closure before its agreed beacon round.
 Use this guide for each assignment; retain its public evidence and results.
+The [guided workflow](../role-workflow.md) remembers both phases and receipt
+handoffs; it cannot make observations or confirm them on your behalf.
 
 ## Prepare once
 

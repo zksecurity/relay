@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -219,12 +218,13 @@ func setupWriteNew(path string, v any) error {
 }
 
 type coordinatorWizard struct {
-	d           coordinatorDraft
-	input       *bufio.Reader
-	output      io.Writer
-	draftPath   string
-	run         func([]string) error
-	localAction func(string, string, []string, bool) error
+	d            coordinatorDraft
+	input        *bufio.Reader
+	output       io.Writer
+	draftPath    string
+	run          func([]string) error
+	localAction  func(string, string, []string, bool) error
+	continueFlow func() error
 }
 
 func (w *coordinatorWizard) ask(label, current string) (string, error) {
@@ -838,6 +838,9 @@ func (w *coordinatorWizard) menu() error {
 			if w.localAction == nil && w.d.Status == "definition-verified" {
 				fmt.Fprintln(w.output, "6 Storage settings\n10 Configure storage")
 			}
+			if w.d.Status == "definition-verified" {
+				fmt.Fprintln(w.output, "12 Continue the guided coordinator workflow")
+			}
 			fmt.Fprintln(w.output, "0 Save and exit")
 		}
 		choice, err := w.ask("Choose", "0")
@@ -859,6 +862,14 @@ func (w *coordinatorWizard) menu() error {
 			continue
 		}
 		switch choice {
+		case "12":
+			if w.d.Status != "definition-verified" {
+				err = errors.New("verify the definition first")
+			} else if w.continueFlow != nil {
+				err = w.continueFlow()
+			} else {
+				err = w.openCoordinatorFlow()
+			}
 		case "1":
 			err = w.basics()
 		case "2":
@@ -966,16 +977,6 @@ func runCoordinatorPrepare(args []string) error {
 			return err
 		}
 	}
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	w := coordinatorWizard{d: d, input: bufio.NewReader(os.Stdin), output: os.Stdout, draftPath: path, run: func(args []string) error {
-		cmd := exec.Command(executable, args...)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
-	}}
+	w := coordinatorWizard{d: d, input: bufio.NewReader(os.Stdin), output: os.Stdout, draftPath: path, run: executeGuidedChild}
 	return w.menu()
 }

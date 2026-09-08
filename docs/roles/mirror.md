@@ -2,6 +2,8 @@
 
 Your task is to retain an independent copy of the authenticated transcript.
 Use this guide for each assignment; retain its public evidence and results.
+The [guided workflow](../role-workflow.md) covers synchronization, receipt
+preparation, offline-signature handoff, submission and retention.
 
 ## Prepare once
 

@@ -18,9 +18,9 @@ It requires a fresh folder and never overwrites an existing test setup.
 Build contexts contain only binaries and the Dockerfile, never role keys.
 
 `run` opens the same coordinator menu using the `relaylocal` development build.
-It resumes the draft in that test folder. The local entry point only allows
-the tiny rehearsal circuit, key generation and definition verification.
-Cloud operations, contributions and extra binary allowlists are disabled.
+It resumes the draft in that test folder. Preparation only allows the tiny
+rehearsal circuit, key generation and definition verification; it does not
+configure cloud storage, contribute or add binary allowlists.
 These images are local test artifacts, not approved production releases.
 
 ## Suggested first pass
@@ -46,6 +46,10 @@ These images are local test artifacts, not approved production releases.
 6. When ready, choose **8** and type `INITIALIZE REHEARSAL`.
    Review and confirm each displayed Docker command.
 7. Successful initialization is followed by proof-tool signature verification.
+   Choose **12** to open the [remaining role workflow](../role-workflow.md).
+   Other roles still need their own profiles and public files. Cloud transport
+   needs separately provisioned rehearsal storage and a shared launcher profile
+   with the rehearsal credentials; the local preparation profile has no credentials.
 
 Failed initialization remains frozen for investigation, as in the real helper.
 Do not delete uncertain outputs to force a retry. Use a fresh, separately named
@@ -76,3 +80,5 @@ go test -tags relaylocal ./cmd/relay -run TestLocalCoordinatorBoundaries
 The opt-in `TestCoordinatorPrepareDocker` test covers real tiny initialization
 and invalid-signature rejection; it takes `RELAY_PREPARE_TEST_IMAGE` as an
 immutable local online-image ID.
+For the full tiny Docker ceremony lane and its limitations, see the
+[workflow review and test scope](role-workflow-review.md).

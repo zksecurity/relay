@@ -3,6 +3,7 @@
 Start with [installation](install.md), then follow your assigned role guide.
 Installation includes [guided computer setup](setup-host.md) for Mac and Linux.
 Coordinators can then use [guided ceremony preparation](coordinator-setup.md).
+All roles can use the [resumable role workflow](role-workflow.md) after setup.
 Load the installer's saved settings in each new terminal before using role commands.
 Commands, checkboxes, success results, and recovery instructions live together.
 

@@ -2,6 +2,8 @@
 
 Use this page as your live checklist. You schedule turns, verify submissions,
 and publish accepted ceremony state. You do not hold other roles' private keys.
+Use the [guided workflow](../role-workflow.md) for a resumable menu;
+the commands below remain available for manual operation and recovery.
 
 ## Prepare once
 

@@ -1,6 +1,7 @@
 # Launcher and saved-action reference
 
 Operators use [installation](../install.md) and their role guide.
+Shared saved settings also support the [resumable role workflow](../role-workflow.md).
 A host-native Relay controls local Docker; ceremony commands run in Linux
 images. Participant cleanup uses a separate host supervisor, never a nested
 Docker socket.

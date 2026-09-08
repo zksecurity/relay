@@ -63,8 +63,9 @@ role_action "$ACTION-phase2" relay auditor run \
       signed cleanup claims and their limitations, and final result.
 - [ ] Authorize only the exact successful audit report and signature.
 
-The profile and full audit arguments must be supplied and reviewed before
-starting; there is no automatic end-to-end audit wizard.
+The profile and full audit inputs must be supplied and reviewed before starting.
+The [guided role workflow](../role-workflow.md) prompts for the audit arguments
+and retains your progress; it does not replace independently acquiring evidence.
 Use container paths and keep the auditor key in the dedicated key mount.
 
 ## Submit

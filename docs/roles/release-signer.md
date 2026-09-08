@@ -2,6 +2,8 @@
 
 You independently review and sign the final ceremony parameters.
 This protocol role is separate from software publishing.
+The [guided workflow](../role-workflow.md) covers review, signing, verification,
+public handoff and the production decision. Keep the signing host offline.
 
 ## Prepare once
 

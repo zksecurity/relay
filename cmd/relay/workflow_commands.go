@@ -231,6 +231,11 @@ func runParticipate(args []string) error {
 	if resumeCandidate != "" {
 		return resumeCandidateUpload(config, grant, pos, resumeCandidate)
 	}
+	// Keep this guard inside the supervisor's run lock, not only in a UI
+	// wrapper. Every entry point must resume retained output after interruption.
+	if err := guardFreshGuidedContribution(config.CandidateParentDir, config.Phase, participant.CeremonyID, participant.ParticipantID); err != nil {
+		return err
+	}
 	if err := runWithProgress("downloading authenticated transcript", func() error {
 		return fetchForContribution(o, pos)
 	}); err != nil {

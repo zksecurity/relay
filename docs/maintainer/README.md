@@ -8,6 +8,7 @@ These references support release engineering, profile preparation, and recovery.
 | Publish launchers and images | [Software releases](releases.md) |
 | Build and test Docker images locally | [Role images](role-images.md) |
 | Try the coordinator setup UI locally | [Local coordinator test](local-coordinator.md) |
+| Review/test the guided role workflows | [Workflow review](role-workflow-review.md) |
 | Prepare authenticated role profiles | [Profiles](profiles.md) |
 | Understand mounts and saved actions | [Launcher reference](launcher.md) |
 | Provision AWS | [AWS setup](aws.md) |

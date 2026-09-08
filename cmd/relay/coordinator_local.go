@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -86,17 +85,7 @@ func runCoordinatorLocal(args []string) error {
 		}
 		images[role] = id
 	}
-	executable, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	run := func(args []string) error {
-		cmd := exec.Command(executable, args...)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
-	}
+	run := executeGuidedChild
 	if *newIdentity {
 		return generateLocalRoleIdentity(*root, images["offline"], run, os.Stdin, os.Stdout)
 	}
@@ -149,6 +138,26 @@ func runCoordinatorLocal(args []string) error {
 		return nil
 	}
 	settings := filepath.Join(*root, "launcher-settings")
+	w.continueFlow = func() error {
+		name := "local-ceremony-workflow"
+		profilePath := filepath.Join(settings, name, "coordinator", "profile.json")
+		if _, err := os.Lstat(profilePath); errors.Is(err, os.ErrNotExist) {
+			if err := run([]string{"ceremony", "setup", name, "--settings-root", settings, "--role", "coordinator", "--image", images["online"], "--download=false", "--work", d.Work, "--trust", d.Trust, "--keys", d.Keys}); err != nil {
+				return err
+			}
+		} else if err != nil {
+			return err
+		}
+		p, err := readGuidedProfile(profilePath, name, "coordinator")
+		if err != nil {
+			return err
+		}
+		if p.Image != images["online"] || p.Work != d.Work || p.Trust != d.Trust || p.Keys != d.Keys || p.Credentials != "" {
+			return errors.New("local workflow profile changed")
+		}
+		fmt.Println("This existing local ceremony can continue through the role workflow. Cloud transport still needs separately provisioned rehearsal storage; do not use production credentials.")
+		return run([]string{"ceremony", "guide", name, "--role", "coordinator", "--settings-root", settings})
+	}
 	w.localAction = func(name, role string, command []string, credentials bool) error {
 		if !localTestCommandAllowed(role, command, credentials) {
 			return errors.New("operation disabled in local test harness")

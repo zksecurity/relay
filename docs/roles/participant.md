@@ -3,6 +3,8 @@
 You contribute on your own machine, keep your identity key, and confirm the
 cleanup statements that software cannot observe. Repeat the turn section for
 each assigned phase.
+After preparing your profiles, use the [guided workflow](../role-workflow.md)
+to handle both phases from one resumable menu.
 
 ## Prepare once
 

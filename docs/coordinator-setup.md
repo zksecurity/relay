@@ -74,9 +74,10 @@ objects, checks access, and attempts to remove those objects.
 Cloud costs can apply. R2 still needs the administrator's
 [credential handoff](maintainer/r2.md).
 
-Continue with [the coordinator guide](roles/coordinator.md): save the shared
-launcher settings and run the ceremony. Skip manual initialization if the
-helper already completed it, and skip storage preflight if it already succeeded.
+Choose **12 — Continue the guided coordinator workflow** for the
+[resumable role menu](role-workflow.md). It saves shared settings and guides
+the remaining stages without repeating initialization. The
+[coordinator guide](roles/coordinator.md) retains manual commands for recovery.
 
 ## If something fails
 
