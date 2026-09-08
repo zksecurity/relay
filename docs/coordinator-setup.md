@@ -48,11 +48,12 @@ for Tessera**. See the [Tessera walkthrough](tessera.md) for the complete round 
    proof-tool build pinned by this release. No binary path is required.
    Macs use these Linux builds through Docker. Narrowing this selection or
    supplying a reviewed custom binary is available under **Supported computers**.
-6. Choose **Storage settings → Import the administrator's settings file**.
-   Review the public address and buckets. Supply your credentials file's path
-   separately, never its contents. Import does not contact storage or prove
-   permissions; **Configure storage** checks actual access later.
-   Individual infrastructure fields remain under **Advanced**.
+6. Choose **Storage settings**. For Cloudflare, choose **Set up Cloudflare R2
+   and credentials** and follow the numbered prompts. Select existing buckets,
+   then enter credentials only at the hidden prompt or select protected files.
+   Any password manager works. Administrator-file import and individual
+   infrastructure settings remain available. Saving settings alone does not
+   prove permissions; approve **Check storage** to test actual access.
 
 Witness and mirror enrollments happen after initialization because they must
 refer to the exact signed definition. Different signing keys are checked;
@@ -67,6 +68,8 @@ Required prompts repeat when left blank unless a valid default is shown.
 
 Choose **Approve and initialize** only when ready. Type the full displayed
 confirmation, then review the Docker command and confirm again.
+The helper first asks you to check storage, set it up, or explicitly prepare
+offline. Offline preparation does not authorize grants or publication.
 Production initialization can require substantial RAM, disk and computation.
 The helper freezes a copy of the inputs before invoking proof-tool.
 
@@ -75,9 +78,12 @@ signed definition against the coordinator key you confirmed earlier.
 It does not mean a complete ceremony or a full transcript audit has succeeded.
 Distribute the signed public definition for assignment review and collect
 the required enrollments before granting participant access.
-Choose **13 — Prepare, review and sign MY coordinator enrollment** for your own
-statement. Preload its offline image, disconnect when prompted, and review your
-public disclosure. Other roles create and sign their own enrollments.
+Choose **Prepare, review and sign MY coordinator enrollment** for your own
+statement. Preload its network-disabled signing image and review your public
+disclosure. Disconnecting the coordinator host is an additional precaution,
+not required by this enrollment prompt; follow any stricter agreed procedure.
+Other roles create and sign their own enrollments. Final-parameter signers
+retain their dedicated disconnected-host signing procedure.
 
 ## Storage and next steps
 
@@ -87,7 +93,7 @@ objects, checks access, and attempts to remove those objects.
 Cloud costs can apply. R2 still needs the administrator's
 [credential handoff](maintainer/r2.md).
 
-Choose **12 — Continue the guided coordinator workflow** for the
+Choose **Open ceremony operations and progress** for the
 [resumable role menu](role-workflow.md). It saves shared settings and guides
 the remaining stages without repeating initialization. The
 [coordinator guide](roles/coordinator.md) summarizes handoffs and safe recovery.

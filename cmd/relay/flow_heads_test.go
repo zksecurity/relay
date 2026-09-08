@@ -20,6 +20,23 @@ func TestDockerAuthenticatedHeadDiscovery(t *testing.T) {
 	root := filepath.Join(work, "ceremony/public")
 	stateRoot := privateRoleTestDir(t)
 	f := roleFlow{state: roleFlowState{Values: map[string]string{}, Profile: guidedProfile{Work: work, Trust: root, Image: os.Getenv("RELAY_ROLE_ONLINE_IMAGE"), Platform: os.Getenv("RELAY_ROLE_PLATFORM")}}, path: filepath.Join(stateRoot, "head-state.json"), ui: coordinatorWizard{output: new(bytes.Buffer)}}
+	definition, err := f.authenticatedDefinition()
+	if err != nil {
+		t.Fatal(err)
+	}
+	requirements, err := definition.RequireJourney()
+	if err != nil || len(requirements.RequiredEnrollments) != 7 {
+		t.Fatalf("expected coordinator, final signer, two auditors and three participants: %+v %v", requirements, err)
+	}
+	journey, err := f.authenticatedJourney()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range journey.Phases {
+		if !p.Closed || p.CloseID == "" || p.WitnessObservationDeadline == "" || p.BeaconScheduledAt == "" {
+			t.Fatalf("missing authenticated phase timing: %+v", p)
+		}
+	}
 	for _, phase := range []string{"phase1", "phase2"} {
 		head, err := f.discoverHead(phase, nil)
 		if err != nil {

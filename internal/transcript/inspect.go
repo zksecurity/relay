@@ -46,6 +46,7 @@ type inspectionResult struct {
 	ChainInspection       *chainInspection       `json:"chain_inspection"`
 	ParticipantInspection *ParticipantInspection `json:"participant_inspection"`
 	EnrollmentInspection  *EnrollmentInspection  `json:"enrollment_inspection"`
+	JourneyInspection     *Journey               `json:"journey_inspection"`
 	Error                 inspectionCommandError `json:"error"`
 }
 

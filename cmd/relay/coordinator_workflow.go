@@ -231,9 +231,11 @@ func candidateVerificationCommand(
 
 func runEvidenceInbox(args []string) error {
 	set := flag.NewFlagSet("coordinator evidence", flag.ContinueOnError)
-	var storagePath, role string
+	var storagePath, role, manifestKey, outDir string
 	set.StringVar(&storagePath, "storage", "", "storage configuration")
 	set.StringVar(&role, "role", "", "optional witness, mirror, auditor, release, decision filter")
+	set.StringVar(&manifestKey, "manifest-key", "", "exact submitted manifest key to download for review")
+	set.StringVar(&outDir, "out-dir", "", "fresh evidence review directory")
 	if err := set.Parse(args); err != nil {
 		return err
 	}
@@ -258,6 +260,22 @@ func runEvidenceInbox(args []string) error {
 		return err
 	}
 	client := coordinatorClient(config, config.InboxBucket)
+	if manifestKey != "" || outDir != "" {
+		if manifestKey == "" || outDir == "" || !safeObjectKey(manifestKey) {
+			return errors.New("--manifest-key and --out-dir must be supplied together with a safe key")
+		}
+		manifest, err := downloadSubmissionManifest(client, manifestKey)
+		if err != nil {
+			return err
+		}
+		if err := runWithProgress("downloading evidence for review", func() error {
+			return receiveEvidence(config.CeremonyID, role, manifestKey, outDir, manifest, client.GetSized)
+		}); err != nil {
+			return err
+		}
+		fmt.Println("Downloaded evidence with matching manifest scope, sizes and hashes. Signatures and ceremony evidence still require independent verification.")
+		return nil
+	}
 	count := 0
 	for _, currentRole := range roles {
 		prefix, _ := access.Prefix(config.CeremonyID, currentRole, "placeholder")
@@ -267,6 +285,11 @@ func runEvidenceInbox(args []string) error {
 			return err
 		}
 		for _, key := range manifestKeys(objects) {
+			// Only identity/attempt/manifest.json marks a completed upload.
+			// A payload may legitimately contain files/manifest.json of its own.
+			if len(strings.Split(strings.TrimPrefix(key, prefix), "/")) != 3 {
+				continue
+			}
 			manifest, err := downloadSubmissionManifest(client, key)
 			if err != nil {
 				fmt.Printf("invalid  %s  (%v)\n", key, err)
@@ -335,7 +358,7 @@ func downloadSubmissionManifest(client store.Client, key string) (access.Submiss
 	}
 	defer os.RemoveAll(dir)
 	local := filepath.Join(dir, "manifest.json")
-	if err := client.Get(key, local); err != nil {
+	if err := client.GetAtMost(key, local, maxInboxManifestBytes); err != nil {
 		return access.SubmissionManifest{}, err
 	}
 	raw, err := readInboxManifest(local)

@@ -9,6 +9,7 @@ These references support release engineering, profile preparation, and recovery.
 | Build and test Docker images locally | [Role images](role-images.md) |
 | Try the coordinator setup UI locally | [Local coordinator test](local-coordinator.md) |
 | Review/test the guided role workflows | [Workflow review](role-workflow-review.md) |
+| Implement the agreed guided-journey redesign | [Journey design](guided-journey-design.md) |
 | Review/test role onboarding | [Onboarding review](onboarding-review.md) |
 | Prepare authenticated role profiles | [Profiles](profiles.md) |
 | Understand mounts and saved actions | [Launcher reference](launcher.md) |

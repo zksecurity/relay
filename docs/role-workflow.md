@@ -6,10 +6,10 @@ It does not operate their machines or approve things for them.
 ## Open it
 
 Coordinators: after preparation verifies the definition, choose
-**12 — Continue the guided coordinator workflow**. Initialization is not repeated.
+**Open ceremony operations and progress**. Initialization is not repeated.
 
 Other roles: follow [onboarding](role-onboarding.md), then choose
-**Continue the ceremony workflow**. Reopen the same installer-created
+**Open ceremony operations and progress**. Reopen the same installer-created
 `start.sh` to return. Each person uses their own folders and key.
 A participant's saved settings reference the first-phase Docker profile;
 the guide asks for the matching second-phase profile later.
@@ -19,18 +19,29 @@ recovery; choose a fresh alias for shared workflow settings.
 
 ## What you see
 
-- Your current stage and numbered actions, with remembered input values.
+- A named next action, with **Show other actions and requirements** for details.
 - Labeled inputs and local paths before you approve with `RUN`; enter
   `DETAILS` to inspect the exact command.
 - A suggested next step based on saved progress, not authorization to act.
+- Required/optional labels and missing input paths before opening an action.
+  **Ready to review inputs** means local inputs are available, not that their
+  signatures or the whole ceremony have been verified. A waiting action can be
+  opened to select the correct files; missing inputs still block execution.
 - Separate human handoffs, recorded as **reported**, not verified.
+- Coordinator enrollment collection lists the authenticated roster and verifies
+  each imported public enrollment, signature and disclosure. Observer minimums
+  are shown separately; a higher agreed witness quorum still needs review.
 - **Save and exit**; reopening the same guide resumes your progress.
-- **Review/recover earlier stage** for inspecting earlier results.
+- **Choose another ceremony area** for independent preparation or recovery;
+  this changes navigation only, not completion or verification requirements.
 
 Chain prompts discover and authenticate the most advanced consistent **local**
 head, rejecting forks and rollback from a previously seen head. Import or sync
 the current transcript first: discovery cannot prove that nobody has published
 a newer head elsewhere.
+Mirrors can select an authenticated earlier contribution when preparing a receipt.
+Finishing a mirror phase requires matching signed/uploaded receipts for every
+accepted contribution in the closed local phase—not merely one successful receipt.
 
 Enter local paths inside your saved work/trust/key folders or the displayed
 Docker paths. Defaults display local paths when a mount is known; the guide
@@ -59,6 +70,11 @@ independence, signatures or approval.
 
 ## Recovery
 
+Public output files and evidence folders are tracked too. Changes, deletions,
+or extra files in an immutable bundle require review. Transcripts may grow with
+new signed heads, but previously retained files must not change or disappear.
+Private keys and temporary grants are not included in these public snapshots.
+
 An interrupted action is uncertain, even if it printed success before stopping.
 Preserve outputs and authenticate the current state before **REVIEWED RETRY**.
 Retries retain the exact command. After investigation, you can record the
@@ -72,7 +88,8 @@ review rather than automatic relocation.
 For non-participant actions that actually completed before interruption, first
 verify the exact output with the appropriate tool. You can then record that
 external verification as a **reported** recovery, preserving the failed attempt.
-This is not a waiver of any protocol check. Do not use it to hide a real failure.
+This does not complete a required verification command or waive protocol checks.
+Changed or missing bound input files require investigation and re-verification.
 
 Participants: preserve the public candidate and use `resume-candidate` with a
 replacement grant if needed. Do not recompute after an upload interruption.

@@ -18,6 +18,11 @@ The script never creates access keys, edits the selected profile's permission
 set, or deletes cloud resources. It can incur AWS charges. Use a dedicated AWS
 account for a rehearsal when possible.
 
+For a role already prepared by an administrator, set `USE_EXISTING_GRANT_ROLE=yes`
+in the setup config. Setup checks its caller-only trust and session duration
+before cloud writes, and skips all IAM changes. This metadata check does not
+verify the role's permission policies; test temporary grants separately.
+
 ## 1. Prepare one AWS profile
 
 Install AWS CLI v2 and `jq` through the administrator's approved package

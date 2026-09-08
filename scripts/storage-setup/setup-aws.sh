@@ -82,6 +82,8 @@ INBOX_BUCKET=${INBOX_BUCKET:-}
 GRANT_ROLE_NAME=${GRANT_ROLE_NAME:-}
 GRANT_ROLE_MAX_TTL=${GRANT_ROLE_MAX_TTL:-1h}
 CONFIRM_CREATE=${CONFIRM_CREATE:-}
+USE_EXISTING_GRANT_ROLE=${USE_EXISTING_GRANT_ROLE:-no}
+[[ "$USE_EXISTING_GRANT_ROLE" == yes || "$USE_EXISTING_GRANT_ROLE" == no ]] || die 'USE_EXISTING_GRANT_ROLE must be yes or no'
 
 storage_env_fields=(
   STORAGE_PROVIDER
@@ -176,6 +178,20 @@ GRANT_ROLE_NAME=${GRANT_ROLE_NAME:-$RESOURCE_PREFIX-inbox-grant}
 [[ "$PUBLISHED_BUCKET" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]] || die "PUBLISHED_BUCKET is malformed"
 [[ "$INBOX_BUCKET" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]] || die "INBOX_BUCKET is malformed"
 [[ "$GRANT_ROLE_NAME" =~ ^[A-Za-z0-9+=,.@_-]{1,64}$ ]] || die "GRANT_ROLE_NAME is malformed"
+
+# Check administrator-managed role metadata before making any cloud writes.
+# Its permissions are tested separately; this does not certify its policies.
+if [[ "$USE_EXISTING_GRANT_ROLE" == yes ]]; then
+  existing_role=$(aws --profile "$AWS_PROFILE" iam get-role --role-name "$GRANT_ROLE_NAME") || die 'Could not inspect administrator-managed grant role'
+  jq -e --arg arn "arn:aws:iam::$setup_account:role/$GRANT_ROLE_NAME" \
+    --arg principal "$aws_principal_arn" --argjson ttl "$((${GRANT_ROLE_MAX_TTL%h} * 3600))" '
+    .Role | .Arn == $arn and .MaxSessionDuration >= $ttl
+    and (.AssumeRolePolicyDocument.Statement | length == 1)
+    and (.AssumeRolePolicyDocument.Statement[0] |
+      .Effect == "Allow" and .Action == "sts:AssumeRole"
+      and .Principal == {AWS:$principal} and (has("Condition") | not))
+  ' >/dev/null <<<"$existing_role" || die 'Administrator-managed role trust or duration does not match setup'
+fi
 
 printf '\nAWS setup plan:\n'
 printf '  profile/principal: %s (%s)\n' "$AWS_PROFILE" "$aws_principal_arn"
@@ -398,7 +414,9 @@ jq -n --arg principal "$aws_principal_arn" '{
   Statement: [{Effect: "Allow", Principal: {AWS: $principal}, Action: "sts:AssumeRole"}]
 }' >"$work_dir/grant-trust.json"
 
-if aws --profile "$AWS_PROFILE" iam get-role --role-name "$GRANT_ROLE_NAME" >/dev/null 2>&1; then
+if [[ "$USE_EXISTING_GRANT_ROLE" == yes ]]; then
+  printf 'Using administrator-managed grant role; no IAM changes will be made.\n'
+elif aws --profile "$AWS_PROFILE" iam get-role --role-name "$GRANT_ROLE_NAME" >/dev/null 2>&1; then
   printf 'Updating grant role %s\n' "$GRANT_ROLE_NAME"
   aws --profile "$AWS_PROFILE" iam update-assume-role-policy \
     --role-name "$GRANT_ROLE_NAME" --policy-document "file://$work_dir/grant-trust.json"
@@ -420,9 +438,11 @@ jq -n --arg bucket "$INBOX_BUCKET" '{
     Resource: ("arn:aws:s3:::" + $bucket + "/*")
   }]
 }' >"$work_dir/grant-policy.json"
-aws --profile "$AWS_PROFILE" iam put-role-policy \
+if [[ "$USE_EXISTING_GRANT_ROLE" == no ]]; then
+  aws --profile "$AWS_PROFILE" iam put-role-policy \
   --role-name "$GRANT_ROLE_NAME" --policy-name RelayScopedInboxBase \
   --policy-document "file://$work_dir/grant-policy.json"
+fi
 
 printf 'Waiting for CloudFront distribution %s to deploy; this can take several minutes.\n' "$distribution_id"
 aws --profile "$AWS_PROFILE" cloudfront wait distribution-deployed --id "$distribution_id"
