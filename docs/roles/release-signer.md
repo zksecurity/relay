@@ -1,73 +1,43 @@
 # Final-parameter signer
 
 You independently review and sign the final ceremony parameters.
-This protocol role is separate from software publishing.
-The [guided workflow](../role-workflow.md) covers review, signing, verification,
-public handoff and the production decision. Keep the signing host offline.
+This role is separate from publishing Relay software.
 
-## Prepare once
+## Start or resume
 
-- [ ] Complete [installation](../install.md) and preload the signing image/actions.
-- [ ] Receive the coordinator key, signed assignment, candidate, audit reports,
-      operational evidence, and the release-specific review/signing recipe.
-- [ ] Confirm your identity and the intended ceremony/release label.
-- [ ] Keep the signing machine offline during key generation, review, and signing.
-      Container network isolation alone does not disconnect the machine.
+Complete [installation](../install.md), then run your installer-created
+`start.sh`. Existing installation? Run `./scripts/role.sh` from your
+authenticated source checkout.
 
-Setup verifies the release's image list and selects your role/machine's image.
-Before disconnecting, download the images and save each action under a fresh
-name. Prepared actions open without GitHub access or image downloads.
-Save key generation with your assigned public values:
+1. Choose **Prepare approved images** while still online. This prepares both
+   identity generation and the offline signing workflow.
+2. Disconnect the signing machine before generating its key, reviewing, or signing.
+   A network-isolated container does not disconnect the host.
+3. Generate your identity through the helper; transfer only `identity.json`
+   to the coordinator using the agreed public-file transfer procedure.
+4. Import the public ceremony and enrollment files, independently authenticate
+   the coordinator, and choose **Continue the ceremony workflow**.
+   This role does not need a transport profile.
 
-```bash
-"$RELAY" ceremony setup release-identity --role keygen \
-  --release "$RELAY_RELEASE" --work "$ROLE_KEYS" -- \
-  mpc-ceremony identity generate --identity-id "$IDENTITY_ID" \
-  --display-name "$DISPLAY_NAME" --private-key-out /work/signing.hex \
-  --public-identity-out /work/identity.json
-```
+Prepared actions do not download images or contact GitHub. Do not choose image
+preparation again while operating offline. Never bring storage credentials
+or an online upload profile onto the signing machine.
 
-After disconnecting:
-```bash
-"$RELAY" ceremony open release-identity --role keygen
-```
+## Follow the workflow
 
-Send only `identity.json` through the approved transfer process.
-Never bring storage credentials or an online upload profile onto this machine.
+- Review the exact candidate, both phases, auditor identities, beacon evidence,
+  witness/mirror evidence, incidents, and contribution-bound cleanup statements.
+- Supply the evidence paths when prompted and require verification to pass.
+- Authorize signing only the exact verified release manifest.
+- Independently verify the signed release and complete any required production
+  decision. A tiny rehearsal does not satisfy production decision requirements.
+- Transfer only the signed public output to the separate
+  [upload station](../tasks/upload.md). Keep your private key offline.
 
-## Review and sign
+Cleanup statements do not prove physical erasure or exclude host/VM remnants.
 
-- [ ] Review the exact candidate, ceremony, auditor identities, both phases,
-      beacon evidence, independent witness/mirror requirements, and incidents.
-- [ ] Run the pinned proof-tool verification recipe over the entire evidence set.
-- [ ] Verify contribution-bound cleanup statements and understand their scope:
-      they do not exclude host/VM remnants or prove physical erasure.
-- [ ] Authorize signing only the exact verified release manifest.
+## If something fails
 
-Prepare each reviewed command before disconnecting using:
-```bash
-"$RELAY" ceremony setup "$ACTION" --role release-signer \
-  --release "$RELAY_RELEASE" --work "$ROLE_WORK" --trust "$ROLE_TRUST" \
-  --keys "$ROLE_KEYS" -- mpc-ceremony release sign REPLACE_WITH_REVIEWED_ARGUMENTS
-```
-
-The arguments depend on the pinned proof-tool recipe and actual evidence paths.
-Replace the placeholder before saving; signing inputs use `/work`, `/trust`,
-and `/keys` paths. Setup does not execute the signing action.
-On the disconnected machine, review and open that action:
-```bash
-"$RELAY" ceremony open "$ACTION" --role release-signer
-```
-
-Success produces the signed public release output. Verification authenticates
-cleanup statements and their timing; it does not physically prove erasure.
-
-## Handoff and recovery
-
-- [ ] Transfer only signed public output to the separate [upload station](../tasks/upload.md).
-- [ ] Keep your key offline; retain the verification result and transfer record.
-- [ ] Wait for the coordinator's independently verified acceptance.
-
-If a check fails or signing is interrupted, preserve the output and investigate
-before retrying. Do not sign substitute files or infer success from an upload.
-Report missing evidence, changed identities, and suspected key exposure.
+Retain the output and investigate before signing or retrying.
+Use [reviewed recovery](../role-workflow.md#recovery); do not sign substitute
+files or infer success from an upload. Report suspected key exposure immediately.

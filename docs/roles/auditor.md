@@ -1,89 +1,38 @@
 # Auditor
 
-Your task is to independently replay the ceremony and sign the resulting audit.
-Use this guide for each assignment; retain its public evidence and results.
+You independently replay the ceremony and sign the resulting audit.
 
-## Prepare once
+## Start or resume
 
-- [ ] Complete [installation](../install.md).
-- [ ] Receive the coordinator key, release ID, signed assignment/enrollment,
-      phase, reviewed command arguments, and retention obligations.
-- [ ] Confirm the identity and assignment match what you agreed to do.
-      Software checks distinct keys; it cannot establish independent people.
-- [ ] Keep your signing key on your own trusted machine.
+Complete [installation](../install.md), then run your installer-created
+`start.sh`. Existing installation? Run `./scripts/role.sh` from your
+authenticated source checkout.
 
-Generate your identity with the assigned `IDENTITY_ID` and public `DISPLAY_NAME`:
-```bash
-"$RELAY" ceremony setup auditor-identity --role keygen \
-  --release "$RELAY_RELEASE" --work "$ROLE_KEYS" -- \
-  mpc-ceremony identity generate --identity-id "$IDENTITY_ID" \
-  --display-name "$DISPLAY_NAME" --private-key-out /work/signing.hex \
-  --public-identity-out /work/identity.json
-"$RELAY" ceremony open auditor-identity --role keygen
-```
-Send only `identity.json`. For a witness or mirror, the subsequent signed
-enrollment must bind to the initialized ceremony.
+Follow [role onboarding](../role-onboarding.md): prepare images, generate your
+identity, send only `identity.json` to the coordinator, import the public
+ceremony/enrollment files, and create the phase profiles.
+Keep your private key on your own trusted machine.
 
-## Save and run actions
+Choose **Continue the ceremony workflow** for the numbered audit steps.
 
-Stage the signed public files, matching tool receipt, and reviewed role profile
-under the installation directories. Authenticate the profile using
-[profile preparation](../maintainer/profiles.md) before running role commands.
-Define this helper in Bash or Zsh; give each operation a fresh `ACTION` name.
-Setup verifies the release's image list and selects your role/machine's image.
-Open shows the saved command and asks before running it in Docker:
+## Follow the workflow
 
-```bash
-role_action() {
-  local action="$1"; shift
-  "$RELAY" ceremony setup "$action" --role auditor \
-    --release "$RELAY_RELEASE" --work "$ROLE_WORK" --trust "$ROLE_TRUST" \
-    --keys "$ROLE_KEYS" -- "$@" &&
-  "$RELAY" ceremony open "$action" --role auditor
-}
-```
+1. Confirm the signed assignment and independently authenticate the coordinator.
+2. Acquire the transcript from independently checked sources and retain the
+   source evidence. Do not rely solely on the coordinator's local copy.
+3. Supply the complete transcript and operational evidence when prompted.
+   Synchronization alone does not recheck every pre-existing local file.
+4. Run the audit and review both phases, warnings, cleanup claims, and result.
+   Cleanup claims do not prove physical erasure or exclude host/VM remnants.
+5. Upload only the exact successful signed public audit with your scoped grant.
+   Send the resulting manifest key to the coordinator.
+6. Complete any required production decision and retain the audit inputs,
+   source evidence, signed output, and secret-free logs.
 
-## Acquire and audit
-
-- [ ] Choose independently checked mirror sources and retain the source evidence.
-      Do not rely solely on the coordinator's local copy.
-
-```bash
-role_action "$ACTION-phase1" relay auditor run \
-  --config /work/ceremony/config/auditor-phase1.json
-role_action "$ACTION-phase2" relay auditor run \
-  --config /work/ceremony/config/auditor-phase2.json
-```
-
-- [ ] Run the pinned `mpc-ceremony audit` recipe against the complete transcript
-      and evidence, using the reviewed arguments for this ceremony.
-- [ ] Require replay and re-hashing of the entire local file set.
-      Relay synchronization alone does not re-check every pre-existing artifact.
-- [ ] Review the audit scope, both phases, warnings, operational evidence,
-      signed cleanup claims and their limitations, and final result.
-- [ ] Authorize only the exact successful audit report and signature.
-
-The profile and full audit inputs must be supplied and reviewed before starting.
-The [guided role workflow](../role-workflow.md) prompts for the audit arguments
-and retains your progress; it does not replace independently acquiring evidence.
-Use container paths and keep the auditor key in the dedicated key mount.
-
-## Submit
-
-```bash
-role_action "$ACTION-submit" relay auditor submit \
-  --config /work/ceremony/config/auditor-phase2.json \
-  --grant /work/auditor.grant.json --dir /work/signed-output
-```
-
-Success prints an evidence manifest key. Send it to the coordinator and retain
-the audit inputs, source evidence, signed output, and secret-free logs.
-A failed replay or conflicting source must be reported even if transport worked.
+A different signing key does not establish an independent person or organization.
 
 ## If something fails
 
-Preserve the error, signed outputs, and current head; notify the coordinator.
-Do not edit signed evidence or delete retained state to make a retry pass.
-After reviewing an ordinary interrupted action, use its saved name with
-`open --reviewed-retry` if a retry is appropriate. For expired grants, obtain
-a replacement before submission. An upload is not acceptance of the evidence.
+Report failed replay or conflicting sources even if transport succeeded.
+Preserve evidence, stop signing, and use [reviewed recovery](../role-workflow.md#recovery).
+An upload does not mean the coordinator accepted your audit.

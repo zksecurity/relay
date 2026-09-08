@@ -8,18 +8,11 @@ It does not operate their machines or approve things for them.
 Coordinators: after preparation verifies the definition, choose
 **12 — Continue the guided coordinator workflow**. Initialization is not repeated.
 
-Other roles: complete installation, identity generation, and
-[authenticated profile preparation](maintainer/profiles.md). Save shared
-settings using `ceremony setup` **without a command after `--`**, then:
-
-```bash
-"$RELAY" ceremony guide "$CEREMONY" --role auditor
-```
-
-Replace `auditor` with your role: `coordinator`, `participant`, `witness`,
-`mirror`, `release-signer`, or `upload-station`. Each person uses their own
-folders and key. A participant's saved settings reference the first-phase
-Docker profile; the guide asks for the matching second-phase profile later.
+Other roles: follow [onboarding](role-onboarding.md), then choose
+**Continue the ceremony workflow**. Reopen the same installer-created
+`start.sh` to return. Each person uses their own folders and key.
+A participant's saved settings reference the first-phase Docker profile;
+the guide asks for the matching second-phase profile later.
 
 Existing one-command actions still open with `ceremony open`. Keep them for
 recovery; choose a fresh alias for shared workflow settings.
@@ -46,7 +39,7 @@ The guide runs existing verification, contribution, acceptance, phase-transition
 audit and release commands. These checks—not menu progress—establish validity.
 A tiny rehearsal cannot satisfy the production GO/NO-GO evidence gates.
 
-Storage provisioning, identity exchange, operational-record authoring, offline
+Storage provisioning, public identity exchange, operational-record authoring, offline
 raw receipt signing, public-proof generation and actual observations remain
 explicit external tasks. The guide explains their handoffs and verifies
 returned artifacts where commands exist. It never fabricates observations,

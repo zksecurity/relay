@@ -161,6 +161,12 @@ func (f *roleFlow) command(task flowTask) ([]string, error) {
 	for index, field := range fields {
 		key := f.stages[f.state.Stage].ID + "/" + task.ID + "/" + strconv.Itoa(index) + "/" + field.Flag
 		current := field.Default
+		if f.state.Role == "participant" && field.Flag == "config" && current == "" && filepath.Base(f.state.Profile.Config) == "participant-phase1.json" {
+			phase := f.stages[f.state.Stage].ID
+			if phase == "phase1" || phase == "phase2" {
+				current = filepath.Join(filepath.Dir(f.state.Profile.Config), "participant-"+phase+".json")
+			}
+		}
 		if shared, ok := f.state.Values["shared/"+field.Flag]; ok {
 			current = shared
 		}

@@ -14,7 +14,7 @@ Install once, then follow the guide for your assigned role:
 [auditor](docs/roles/auditor.md), or
 [final-parameter signer](docs/roles/release-signer.md).
 
-Each role guide includes its commands, expected results, and recovery steps.
+Each role guide explains its numbered helper, public-file handoffs, and recovery.
 The coordinator supplies ceremony-specific public inputs and reviewed arguments.
 Never send a role's private key to the coordinator or website.
 

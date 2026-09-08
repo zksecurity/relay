@@ -19,9 +19,17 @@ prepare_guided_settings() {
   printf 'Ceremony name (lowercase letters, numbers, hyphens): '
   IFS= read -r name
   [[ "$name" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]] || { echo 'Invalid ceremony name.' >&2; return 1; }
-  printf 'Role (coordinator, participant, witness, mirror, auditor, release-signer): '
-  IFS= read -r role
-  case "$role" in coordinator|participant|witness|mirror|auditor|release-signer) ;; *) echo 'Unknown role.' >&2; return 1 ;; esac
+  printf 'Role: 1 coordinator, 2 participant, 3 witness, 4 mirror, 5 auditor, 6 release-signer, 7 upload-station\n'
+  while :; do
+    printf 'Choose a role number: '; IFS= read -r role || return 1
+    case "$role" in
+      1|coordinator) role=coordinator;; 2|participant) role=participant;;
+      3|witness) role=witness;; 4|mirror) role=mirror;; 5|auditor) role=auditor;;
+      6|release-signer) role=release-signer;; 7|upload-station) role=upload-station;;
+      *) printf 'Choose one of the listed roles.\n'; continue;;
+    esac
+    break
+  done
   printf 'Role folder [press Enter for %s/ceremonies/%s/%s]: ' "$HOME" "$name" "$role"
   IFS= read -r folder
   folder=${folder:-"$HOME/ceremonies/$name/$role"}
@@ -40,6 +48,8 @@ prepare_guided_settings() {
   IFS= read -r answer
   [[ "$answer" == yes ]] || { echo 'Cancelled.' >&2; return 1; }
   role_folder=$folder
+  guided_role=$role
+  guided_name=$name
 }
 
 shell_quote() {
@@ -69,12 +79,35 @@ save_guided_settings() {
       write_setting ROLE_WORK "$role_folder/work"
       write_setting ROLE_TRUST "$role_folder/trust"
       write_setting ROLE_KEYS "$role_folder/keys"
+      write_setting ROLE_NAME "${guided_role:-}"
+      write_setting CEREMONY_NAME "${guided_name:-}"
     } > "$role_folder/relay-env.sh"
   )
-  printf '\nSetup saved. You can close this terminal.\nIn your current Bash or Zsh terminal, load your settings with:\n  source '
-  shell_quote "$role_folder/relay-env.sh"
-  printf '\n'
-  printf 'Then follow your role guide. No ceremony profile, credentials, or keys have been created.\n'
+  # A self-contained entry point avoids asking operators to source settings or
+  # assemble flags. Quoted literals cannot turn user input into shell commands.
+  (
+    set -o noclobber
+    {
+      printf '#!/usr/bin/env bash\nset -euo pipefail\n'
+      write_setting relay_launcher "$destination/relay"
+      write_setting ceremony_name "${guided_name:-}"
+      write_setting ceremony_role "${guided_role:-}"
+      write_setting ceremony_release "$tag"
+      write_setting ceremony_work "$role_folder/work"
+      write_setting ceremony_trust "$role_folder/trust"
+      write_setting ceremony_keys "$role_folder/keys"
+      # Expand these variables in the generated script, not in the installer.
+      # shellcheck disable=SC2016
+      printf '%s\n' 'if [[ "$ceremony_role" == coordinator ]]; then' \
+        '  exec "$relay_launcher" coordinator prepare --name "$ceremony_name" --release "$ceremony_release" --work "$ceremony_work" --trust "$ceremony_trust" --keys "$ceremony_keys"' \
+        'fi' \
+        'exec "$relay_launcher" ceremony prepare --name "$ceremony_name" --role "$ceremony_role" --release "$ceremony_release" --work "$ceremony_work" --trust "$ceremony_trust" --keys "$ceremony_keys"'
+    } > "$role_folder/start.sh"
+  )
+  chmod 0700 "$role_folder/start.sh"
+  printf '\nSetup saved. Start or resume your role with:\n  '
+  shell_quote "$role_folder/start.sh"
+  printf '\nNo ceremony profile, credentials, or keys have been created yet.\n'
 }
 
 install_verified_launcher() {

@@ -78,6 +78,7 @@ func usage() {
   relay ceremony open NAME --role ROLE [--grant FILE] [--resume-candidate DIR]
   relay ceremony open NAME --role ROLE --action ACTION [-- TOOL ARGS...]
   relay ceremony guide NAME --role ROLE
+  relay ceremony prepare --name NAME --role ROLE --release RELEASE --work DIR --trust DIR --keys DIR
   relay role --role ROLE --image DIGEST --work DIR [mount flags] -- TOOL ARGS...
   relay coordinator configure-storage [provider and ceremony flags] --out FILE
   relay coordinator prepare --name NAME --release RELEASE --work DIR --trust DIR --keys DIR
@@ -227,9 +228,11 @@ func runAuditor(args []string) error {
 
 func runCeremony(args []string) error {
 	if len(args) == 0 {
-		return errors.New("ceremony requires setup, open, guide, enroll, or init-config")
+		return errors.New("ceremony requires prepare, setup, open, guide, enroll, or init-config")
 	}
 	switch args[0] {
+	case "prepare":
+		return runRolePrepare(args[1:])
 	case "guide":
 		return runRoleFlow(args[1:])
 	case "setup":

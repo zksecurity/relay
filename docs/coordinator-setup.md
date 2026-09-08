@@ -6,16 +6,12 @@ It does not send messages, publish ceremony artifacts, or provision buckets.
 
 ## Start or resume
 
-Complete [installation](install.md), then run from your authenticated checkout:
-
-```sh
-./scripts/coordinator.sh
-```
-
-Select your own installer-created `relay-env.sh` and a local ceremony name.
-If exactly one coordinator settings file is found under `~/ceremonies`, press
-Enter to accept its suggested path; otherwise choose the file for this ceremony.
-Reuse that file and name when returning. Do not load settings sent by someone else.
+Complete [installation](install.md), then run its printed `start.sh` command.
+For an existing installation, run `./scripts/role.sh` from your authenticated
+checkout and select your own installer-created settings file and coordinator role.
+The earlier `./scripts/coordinator.sh` entry point remains available.
+Reuse the same file and ceremony name when returning; never load someone else's
+settings file. Policy template files still need your review before initialization.
 The installed Relay release must include `coordinator prepare`; older launchers
 cannot run the helper. Install a matching new release rather than mixing binaries.
 
@@ -77,7 +73,7 @@ Cloud costs can apply. R2 still needs the administrator's
 Choose **12 — Continue the guided coordinator workflow** for the
 [resumable role menu](role-workflow.md). It saves shared settings and guides
 the remaining stages without repeating initialization. The
-[coordinator guide](roles/coordinator.md) retains manual commands for recovery.
+[coordinator guide](roles/coordinator.md) summarizes handoffs and safe recovery.
 
 ## If something fails
 

@@ -38,9 +38,11 @@ This is a code-level self-review, not an independent security audit.
 
 - This is guided orchestration over existing commands, not an autonomous
   coordinator. Stage progress is a local checklist, not authenticated global state.
-- Identity/profile setup, operational-record authoring, raw offline receipt
+- Operational-record authoring, raw offline receipt
   signing, application public-proof generation and actual human observations
   still require their existing tools/processes. The guide makes these explicit.
+  Onboarding now handles identity generation, small public-file imports and
+  profile initialization, but requires approved receipts and environment inputs.
 - Correct input files still need to be staged in each role's dedicated folders.
   The guide does not copy files between people or send emails.
 - Recipe changes intentionally stop incompatible saved workflows. There is

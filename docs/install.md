@@ -66,24 +66,23 @@ An existing launcher is reused only if its hash matches the verified release.
 Existing role folders are never overwritten. The Mac binary is GitHub-attested,
 not Apple-notarized.
 
-## Load your saved settings
+## Start or resume your role
 
-The installer prints one `source` command. Run it in your current Bash or Zsh
-terminal, including whenever you open a new terminal. No shell switch is needed:
+Run the single `start.sh` command printed by the installer, including after
+opening a new terminal. It remembers your role, ceremony, approved launcher,
+release, and folders. No shell switch or `source` command is needed.
 
-```bash
-source "$HOME/ceremonies/example-ceremony/coordinator/relay-env.sh"
-```
+For an older installation, use `./scripts/role.sh` from your authenticated
+source checkout. It asks you to select your own `relay-env.sh`. Never select
+someone else's settings file: loading that file executes shell code.
+The helper requires a matching launcher release with guided onboarding.
 
-This sets `$RELAY_COMMIT`, `$RELAY_RELEASE`, `$RELAY`, and the `$ROLE_*` paths
-used by the role guides. You do not need to fill them in manually. Only source
-your own installer-created file: sourcing a file executes shell code.
-The private role folder contains `work`, `trust` (public trust files), and
-`keys` (private signing keys).
+Your private role folder contains `work`, `trust` (public trust files), and
+`keys` (private signing keys). Keep using the same folder when resuming.
 
 ## Follow your role guide
 
-Your installation is ready. Load your saved settings, then follow your
+Your installation is ready. Open your helper, then follow your
 [role guide](README.md).
 
 If installation fails, save the error message and contact your coordinator.
