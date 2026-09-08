@@ -58,3 +58,10 @@ required reviews and do not bypass release protections. Website activation also
 requires its separate trusted-release provisioning and deployment smoke check.
 For documentation-only edits, verify referenced paths and content; a full test
 run is unnecessary.
+
+The private Tessera repository runs the website/CLI integration matrix. Before
+merging a CLI PR, a maintainer runs its `scripts/check-relay-pr.mjs PR_NUMBER`
+against the reviewed exact head. The required public status is `Tessera integration`;
+a new commit needs a new run. Keep private source and logs in Tessera. Changes to
+the setup schema/rules/beacon require a new versioned contract directory while
+retaining existing versions and their signed compatibility fixtures.
