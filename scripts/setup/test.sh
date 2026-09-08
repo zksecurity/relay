@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Mocked safety tests: never install packages or alter the test host.
 # Mocks are called indirectly by sourced helpers; subshell isolation is intentional.
-# shellcheck disable=SC2030,SC2031,SC2329
+# shellcheck disable=SC2030,SC2031,SC2317,SC2329
 set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=linux.sh
