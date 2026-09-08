@@ -128,3 +128,32 @@ func TestPublicOutputBindingNeverReadsGrant(t *testing.T) {
 		t.Fatal("grant was bound as public evidence")
 	}
 }
+
+func TestArtifactHandoffRequiresAndBindsPublicFiles(t *testing.T) {
+	f := flowFixture(t)
+	f.state.Profile.Work = t.TempDir()
+	f.state.Role = "release-signer"
+	task := handoff("handoff", "Transfer signed release", "Public files only")
+	if _, err := f.handoffBindings(task); err == nil {
+		t.Fatal("missing release allowed a handoff report")
+	}
+	root := filepath.Join(f.state.Profile.Work, "release")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"manifest.json", "manifest.sig"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bindings, err := f.handoffBindings(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "manifest.sig"), []byte("changed"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.checkAttemptEvidence(&flowAttempt{Status: "reported", InputBindings: bindings}); err == nil {
+		t.Fatal("changed handoff not noticed")
+	}
+}

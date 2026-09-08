@@ -364,7 +364,7 @@ func (f *roleFlow) execute(task flowTask) error {
 		fmt.Fprintf(f.ui.output, "Previous attempt may have written output: %s\n", previous.ID)
 		writeActionSummary(f.ui.output, f.state.Profile, previous.Command)
 		choices := []setupChoice{{value: "retry", label: "Retry the exact saved action"}, {value: "resolve", label: "Record investigation; prepare a corrected/resume action next"}}
-		if f.state.Role != "participant" {
+		if f.state.Role != "participant" && !task.Handoff {
 			choices = append(choices, setupChoice{value: "external", label: "Record completion already verified outside this guide"})
 		}
 		choices = append(choices, setupChoice{value: "inspect", label: "Return to inspect existing outputs before deciding"})
@@ -401,6 +401,10 @@ func (f *roleFlow) execute(task flowTask) error {
 	} else {
 		var err error
 		if task.Handoff {
+			bindings, err := f.handoffBindings(task)
+			if err != nil {
+				return err
+			}
 			choice, err := f.ui.choose("Report this specific step: "+task.Label, "", []setupChoice{{"reported", "I completed the human action described above"}, {"waiting", "Not yet — leave this step waiting"}, {"issue", "There is a problem — record it and pause"}})
 			if err != nil {
 				return err
@@ -423,7 +427,10 @@ func (f *roleFlow) execute(task flowTask) error {
 			if err != nil {
 				return err
 			}
-			f.state.Attempts = append(f.state.Attempts, flowAttempt{ID: id, Task: task.ID, Stage: f.stages[f.state.Stage].ID, Status: status, Note: note, FinishedAt: time.Now().UTC().Format(time.RFC3339Nano)})
+			if err := f.checkAttemptEvidence(&flowAttempt{InputBindings: bindings}); err != nil {
+				return err
+			}
+			f.state.Attempts = append(f.state.Attempts, flowAttempt{ID: id, Task: task.ID, Stage: f.stages[f.state.Stage].ID, Status: status, Note: note, InputBindings: bindings, FinishedAt: time.Now().UTC().Format(time.RFC3339Nano)})
 			return f.save()
 		}
 		command, err = f.command(task)

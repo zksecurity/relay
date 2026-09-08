@@ -56,8 +56,11 @@ func (f *roleFlow) readiness(task flowTask) flowReadiness {
 			return r
 		}
 	}
-	if task.Handoff || f.state.Profile.Work == "" {
+	if f.state.Profile.Work == "" {
 		return r
+	}
+	if task.Handoff {
+		task.Fields = f.handoffFields(task)
 	}
 	if f.state.Role == "coordinator" && task.ID == "close" {
 		if err := f.checkScheduledTurns(); err != nil {
