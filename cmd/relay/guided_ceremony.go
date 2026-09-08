@@ -383,7 +383,7 @@ func runGuidedOpen(args []string) error {
 		return err
 	}
 	var role, grant, resume, action string
-	var status, retry bool
+	var status, retry, showCommand bool
 	set := flag.NewFlagSet("ceremony open", flag.ContinueOnError)
 	set.StringVar(&root, "settings-root", root, "saved-settings root")
 	set.StringVar(&role, "role", "", "assigned role")
@@ -392,6 +392,7 @@ func runGuidedOpen(args []string) error {
 	set.StringVar(&resume, "resume-candidate", "", "public candidate to verify and resume, never recompute")
 	set.BoolVar(&status, "status", false, "participant: verify/report public position without contributing")
 	set.BoolVar(&retry, "reviewed-retry", false, "ordinary roles only: acknowledge manual review of outputs/state before retrying an interrupted task")
+	set.BoolVar(&showCommand, "show-command", false, "also display the exact saved command for technical review")
 	if err := set.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -488,7 +489,11 @@ func runGuidedOpen(args []string) error {
 		if err := prepareGuidedImage(p.Image, p.Platform, "docker", false); err != nil {
 			return err
 		}
-		fmt.Printf("Key directory: %s\nWork/output directory: %s\nSaved action (not an inferred next step): %q\n", p.Keys, p.Work, p.Command)
+		fmt.Printf("Key directory: %s\nWork/output directory: %s\n", p.Keys, p.Work)
+		writeActionSummary(os.Stdout, p, p.Command)
+		if showCommand {
+			fmt.Printf("Exact command: %q\n", p.Command)
+		}
 		launch = []string{"role", "--role", p.Role, "--image", p.Image, "--platform", p.Platform, "--work", p.Work}
 		for _, pair := range [][2]string{{"--trust", p.Trust}, {"--keys", p.Keys}, {"--aws-credentials", p.Credentials}} {
 			if pair[1] != "" {

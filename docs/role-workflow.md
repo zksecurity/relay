@@ -20,13 +20,21 @@ recovery; choose a fresh alias for shared workflow settings.
 ## What you see
 
 - Your current stage and numbered actions, with remembered input values.
-- The exact command before you approve it with `RUN`.
+- Labeled inputs and local paths before you approve with `RUN`; enter
+  `DETAILS` to inspect the exact command.
+- A suggested next step based on saved progress, not authorization to act.
 - Separate human handoffs, recorded as **reported**, not verified.
 - **Save and exit**; reopening the same guide resumes your progress.
 - **Review/recover earlier stage** for inspecting earlier results.
 
+Chain prompts discover and authenticate the most advanced consistent **local**
+head, rejecting forks and rollback from a previously seen head. Import or sync
+the current transcript first: discovery cannot prove that nobody has published
+a newer head elsewhere.
+
 Enter local paths inside your saved work/trust/key folders or the displayed
-Docker paths. The guide maps local paths into Docker. Stage files in these
+Docker paths. Defaults display local paths when a mount is known; the guide
+maps them into Docker. Stage files in these
 dedicated folders first; never put another role's keys in them.
 
 ## What stays independent
@@ -39,8 +47,12 @@ The guide runs existing verification, contribution, acceptance, phase-transition
 audit and release commands. These checks—not menu progress—establish validity.
 A tiny rehearsal cannot satisfy the production GO/NO-GO evidence gates.
 
-Storage provisioning, public identity exchange, operational-record authoring, offline
-raw receipt signing, public-proof generation and actual observations remain
+Witness and mirror receipt signing uses a separately prepared offline image.
+Review your exact record, disconnect the host, and confirm your own observations.
+Signing is bound to the displayed bytes. Online observer images receive no keys.
+
+Storage provisioning, public identity exchange, other operational-record authoring,
+public-proof generation and actual observations remain
 explicit external tasks. The guide explains their handoffs and verifies
 returned artifacts where commands exist. It never fabricates observations,
 independence, signatures or approval.
@@ -51,7 +63,11 @@ An interrupted action is uncertain, even if it printed success before stopping.
 Preserve outputs and authenticate the current state before **REVIEWED RETRY**.
 Retries retain the exact command. After investigation, you can record the
 finding and prepare a corrected action; that does not mark the task complete.
-Use fresh output paths where required.
+New independent output files get an unused suggested filename; successful
+output locations are remembered for later steps. Receipt exports also get fresh
+directories, carried forward to signing and upload. Existing files are never
+overwritten. Protocol-layout directories and uncertain retries still require
+review rather than automatic relocation.
 
 For non-participant actions that actually completed before interruption, first
 verify the exact output with the appropriate tool. You can then record that

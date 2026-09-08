@@ -59,8 +59,13 @@ From a reviewed Relay checkout or extracted storage-setup bundle, run:
 
 ```bash
 MACHINE1_ENV="$HOME/ceremony-tools/three-machine-rehearsal/machine-1/.env"
-scripts/storage-setup/setup-aws.sh --machine-env "$MACHINE1_ENV"
+scripts/storage-setup/setup-aws.sh --machine-env "$MACHINE1_ENV" \
+  --coordinator-settings /secure/coordinator-storage-settings.json
 ```
+
+The export path must be fresh and its parent folder must already exist.
+Send the resulting JSON to the coordinator for **Storage settings → Import**.
+Deliver credentials separately; the export contains no secret keys or tokens.
 
 The script asks for:
 

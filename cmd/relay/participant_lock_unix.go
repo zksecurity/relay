@@ -55,7 +55,7 @@ func acquireParticipantRunLock(configPath, candidateParent string) (*participant
 	}
 	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
-			return nil, errors.New("another participant run is already active for this profile")
+			return nil, fmt.Errorf("another Relay helper or run is already active for this profile in %s; return to its terminal or save and exit there before reopening; do not delete the lock file", candidateParent)
 		}
 		return nil, fmt.Errorf("lock participant profile: %w", err)
 	}

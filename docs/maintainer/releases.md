@@ -60,5 +60,7 @@ rehearsal and source audit. They are legacy package tools, not this automatic
 production distribution route. Their retained instructions live beside the
 [three-machine rehearsal](../../scripts/three-machine-rehearsal/INSTALL.md).
 
-The coordinator still needs reviewed ceremony inputs and matching tool receipts;
-a released image map does not create profiles, identities, or a ceremony.
+The coordinator still needs reviewed ceremony inputs. Guided preparation creates
+the local measured-tool records; the released image map alone does not create
+profiles, identities, or a ceremony. Linux release smoke tests also check the
+image's measured tools against the expected source commit and proof-tool pins.

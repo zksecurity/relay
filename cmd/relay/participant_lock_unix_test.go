@@ -18,7 +18,7 @@ func TestParticipantRunLockIsExclusivePerProfile(t *testing.T) {
 	t.Cleanup(func() { _ = first.release() })
 
 	if _, err := acquireParticipantRunLock(profile, candidates); err == nil ||
-		!strings.Contains(err.Error(), "another participant run is already active") {
+		!strings.Contains(err.Error(), "another Relay helper or run is already active") {
 		t.Fatalf("concurrent lock error = %v", err)
 	}
 

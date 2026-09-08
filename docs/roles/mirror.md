@@ -10,7 +10,7 @@ authenticated source checkout.
 
 Follow [role onboarding](../role-onboarding.md): prepare images, generate your
 identity, send only `identity.json` to the coordinator, import your public
-ceremony/enrollment files, and create the phase profiles.
+ceremony files, review/sign your enrollment, and create the phase profiles.
 
 Choose **Continue the ceremony workflow** for the numbered mirror steps.
 
@@ -20,13 +20,14 @@ Choose **Continue the ceremony workflow** for the numbered mirror steps.
 2. Synchronize each required phase/head to storage you independently control.
    Two folders in one account do not establish independent administration.
 3. Check that the exact bytes are durably retained at the agreed destination.
-4. Enter the actual retained head, storage location, and time.
+4. Confirm the authenticated local head, then enter the storage location and time.
    The public receipt uses a location digest; keep private location details
    out of shared logs.
 5. Run the receipt verification over the complete retained files. Synchronizing
    alone does not rehash every pre-existing local file.
-6. Review and sign the canonical receipt using the agreed offline procedure,
-   then import its raw signature through the helper.
+6. Review your receipt and disconnect the signing host when prompted. The
+   helper signs it in the prepared offline image and verifies the signature.
+   Reconnect only after signing finishes.
 7. Upload only signed public output with your scoped grant and send the
    manifest key to the coordinator.
 

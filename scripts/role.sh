@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Run directly from Bash or Zsh; only source YOUR installer-created settings.
 set -euo pipefail
-SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 if [[ ${1:-} == --help ]]; then
   printf 'Usage: ./scripts/role.sh [absolute-path-to-your-relay-env.sh]\n'
   exit 0
@@ -44,14 +43,13 @@ if [[ -z "$role" ]]; then
     printf 'A listed role is required.\n'
   done
 fi
-name=${CEREMONY_NAME:-}
+name=${ROLE_LOCAL_NAME:-${CEREMONY_NAME:-}}
 while [[ ! "$name" =~ ^[a-z0-9][a-z0-9_-]{0,63}$ ]]; do
   printf 'Local ceremony name (reuse the same name to resume): '; IFS= read -r name
 done
 if [[ "$role" == coordinator ]]; then
   exec "$RELAY" coordinator prepare --name "$name" --release "$RELAY_RELEASE" \
-    --work "$ROLE_WORK" --trust "$ROLE_TRUST" --keys "$ROLE_KEYS" \
-    --policy-template "$SCRIPT_DIR/../release/ceremony-policy.json"
+    --work "$ROLE_WORK" --trust "$ROLE_TRUST" --keys "$ROLE_KEYS"
 fi
 exec "$RELAY" ceremony prepare --name "$name" --role "$role" --release "$RELAY_RELEASE" \
   --work "$ROLE_WORK" --trust "$ROLE_TRUST" --keys "$ROLE_KEYS"

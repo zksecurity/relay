@@ -15,8 +15,9 @@ Follow [role onboarding](../role-onboarding.md):
 2. Generate your identity. Send only `identity.json` to the coordinator.
 3. Import the signed ceremony files and independently authenticate the
    coordinator's public-key fingerprint.
-4. Obtain the matching tool receipt and approved Linux proof-tool file.
-   Review your environment JSON, then create each assigned phase's profile.
+4. Follow the environment-check prompts, review the precautions, then create
+   each assigned phase's profile. Preparation downloads the pinned Linux tool
+   and records the measured tool identities automatically.
 5. Continue to the numbered ceremony workflow.
 
 The helper checks your signing identity against the signed assignment.

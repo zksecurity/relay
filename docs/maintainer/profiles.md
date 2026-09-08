@@ -2,24 +2,28 @@
 
 The [onboarding helper](../role-onboarding.md) now collects the inputs and calls
 these initializers. This reference explains the underlying commands for
-maintainers and recovery. Tool receipts, environment inputs and enrollment
-signatures must still be prepared using their agreed authenticated procedures.
+maintainers and recovery. Onboarding prepares measured tool records and asks
+participants to review the environment plan. Enrollment signatures still require
+the enrolled owner's agreed authenticated signing procedure.
 
 Stage the signed definition and signature under `CEREMONY_HOME/public`,
 the storage config under `CEREMONY_HOME/config`, and mutable output under
 `CEREMONY_HOME/run`. Keep the coordinator public key independently authenticated.
 
-The coordinator must supply a matching tool-identity receipt and the exact
-approved tool files. The native installer does not generate that receipt.
-Legacy kit `setup verify --receipt-out FILE` emits one for the kit's tools;
-do not reuse a receipt for different host or container binaries.
+Approved-image preparation emits `relay-release-tool-identities-v1`, binding
+measured tools to this launcher's source commit and embedded proof-tool pins.
+It is a local measurement record, not a signature, compatibility-test result,
+or independent proof of release approval. Downloads are authenticated separately
+using GitHub provenance; profiles still authenticate the signed ceremony policy.
+Legacy kit receipts remain readable. Do not reuse another installation's record.
 
 ## Participant: host paths
 
 Set absolute host paths for every variable below; select one phase per profile.
-Stage the approved Linux proof-tool file at the same resolved absolute path
-on the host and inside the image (normally `/usr/local/bin/mpc-ceremony`).
-On a Mac the host hashes this Linux file; Docker executes it.
+Onboarding caches the pinned Linux proof tool under `work/approved-tools`.
+The host hashes that file; Docker executes the image's tool at the fixed path
+`/usr/local/bin/mpc-ceremony`. The host path need not match the image path.
+The signed binary policy still governs the executable used for contribution.
 
 ```bash
 "$RELAY" ceremony init-config \

@@ -114,6 +114,11 @@ func TestRolePreparationTransportProfilesBindOwnIdentity(t *testing.T) {
 				prepareTestIdentity(t, p)
 			}
 			p.ui.input = bufio.NewReader(strings.NewReader("2\n"))
+			for _, name := range []string{"enrollment.json", "enrollment.sig"} {
+				if err := writePublicTextOnce(filepath.Join(p.d.Work, name), "{}"); err != nil {
+					t.Fatal(err)
+				}
+			}
 			p.run = func(args []string) error {
 				joined := strings.Join(args, " ")
 				if !strings.Contains(joined, "--phase phase2") || !strings.Contains(joined, "--enrollment /work/enrollment.json") || !strings.Contains(joined, "--tool-identity-receipt /trust/tool-identity-receipt.env") {

@@ -30,7 +30,10 @@ From the authenticated source checkout used for computer setup, run:
 ```
 
 The installer asks for the exact release URL or tag from your coordinator,
-your ceremony name, role, and a fresh role folder. It verifies the downloaded
+your ceremony label, role, and a fresh role folder. Use the same ceremony label
+for different roles. If that role already exists, choose to resume it or create
+another instance with separate keys and progress (for example, a second auditor).
+Resuming preserves its original release. A new installation verifies the downloaded
 launcher, selects your machine type, and saves your settings after confirmation.
 It does not start a ceremony, generate keys, or configure storage/profiles.
 

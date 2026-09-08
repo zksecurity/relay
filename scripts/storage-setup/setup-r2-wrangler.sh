@@ -14,12 +14,20 @@ usage() {
 }
 
 machine_env=
+coordinator_settings=
+# shellcheck source=coordinator-settings.sh
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/coordinator-settings.sh"
 machine_env_explicit=no
 wrangler_bin=${WRANGLER_BIN:-}
 cloudflare_token_file=
 token_manager_file=
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --coordinator-settings)
+      [[ $# -ge 2 ]] || usage
+      coordinator_settings=$2
+      shift 2
+      ;;
     --machine-env)
       [[ $# -ge 2 ]] || usage
       machine_env=$2
@@ -49,11 +57,14 @@ while [[ $# -gt 0 ]]; do
       printf 'and zone, generate R2 resource names, provision storage, securely retain the\n'
       printf 'inbox-parent credentials, and update Machine 1 automatically.\n'
       printf 'A token manager can mint the two bucket-scoped R2 credentials automatically.\n'
+      printf -- '--coordinator-settings FRESH_JSON exports the non-secret coordinator handoff.\n'
       exit 0
       ;;
     *) usage ;;
   esac
 done
+
+prepare_coordinator_settings_export "$coordinator_settings"
 
 [[ -z "$cloudflare_token_file" || -z "$wrangler_bin" ]] ||
   die "choose only one of --wrangler-bin and --cloudflare-token-file"
@@ -298,6 +309,7 @@ args=(
 )
 [[ -z "$token_manager_file" ]] || args+=(--token-manager-file "$token_manager_file")
 [[ -z "$machine_env" ]] || args+=(--machine-env "$machine_env")
+[[ -z "$coordinator_settings" ]] || args+=(--coordinator-settings "$coordinator_settings")
 "$script_root/setup-r2.sh" "${args[@]}" "$work_dir/r2.env"
 
 printf '\nWrangler-backed R2 setup completed.\n'

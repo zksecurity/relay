@@ -29,7 +29,7 @@ remain append-only evidence even when the default UI shows only a summary.
 
 | ID | Stage | Authoritative behavior | Required result and evidence |
 | --- | --- | --- | --- |
-| `SYS-TOOL-01` | Tool setup | `./setup verify` authenticates the kit, internal files, compatibility records, release IDs, resolved Relay and proof-tool paths, versions, and binary hashes. | Passing secret-free tool-identity receipt; ceremony actions refuse a mismatched effective tool identity. |
+| `SYS-TOOL-01` | Tool setup | Guided preparation authenticates release downloads and records actual tool paths/hashes against pinned release inputs. Legacy kit verification remains separate. | Local measured-tool receipt; ceremony actions refuse mismatched effective tools. This record is not independent provenance or a compatibility-test claim. |
 | `SYS-PROFILE-01` | Role initialization | `relay ceremony init-config` authenticates the signed definition, coordinator trust key, role enrollment or participant key, ceremony, phase, public source, and approved tools. | Passing assignment receipt bound to the exact identity and role; participant receipts also include key ID, fingerprint, and both frozen positions. |
 | `SYS-PROFILE-02` | Persistent configuration | Relay creates profiles with mode `0600` containing validated public metadata and approved paths. | Reject private-key bytes, cloud credentials, or temporary grants in a persistent profile. |
 | `SYS-SUBMIT-01` | Evidence upload | Relay authenticates the grant's ceremony, role, identity, prefix, expiry, and minimum-remaining window; rejects unsafe inputs; uploads `manifest.json` last. | Passing transport receipt and manifest key. Upload success is not semantic acceptance. |

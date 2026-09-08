@@ -117,7 +117,11 @@ func privateRoleTestDir(t *testing.T) string {
 	if err := os.Chmod(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	return dir
+	physical, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return physical
 }
 
 func TestDockerRolePolicies(t *testing.T) {

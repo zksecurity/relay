@@ -16,7 +16,36 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	releaseassets "github.com/zksecurity/relay/release"
 )
+
+func TestCoordinatorArchitectureSelectionPreservesIntent(t *testing.T) {
+	w := setupFixture(t)
+	w.input = bufio.NewReader(strings.NewReader("\n"))
+	if err := w.binary(); err != nil {
+		t.Fatal(err)
+	}
+	if w.d.ArchitecturePolicy != "both" {
+		t.Fatal("both platforms are not the default")
+	}
+	w.d.ArchitecturePolicy = "single"
+	w.input = bufio.NewReader(strings.NewReader("\n"))
+	if err := w.binary(); err != nil {
+		t.Fatal(err)
+	}
+	if w.d.ArchitecturePolicy != "single" {
+		t.Fatal("reopening silently widened the policy")
+	}
+	w.d.ArchitecturePolicy = "custom"
+	w.d.Binaries = []setupBinary{{Path: "/reviewed/tool", SHA256: strings.Repeat("b", 64)}}
+	if err := w.prepareApprovedArchitectures(); err != nil {
+		t.Fatal(err)
+	}
+	if len(w.d.Binaries) != 1 || w.d.Binaries[0].Path != "/reviewed/tool" {
+		t.Fatal("custom approval was replaced")
+	}
+}
 
 func TestCoordinatorRequiredPrompts(t *testing.T) {
 	w := setupFixture(t)
@@ -109,7 +138,7 @@ func TestCoordinatorIdentityIDIsAutomatic(t *testing.T) {
 	if err := os.Remove(filepath.Join(w.d.Keys, "signing.hex")); err != nil {
 		t.Fatal(err)
 	}
-	w.input = bufio.NewReader(strings.NewReader("\n  \njason\nGENERATE\n"))
+	w.input = bufio.NewReader(strings.NewReader("\n  \njason\nGENERATE\n\n"))
 	var id, display string
 	w.localAction = func(_ string, role string, command []string, _ bool) error {
 		if role != "keygen" {
@@ -123,13 +152,19 @@ func TestCoordinatorIdentityIDIsAutomatic(t *testing.T) {
 				display = command[n+1]
 			}
 		}
-		return nil
+		generated := w.d.Identities.Coordinator
+		generated.ID = id
+		generated.DisplayName = display
+		return writeJSONNoReplace(filepath.Join(w.d.Keys, "identity.json"), generated, 0600)
 	}
 	if err := w.generateIdentity(); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(id, "coordinator-") || !guidedName.MatchString(id) || display != "jason" {
 		t.Fatal(id, display)
+	}
+	if w.d.Identities.Coordinator.ID != id {
+		t.Fatal("new coordinator was not assigned")
 	}
 }
 
@@ -197,6 +232,73 @@ func TestCoordinatorPolicyTemplateMatchesReviewedFixture(t *testing.T) {
 	}
 	if p.Beacon != w.d.Policy.Beacon {
 		t.Fatal("beacon template changed without updating the reviewed fixture")
+	}
+	raw, err := os.ReadFile("../../release/ceremony-policy.json")
+	if err != nil || !bytes.Equal(raw, releaseassets.CeremonyPolicy()) {
+		t.Fatal("embedded policy differs from reviewed source", err)
+	}
+}
+
+func TestCoordinatorPolicyBuiltInNeedsNoFile(t *testing.T) {
+	w := setupFixture(t)
+	w.d.Policy = setupPolicy{}
+	w.d.PolicyTemplate = "/missing/source-checkout/policy.json"
+	w.input = bufio.NewReader(strings.NewReader("\n\n0\nno\n999\n1\n\n1\nREVIEWED\n"))
+	if err := w.policy(); err != nil {
+		t.Fatal(err)
+	}
+	if w.d.PolicyTemplate != "" || w.d.Policy.Beacon.Network != "quicknet-mainnet" || w.d.Policy.Phase1.Minimum != 1 {
+		t.Fatal("wrong built-in policy")
+	}
+	output := w.output.(*bytes.Buffer).String()
+	if strings.Contains(output, "Path to your reviewed") || !strings.Contains(output, "Enter a number from 1") {
+		t.Fatal("unexpected path prompt or missing minimum validation")
+	}
+	var saved coordinatorDraft
+	if err := setupReadJSON(w.draftPath, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.Policy.Beacon != w.d.Policy.Beacon {
+		t.Fatal("policy not saved")
+	}
+}
+
+func TestCoordinatorPolicyRetainsSavedBeaconWithoutSourceFile(t *testing.T) {
+	w := setupFixture(t)
+	w.d.Policy.Beacon.Lead = 321
+	w.d.PolicyTemplate = "/no-longer-available/custom.json"
+	w.input = bufio.NewReader(strings.NewReader("\n\n\n\n\nREVIEWED\n"))
+	if err := w.policy(); err != nil {
+		t.Fatal(err)
+	}
+	if w.d.Policy.Beacon.Lead != 321 {
+		t.Fatal("saved beacon silently replaced")
+	}
+}
+
+func TestCoordinatorPolicyCustomAndCancelledReview(t *testing.T) {
+	w := setupFixture(t)
+	before, _ := json.Marshal(w.d)
+	w.input = bufio.NewReader(strings.NewReader("2\n\n\n\n\nno\n"))
+	if err := w.policy(); err == nil {
+		t.Fatal("unconfirmed change accepted")
+	}
+	after, _ := json.Marshal(w.d)
+	if !bytes.Equal(before, after) {
+		t.Fatal("cancelled review changed the draft")
+	}
+	custom := w.d.Policy
+	custom.Beacon.Lead = 444
+	path := filepath.Join(w.d.Work, "custom-policy.json")
+	if err := writeJSONNoReplace(path, custom, 0600); err != nil {
+		t.Fatal(err)
+	}
+	w.input = bufio.NewReader(strings.NewReader("3\n" + path + "\n\n\n\n\nREVIEWED\n"))
+	if err := w.policy(); err != nil {
+		t.Fatal(err)
+	}
+	if w.d.Policy.Beacon.Lead != 444 || w.d.PolicyTemplate != path {
+		t.Fatal("custom policy not retained")
 	}
 }
 

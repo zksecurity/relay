@@ -271,6 +271,14 @@ func TestRoleFlowFieldsAndPaths(t *testing.T) {
 	if flowContainerPath(p, "/tmp/ceremony/work-other/input.json") == "/work/input.json" {
 		t.Fatal("mapped unrelated directory")
 	}
+	for _, path := range []string{"/work/input.json", "/trust/coordinator.hex", "/keys/signing.hex"} {
+		if flowContainerPath(p, flowHostPath(p, path)) != path {
+			t.Fatal("display path does not round-trip", path)
+		}
+	}
+	if flowHostPath(p, "/work-other/input.json") != "/work-other/input.json" {
+		t.Fatal("mapped unrelated container directory")
+	}
 }
 
 func TestRoleFlowDuplicateFlagsKeepSeparateDefaults(t *testing.T) {

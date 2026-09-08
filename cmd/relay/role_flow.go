@@ -35,6 +35,7 @@ type flowTask struct {
 	ExtraLabel      string
 	Handoff         bool
 	Optional        bool
+	Offline         bool
 }
 type flowStage struct {
 	ID, Label string
@@ -173,8 +174,47 @@ func (f *roleFlow) command(task flowTask) ([]string, error) {
 		if saved, ok := f.state.Values[key]; ok && field.Kind != "time" {
 			current = saved
 		}
+		authenticatedHead := ""
+		if phase := flowHeadPhase(field); phase != "" && f.state.Profile.Work != "" {
+			head, err := f.discoverHead(phase, command)
+			if err != nil {
+				return nil, err
+			}
+			current = flowContainerPath(f.state.Profile, head.Chain.ChainPath)
+			authenticatedHead = current
+		}
+		if strings.HasSuffix(field.Flag, "chain-signature") {
+			if chain := commandValue(command, strings.TrimSuffix(field.Flag, "-signature")); strings.HasSuffix(chain, ".json") {
+				current = strings.TrimSuffix(chain, ".json") + ".sig"
+			}
+		}
+		if task.ID == "draft-receipt" && field.Flag == "index" {
+			var checkpoint flowHeadCheckpoint
+			if raw := f.state.Values["head/"+f.stages[f.state.Stage].ID]; raw != "" {
+				if err := json.Unmarshal([]byte(raw), &checkpoint); err != nil {
+					return nil, err
+				}
+				if checkpoint.Count > 0 {
+					current = strconv.Itoa(checkpoint.Count)
+				}
+			}
+		}
 		if current == "NOW" {
 			current = time.Now().UTC().Format(time.RFC3339Nano)
+		}
+		if flowIndependentOutput(task, field) {
+			var err error
+			current = f.rememberedOutputPath(current, false)
+			current, err = f.freshOutputDefault(current)
+			if err != nil {
+				return nil, err
+			}
+		} else if field.Kind == "path" {
+			current = f.rememberedOutputPath(current, true)
+		}
+		identities, err := f.identityChoices(task, field)
+		if err != nil {
+			return nil, fmt.Errorf("read local public identity choices: %w", err)
 		}
 		for {
 			label := field.Label
@@ -183,14 +223,21 @@ func (f *roleFlow) command(task flowTask) ([]string, error) {
 			}
 			var value string
 			var err error
-			if len(field.Choices) != 0 {
+			if len(identities) > 0 {
+				fmt.Fprintln(f.ui.output, "Names below come from your saved public identities, not proof of assignment or whose turn it is. Check the authenticated schedule before issuing a grant.")
+				value, err = f.ui.choose(label, current, identities)
+			} else if len(field.Choices) != 0 {
 				choices := []setupChoice{}
 				for _, choice := range field.Choices {
 					choices = append(choices, setupChoice{value: choice, label: choice})
 				}
 				value, err = f.ui.choose(label, current, choices)
 			} else {
-				value, err = f.ui.ask(label, current)
+				displayed := current
+				if field.Kind == "path" {
+					displayed = flowHostPath(f.state.Profile, current)
+				}
+				value, err = f.ui.ask(label, displayed)
 			}
 			if err != nil {
 				return nil, err
@@ -203,6 +250,10 @@ func (f *roleFlow) command(task flowTask) ([]string, error) {
 			}
 			if err := validateFlowValue(field, value); err != nil {
 				fmt.Fprintln(f.ui.output, err)
+				continue
+			}
+			if authenticatedHead != "" && value != authenticatedHead {
+				fmt.Fprintln(f.ui.output, "Use the authenticated local head shown above. Resolve missing or conflicting transcript files before continuing; historical inspection is a separate read-only action.")
 				continue
 			}
 			f.state.Values[key] = value
@@ -231,6 +282,19 @@ func flowContainerPath(p guidedProfile, value string) string {
 	return value
 }
 
+// Display host paths without changing the fixed, validated Docker command paths.
+func flowHostPath(p guidedProfile, value string) string {
+	if filepath.Clean(value) != value {
+		return value
+	}
+	for _, mount := range []struct{ host, container string }{{p.Work, "/work"}, {p.Trust, "/trust"}, {p.Keys, "/keys"}} {
+		if mount.host != "" && strings.HasPrefix(value, mount.container+"/") {
+			return mount.host + strings.TrimPrefix(value, mount.container)
+		}
+	}
+	return value
+}
+
 func (f *roleFlow) last(task flowTask) *flowAttempt {
 	for n := len(f.state.Attempts) - 1; n >= 0; n-- {
 		a := &f.state.Attempts[n]
@@ -248,7 +312,8 @@ func (f *roleFlow) execute(task flowTask) error {
 	var command []string
 	id := ""
 	if retry {
-		fmt.Fprintf(f.ui.output, "Previous attempt may have written output: %s\nSaved command: %q\n", previous.ID, previous.Command)
+		fmt.Fprintf(f.ui.output, "Previous attempt may have written output: %s\n", previous.ID)
+		writeActionSummary(f.ui.output, f.state.Profile, previous.Command)
 		choices := []setupChoice{{value: "retry", label: "Retry the exact saved action"}, {value: "resolve", label: "Record investigation; prepare a corrected/resume action next"}}
 		if f.state.Role != "participant" {
 			choices = append(choices, setupChoice{value: "external", label: "Record completion already verified outside this guide"})
@@ -301,8 +366,7 @@ func (f *roleFlow) execute(task flowTask) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(f.ui.output, "Action: %q\n", command)
-		if err := f.ui.confirm("Review the exact inputs. This may sign, publish or upload; no other role's approval is implied", "RUN"); err != nil {
+		if err := f.confirmAction(command); err != nil {
 			return err
 		}
 		id, err = randomID()
@@ -330,6 +394,8 @@ func (f *roleFlow) execute(task flowTask) error {
 	f.state.Attempts[index].Status = "succeeded"
 	if err != nil {
 		f.state.Attempts[index].Status = "failed"
+	} else {
+		f.rememberSuccessfulOutputs(task, command)
 	}
 	f.state.Attempts[index].FinishedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	if saveErr := f.save(); saveErr != nil {
@@ -521,6 +587,17 @@ func (f *roleFlow) menu() error {
 		stage := f.stages[f.state.Stage]
 		fmt.Fprintf(f.ui.output, "\n%s — %s — %s (%d/%d)\n", f.state.Name, f.state.Role, stage.Label, f.state.Stage+1, len(f.stages))
 		for n, task := range stage.Tasks {
+			last := f.last(task)
+			if last != nil && (last.Status == "running" || last.Status == "failed") {
+				fmt.Fprintf(f.ui.output, "Needs attention: %d — %s. Review the retained attempt before retrying.\n", n+1, task.Label)
+				break
+			}
+			if !task.Optional && (last == nil || (last.Status != "succeeded" && last.Status != "reported")) {
+				fmt.Fprintf(f.ui.output, "Suggested next step: %d — %s. This is local progress guidance, not ceremony authorization.\n", n+1, task.Label)
+				break
+			}
+		}
+		for n, task := range stage.Tasks {
 			status := "pending"
 			if a := f.last(task); a != nil {
 				status = a.Status
@@ -650,6 +727,26 @@ func runRoleFlow(args []string) error {
 	}
 	f.run = func(task flowTask, command []string, id string, retry bool) error {
 		open := []string{"ceremony", "open", p.Name, "--role", p.Role, "--settings-root", root}
+		if task.Offline {
+			alias := offlineRoleAlias(p.Name, p.Role)
+			dir, err := guidedDirectory(root, alias, "decision-signer")
+			if err != nil {
+				return err
+			}
+			offline, err := readGuidedProfile(filepath.Join(dir, "profile.json"), alias, "decision-signer")
+			if err != nil {
+				return fmt.Errorf("prepare the offline signing image in onboarding first: %w", err)
+			}
+			if offline.Work != p.Work || offline.Trust != p.Trust || offline.Keys == "" || offline.Credentials != "" || offline.ReleaseCommit != p.ReleaseCommit || len(offline.Command) != 0 {
+				return errors.New("offline signing profile does not match this role's public folders and release")
+			}
+			digest, err := f.reviewOfflineRecord(command)
+			if err != nil {
+				return err
+			}
+			command = append(append([]string(nil), command...), "--reviewed-sha256", digest)
+			open = []string{"ceremony", "open", alias, "--role", "decision-signer", "--settings-root", root}
+		}
 		if p.Role == "participant" {
 			configPath := ""
 			participantArgs := []string{command[0]}

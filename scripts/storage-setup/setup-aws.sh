@@ -8,10 +8,18 @@ die() {
 }
 
 config=
+coordinator_settings=
+# shellcheck source=coordinator-settings.sh
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/coordinator-settings.sh"
 machine_env=
 machine_env_explicit=no
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --coordinator-settings)
+      [[ $# -ge 2 ]] || die '--coordinator-settings requires a fresh absolute path'
+      coordinator_settings=$2
+      shift 2
+      ;;
     --machine-env)
       [[ $# -ge 2 ]] || die "--machine-env requires an absolute file path"
       machine_env=$2
@@ -19,7 +27,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h | --help)
-      printf 'usage: %s [--machine-env FILE] [AWS_CONFIG]\n\n' "$0"
+      printf 'usage: %s [--coordinator-settings FRESH_JSON] [--machine-env FILE] [AWS_CONFIG]\n\n' "$0"
       printf 'Without a config file, interactively creates or updates Relay AWS storage.\n'
       printf 'With a config file, reads the variables documented in aws.env.example.\n'
       printf 'When selected, --machine-env atomically writes the non-secret rehearsal values.\n'
@@ -33,6 +41,8 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+prepare_coordinator_settings_export "$coordinator_settings"
 
 command -v aws >/dev/null 2>&1 || die "AWS CLI v2 is required"
 command -v jq >/dev/null 2>&1 || die "jq is required"
@@ -488,3 +498,11 @@ printf 'GRANT_ROLE_MAX_TTL=%s\n' "$GRANT_ROLE_MAX_TTL"
 
 printf '\nValidation identities:\n'
 printf '%s\n' "$caller_identity"
+
+if [[ -n "$coordinator_settings" ]]; then
+  jq -Sn --arg region "$AWS_REGION" --arg published "$PUBLISHED_BUCKET" \
+    --arg url "https://$distribution_domain" --arg inbox "$INBOX_BUCKET" \
+    --arg profile "$AWS_PROFILE" --arg arn "$grant_role_arn" --arg ttl "$GRANT_ROLE_MAX_TTL" \
+    '{schema:"relay-coordinator-storage-settings-v1",settings:{provider:"aws",region:$region,"published-bucket":$published,"published-base-url":$url,"inbox-bucket":$inbox,profile:$profile,"issuer-profile":$profile,"grant-role-arn":$arn,"grant-role-max-ttl":$ttl}}' \
+    | save_coordinator_settings_export "$coordinator_settings"
+fi

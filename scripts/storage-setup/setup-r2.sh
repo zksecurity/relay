@@ -16,6 +16,9 @@ usage() {
 }
 
 config=
+coordinator_settings=
+# shellcheck source=coordinator-settings.sh
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/coordinator-settings.sh"
 machine_env=
 provision_token_file=
 parent_token_file=
@@ -25,6 +28,11 @@ control_token_file=
 control_wrangler_bin=
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --coordinator-settings)
+      [[ $# -ge 2 ]] || usage
+      coordinator_settings=$2
+      shift 2
+      ;;
     --machine-env)
       [[ $# -ge 2 ]] || usage
       machine_env=$2
@@ -67,6 +75,7 @@ while [[ $# -gt 0 ]]; do
       printf 'Token-file options read secrets without putting them in argv or the config.\n'
       printf 'A token manager with Account API Tokens Write can create the scoped R2 credentials.\n'
       printf -- '--machine-env atomically writes the non-secret rehearsal values.\n'
+      printf -- '--coordinator-settings FRESH_JSON exports non-secret coordinator settings.\n'
       exit 0
       ;;
     -*) usage ;;
@@ -79,6 +88,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$config" ]] || usage
+prepare_coordinator_settings_export "$coordinator_settings"
 [[ -z "$control_token_file" || -z "$control_wrangler_bin" ]] ||
   die "choose only one control token source"
 [[ -f "$config" && ! -L "$config" ]] ||
@@ -710,3 +720,11 @@ if [[ -n "$machine_env" ]]; then
   printf '\nUpdated Machine 1 automatically:\n  %s\n' "$machine_env"
 fi
 printf 'The coordinator S3 profile and parent/control credential sources were validated without printing secrets.\n'
+
+if [[ -n "$coordinator_settings" ]]; then
+  jq -Sn --arg published "$PUBLISHED_BUCKET" --arg url "$PUBLISHED_BASE_URL" \
+    --arg inbox "$INBOX_BUCKET" --arg profile "$COORDINATOR_PROFILE" \
+    --arg account "$R2_ACCOUNT_ID" --arg endpoint "$endpoint" --arg parent "$R2_PARENT_ACCESS_KEY_ID" \
+    '{schema:"relay-coordinator-storage-settings-v1",settings:{provider:"r2",region:"auto","published-bucket":$published,"published-base-url":$url,"inbox-bucket":$inbox,profile:$profile,"account-id":$account,endpoint:$endpoint,"parent-access-key-id":$parent}}' \
+    | save_coordinator_settings_export "$coordinator_settings"
+fi

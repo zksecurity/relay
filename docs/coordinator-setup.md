@@ -11,7 +11,8 @@ For an existing installation, run `./scripts/role.sh` from your authenticated
 checkout and select your own installer-created settings file and coordinator role.
 The earlier `./scripts/coordinator.sh` entry point remains available.
 Reuse the same file and ceremony name when returning; never load someone else's
-settings file. Policy template files still need your review before initialization.
+settings file. Standard policy settings are included in the launcher; no source
+checkout or policy-file path is required when using the installed start script.
 The installed Relay release must include `coordinator prepare`; older launchers
 cannot run the helper. Install a matching new release rather than mixing binaries.
 
@@ -24,21 +25,30 @@ cannot run the helper. Install a matching new release rather than mixing binarie
 2. Generate your coordinator identity, or keep your existing keypair.
    The helper assigns an ID automatically; you only enter a public display name.
    Send only `identity.json` to the ceremony roles through your agreed channel.
-3. Import your public identity, the final-parameter signer's identity, at least
+   Accept the offer to assign it as your coordinator identity.
+3. Import the final-parameter signer's identity, at least
    two auditors, and the participants. Compare each full fingerprint with its
    owner's copy through your independent channel, then type `VERIFIED` if it matches.
    Reimport the same ID to replace its draft entry; remove mistaken assignments
    with **Remove an identity assignment**. Private keys stay with their owners.
 4. Choose **Orders, minimum contributions and reviewed beacon policy**.
-   The supplied template uses drand Quicknet and a 180-second witness lead time.
+   Choose the standard settings: drand Quicknet with a 180-second witness lead
+   time. Pick participant orders and minimum counts from the prompts, then
+   review and confirm. Reopening keeps your saved beacon settings by default.
+   A custom policy file is available only through the **Advanced** choice.
    Review this choice with the roles. Adjust both participant orders and minimum
    contribution counts; the helper initially suggests the import order.
    Enter participant numbers such as `2,1,3`, not their generated identity IDs.
-5. For mixed Linux AMD64/ARM64 participation, add the other approved proof-tool
-   binary and confirm its SHA-256 against the reviewed release.
-   These are Linux binaries even when operators use Macs.
-6. Enter storage details supplied by your administrator. Enter the credentials
-   file's path, never its contents. This saves settings; it does not contact storage.
+5. Both Intel/AMD and ARM64 computers are supported by default. Before
+   initialization, the helper downloads and authenticates the companion Linux
+   proof-tool build pinned by this release. No binary path is required.
+   Macs use these Linux builds through Docker. Narrowing this selection or
+   supplying a reviewed custom binary is available under **Supported computers**.
+6. Choose **Storage settings → Import the administrator's settings file**.
+   Review the public address and buckets. Supply your credentials file's path
+   separately, never its contents. Import does not contact storage or prove
+   permissions; **Configure storage** checks actual access later.
+   Individual infrastructure fields remain under **Advanced**.
 
 Witness and mirror enrollments happen after initialization because they must
 refer to the exact signed definition. Different signing keys are checked;
@@ -61,6 +71,9 @@ signed definition against the coordinator key you confirmed earlier.
 It does not mean a complete ceremony or a full transcript audit has succeeded.
 Distribute the signed public definition for assignment review and collect
 the required enrollments before granting participant access.
+Choose **13 — Prepare, review and sign MY coordinator enrollment** for your own
+statement. Preload its offline image, disconnect when prompted, and review your
+public disclosure. Other roles create and sign their own enrollments.
 
 ## Storage and next steps
 

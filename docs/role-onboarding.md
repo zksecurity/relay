@@ -9,7 +9,9 @@ Coordinators use [coordinator preparation](coordinator-setup.md).
 Other roles see this menu:
 
 1. **Prepare approved images:** verifies the release map, selects this machine's
-   images, and downloads missing images. Do this before disconnecting a signer.
+   images, downloads missing images, and prepares the measured tool record.
+   Participants also get the pinned Linux proof tool automatically.
+   Do this before disconnecting a signer.
 2. **Generate/review MY identity:** assigns an ID automatically and asks for
    your public display name. Send only the displayed `identity.json` to the
    coordinator; keep `signing.hex` private. Existing keys are not overwritten.
@@ -20,6 +22,11 @@ Other roles see this menu:
    signed ceremony, and role assignment. Repeat for each assigned phase.
 5. **Continue the ceremony workflow:** opens the numbered role-specific steps.
 6. **Show folders and remaining input requirements:** lists what to obtain next.
+7. **Prepare, review and sign MY enrollment:** after importing the signed
+   definition and trusted coordinator key, write your public disclosure and
+   review the exact record. Disconnect the signing host, then confirm. The
+   offline image signs with your own key and verifies the result. Send the
+   displayed public export directory to the coordinator, including its disclosure.
 
 Choose **0 — Save and exit** to retain setup choices and files.
 
@@ -28,21 +35,23 @@ Required answers cannot be blank. A displayed default can be accepted with Enter
 ## What to obtain
 
 Through your agreed channel, obtain the signed ceremony definition, its signature,
-public storage configuration, and matching tool-identity receipt. Compare the
+and public storage configuration. Tool records are prepared locally; do not
+copy another operator's record. Compare the
 coordinator's public-key fingerprint through an independent channel before
 confirming it. Merely importing a file does not authenticate its contents.
 
 Non-participant transport profiles also require your reviewed, signed enrollment.
 Its signature must come from the enrolled owner—not a coordinator claiming consent.
-Enrollment authoring/signing and offline witness/mirror receipt signing still
-use the agreed external procedure; this helper does not yet replace that signer.
+Use option 7 before creating a non-participant transport profile. Witnesses and
+mirrors obtain their enrollment number from the coordinator; other role positions
+come from the signed definition. Distinct keys do not prove independent people.
 
-Participants additionally need the approved host-local Linux proof-tool file
-and truthful v2 environment JSON. The Linux file must currently have the same
-absolute path on the host and in the image. The receipt must match the native
-launcher and this file; receipts for different tools are rejected.
-Do not manufacture a receipt to get past a failed check. Ask the coordinator
-and release maintainer for matching approved material.
+Participants follow the environment prompts rather than writing JSON. Relay
+checks Docker and the applicable swap requirements, explains the container
+controls, and asks about the precautions they will follow. The saved plan does
+not prove physical erasure. Host and container binary paths are managed separately.
+Changed cached tools or mismatched existing records stop preparation; preserve
+the error and ask the coordinator or release maintainer rather than bypassing it.
 
 The helper imports the small setup files, not entire transcripts or evidence
 directories. Exchange those public directories through the agreed channel and
@@ -53,7 +62,8 @@ Private grants are delivered separately only to their named recipient.
 
 - Final-parameter signers prepare images online, then disconnect before key
   generation and signing. Skip transport-profile creation.
-- Upload stations skip key generation and never receive a private signing key.
+- Upload stations import the final signer's public enrollment; they never
+  generate or receive a private signing key. Inapplicable menu options are hidden.
 - Participants run computation through the host supervisor, not a nested Docker
   controller. Linux requires native Docker and disabled swap.
 - [Advanced profile reference](maintainer/profiles.md) explains the underlying
