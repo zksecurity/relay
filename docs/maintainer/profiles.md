@@ -1,8 +1,9 @@
 # Prepare authenticated role profiles
 
-This is the remaining manual setup step for the coordinator and role operator.
-Guided setup saves an action; it does not invent ceremony inputs or authenticate
-a role assignment by itself.
+The [onboarding helper](../role-onboarding.md) now collects the inputs and calls
+these initializers. This reference explains the underlying commands for
+maintainers and recovery. Tool receipts, environment inputs and enrollment
+signatures must still be prepared using their agreed authenticated procedures.
 
 Stage the signed definition and signature under `CEREMONY_HOME/public`,
 the storage config under `CEREMONY_HOME/config`, and mutable output under

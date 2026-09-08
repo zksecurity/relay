@@ -1,38 +1,33 @@
 # Upload already signed evidence
 
-This station transports public signed output. It never receives a signer's key.
+This station transports signed public output. It never receives a signer's key.
 
-- [ ] Complete [installation](../install.md).
-- [ ] Agree on the evidence type, signer enrollment, and transfer procedure.
-- [ ] Receive the expected public files and a fresh role-scoped grant.
-- [ ] Run the pinned proof-tool verification recipe; require its ceremony and
-      signer to match the assignment before uploading.
-- [ ] Stage only approved signed output in `ROLE_WORK/signed-output` and the
-      private grant in `ROLE_WORK/evidence.grant.json`.
+## Start or resume
 
-Save the upload action with a fresh name:
-```bash
-"$RELAY" ceremony setup "$ACTION" --role upload-station \
-  --release "$RELAY_RELEASE" --work "$ROLE_WORK" --trust "$ROLE_TRUST" -- \
-  relay submit-evidence --grant /work/evidence.grant.json \
-  --dir /work/signed-output
-"$RELAY" ceremony open "$ACTION" --role upload-station
-```
+Complete [installation](../install.md), choosing **upload-station**, then run
+your installer-created `start.sh`. For an existing installation, run
+`./scripts/role.sh` from your authenticated source checkout.
 
-Do not supply a key mount. The grant must match the evidence type and signer.
-The uploader rejects suspicious files and publishes its manifest last.
-Success prints the evidence manifest key; send that key to the coordinator.
-A successful transport does not establish valid ceremony evidence.
+Follow [role onboarding](../role-onboarding.md): prepare the online image,
+import the public ceremony/enrollment files, and create the release Phase 2
+profile. Skip identity generation: this station must not hold signing keys.
 
-For a release-specific prepared profile, the equivalent tool command is:
-```bash
-relay release run --config /work/ceremony/config/release-phase2.json \
-  --grant /work/evidence.grant.json --dir /work/signed-output
-```
-Run it through the same upload-station setup, never directly with host paths.
+Choose **Continue the ceremony workflow**.
 
-If upload fails, inspect the error and grant expiry before retrying the saved
-action with `--reviewed-retry`. This task has no participant-style candidate
-resume command. Never edit the signed output to resolve a mismatch.
-Retain public evidence and logs; retire expired grants only under the agreed
-retention procedure.
+## Verify, upload, and hand off
+
+1. Agree on the evidence type, expected signer, and transfer procedure.
+2. Receive only the expected public files and a fresh role-scoped private grant.
+3. Verify the complete signed release through the menu. Independently obtain
+   the expected final signer's public key and check the ceremony and assignment.
+4. Select the directory containing only signed public output and the grant file.
+5. Upload, then send the resulting evidence manifest key to the coordinator.
+
+Transport success is not evidence acceptance. Retain the public evidence and
+logs according to the agreed retention procedure.
+
+## If something fails
+
+Keep the signed files unchanged. Review the error and grant expiry before
+retrying through [workflow recovery](../role-workflow.md#recovery).
+This station has no participant-style candidate-resume command.

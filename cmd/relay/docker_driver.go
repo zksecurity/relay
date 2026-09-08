@@ -552,6 +552,18 @@ func (d *dockerDriver) contributionArgs(o roleOpts, pos position, contributedAt 
 	container.signingKey = "/relay/key/participant.key"
 	container.envPath = "/relay/config/environment.json"
 	container.outDir = output
+	// Explicit phase-1 seal paths use the same read-only transcript mount as
+	// default paths. Never pass a host path into the isolated contributor.
+	for _, sealPath := range []*string{&container.phase1Seal, &container.phase1SealSig} {
+		if *sealPath == "" {
+			continue
+		}
+		mapped, err := pathWithin(d.root, *sealPath, "/relay/input")
+		if err != nil {
+			return nil, nil, fmt.Errorf("phase1 seal path: %w", err)
+		}
+		*sealPath = mapped
+	}
 	chain, err := pathWithin(d.root, pos.chainPath, "/relay/input")
 	if err != nil {
 		return nil, nil, fmt.Errorf("chain path: %w", err)

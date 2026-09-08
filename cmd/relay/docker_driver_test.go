@@ -185,6 +185,30 @@ func (f *dockerClientFake) inspectionJSON() []byte {
 	return raw
 }
 
+func TestDockerContributionMapsExplicitPhase1Seal(t *testing.T) {
+	o, pos, driver, _ := dockerContributionFixture(t)
+	o.phase = "phase2"
+	o.phase1Seal = filepath.Join(driver.root, "phase1", "sealed", "seal.json")
+	o.phase1SealSig = filepath.Join(driver.root, "phase1", "sealed", "seal.sig")
+	args, _, err := driver.contributionArgs(o, pos, time.Now(), driver.candidateRoot, "/relay/output/candidate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(args, " ")
+	for _, path := range []string{"/relay/input/phase1/sealed/seal.json", "/relay/input/phase1/sealed/seal.sig"} {
+		if !strings.Contains(joined, path) {
+			t.Fatal("seal not mapped", args)
+		}
+	}
+	if strings.Contains(joined, driver.root) {
+		t.Fatal("host path leaked into container argv")
+	}
+	o.phase1Seal = filepath.Join(t.TempDir(), "outside-seal.json")
+	if _, _, err := driver.contributionArgs(o, pos, time.Now(), driver.candidateRoot, "/relay/output/candidate"); err == nil {
+		t.Fatal("accepted seal outside read-only transcript")
+	}
+}
+
 func dockerContributionFixture(t *testing.T) (roleOpts, position, *dockerDriver, *dockerClientFake) {
 	t.Helper()
 	t.Setenv("DOCKER_CONTEXT", "")

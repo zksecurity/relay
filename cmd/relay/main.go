@@ -77,8 +77,11 @@ func usage() {
   relay ceremony setup NAME --role ROLE [saved launcher settings] -- TOOL ARGS...
   relay ceremony open NAME --role ROLE [--grant FILE] [--resume-candidate DIR]
   relay ceremony open NAME --role ROLE --action ACTION [-- TOOL ARGS...]
+  relay ceremony guide NAME --role ROLE
+  relay ceremony prepare --name NAME --role ROLE --release RELEASE --work DIR --trust DIR --keys DIR
   relay role --role ROLE --image DIGEST --work DIR [mount flags] -- TOOL ARGS...
   relay coordinator configure-storage [provider and ceremony flags] --out FILE
+  relay coordinator prepare --name NAME --release RELEASE --work DIR --trust DIR --keys DIR
   relay coordinator grant --storage FILE --role ROLE --identity ID \
              --credential-ttl D --minimum-remaining D --out FILE
   relay coordinator candidates --storage FILE [--phase P]
@@ -135,9 +138,16 @@ transported bytes against its authenticated artifact projection.
 
 func runCoordinator(args []string) error {
 	if len(args) == 0 {
-		return errors.New("coordinator requires configure-storage, grant, candidates, accept, evidence, or publish")
+		return errors.New("coordinator requires prepare, configure-storage, grant, candidates, accept, evidence, or publish")
 	}
 	switch args[0] {
+	case "prepare-local":
+		if coordinatorLocalRunner == nil {
+			return errors.New("local coordinator testing is available only in a relaylocal development build")
+		}
+		return coordinatorLocalRunner(args[1:])
+	case "prepare":
+		return runCoordinatorPrepare(args[1:])
 	case "configure-storage":
 		return runConfigureStorage(args[1:])
 	case "grant":
@@ -154,6 +164,9 @@ func runCoordinator(args []string) error {
 		return fmt.Errorf("unknown coordinator command %q", args[0])
 	}
 }
+
+// Registered only by a file excluded from ordinary builds.
+var coordinatorLocalRunner func([]string) error
 
 func runParticipant(args []string) error {
 	if len(args) == 0 {
@@ -215,9 +228,13 @@ func runAuditor(args []string) error {
 
 func runCeremony(args []string) error {
 	if len(args) == 0 {
-		return errors.New("ceremony requires setup, open, enroll, or init-config")
+		return errors.New("ceremony requires prepare, setup, open, guide, enroll, or init-config")
 	}
 	switch args[0] {
+	case "prepare":
+		return runRolePrepare(args[1:])
+	case "guide":
+		return runRoleFlow(args[1:])
 	case "setup":
 		return runGuidedSetup(args[1:])
 	case "open":

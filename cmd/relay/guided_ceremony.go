@@ -191,9 +191,14 @@ func runGuidedSetup(args []string) error {
 	if err := writeJSONNoReplace(filepath.Join(dir, "profile.json"), p, 0o600); err != nil {
 		return err
 	}
-	fmt.Printf("Setup ready for %s / %s. Configured image is available.\nSaved settings: %s\nOpen with: relay ceremony open %s --role %s\n", p.Name, p.Role, dir, p.Name, p.Role)
+	fmt.Printf("Setup ready for %s / %s. Configured image is available.\nSaved settings: %s\n", p.Name, p.Role, dir)
+	if len(p.Command) == 0 && len(roleFlowStages(p.Role)) > 0 {
+		fmt.Printf("Guided workflow: relay ceremony guide %s --role %s --settings-root %q\n", p.Name, p.Role, root)
+	} else {
+		fmt.Printf("Open with: relay ceremony open %s --role %s --settings-root %q\n", p.Name, p.Role, root)
+	}
 	if p.Role != "participant" && len(p.Command) == 0 {
-		fmt.Println("Shared settings saved. Add --action NAME -- TOOL ARGS... when opening a new action.")
+		fmt.Println("For manual actions instead, use ceremony open with --action NAME -- TOOL ARGS...")
 	}
 	return nil
 }
