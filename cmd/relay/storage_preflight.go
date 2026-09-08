@@ -64,6 +64,7 @@ func runCheckStorage(args []string) error {
 	checks := []string{"published object write and authenticated read", "anonymous published read with exact bytes", "inbox object write", "probe deletion"}
 	if c.Provider == "r2" {
 		checks = append(checks, "R2 inbox has no enabled managed or custom public domain")
+		checks = append(checks, "inbox parent read/write denied on the selected public bucket; other account buckets were not tested")
 		checks = append(checks, "temporary grant allowed-prefix read/write, outside-prefix and other-bucket read/write denied, expired grant denied")
 	} else {
 		checks = append(checks, "anonymous inbox read denied")

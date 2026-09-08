@@ -13,6 +13,17 @@ import (
 	"github.com/zksecurity/relay/internal/store"
 )
 
+type scopeProbeStore struct {
+	Bucket       string
+	PutNoReplace func(string, string) error
+	Get          func(string, string) error
+	Delete       func(string) error
+}
+
+func newScopeProbeStore(c store.Client) scopeProbeStore {
+	return scopeProbeStore{c.Bucket, c.PutNoReplace, c.Get, c.Delete}
+}
+
 // Only fresh random probe keys are touched, including denial tests. No listing
 // or reading another ceremony's namespace is needed to establish restrictions.
 func preflightR2GrantScope(config access.StorageConfig) (result error) {
@@ -23,6 +34,10 @@ func preflightR2GrantScope(config access.StorageConfig) (result error) {
 	if secret == "" {
 		return errors.New("R2 inbox parent credential is required for temporary grant scope checks")
 	}
+	return checkR2GrantScope(config, secret, newScopeProbeStore)
+}
+
+func checkR2GrantScope(config access.StorageConfig, secret string, clientFor func(store.Client) scopeProbeStore) (result error) {
 	id, err := randomID()
 	if err != nil {
 		return err
@@ -44,7 +59,7 @@ func preflightR2GrantScope(config access.StorageConfig) (result error) {
 		return err
 	}
 	type probe struct {
-		client store.Client
+		client scopeProbeStore
 		key    string
 	}
 	var created []probe
@@ -55,15 +70,31 @@ func preflightR2GrantScope(config access.StorageConfig) (result error) {
 			}
 		}
 	}()
-	coordinator := coordinatorClient(config, config.InboxBucket)
-	public := coordinatorClient(config, config.PublishedBucket)
+	coordinator := clientFor(coordinatorClient(config, config.InboxBucket))
+	public := clientFor(coordinatorClient(config, config.PublishedBucket))
 	for _, p := range []probe{{coordinator, outsideKey}, {public, outsideKey}} {
 		if err := p.client.PutNoReplace(p.key, source); err != nil {
 			return probeWriteFailure(p.client.Bucket, p.key, err)
 		}
 		created = append(created, p)
 	}
-	scoped := store.Client{Endpoint: config.Endpoint, Region: config.Region, Bucket: config.InboxBucket, Credentials: &store.Credentials{AccessKeyID: credentials.AccessKeyID, SecretAccessKey: credentials.SecretAccessKey, SessionToken: credentials.SessionToken}}
+	// A second, differently named credential can still be overprivileged.
+	// Verify that the parent itself cannot access the selected public bucket.
+	parentPublic := clientFor(store.Client{Endpoint: config.Endpoint, Region: config.Region, Bucket: config.PublishedBucket, Credentials: &store.Credentials{AccessKeyID: config.ParentAccessKeyID, SecretAccessKey: secret}})
+	if err := parentPublic.Get(outsideKey, filepath.Join(dir, "parent-denied")); err == nil {
+		return errors.New("inbox parent credential can read the public bucket; replace it with an inbox-only credential")
+	} else if !isAccessDenied(err) {
+		return errors.New("inbox parent public-bucket denial check was inconclusive")
+	}
+	parentWriteKey := base + "parent-denied-write"
+	if err := parentPublic.PutNoReplace(parentWriteKey, source); err == nil {
+		created = append(created, probe{public, parentWriteKey})
+		return errors.New("inbox parent credential can write the public bucket; replace it with an inbox-only credential")
+	} else if !isAccessDenied(err) {
+		return probeWriteFailure(public.Bucket, parentWriteKey, err)
+	}
+	scopedConfig := store.Client{Endpoint: config.Endpoint, Region: config.Region, Bucket: config.InboxBucket, Credentials: &store.Credentials{AccessKeyID: credentials.AccessKeyID, SecretAccessKey: credentials.SecretAccessKey, SessionToken: credentials.SessionToken}}
+	scoped := clientFor(scopedConfig)
 	if err := scoped.PutNoReplace(allowedKey, source); err != nil {
 		return probeWriteFailure(scoped.Bucket, allowedKey, err)
 	}
@@ -75,7 +106,7 @@ func preflightR2GrantScope(config access.StorageConfig) (result error) {
 	if err != nil || !bytes.Equal(got, data) {
 		return errors.New("temporary grant read returned different probe bytes")
 	}
-	for n, p := range []probe{{scoped, outsideKey}, {store.Client{Endpoint: scoped.Endpoint, Region: scoped.Region, Bucket: config.PublishedBucket, Credentials: scoped.Credentials}, outsideKey}} {
+	for n, p := range []probe{{scoped, outsideKey}, {clientFor(store.Client{Endpoint: scopedConfig.Endpoint, Region: scopedConfig.Region, Bucket: config.PublishedBucket, Credentials: scopedConfig.Credentials}), outsideKey}} {
 		err := p.client.Get(p.key, filepath.Join(dir, fmt.Sprintf("denied-%d", n)))
 		if err == nil {
 			return errors.New("temporary grant read outside its allowed inbox prefix; do not issue grants")
@@ -101,7 +132,8 @@ func preflightR2GrantScope(config access.StorageConfig) (result error) {
 	if err != nil {
 		return err
 	}
-	scoped.Credentials = &store.Credentials{AccessKeyID: expired.AccessKeyID, SecretAccessKey: expired.SecretAccessKey, SessionToken: expired.SessionToken}
+	scopedConfig.Credentials = &store.Credentials{AccessKeyID: expired.AccessKeyID, SecretAccessKey: expired.SecretAccessKey, SessionToken: expired.SessionToken}
+	scoped = clientFor(scopedConfig)
 	err = scoped.Get(allowedKey, filepath.Join(dir, "expired"))
 	if err == nil {
 		return errors.New("expired temporary grant remained usable; do not issue grants")
