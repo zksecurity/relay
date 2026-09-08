@@ -191,9 +191,6 @@ func runSBOM(args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(info.Deps) != 0 {
-		return fmt.Errorf("Relay binary unexpectedly links %d third-party modules", len(info.Deps))
-	}
 	result := bom{
 		BOMFormat:   "CycloneDX",
 		SpecVersion: "1.5",
@@ -211,13 +208,9 @@ func runSBOM(args []string) error {
 				BOMRef:  "pkg:golang/github.com/zksecurity/relay@" + commit,
 				PURL:    "pkg:golang/github.com/zksecurity/relay@" + commit,
 			},
-			Properties: []property{
-				{Name: "relay:go-version", Value: info.GoVersion},
-				{Name: "relay:source-commit", Value: commit},
-				{Name: "relay:vcs-modified", Value: "false"},
-			},
+			Properties: sbomProperties(commit),
 		},
-		Components: []component{},
+		Components: sbomComponents(),
 	}
 	return writeJSONFresh(*out, result)
 }
@@ -616,8 +609,8 @@ func validateBuildInfo(info *debug.BuildInfo, expectedCommit string) (string, er
 	if expectedCommit != "" && commit != expectedCommit {
 		return "", fmt.Errorf("binary source commit is %q, want %q", commit, expectedCommit)
 	}
-	if len(info.Deps) != 0 {
-		return "", fmt.Errorf("Relay binary unexpectedly links %d third-party modules", len(info.Deps))
+	if err := validatePinnedModules(info.Deps); err != nil {
+		return "", err
 	}
 	return commit, nil
 }
@@ -668,11 +661,7 @@ func verifySBOM(path, commit string) error {
 		}) {
 		return errors.New("SBOM generator identity does not match the release")
 	}
-	wantProperties := []property{
-		{Name: "relay:go-version", Value: productionGoVersion},
-		{Name: "relay:source-commit", Value: commit},
-		{Name: "relay:vcs-modified", Value: "false"},
-	}
+	wantProperties := sbomProperties(commit)
 	if len(value.Metadata.Properties) != len(wantProperties) {
 		return errors.New("SBOM properties do not match the release")
 	}
@@ -681,10 +670,63 @@ func verifySBOM(path, commit string) error {
 			return errors.New("SBOM properties do not match the release")
 		}
 	}
-	if len(value.Components) != 0 {
-		return errors.New("dependency-free Relay SBOM unexpectedly lists components")
+	wantComponents := sbomComponents()
+	if len(value.Components) != len(wantComponents) {
+		return errors.New("SBOM module inventory does not match the pinned dependencies")
+	}
+	for index, want := range wantComponents {
+		if value.Components[index] != want {
+			return errors.New("SBOM module inventory does not match the pinned dependencies")
+		}
 	}
 	return nil
+}
+
+// Explicit release policy, kept in sync with the modules linked into the CLI.
+// A dependency addition/update needs a reviewed pin here as well as go.mod/go.sum.
+var pinnedModules = []debug.Module{
+	{Path: "github.com/cyberphone/json-canonicalization", Version: "v0.0.0-20241213102144-19d51d7fe467", Sum: "h1:uX1JmpONuD549D73r6cgnxyUu18Zb7yHAy5AYU0Pm4Q="},
+	{Path: "github.com/santhosh-tekuri/jsonschema/v6", Version: "v6.0.3", Sum: "h1:1EYB5IzjZawrrnELUi78f9fPu57HuXjmddZPjrls/28="},
+	{Path: "golang.org/x/text", Version: "v0.14.0", Sum: "h1:ScX5w1eTa3QqT8oi6+ziP7dTV1S2+ALU0bI+0zXKWiQ="},
+}
+
+func validatePinnedModules(deps []*debug.Module) error {
+	if len(deps) != len(pinnedModules) {
+		return errors.New("binary module inventory differs from the reviewed release pins")
+	}
+	seen := map[string]bool{}
+	for _, dep := range deps {
+		if dep == nil || dep.Replace != nil || seen[dep.Path] {
+			return errors.New("binary has a nil, replaced or duplicate module")
+		}
+		seen[dep.Path] = true
+		found := false
+		for _, pin := range pinnedModules {
+			if dep.Path == pin.Path && dep.Version == pin.Version && dep.Sum == pin.Sum {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("binary module %q differs from the reviewed release pins", dep.Path)
+		}
+	}
+	return nil
+}
+func sbomComponents() []component {
+	result := make([]component, 0, len(pinnedModules))
+	for _, pin := range pinnedModules {
+		purl := "pkg:golang/" + pin.Path + "@" + pin.Version
+		result = append(result, component{Type: "library", Name: pin.Path, Version: pin.Version, BOMRef: purl, PURL: purl})
+	}
+	return result
+}
+func sbomProperties(commit string) []property {
+	result := []property{{Name: "relay:go-version", Value: productionGoVersion}, {Name: "relay:source-commit", Value: commit}, {Name: "relay:vcs-modified", Value: "false"}}
+	for _, pin := range pinnedModules {
+		result = append(result, property{Name: "relay:go-module-sum:" + pin.Path, Value: pin.Sum})
+	}
+	return result
 }
 
 func validateCommit(value string) error {

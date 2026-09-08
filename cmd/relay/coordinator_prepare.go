@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/zksecurity/relay/contracts/setupv2"
 	"io"
 	"os"
 	"os/signal"
@@ -64,7 +65,9 @@ type setupPolicy struct {
 }
 type setupBinary struct{ Path, SHA256 string }
 type coordinatorDraft struct {
-	ArchitecturePolicy                       string `json:"architecture_policy,omitempty"`
+	TesseraSetup                             *setupv2.Setup  `json:"tessera_setup,omitempty"`
+	Tessera                                  *tesseraContext `json:"tessera_context,omitempty"`
+	ArchitecturePolicy                       string          `json:"architecture_policy,omitempty"`
 	Schema, Name, Release, Work, Trust, Keys string
 	Mode, Circuit, Status, CreatedAt         string
 	Identities                               setupRoster
@@ -776,6 +779,11 @@ func (w *coordinatorWizard) generateIdentity() error {
 }
 
 func (w *coordinatorWizard) initialize() error {
+	if w.d.Tessera != nil || w.d.TesseraSetup != nil {
+		if err := checkTesseraDraft(w.d); err != nil {
+			return err
+		}
+	}
 	if w.localAction != nil && (w.d.Mode != "rehearsal" || w.d.Circuit != "rehearsal-tiny-v1" || len(w.d.Binaries) != 0) {
 		return errors.New("local tests require the tiny rehearsal circuit and the supplied local images only")
 	}
@@ -1013,6 +1021,12 @@ func (w *coordinatorWizard) menu() (result error) {
 		if w.localAction == nil {
 			fmt.Fprintln(w.output, "14) Check storage access (writes and removes test objects only after approval)")
 		}
+		if w.d.Status == "draft" {
+			fmt.Fprintln(w.output, "15) Open setup downloaded from Tessera")
+		}
+		if w.d.Status == "definition-verified" && (w.d.Tessera != nil || w.d.TesseraSetup != nil) && w.localAction == nil {
+			fmt.Fprintln(w.output, "16) Export setup for Tessera")
+		}
 		choice, err := w.ask("Choose", "0")
 		if err == io.EOF {
 			return nil
@@ -1032,6 +1046,10 @@ func (w *coordinatorWizard) menu() (result error) {
 			continue
 		}
 		switch choice {
+		case "15":
+			err = w.importTesseraRoster()
+		case "16":
+			err = w.exportTesseraSetup()
 		case "13":
 			if w.d.Status != "definition-verified" || w.localAction != nil {
 				err = errors.New("coordinator enrollment requires the verified definition and approved release")

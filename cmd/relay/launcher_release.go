@@ -102,17 +102,22 @@ func selectReleaseImage(raw []byte, commit, role, platform string) (string, erro
 }
 
 func verifiedReleaseImage(tag, role, platform string) (string, string, error) {
+	image, commit, _, err := verifiedReleaseImageMap(tag, role, platform)
+	return image, commit, err
+}
+
+func verifiedReleaseImageMap(tag, role, platform string) (string, string, []byte, error) {
 	match := launcherReleaseTag.FindStringSubmatch(tag)
 	if match == nil {
-		return "", "", errors.New("--release requires role-images-<full-commit-sha>")
+		return "", "", nil, errors.New("--release requires role-images-<full-commit-sha>")
 	}
 	commit := match[1]
 	if err := checkLauncherRelease(commit); err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	dir, err := os.MkdirTemp("", "relay-release-")
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	defer os.RemoveAll(dir)
 	file := filepath.Join(dir, "relay-role-images.release.json")
@@ -124,13 +129,13 @@ func verifiedReleaseImage(tag, role, platform string) (string, string, error) {
 		cmd := exec.Command("gh", args...)
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
-			return "", "", fmt.Errorf("release verification failed: %w", err)
+			return "", "", nil, fmt.Errorf("release verification failed: %w", err)
 		}
 	}
 	raw, err := os.ReadFile(file)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	image, err := selectReleaseImage(raw, commit, role, platform)
-	return image, commit, err
+	return image, commit, raw, err
 }

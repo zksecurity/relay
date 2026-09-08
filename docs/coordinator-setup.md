@@ -18,6 +18,10 @@ cannot run the helper. Install a matching new release rather than mixing binarie
 
 ## Fill in the draft
 
+If the ceremony was drafted in Tessera, start with **14 — Import roster downloaded
+from Tessera**. After initialization and verification, use **15 — Export setup
+for Tessera**. See the [Tessera walkthrough](tessera.md) for the complete round trip.
+
 1. Choose **Basics**: explicitly select rehearsal or production and the circuit.
    Select from the numbered choices; no internal names need to be typed.
    `rehearsal-tiny-v1` is only for testing; `ownership-destination-v2` is the
