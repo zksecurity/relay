@@ -6,9 +6,38 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"testing"
 )
+
+func TestPinnedModuleInventory(t *testing.T) {
+	fresh := func() []*debug.Module {
+		result := []*debug.Module{}
+		for _, pin := range pinnedModules {
+			p := pin
+			result = append(result, &p)
+		}
+		return result
+	}
+	if err := validatePinnedModules(fresh()); err != nil {
+		t.Fatal(err)
+	}
+	for name, change := range map[string]func([]*debug.Module) []*debug.Module{
+		"missing":     func(d []*debug.Module) []*debug.Module { return d[1:] },
+		"extra":       func(d []*debug.Module) []*debug.Module { return append(d, &debug.Module{Path: "unexpected"}) },
+		"duplicate":   func(d []*debug.Module) []*debug.Module { d[1] = d[0]; return d },
+		"version":     func(d []*debug.Module) []*debug.Module { d[0].Version = "v9.9.9"; return d },
+		"checksum":    func(d []*debug.Module) []*debug.Module { d[0].Sum = "h1:changed"; return d },
+		"replacement": func(d []*debug.Module) []*debug.Module { d[0].Replace = &debug.Module{Path: "./local"}; return d },
+	} {
+		t.Run(name, func(t *testing.T) {
+			if validatePinnedModules(change(fresh())) == nil {
+				t.Fatal("accepted unreviewed module inventory")
+			}
+		})
+	}
+}
 
 func TestSignAndVerifyManifest(t *testing.T) {
 	t.Parallel()
