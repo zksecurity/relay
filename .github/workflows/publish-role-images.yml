@@ -263,6 +263,16 @@ jobs:
         with:
           name: native-launchers
           path: launchers
+      - name: Generate setup software manifest from this release
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x launchers/relay-linux-amd64
+          launchers/relay-linux-amd64 tessera release-manifest --role-images relay-role-images.release.json --out ceremony-software-manifest-v2.json
+      - name: Attest setup software manifest
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: ceremony-software-manifest-v2.json
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
@@ -271,4 +281,5 @@ jobs:
           body: GitHub-attested CI role-image release for protected-main commit `${{ env.RELAY_COMMIT }}`.
           files: |
             relay-role-images.release.json
+            ceremony-software-manifest-v2.json
             launchers/*

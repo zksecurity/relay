@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/zksecurity/relay/contracts/setupv2"
 	"io"
 	"os"
 	"path/filepath"
@@ -62,6 +63,7 @@ type setupPolicy struct {
 }
 type setupBinary struct{ Path, SHA256 string }
 type coordinatorDraft struct {
+	TesseraSetup                             *setupv2.Setup  `json:"tessera_setup,omitempty"`
 	Tessera                                  *tesseraContext `json:"tessera_context,omitempty"`
 	ArchitecturePolicy                       string          `json:"architecture_policy,omitempty"`
 	Schema, Name, Release, Work, Trust, Keys string
@@ -726,7 +728,7 @@ func (w *coordinatorWizard) generateIdentity() error {
 }
 
 func (w *coordinatorWizard) initialize() error {
-	if w.d.Tessera != nil {
+	if w.d.Tessera != nil || w.d.TesseraSetup != nil {
 		if err := checkTesseraDraft(w.d); err != nil {
 			return err
 		}
@@ -939,9 +941,9 @@ func (w *coordinatorWizard) menu() error {
 			fmt.Fprintln(w.output, "0 Save and exit")
 		}
 		if w.d.Status == "draft" {
-			fmt.Fprintln(w.output, "14 Import roster downloaded from Tessera")
+			fmt.Fprintln(w.output, "14 Open setup downloaded from Tessera")
 		}
-		if w.d.Status == "definition-verified" && w.d.Tessera != nil && w.localAction == nil {
+		if w.d.Status == "definition-verified" && (w.d.Tessera != nil || w.d.TesseraSetup != nil) && w.localAction == nil {
 			fmt.Fprintln(w.output, "15 Export setup for Tessera")
 		}
 		choice, err := w.ask("Choose", "0")

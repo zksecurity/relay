@@ -1,0 +1,21 @@
+{
+  "id": "two-phase-v1",
+  "version": 1,
+  "definition_schema": "proof-tool-mpc-ceremony-definition-v2",
+  "circuits": [
+    "rehearsal-tiny-v1",
+    "ownership-destination-v2"
+  ],
+  "roles": [
+    "coordinator",
+    "participant",
+    "auditor",
+    "release-signer",
+    "witness",
+    "mirror"
+  ],
+  "minimum_auditors": 2,
+  "minimum_production_participants": 2,
+  "production_witness_lead_seconds": 86400,
+  "maximum_phase_participants": 20
+}
