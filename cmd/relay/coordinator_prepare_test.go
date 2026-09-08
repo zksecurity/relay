@@ -384,17 +384,17 @@ func TestCoordinatorPostInitializationMenu(t *testing.T) {
 				t.Fatal(err)
 			}
 			out := w.output.(*bytes.Buffer).String()
-			for _, hidden := range []string{"1 Basics", "2 Generate", "3 Import", "4 Orders", "5 Add", "8 Approve", "11 Remove", "Coordinator preparation"} {
+			for _, hidden := range []string{"1) Basics", "2) Generate", "3) Import", "4) Orders", "5) Add", "8) Approve", "11) Remove", "Coordinator preparation"} {
 				if strings.Contains(out, hidden) {
 					t.Fatalf("stale action %q in %s", hidden, out)
 				}
 			}
-			for _, visible := range []string{tc.heading, "7 Review identities and policy", "9 Verify existing definition", "0 Save and exit"} {
+			for _, visible := range []string{tc.heading, "7) Review identities and policy", "9) Verify existing definition", "0) Save and exit"} {
 				if !strings.Contains(out, visible) {
 					t.Fatalf("missing %q", visible)
 				}
 			}
-			if strings.Contains(out, "10 Configure storage") != tc.storage {
+			if strings.Contains(out, "10) Configure storage") != tc.storage {
 				t.Fatal("incorrect storage availability")
 			}
 		})

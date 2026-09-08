@@ -38,10 +38,12 @@ type guidedProfile struct {
 	Credentials   string   `json:"aws_credentials,omitempty"`
 	Config        string   `json:"participant_config,omitempty"`
 	Command       []string `json:"command,omitempty"`
+	R2Parent      string   `json:"r2_parent_credential,omitempty"`
+	R2Control     string   `json:"r2_control_credential,omitempty"`
 }
 
 func (p guidedProfile) options() dockerRoleOptions {
-	return dockerRoleOptions{role: p.Role, image: p.Image, platform: p.Platform, work: p.Work, trust: p.Trust, keys: p.Keys, credentials: p.Credentials, config: p.Config, docker: "docker"}
+	return dockerRoleOptions{role: p.Role, image: p.Image, platform: p.Platform, work: p.Work, trust: p.Trust, keys: p.Keys, credentials: p.Credentials, config: p.Config, docker: "docker", r2Parent: p.R2Parent, r2Control: p.R2Control}
 }
 
 func guidedRoot() (string, error) {
@@ -91,10 +93,15 @@ func runGuidedSetup(args []string) error {
 	set.StringVar(&p.Trust, "trust", "", "dedicated public trust directory; created automatically if omitted")
 	set.StringVar(&p.Keys, "keys", "", "existing protected role key directory (never created or populated automatically)")
 	set.StringVar(&p.Credentials, "aws-credentials", "", "coordinator-only credentials file")
+	set.StringVar(&p.R2Parent, "r2-parent-credential", "", "protected R2 inbox parent secret file")
+	set.StringVar(&p.R2Control, "r2-control-credential", "", "protected R2 control token file")
 	set.StringVar(&p.Config, "config", "", "existing participant Docker profile")
 	set.BoolVar(&pull, "download", true, "download the approved digest during setup if absent; use --download=false for offline setup")
 	if err := set.Parse(args[1:]); err != nil {
 		return err
+	}
+	if (p.R2Parent != "" || p.R2Control != "") && p.Role != "coordinator" {
+		return errors.New("R2 administrative credentials are coordinator-only")
 	}
 	var releaseImage string
 	if releaseTag != "" {
@@ -418,6 +425,12 @@ func runGuidedOpen(args []string) error {
 		return err
 	}
 	defer lock.release()
+	// Credential-reference refresh takes this same lock. Do not execute a
+	// profile read just before a completed refresh.
+	p, err = readGuidedProfile(filepath.Join(dir, "profile.json"), args[0], role)
+	if err != nil {
+		return err
+	}
 	activity := filepath.Join(dir, "activity")
 	if action != "" {
 		if role == "participant" || len(p.Command) != 0 {
@@ -495,7 +508,7 @@ func runGuidedOpen(args []string) error {
 			fmt.Printf("Exact command: %q\n", p.Command)
 		}
 		launch = []string{"role", "--role", p.Role, "--image", p.Image, "--platform", p.Platform, "--work", p.Work}
-		for _, pair := range [][2]string{{"--trust", p.Trust}, {"--keys", p.Keys}, {"--aws-credentials", p.Credentials}} {
+		for _, pair := range [][2]string{{"--trust", p.Trust}, {"--keys", p.Keys}, {"--aws-credentials", p.Credentials}, {"--r2-parent-credential", p.R2Parent}, {"--r2-control-credential", p.R2Control}} {
 			if pair[1] != "" {
 				launch = append(launch, pair[0], pair[1])
 			}
@@ -597,7 +610,7 @@ func executeGuidedChild(args []string) error {
 	command := exec.Command(binary, args...)
 	command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
 	signals := make(chan os.Signal, 2)
-	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(signals)
 	if err := command.Start(); err != nil {
 		return err
@@ -608,6 +621,9 @@ func executeGuidedChild(args []string) error {
 		for {
 			select {
 			case s := <-signals:
+				if s == syscall.SIGHUP {
+					s = syscall.SIGTERM
+				}
 				_ = command.Process.Signal(s)
 			case <-finished:
 				return

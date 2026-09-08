@@ -128,7 +128,7 @@ func decisionFlow(role string) flowStage {
 
 func coordinatorFlowStages() []flowStage {
 	stages := []flowStage{{ID: "enrollments", Label: "Assignments and enrollments", Tasks: []flowTask{
-		inspectFlow(), enrollmentFlow(), handoff("assignments", "Confirm assignment review and enrollment collection", "Distribute the exact signed definition through your agreed channel. Collect reviewed proof-of-possession enrollments from all required roles, including witnesses and mirrors. Other roles retain their private keys."),
+		inspectFlow(), enrollmentFlow(), handoff("assignments", "Report sharing the signed definition", "Have you shared the exact signed definition with every assigned role through your agreed coordination channel? This records sharing only, not their review or enrollment. Enrollment collection is checked separately."),
 	}}, {ID: "storage", Label: "Storage and first publication", Tasks: []flowTask{
 		handoff("storage", "Confirm storage preflight completed", "Use coordinator preparation to configure administrator-provisioned storage. Require successful public-read/private-inbox/freshness/scope checks. This workflow does not provision billable cloud resources."), publishFlow("phase1", false),
 	}}}
@@ -166,6 +166,7 @@ func coordinatorFlowStages() []flowStage {
 	for i := range stages {
 		if stages[i].ID == "phase1-close" || stages[i].ID == "phase2-close" {
 			stages[i].Tasks = append(stages[i].Tasks, optional(evidenceGrantFlow()), optional(flowTask{ID: "evidence-inbox", Label: "List submitted evidence for review", Help: "Download into fresh review directories and verify each record with proof-tool. Listing an inbox does not validate its contents.", Command: []string{"relay", "coordinator", "evidence"}, Fields: []flowField{storageField()}}))
+			stages[i].Tasks = append(stages[i].Tasks, optional(flowTask{ID: "evidence-receive", Label: "Download submitted evidence for verification", Help: "Choose the exact manifest key reported by the sender. Downloads into a fresh directory and checks file hashes; this is not signature verification or acceptance.", Command: []string{"relay", "coordinator", "evidence"}, Fields: []flowField{storageField(), ft("manifest-key", "Exact submitted manifest key", ""), ff("out-dir", "Fresh public evidence review folder", "/work/received-evidence")}}))
 		}
 	}
 	// Preserve the final archive handoff until after the production decision.

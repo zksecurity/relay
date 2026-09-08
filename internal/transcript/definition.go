@@ -4,12 +4,13 @@ import "fmt"
 
 // Definition is the authenticated projection emitted by mpc-ceremony inspect.
 type Definition struct {
-	Schema             string      `json:"schema"`
-	CeremonyID         string      `json:"ceremony_id"`
-	Mode               string      `json:"mode"`
-	Phase1Participants []string    `json:"phase1_participants"`
-	Phase2Participants []string    `json:"phase2_participants"`
-	R1CSRef            ArtifactRef `json:"r1cs"`
+	Schema             string             `json:"schema"`
+	CeremonyID         string             `json:"ceremony_id"`
+	Mode               string             `json:"mode"`
+	Phase1Participants []string           `json:"phase1_participants"`
+	Phase2Participants []string           `json:"phase2_participants"`
+	R1CSRef            ArtifactRef        `json:"r1cs"`
+	Journey            *DefinitionJourney `json:"journey,omitempty"`
 }
 
 // Schedule returns the ordered participant list for a phase.

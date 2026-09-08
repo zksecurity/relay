@@ -55,6 +55,9 @@ func (s coordinatorStorageSettings) validate() error {
 }
 
 func (w *coordinatorWizard) importStorageSettings() error {
+	if err := w.requirePreviousSessionClosed(); err != nil {
+		return err
+	}
 	path, err := w.required("Administrator-provided coordinator storage settings JSON, absolute path", "")
 	if err != nil {
 		return err
@@ -83,5 +86,6 @@ func (w *coordinatorWizard) importStorageSettings() error {
 		return err
 	}
 	w.d.Storage, w.d.Credentials = v, credential
+	w.d.R2Parent, w.d.R2Control, w.d.SessionCredentials = "", "", false
 	return w.save()
 }

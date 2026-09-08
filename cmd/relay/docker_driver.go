@@ -87,7 +87,7 @@ func dockerEnvironmentWithoutTargetOverrides() []string {
 	filtered := make([]string, 0, len(environment))
 	for _, entry := range environment {
 		name, _, _ := strings.Cut(entry, "=")
-		if name == "DOCKER_HOST" || name == "DOCKER_CONTEXT" {
+		if name == "DOCKER_HOST" || name == "DOCKER_CONTEXT" || strings.HasPrefix(name, "RELAY_R2_") {
 			continue
 		}
 		filtered = append(filtered, entry)

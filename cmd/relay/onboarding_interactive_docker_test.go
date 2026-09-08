@@ -213,7 +213,11 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 		if p.d.Role == "witness" || p.d.Role == "mirror" {
 			input += "1\n"
 		}
-		input += "Same-machine local test; all roles operated by this test process.\nPUBLIC DISCLOSURE\nOFFLINE AND REVIEWED\n0\n"
+		review := "REVIEWED"
+		if p.d.Role == "release-signer" {
+			review = "OFFLINE AND REVIEWED"
+		}
+		input += "Same-machine local test; all roles operated by this test process.\nPUBLIC DISCLOSURE\n" + review + "\n0\n"
 		dialogue(p, input)
 		if _, err := os.Stat(filepath.Join(p.d.Work, "enrollment.sig")); err != nil {
 			t.Fatal(err)
@@ -227,7 +231,7 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 		if p.d.Role == "witness" || p.d.Role == "mirror" {
 			resume += "\n"
 		}
-		resume += "OFFLINE AND REVIEWED\n0\n"
+		resume += review + "\n0\n"
 		dialogue(p, resume)
 		keyAfter, _ := setupFileHash(filepath.Join(p.d.Keys, "signing.hex"))
 		if keyAfter != keyBefore {
@@ -410,6 +414,9 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 			}
 			var answers strings.Builder
 			for _, field := range task.Fields {
+				if p.d.Role == "mirror" && task.ID == "draft-receipt" && field.Flag == "chain" {
+					answers.WriteString("1\n")
+				}
 				value := ""
 				switch field.Flag {
 				case "location":

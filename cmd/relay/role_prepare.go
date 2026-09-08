@@ -375,22 +375,26 @@ func (p *rolePreparer) workflow() error {
 }
 func (p *rolePreparer) menu() error {
 	for {
-		fmt.Fprintf(p.ui.output, "\n%s — %s onboarding\n1 Prepare approved images (online; before disconnecting a signer)\n", p.d.Name, p.d.Role)
+		fmt.Fprintf(p.ui.output, "\n%s — %s onboarding\n1) Prepare approved images (online; before disconnecting a signer)\n", p.d.Name, p.d.Role)
 		if p.d.Role != "upload-station" {
-			fmt.Fprintln(p.ui.output, "2 Generate/review MY identity and public handoff")
+			fmt.Fprintln(p.ui.output, "2) Generate/review MY identity and public handoff")
 		}
-		fmt.Fprintln(p.ui.output, "3 Import a received public file")
+		fmt.Fprintln(p.ui.output, "3) Import a received public file")
 		if p.d.Role != "release-signer" {
-			fmt.Fprintln(p.ui.output, "4 Authenticate and create a phase profile")
+			fmt.Fprintln(p.ui.output, "4) Authenticate and create a phase profile")
 		}
-		fmt.Fprintln(p.ui.output, "5 Continue the ceremony workflow\n6 Show folders and remaining input requirements")
+		fmt.Fprintln(p.ui.output, "5) Open ceremony operations and progress\n6) Show folders and remaining input requirements")
 		if p.d.Role != "upload-station" {
-			fmt.Fprintln(p.ui.output, "7 Prepare, review and sign MY enrollment (after receiving the signed definition)")
+			fmt.Fprintln(p.ui.output, "7) Prepare, review and sign MY enrollment (after receiving the signed definition)")
 		}
-		fmt.Fprintln(p.ui.output, "0 Save and exit")
+		fmt.Fprintln(p.ui.output, "8) Show all setup steps (including those that do not apply)\n0) Save and exit")
 		choice, err := p.ui.ask("Choose", "0")
 		if err != nil {
 			return err
+		}
+		if reason := onboardingNotApplicable(p.d.Role, choice); reason != "" {
+			fmt.Fprintf(p.ui.output, "Not applicable: %s\n", reason)
+			continue
 		}
 		switch choice {
 		case "0":
@@ -409,6 +413,14 @@ func (p *rolePreparer) menu() error {
 			fmt.Fprintf(p.ui.output, "Work/public outputs: %s\nTrusted public files: %s\nPRIVATE keys: %s\nObtain signed ceremony files and public storage configuration through the agreed channel. Prepare approved images to create your local tool record. Participant environment questions are included in profile setup. Use option 7 for your own enrollment; upload stations instead import the final signer's public enrollment. Witness/mirror receipts are reviewed and signed with the offline image in the workflow. Disconnect the signing host when prompted. Complete phase transcripts and operational evidence are exchanged separately; importing a definition does not fetch them.\n", p.d.Work, p.d.Trust, p.d.Keys)
 		case "7":
 			err = p.enroll()
+		case "8":
+			for n, label := range []string{"Prepare approved images", "Generate/review MY identity", "Import a public file", "Create a phase profile", "Open the ceremony workflow", "Show folders and requirements", "Prepare and sign MY enrollment"} {
+				status := "Applies; prerequisites may still be missing"
+				if reason := onboardingNotApplicable(p.d.Role, fmt.Sprint(n+1)); reason != "" {
+					status = "Not applicable: " + reason
+				}
+				fmt.Fprintf(p.ui.output, "- %s — %s\n", label, status)
+			}
 		default:
 			err = errors.New("choose a listed number")
 		}
@@ -416,6 +428,16 @@ func (p *rolePreparer) menu() error {
 			fmt.Fprintf(p.ui.output, "Stopped: %v\nSaved state and outputs retained. Resolve the cause; do not bypass verification.\n", err)
 		}
 	}
+}
+
+func onboardingNotApplicable(role, choice string) string {
+	if role == "upload-station" && (choice == "2" || choice == "7") {
+		return "Upload stations do not own signing keys; import the final signer's public enrollment instead."
+	}
+	if role == "release-signer" && choice == "4" {
+		return "Final signers use the offline signing workflow, not an online transport phase profile."
+	}
+	return ""
 }
 
 func runRolePrepare(args []string) error {

@@ -10,14 +10,15 @@ the installer. For an existing installation, run `./scripts/role.sh` from
 your authenticated source checkout and select your settings file.
 
 1. Follow [coordinator preparation](../coordinator-setup.md): generate your
-   identity, import public identities, review the circuit and policy, and initialize.
-2. Send your public `identity.json` and the signed ceremony definition to
-   the roles through your agreed coordination channel.
-3. Collect their reviewed, signed enrollments. Relay checks required keys differ;
+   identity, import public identities, and review the circuit and policy.
+2. Have the storage administrator provision storage, then enter the settings
+   in the helper and require its checks to pass before initialization. Deliberate
+   offline preparation does not authorize publication or grant issuance.
+3. Initialize and verify the signed definition, then share it and your public
+   `identity.json` through your agreed coordination channel.
+4. Collect their reviewed, signed enrollments. Relay checks required keys differ;
    it cannot tell whether they belong to independent people or organizations.
-4. Have the storage administrator provision storage, then enter the settings
-   in the helper and require its storage checks to pass.
-5. Choose **Continue the guided coordinator workflow** after initialization.
+5. Choose **Open ceremony operations and progress** after initialization.
    Reopening preparation does not initialize the ceremony again.
 
 ## Follow the numbered workflow
@@ -30,6 +31,8 @@ your authenticated source checkout and select your settings file.
   the prompted beacon, seal, and Phase 2 steps in order.
 - Collect mirror receipts, independent audits, and the final signer's public
   output. Verify the evidence and required production decision before release.
+  Use **Download submitted evidence for verification** with the sender's exact
+  manifest key. Matching download hashes do not replace signature verification.
 - Retain and verify the complete public archive before retiring access.
 
 The menu asks for inputs and shows each action before running it.

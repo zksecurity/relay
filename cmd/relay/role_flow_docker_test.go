@@ -124,12 +124,32 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 	}
 	bound := client.BindHost(endpoint)
 	keyDirs := map[string]string{}
+	cloud := os.Getenv("RELAY_FLOW_AWS_APPROVED") == "1"
+	cloudCredentials := ""
+	var cloudSettings coordinatorStorageSettings
+	if cloud {
+		cloudCredentials = os.Getenv("RELAY_AWS_LIVE_CREDENTIALS_FILE")
+		if _, err := readProtectedCredentialBytes(cloudCredentials, 1<<20); err != nil {
+			t.Fatal("AWS test credentials unavailable")
+		}
+		if err := setupReadJSON(os.Getenv("RELAY_AWS_LIVE_SETTINGS_FILE"), &cloudSettings); err != nil {
+			t.Fatal(err)
+		}
+		c, err := cloudSettings.infrastructure()
+		if err != nil {
+			t.Fatal(err)
+		}
+		requireAWSLiveConfiguration(t, c)
+	}
 	runRole := func(role, identity string, command []string) error {
 		image := online
 		if role == "release-signer" || role == "keygen" {
 			image = offline
 		}
 		o := dockerRoleOptions{role: role, image: image, platform: platform, work: work, trust: trust, keys: keyDirs[identity]}
+		if cloud && role == "coordinator" {
+			o.credentials = freshAWSLiveCredentials(t)
+		}
 		args, err := dockerRoleArgs(o, command, os.Getuid(), os.Getgid())
 		if err != nil {
 			return err
@@ -227,7 +247,31 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 			t.Fatalf("%s/%s/%s: %v", role, stage, id, err)
 		}
 	}
+	if cloud {
+		cmd := []string{"relay", "coordinator", "configure-storage", "--home", "/work/ceremony", "--coordinator-key", "/trust/coordinator-public-key.hex"}
+		for _, field := range []string{"provider", "region", "published-bucket", "published-base-url", "inbox-bucket", "profile", "issuer-profile", "grant-role-arn", "grant-role-max-ttl"} {
+			cmd = append(cmd, "--"+field, cloudSettings.Settings[field])
+		}
+		if err := runRole("coordinator", "", cmd); err != nil {
+			t.Fatal(err)
+		}
+	}
+	publishCloud := func(phase string, index int, closed bool) {
+		t.Helper()
+		if !cloud {
+			return
+		}
+		chain := fmt.Sprintf("/work/ceremony/public/%s/chain-%04d", phase, index)
+		cmd := []string{"relay", "coordinator", "publish", "--storage", "/work/ceremony/config/relay-storage.json", "--phase", phase, "--chain", chain + ".json", "--chain-signature", chain + ".sig", "--verify"}
+		if closed {
+			cmd = append(cmd, "--closed")
+		}
+		if err := runRole("coordinator", "", cmd); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, phase := range []string{"phase1", "phase2"} {
+		publishCloud(phase, 0, false)
 		parent := filepath.Join(work, phase+"-candidates")
 		if err := os.Mkdir(parent, 0700); err != nil {
 			t.Fatal(err)
@@ -285,6 +329,28 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 				t.Fatal(err)
 			}
 			containerPath := func(path string) string { return "/work/" + strings.TrimPrefix(path, work+"/") }
+			if cloud {
+				cloudCredentials = freshAWSLiveCredentials(t)
+				args := []string{"run", "--rm", "--env", "RELAY_AWS_LIVE_EXPECTED_ACCOUNT=" + os.Getenv("RELAY_AWS_LIVE_EXPECTED_ACCOUNT"), "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges=true", "--ulimit", "core=0:0", "--log-driver", "none", "--tmpfs", "/tmp:rw,nosuid,nodev,mode=1777",
+					"--mount", "type=bind,src=" + work + ",dst=/work", "--mount", "type=bind,src=" + trust + ",dst=/trust,readonly",
+					"--mount", "type=bind,src=" + cloudCredentials + ",dst=/credentials,readonly", "--mount", "type=bind,src=" + os.Getenv("RELAY_AWS_TEST_BINARY") + ",dst=/tests,readonly",
+					"--env", "HOME=/tmp", "--env", "AWS_SHARED_CREDENTIALS_FILE=/credentials", "--env", "RELAY_AWS_CANDIDATE_APPROVED=1", "--env", "RELAY_TEST_PHASE=" + phase, "--env", "RELAY_TEST_ID=" + id, "--env", "RELAY_TEST_CANDIDATE=" + containerPath(o.outDir), "--entrypoint", "/tests", online, "-test.run", "^TestAWSLiveCandidateTransport$", "-test.v"}
+				if err := bound.Attached(os.Stdout, os.Stderr, args...); err != nil {
+					t.Fatal(err)
+				}
+				key, err := os.ReadFile(filepath.Join(o.outDir, "aws-manifest-key.txt"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				cmd := []string{"relay", "coordinator", "accept", "--storage", "/work/ceremony/config/relay-storage.json", "--candidate-key", string(key), "--coordinator-signing-key", "/keys/signing.hex", "--verify-publish"}
+				if phase == "phase2" {
+					cmd = append(cmd, "--phase1-seal", "/work/ceremony/public/phase1/sealed/seal.json", "--phase1-seal-signature", "/work/ceremony/public/phase1/sealed/seal.sig")
+				}
+				if err := runRole("coordinator", "coordinator", cmd); err != nil {
+					t.Fatal(err)
+				}
+				continue
+			}
 			co := o
 			co.root, co.definition, co.definitionSig, co.coordinatorKey = "/work/ceremony/public", "/work/ceremony/public/ceremony.json", "/work/ceremony/public/ceremony.sig", "/trust/coordinator-public-key.hex"
 			co.phase1Seal, co.phase1SealSig = "/work/ceremony/public/phase1/sealed/seal.json", "/work/ceremony/public/phase1/sealed/seal.sig"
@@ -295,6 +361,7 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 		}
 		values := map[string][]string{"chain": {"/work/ceremony/public/" + phase + "/chain-0003.json"}, "chain-signature": {"/work/ceremony/public/" + phase + "/chain-0003.sig"}, "beacon-round-lead": {"305"}}
 		execute("coordinator", "coordinator", phase+"-close", "close", values)
+		publishCloud(phase, 3, true)
 		var closure struct {
 			Round     uint64 `json:"beacon_round"`
 			NotBefore string `json:"beacon_not_before"`
@@ -418,5 +485,9 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 	if bytes.Contains(raw, []byte("private_key_hex")) {
 		t.Fatal("secret persisted in workflow")
 	}
-	t.Logf("PASS: 3+3 Docker contributions, removal+signed cleanup, real future beacons, both-phase replay, public proof, two audits, operational fixture verification, release signing/verification. Public-file transport; not a cloud/independence/production test. Public outputs: %s", work)
+	transport := "local public-file transport"
+	if cloud {
+		transport = "real AWS scoped candidate uploads, coordinator downloads/acceptance and S3/CloudFront head publication; audit/final-signer handoffs remain local"
+	}
+	t.Logf("PASS: 3+3 Docker contributions, removal+signed cleanup, real future beacons, both-phase replay, public proof, two audits, operational fixture verification, release signing/verification. Transport: %s. Same-host operational fixtures, not independent operators or production approval. Public outputs: %s", transport, work)
 }

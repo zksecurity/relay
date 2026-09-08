@@ -42,7 +42,10 @@ type r2CustomDomains struct {
 }
 
 func preflightR2InboxPrivacy(config access.StorageConfig) error {
-	token := os.Getenv(r2ControlTokenEnvironment)
+	token, err := consumeR2Credential(r2ControlTokenEnvironment)
+	if err != nil {
+		return err
+	}
 	if token == "" {
 		return fmt.Errorf("%s is required to verify that the R2 inbox has no public domains", r2ControlTokenEnvironment)
 	}
