@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Readiness is local input guidance, never protocol authorization. Missing
@@ -97,6 +98,17 @@ func (f *roleFlow) readiness(task flowTask) flowReadiness {
 		if st.Mode()&os.ModeSymlink != 0 || (!st.IsDir() && !st.Mode().IsRegular()) {
 			r.Missing = append(r.Missing, field.Label+": replace unsafe path")
 			continue
+		}
+		if field.Flag == "grant" {
+			path, err := f.publicHostPath(value)
+			if err != nil {
+				r.Missing = append(r.Missing, "Select a protected grant in your work folder")
+				continue
+			}
+			grant, err := loadGrant(path)
+			if err != nil || grant.CheckUsable(time.Now()) != nil {
+				r.Missing = append(r.Missing, "Ask the coordinator for a fresh, valid role grant")
+			}
 		}
 		if (field.Flag == "storage" || field.Flag == "config") && field.Kind == "path" {
 			// Includes configuration validation and immutable ceremony trust binding.
