@@ -1,5 +1,8 @@
 # Prepare a setup for Tessera
 
+This chapter describes the legacy v1 roster flow. New website drafts use the
+[shared v2 setup](tessera-setup-v2.md).
+
 Use a CLI release containing `tessera export-setup` and the matching installed
 role images. Older releases do not support this workflow. Run
 `relay tessera capabilities --json` to check support for `tessera-bundle-v1` and
@@ -12,7 +15,7 @@ role images. Older releases do not support this workflow. Run
    enrollment happens after the signed definition exists.
 2. Save both phase orders and download the roster JSON.
 3. Open the installed CLI's coordinator preparation menu (see
-   [Prepare a ceremony](coordinator-setup.md)). Choose **14 — Import roster
+   [Prepare a ceremony](coordinator-setup.md)). Choose **Open setup
    downloaded from Tessera**, select the JSON, compare fingerprints with their
    owners, and confirm. This replaces the local draft's mode, identities, orders,
    and minimum counts. It does not generate or copy private signing keys.
@@ -20,7 +23,7 @@ role images. Older releases do not support this workflow. Run
    coordinator key and the administrator's AWS storage settings. Review and
    initialize explicitly. These actions retain their normal local confirmations;
    production initialization can take substantial resources.
-5. Once definition verification succeeds, choose **15 — Export setup for Tessera**.
+5. Once definition verification succeeds, choose **Export setup for Tessera**.
    Choose a fresh JSON output path. This verifies the definition again using the
    exact released image and exports only public artifacts and storage fields.
 6. Import that JSON into Tessera, preview, review, and freeze. Publishing remains

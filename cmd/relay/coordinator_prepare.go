@@ -1022,10 +1022,10 @@ func (w *coordinatorWizard) menu() (result error) {
 			fmt.Fprintln(w.output, "14) Check storage access (writes and removes test objects only after approval)")
 		}
 		if w.d.Status == "draft" {
-			fmt.Fprintln(w.output, "14 Open setup downloaded from Tessera")
+			fmt.Fprintln(w.output, "15) Open setup downloaded from Tessera")
 		}
 		if w.d.Status == "definition-verified" && (w.d.Tessera != nil || w.d.TesseraSetup != nil) && w.localAction == nil {
-			fmt.Fprintln(w.output, "15 Export setup for Tessera")
+			fmt.Fprintln(w.output, "16) Export setup for Tessera")
 		}
 		choice, err := w.ask("Choose", "0")
 		if err == io.EOF {
@@ -1046,9 +1046,9 @@ func (w *coordinatorWizard) menu() (result error) {
 			continue
 		}
 		switch choice {
-		case "14":
-			err = w.importTesseraRoster()
 		case "15":
+			err = w.importTesseraRoster()
+		case "16":
 			err = w.exportTesseraSetup()
 		case "13":
 			if w.d.Status != "definition-verified" || w.localAction != nil {
