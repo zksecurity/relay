@@ -29,6 +29,10 @@ esac
 			if (err == nil) != (metadata == "3") {
 				t.Fatal(metadata, err)
 			}
+			boundedErr := (Client{Bucket: "test"}).GetAtMost("files/probe", filepath.Join(dir, "bounded"), 3)
+			if (boundedErr == nil) != (metadata == "3") {
+				t.Fatal("manifest bound", metadata, boundedErr)
+			}
 			raw, err := os.ReadFile(log)
 			if err != nil {
 				t.Fatal(err)

@@ -285,6 +285,11 @@ func runEvidenceInbox(args []string) error {
 			return err
 		}
 		for _, key := range manifestKeys(objects) {
+			// Only identity/attempt/manifest.json marks a completed upload.
+			// A payload may legitimately contain files/manifest.json of its own.
+			if len(strings.Split(strings.TrimPrefix(key, prefix), "/")) != 3 {
+				continue
+			}
 			manifest, err := downloadSubmissionManifest(client, key)
 			if err != nil {
 				fmt.Printf("invalid  %s  (%v)\n", key, err)
@@ -353,7 +358,7 @@ func downloadSubmissionManifest(client store.Client, key string) (access.Submiss
 	}
 	defer os.RemoveAll(dir)
 	local := filepath.Join(dir, "manifest.json")
-	if err := client.Get(key, local); err != nil {
+	if err := client.GetAtMost(key, local, maxInboxManifestBytes); err != nil {
 		return access.SubmissionManifest{}, err
 	}
 	raw, err := readInboxManifest(local)

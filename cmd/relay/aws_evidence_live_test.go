@@ -135,6 +135,9 @@ func TestAWSLiveRoleEvidenceChild(t *testing.T) {
 		}
 		found := false
 		for _, key := range manifestKeys(objects) {
+			if len(strings.Split(strings.TrimPrefix(key, g.Prefix), "/")) != 2 {
+				continue
+			}
 			m, e := downloadSubmissionManifest(client, key)
 			if e != nil {
 				// Earlier failed attempts/older layouts are not fresh completed
