@@ -13,10 +13,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	releaseassets "github.com/zksecurity/relay/release"
@@ -71,6 +73,10 @@ type coordinatorDraft struct {
 	Storage                                  map[string]string
 	Credentials                              string
 	PolicyTemplate                           string
+	R2Parent                                 string `json:"r2_parent_credential,omitempty"`
+	R2Control                                string `json:"r2_control_credential,omitempty"`
+	OfflinePreparation                       bool   `json:"offline_preparation,omitempty"`
+	SessionCredentials                       bool   `json:"session_credentials,omitempty"`
 }
 
 func setupReadJSON(path string, value any) error {
@@ -224,23 +230,51 @@ func setupWriteNew(path string, v any) error {
 }
 
 type coordinatorWizard struct {
-	d               coordinatorDraft
-	input           *bufio.Reader
-	output          io.Writer
-	draftPath       string
-	run             func([]string) error
-	localAction     func(string, string, []string, bool) error
-	continueFlow    func() error
-	prepareBinaries func() error
+	d                     coordinatorDraft
+	input                 *bufio.Reader
+	output                io.Writer
+	draftPath             string
+	run                   func([]string) error
+	localAction           func(string, string, []string, bool) error
+	continueFlow          func() error
+	prepareBinaries       func() error
+	readSecret            func(string) (string, error)
+	credentialRoot        string
+	sessionCredentialDirs []string
+	interrupted           <-chan struct{}
 }
 
 func (w *coordinatorWizard) ask(label, current string) (string, error) {
+	if w.interrupted != nil {
+		select {
+		case <-w.interrupted:
+			return "", errSecretPromptInterrupted
+		default:
+		}
+	}
 	if current == "" {
 		fmt.Fprintf(w.output, "%s: ", label)
 	} else {
 		fmt.Fprintf(w.output, "%s [%s]: ", label, current)
 	}
-	value, err := w.input.ReadString('\n')
+	var value string
+	var err error
+	if w.interrupted == nil {
+		value, err = w.input.ReadString('\n')
+	} else {
+		type result struct {
+			value string
+			err   error
+		}
+		done := make(chan result, 1)
+		go func() { v, e := w.input.ReadString('\n'); done <- result{v, e} }()
+		select {
+		case <-w.interrupted:
+			return "", errSecretPromptInterrupted
+		case r := <-done:
+			value, err = r.value, r.err
+		}
+	}
 	if err != nil {
 		return "", err
 	}
@@ -271,10 +305,19 @@ func (w *coordinatorWizard) choose(label, current string, choices []setupChoice)
 	}
 	fmt.Fprintln(w.output, label)
 	defaultNumber := ""
-	for n, c := range choices {
-		fmt.Fprintf(w.output, "  %d. %s\n", n+1, c.label)
+	byNumber := map[int]string{}
+	nextNumber := 1
+	for _, c := range choices {
+		number := nextNumber
+		if c.value == "cancel" {
+			number = 0
+		} else {
+			nextNumber++
+		}
+		byNumber[number] = c.value
+		fmt.Fprintf(w.output, "%d) %s\n", number, c.label)
 		if c.value == current {
-			defaultNumber = strconv.Itoa(n + 1)
+			defaultNumber = strconv.Itoa(number)
 		}
 	}
 	for {
@@ -283,10 +326,10 @@ func (w *coordinatorWizard) choose(label, current string, choices []setupChoice)
 			return "", err
 		}
 		n, err := strconv.Atoi(answer)
-		if err == nil && n >= 1 && n <= len(choices) {
-			return choices[n-1].value, nil
+		if value, ok := byNumber[n]; err == nil && ok {
+			return value, nil
 		}
-		fmt.Fprintf(w.output, "Enter a number from 1 to %d.\n", len(choices))
+		fmt.Fprintln(w.output, "Enter one of the displayed numbers.")
 	}
 }
 
@@ -297,7 +340,7 @@ func (w *coordinatorWizard) participantOrder(label string, current []string) ([]
 	fmt.Fprintln(w.output, label)
 	positions := map[string]string{}
 	for n, p := range w.d.Identities.Roster {
-		fmt.Fprintf(w.output, "  %d. %s (%s)\n", n+1, p.Identity.DisplayName, p.Identity.ID)
+		fmt.Fprintf(w.output, "%d) %s (%s)\n", n+1, p.Identity.DisplayName, p.Identity.ID)
 		positions[p.Identity.ID] = strconv.Itoa(n + 1)
 	}
 	defaults := []string{}
@@ -589,6 +632,11 @@ func (w *coordinatorWizard) action(name, role string, command []string, credenti
 	}
 	if credentials {
 		args = append(args, "--aws-credentials", w.d.Credentials)
+		for _, pair := range [][2]string{{"--r2-parent-credential", w.d.R2Parent}, {"--r2-control-credential", w.d.R2Control}} {
+			if pair[1] != "" {
+				args = append(args, pair[0], pair[1])
+			}
+		}
 	}
 	args = append(args, "--")
 	args = append(args, command...)
@@ -618,6 +666,9 @@ func (w *coordinatorWizard) action(name, role string, command []string, credenti
 		// Keygen automatically allocates an unused trust directory.
 		if p.ReleaseCommit != strings.TrimPrefix(w.d.Release, "role-images-") || p.Work != expectedWork || p.Keys != expectedKeys || p.Credentials != expectedCredentials || !slices.Equal(p.Command, command) || (role != "keygen" && p.Trust != expectedTrust) {
 			return errors.New("existing saved action differs from reviewed draft")
+		}
+		if credentials && (p.R2Parent != w.d.R2Parent || p.R2Control != w.d.R2Control) {
+			return errors.New("existing saved action has different R2 credential file references")
 		}
 		if err := checkGuidedAttempts(filepath.Join(dir, "activity")); err != nil && !errors.Is(err, os.ErrNotExist) {
 			if err := w.confirm("Earlier action failed or was interrupted. Review its output and container state first; this does not authorize overwriting files", "REVIEWED RETRY"); err != nil {
@@ -844,12 +895,15 @@ func (w *coordinatorWizard) verify() error {
 }
 
 func (w *coordinatorWizard) storage() error {
-	choice, err := w.choose("Storage settings", "import", []setupChoice{{"import", "Import the administrator's settings file"}, {"advanced", "Advanced: enter infrastructure fields individually"}})
+	choice, err := w.choose("Storage settings", "", []setupChoice{{"r2", "Set up Cloudflare R2 and credentials"}, {"import", "Import the administrator's settings file"}, {"advanced", "Advanced settings: enter infrastructure fields individually"}})
 	if err != nil {
 		return err
 	}
 	if choice == "import" {
 		return w.importStorageSettings()
+	}
+	if choice == "r2" {
+		return w.setupR2()
 	}
 	provider, err := w.choose("Storage provider", w.d.Storage["provider"], []setupChoice{{"aws", "Amazon S3 (AWS)"}, {"r2", "Cloudflare R2"}})
 	if err != nil {
@@ -905,10 +959,30 @@ func (w *coordinatorWizard) configureStorage() error {
 	return w.action("storage", "coordinator", args, true)
 }
 
-func (w *coordinatorWizard) menu() error {
+func (w *coordinatorWizard) menu() (result error) {
+	defer func() { result = errors.Join(result, w.cleanupSessionCredentials()) }()
+	// Return cancellation through the owner so cleanup happens after any child
+	// command has stopped, never concurrently with its credential mount.
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(signals)
+	stop, done := make(chan struct{}), make(chan struct{})
+	w.interrupted = stop
+	defer close(done)
+	defer func() { w.interrupted = nil }()
+	go func() {
+		select {
+		case <-signals:
+			close(stop)
+		case <-done:
+		}
+	}()
+	if err := w.inspectPreviousSessionCredentials(); err != nil {
+		return err
+	}
 	for {
 		if w.d.Status == "draft" {
-			fmt.Fprintf(w.output, "\nCoordinator preparation — %s (%s)\n1 Basics\n2 Generate my identity\n3 Import/replace public identity\n4 Orders, minimum contributions and reviewed beacon policy\n5 Supported computers (both architectures by default)\n6 Storage settings\n7 Review draft\n8 Approve and initialize\n9 Verify existing definition (also after interruption)\n10 Configure storage\n11 Remove an identity assignment\n0 Save and exit\n", w.d.Name, w.d.Status)
+			fmt.Fprintf(w.output, "\nCoordinator preparation — %s (%s)\n1) Basics\n2) Generate my identity\n3) Import/replace public identity\n4) Orders, minimum contributions and reviewed beacon policy\n5) Supported computers (both architectures by default)\n6) Storage settings\n7) Review draft\n8) Approve and initialize\n9) Verify existing definition (also after interruption)\n10) Configure storage\n11) Remove an identity assignment\n0) Save and exit\n", w.d.Name, w.d.Status)
 		} else {
 			if w.d.Status == "definition-verified" {
 				fmt.Fprintf(w.output, "\nInitialization complete — %s\nThe signed ceremony definition has been verified. Identities and policy are frozen.\nThis does not verify all initialization artifacts or start participant contributions.\n", w.d.Name)
@@ -920,17 +994,20 @@ func (w *coordinatorWizard) menu() error {
 			} else {
 				fmt.Fprintf(w.output, "\nInitialization needs verification — %s\nSettings are frozen after an initialization attempt. Preserve the files and error output; use 9 to verify an existing definition. Do not initialize again.\n", w.d.Name)
 			}
-			fmt.Fprintln(w.output, "7 Review identities and policy\n9 Verify existing definition")
+			fmt.Fprintln(w.output, "7) Review identities and policy\n9) Verify existing definition")
 			if w.localAction == nil && w.d.Status == "definition-verified" {
-				fmt.Fprintln(w.output, "6 Storage settings\n10 Configure storage")
+				fmt.Fprintln(w.output, "6) Storage settings\n10) Configure storage")
 			}
 			if w.d.Status == "definition-verified" {
-				fmt.Fprintln(w.output, "12 Continue the guided coordinator workflow")
+				fmt.Fprintln(w.output, "12) Open ceremony operations and progress")
 				if w.localAction == nil {
-					fmt.Fprintln(w.output, "13 Prepare, review and sign MY coordinator enrollment")
+					fmt.Fprintln(w.output, "13) Prepare, review and sign MY coordinator enrollment")
 				}
 			}
-			fmt.Fprintln(w.output, "0 Save and exit")
+			fmt.Fprintln(w.output, "0) Save and exit")
+		}
+		if w.localAction == nil {
+			fmt.Fprintln(w.output, "14) Check storage access (writes and removes test objects only after approval)")
 		}
 		choice, err := w.ask("Choose", "0")
 		if err == io.EOF {
@@ -981,7 +1058,12 @@ func (w *coordinatorWizard) menu() error {
 			w.summary()
 			err = w.d.validate()
 		case "8":
-			err = w.initialize()
+			err = w.prepareStorageBeforeInitialization()
+			if err == nil {
+				err = w.initialize()
+			}
+		case "14":
+			err = w.checkStorage()
 		case "9":
 			err = w.verify()
 		case "10":
@@ -992,6 +1074,9 @@ func (w *coordinatorWizard) menu() error {
 			err = errors.New("unknown option")
 		}
 		if err != nil {
+			if errors.Is(err, errSecretPromptInterrupted) {
+				return err
+			}
 			fmt.Fprintf(w.output, "Stopped: %v\nDraft retained. Review the error before retrying; never bypass verification.\n", err)
 		}
 	}

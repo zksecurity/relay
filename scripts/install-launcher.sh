@@ -21,7 +21,7 @@ prepare_guided_settings() {
   printf 'Ceremony label (use the same label for all roles): '
   IFS= read -r name
   [[ "$name" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]] || { echo 'Invalid ceremony name.' >&2; return 1; }
-  printf 'Role: 1 coordinator, 2 participant, 3 witness, 4 mirror, 5 auditor, 6 release-signer, 7 upload-station\n'
+  printf 'Role:\n1) Coordinator\n2) Participant\n3) Witness\n4) Mirror\n5) Auditor\n6) Release-signer\n7) Upload-station\n'
   while :; do
     printf 'Choose a role number: '; IFS= read -r role || return 1
     case "$role" in
@@ -34,7 +34,7 @@ prepare_guided_settings() {
   done
   suggested=$(default_role_folder "$name" "$role")
   if [[ -e "$suggested" || -L "$suggested" ]]; then
-    printf 'A %s setup already exists for %s.\n1. Resume it (keeps its existing release)\n2. Create another %s with separate keys and progress\n' "$role" "$name" "$role"
+    printf 'A %s setup already exists for %s.\n1) Resume it (keeps its existing release)\n2) Create another %s with separate keys and progress\n' "$role" "$name" "$role"
     while :; do
       printf 'Choose 1 or 2: '; IFS= read -r answer || return 1
       case "$answer" in

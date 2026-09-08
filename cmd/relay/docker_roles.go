@@ -17,6 +17,7 @@ import (
 // Participants use the existing host supervisor and its separate Docker driver.
 type dockerRoleOptions struct {
 	role, image, platform, work, trust, keys, credentials, config, docker string
+	r2Parent, r2Control                                                   string
 }
 
 var roleImagePattern = regexp.MustCompile(`^(sha256:[0-9a-f]{64}|[^\s@]+@sha256:[0-9a-f]{64})$`)
@@ -31,6 +32,8 @@ func runDockerRole(args []string) error {
 	set.StringVar(&o.trust, "trust", "", "public trust directory, mounted read-only at /trust")
 	set.StringVar(&o.keys, "keys", "", "dedicated role key directory, mounted read-only at /keys")
 	set.StringVar(&o.credentials, "aws-credentials", "", "coordinator-only AWS credentials file, mounted read-only")
+	set.StringVar(&o.r2Parent, "r2-parent-credential", "", "protected R2 inbox parent secret file; mounted only for grant issuance")
+	set.StringVar(&o.r2Control, "r2-control-credential", "", "protected R2 control token file; mounted only for storage checks")
 	set.StringVar(&o.config, "config", "", "participant Docker profile on the host")
 	set.StringVar(&o.docker, "docker-cli", "docker", "Docker CLI path")
 	if err := set.Parse(args); err != nil {
@@ -91,6 +94,22 @@ func runDockerRoleParticipant(o dockerRoleOptions, args []string) error {
 }
 
 func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]string, error) {
+	if (o.r2Parent != "" || o.r2Control != "") && o.role != "coordinator" {
+		return nil, errors.New("R2 administrative credentials are coordinator-only")
+	}
+	// A saved profile may support multiple tasks. Do not expose its credentials
+	// to proof computation, identity generation, or unrelated online commands.
+	parentTask, controlTask := false, false
+	if len(command) >= 3 && command[0] == "relay" && command[1] == "coordinator" {
+		parentTask = command[2] == "grant" || command[2] == "evidence-grant" || command[2] == "check-storage" || command[2] == "configure-storage"
+		controlTask = command[2] == "configure-storage" || command[2] == "check-storage"
+	}
+	if !parentTask {
+		o.r2Parent = ""
+	}
+	if !controlTask {
+		o.r2Control = ""
+	}
 	offline := false
 	switch o.role {
 	case "coordinator", "witness", "mirror", "auditor", "upload-station":
@@ -135,11 +154,14 @@ func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]stri
 	if o.credentials != "" && o.role != "coordinator" {
 		return nil, errors.New("only coordinators may mount AWS credentials; other online roles use scoped grant files")
 	}
+	if command[0] != "aws" && !(len(command) >= 3 && command[0] == "relay" && command[1] == "coordinator") {
+		o.credentials = ""
+	}
 	if o.keys != "" && o.role == "upload-station" {
 		return nil, errors.New("upload stations must not receive signing keys")
 	}
 	var sources []string
-	for _, source := range []string{o.work, o.trust, o.keys, o.credentials} {
+	for _, source := range []string{o.work, o.trust, o.keys, o.credentials, o.r2Parent, o.r2Control} {
 		if source == "" {
 			continue
 		}
@@ -165,6 +187,7 @@ func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]stri
 		readonly, file bool
 	}{
 		{o.work, "/work", false, false}, {o.trust, "/trust", true, false}, {o.keys, "/keys", true, false}, {o.credentials, "/credentials/aws", true, true},
+		{o.r2Parent, "/credentials/r2-parent", true, true}, {o.r2Control, "/credentials/r2-control", true, true},
 	} {
 		if mount.source == "" && mount.target != "/work" {
 			continue
@@ -180,6 +203,12 @@ func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]stri
 	}
 	if o.credentials != "" {
 		argv = append(argv, "--env=AWS_SHARED_CREDENTIALS_FILE=/credentials/aws")
+	}
+	if o.r2Parent != "" {
+		argv = append(argv, "--env="+r2ParentSecretEnvironment+"_FILE=/credentials/r2-parent")
+	}
+	if o.r2Control != "" {
+		argv = append(argv, "--env="+r2ControlTokenEnvironment+"_FILE=/credentials/r2-control")
 	}
 	argv = append(argv, "--entrypoint=/usr/local/bin/"+command[0], o.image)
 	return append(argv, command[1:]...), nil

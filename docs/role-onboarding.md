@@ -24,11 +24,16 @@ Other roles see this menu:
 6. **Show folders and remaining input requirements:** lists what to obtain next.
 7. **Prepare, review and sign MY enrollment:** after importing the signed
    definition and trusted coordinator key, write your public disclosure and
-   review the exact record. Disconnect the signing host, then confirm. The
-   offline image signs with your own key and verifies the result. Send the
+   review the exact record. Signing uses a network-disabled container; host
+   disconnection is an extra precaution for ordinary enrollment, not a claimed
+   fact. Final-parameter signers must disconnect their dedicated signing host.
+   Follow any stricter agreed ceremony procedure. The image signs with your
+   own key and verifies the result. Send the
    displayed public export directory to the coordinator, including its disclosure.
 
 Choose **0 — Save and exit** to retain setup choices and files.
+Choose **8 — Show all setup steps** to see why an omitted task does not apply.
+Tasks with missing prerequisites still apply; they are not hidden for that reason.
 
 Required answers cannot be blank. A displayed default can be accepted with Enter.
 

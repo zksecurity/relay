@@ -94,6 +94,11 @@ func runConfigureStorage(args []string) error {
 	if err := preflightStorage(config); err != nil {
 		return err
 	}
+	if config.Provider == "r2" {
+		if err := preflightR2GrantScope(config); err != nil {
+			return err
+		}
+	}
 	if err := writeJSONNoReplace(out, config, 0o600); err != nil {
 		return err
 	}
@@ -102,7 +107,7 @@ func runConfigureStorage(args []string) error {
 	return nil
 }
 
-func preflightStorage(config access.StorageConfig) error {
+func preflightStorage(config access.StorageConfig) (result error) {
 	if config.Provider == "r2" {
 		if err := preflightR2InboxPrivacy(config); err != nil {
 			return err
@@ -112,7 +117,10 @@ func preflightStorage(config access.StorageConfig) error {
 	if err != nil {
 		return err
 	}
-	key := "setup-probes/" + strings.TrimPrefix(config.CeremonyID, "sha256:") + "/" + attempt
+	key := "setup-probes/" + attempt
+	if config.CeremonyID != "" {
+		key = "setup-probes/" + strings.TrimPrefix(config.CeremonyID, "sha256:") + "/" + attempt
+	}
 	dir, err := os.MkdirTemp("", "relay-storage-probe-")
 	if err != nil {
 		return err
@@ -127,10 +135,20 @@ func preflightStorage(config access.StorageConfig) error {
 	if err := published.PutNoReplace(key, source); err != nil {
 		return fmt.Errorf("published bucket write probe: %w", err)
 	}
-	defer published.Delete(key) // best effort; a failed cleanup is not ceremony evidence.
+	publishedPending := true
+	defer func() {
+		if publishedPending {
+			if err := published.Delete(key); err != nil {
+				result = errors.Join(result, fmt.Errorf("cleanup failed: remove only published probe %s in bucket %s: %w", key, config.PublishedBucket, err))
+			}
+		}
+	}()
 	authenticated := filepath.Join(dir, "authenticated")
 	if err := published.Get(key, authenticated); err != nil {
 		return fmt.Errorf("published bucket authenticated read probe: %w", err)
+	}
+	if got, err := os.ReadFile(authenticated); err != nil || !bytes.Equal(got, payload) {
+		return errors.New("authenticated published read returned different probe bytes")
 	}
 	public := store.Client{PublicBaseURL: config.PublishedBaseURL}
 	var publicErr error
@@ -154,7 +172,14 @@ func preflightStorage(config access.StorageConfig) error {
 	if err := inbox.PutNoReplace(key, source); err != nil {
 		return fmt.Errorf("inbox write probe: %w", err)
 	}
-	defer inbox.Delete(key)
+	inboxPending := true
+	defer func() {
+		if inboxPending {
+			if err := inbox.Delete(key); err != nil {
+				result = errors.Join(result, fmt.Errorf("cleanup failed: remove only inbox probe %s in bucket %s: %w", key, config.InboxBucket, err))
+			}
+		}
+	}()
 	if config.Provider != "r2" {
 		unsigned := store.Client{Endpoint: config.Endpoint, Region: config.Region, Bucket: config.InboxBucket, NoSign: true}
 		publiclyVisible, headErr := unsigned.Head(key)
@@ -168,9 +193,11 @@ func preflightStorage(config access.StorageConfig) error {
 	if err := inbox.Delete(key); err != nil {
 		return fmt.Errorf("remove inbox probe: %w", err)
 	}
+	inboxPending = false
 	if err := published.Delete(key); err != nil {
 		return fmt.Errorf("remove published probe: %w", err)
 	}
+	publishedPending = false
 	return nil
 }
 
@@ -299,13 +326,20 @@ func issueR2(config access.StorageConfig, prefix string, ttl time.Duration, now 
 	if ttl > 168*time.Hour {
 		return access.SessionCredentials{}, time.Time{}, errors.New("R2 --credential-ttl must not exceed 168h")
 	}
-	if secret := os.Getenv(r2ParentSecretEnvironment); secret != "" {
+	secret, err := consumeR2Credential(r2ParentSecretEnvironment)
+	if err != nil {
+		return access.SessionCredentials{}, time.Time{}, err
+	}
+	if secret != "" {
 		if err := os.Unsetenv(r2ParentSecretEnvironment); err != nil {
 			return access.SessionCredentials{}, time.Time{}, fmt.Errorf("clear %s before issuing credentials: %w", r2ParentSecretEnvironment, err)
 		}
 		return issueR2Locally(config, prefix, ttl, now, secret)
 	}
-	token := os.Getenv(r2ParentTokenEnvironment)
+	token, err := consumeR2Credential(r2ParentTokenEnvironment)
+	if err != nil {
+		return access.SessionCredentials{}, time.Time{}, err
+	}
 	if token == "" {
 		return access.SessionCredentials{}, time.Time{}, fmt.Errorf("%s or %s is required", r2ParentSecretEnvironment, r2ParentTokenEnvironment)
 	}

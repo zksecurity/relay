@@ -6,10 +6,10 @@ It does not operate their machines or approve things for them.
 ## Open it
 
 Coordinators: after preparation verifies the definition, choose
-**12 — Continue the guided coordinator workflow**. Initialization is not repeated.
+**Open ceremony operations and progress**. Initialization is not repeated.
 
 Other roles: follow [onboarding](role-onboarding.md), then choose
-**Continue the ceremony workflow**. Reopen the same installer-created
+**Open ceremony operations and progress**. Reopen the same installer-created
 `start.sh` to return. Each person uses their own folders and key.
 A participant's saved settings reference the first-phase Docker profile;
 the guide asks for the matching second-phase profile later.
@@ -24,6 +24,9 @@ recovery; choose a fresh alias for shared workflow settings.
   `DETAILS` to inspect the exact command.
 - A suggested next step based on saved progress, not authorization to act.
 - Separate human handoffs, recorded as **reported**, not verified.
+- Coordinator enrollment collection lists the authenticated roster and verifies
+  each imported public enrollment, signature and disclosure. Observer minimums
+  are shown separately; a higher agreed witness quorum still needs review.
 - **Save and exit**; reopening the same guide resumes your progress.
 - **Review/recover earlier stage** for inspecting earlier results.
 

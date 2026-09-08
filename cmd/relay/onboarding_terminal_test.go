@@ -57,8 +57,7 @@ proc reply {value} {
 }
 spawn -noecho $env(RELAY_TERMINAL_BINARY) ceremony guide $env(RELAY_TERMINAL_NAME) --role $env(RELAY_TERMINAL_ROLE) --settings-root $env(RELAY_TERMINAL_SETTINGS)
 reply 1
-reply {Same-machine local test assignment reviewed}
-reply CONFIRMED
+reply 1
 reply 2
 for {set i 0} {$i < 5} {incr i} {reply {}}
 reply RUN

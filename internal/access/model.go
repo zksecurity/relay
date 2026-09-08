@@ -68,20 +68,31 @@ func (c StorageConfig) Validate() error {
 	if !validHashID(c.CeremonyID) {
 		return errors.New("storage ceremony_id is not a tagged SHA-256 digest")
 	}
+	if c.CeremonyPath == "" || c.CeremonySignature == "" || c.CoordinatorPublicKey == "" || c.CeremonyBinary == "" {
+		return errors.New("storage ceremony trust paths are required")
+	}
+	return c.ValidateInfrastructure()
+}
+
+// ValidateInfrastructure checks only resource configuration, before a ceremony
+// exists. It neither invents a ceremony ID nor authorizes ceremony operations.
+func (c StorageConfig) ValidateInfrastructure() error {
+	if c.Provider != "r2" && c.Provider != "aws" {
+		return errors.New("storage provider must be r2 or aws")
+	}
 	if c.PublishedBucket == "" || c.InboxBucket == "" || c.PublishedBucket == c.InboxBucket {
 		return errors.New("distinct published_bucket and inbox_bucket are required")
 	}
-	if c.CoordinatorProfile == "" || c.CeremonyPath == "" || c.CeremonySignature == "" ||
-		c.CoordinatorPublicKey == "" || c.CeremonyBinary == "" {
-		return errors.New("storage coordinator profile and ceremony trust paths are required")
+	if c.CoordinatorProfile == "" {
+		return errors.New("storage coordinator profile is required")
 	}
 	base, err := url.Parse(c.PublishedBaseURL)
-	if err != nil || base.Scheme != "https" || base.Host == "" || base.RawQuery != "" || base.Fragment != "" {
+	if err != nil || base.Scheme != "https" || base.Host == "" || base.User != nil || base.RawQuery != "" || base.Fragment != "" {
 		return errors.New("published_base_url must be an HTTPS origin without query or fragment")
 	}
 	if c.Provider == "r2" {
 		endpoint, err := url.Parse(c.Endpoint)
-		if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" ||
+		if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" ||
 			c.AccountID == "" || c.ParentAccessKeyID == "" {
 			return errors.New("R2 storage requires account_id, parent_access_key_id, and an HTTPS endpoint")
 		}

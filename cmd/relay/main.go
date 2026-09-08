@@ -150,6 +150,8 @@ func runCoordinator(args []string) error {
 		return runCoordinatorPrepare(args[1:])
 	case "configure-storage":
 		return runConfigureStorage(args[1:])
+	case "check-storage":
+		return runCheckStorage(args[1:])
 	case "grant":
 		return runGrant(args[1:])
 	case "candidates":

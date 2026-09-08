@@ -201,16 +201,23 @@ func TestDockerRoleMountsAndArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := strings.Join(args, " ")
-	for _, value := range []string{"dst=/keys,readonly", "dst=/trust,readonly", "dst=/credentials/aws,readonly", "AWS_SHARED_CREDENTIALS_FILE=/credentials/aws"} {
+	for _, value := range []string{"dst=/keys,readonly", "dst=/trust,readonly"} {
 		if !strings.Contains(joined, value) {
 			t.Errorf("missing %s", value)
 		}
 	}
+	if strings.Contains(joined, "dst=/credentials/aws") || strings.Contains(joined, "AWS_SHARED_CREDENTIALS_FILE=/credentials/aws") {
+		t.Fatal("unrelated help command received cloud credentials")
+	}
 	if args[len(args)-1] != "a value with spaces" {
 		t.Fatal("argument boundaries lost")
 	}
-	if _, err := dockerRoleArgs(o, []string{"relay", "coordinator", "grant", "--role", "participant"}, 501, 20); err != nil {
+	grantArgs, err := dockerRoleArgs(o, []string{"relay", "coordinator", "grant", "--role", "participant"}, 501, 20)
+	if err != nil {
 		t.Fatalf("participant grant must remain allowed: %v", err)
+	}
+	if !strings.Contains(strings.Join(grantArgs, " "), "dst=/credentials/aws,readonly") {
+		t.Fatal("grant command lost required credentials")
 	}
 	o.keys = o.work
 	if _, err := dockerRoleArgs(o, []string{"relay", "help"}, 501, 20); err == nil {

@@ -128,7 +128,7 @@ func decisionFlow(role string) flowStage {
 
 func coordinatorFlowStages() []flowStage {
 	stages := []flowStage{{ID: "enrollments", Label: "Assignments and enrollments", Tasks: []flowTask{
-		inspectFlow(), enrollmentFlow(), handoff("assignments", "Confirm assignment review and enrollment collection", "Distribute the exact signed definition through your agreed channel. Collect reviewed proof-of-possession enrollments from all required roles, including witnesses and mirrors. Other roles retain their private keys."),
+		inspectFlow(), enrollmentFlow(), handoff("assignments", "Report sharing the signed definition", "Have you shared the exact signed definition with every assigned role through your agreed coordination channel? This records sharing only, not their review or enrollment. Enrollment collection is checked separately."),
 	}}, {ID: "storage", Label: "Storage and first publication", Tasks: []flowTask{
 		handoff("storage", "Confirm storage preflight completed", "Use coordinator preparation to configure administrator-provisioned storage. Require successful public-read/private-inbox/freshness/scope checks. This workflow does not provision billable cloud resources."), publishFlow("phase1", false),
 	}}}
