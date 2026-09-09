@@ -367,3 +367,58 @@ jobs:
             test ! -e "$release/build-package-manifest.sig"
             test ! -e "$release/build-package-manifest-public-key.hex"
           done
+
+  public-archive-rehearsal:
+    name: Full ceremony and public archive replay
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
+      - name: Prepare isolated rehearsal host and pinned tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Disposable hosted runner only: satisfy the normal contributor guard.
+          sudo swapoff -a
+          test "$(wc -l < /proc/swaps)" -eq 1
+          mkdir "$RUNNER_TEMP/archive-image"
+          url=$(jq -r .mpc.linux_amd64.url release/role-images.json)
+          expected=$(jq -r .mpc.linux_amd64.sha256 release/role-images.json)
+          tag=$(basename "$(dirname "$url")")
+          commit=${tag#mpc-ci-}
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          curl --proto '=https' --tlsv1.2 -fsSL "$url" -o "$RUNNER_TEMP/archive-image/mpc-ceremony"
+          printf '%s  %s\n' "$expected" "$RUNNER_TEMP/archive-image/mpc-ceremony" | sha256sum --check --strict
+          gh attestation verify "$RUNNER_TEMP/archive-image/mpc-ceremony" \
+            --repo zksecurity/proof-tool \
+            --signer-workflow zksecurity/proof-tool/.github/workflows/publish-mpc-ceremony-release.yml \
+            --source-ref refs/heads/main --source-digest "$commit" --deny-self-hosted-runners
+          git clone --no-checkout https://github.com/zksecurity/proof-tool.git "$RUNNER_TEMP/archive-proof-source"
+          git -C "$RUNNER_TEMP/archive-proof-source" checkout --detach "$commit"
+          (cd "$RUNNER_TEMP/archive-proof-source" && bash scripts/bootstrap-vendor.sh)
+          CGO_ENABLED=0 go build -trimpath -buildvcs=true -o "$RUNNER_TEMP/archive-image/relay" ./cmd/relay
+          chmod 0555 "$RUNNER_TEMP/archive-image/"*
+          cp docker/roles/Dockerfile "$RUNNER_TEMP/archive-image/Dockerfile"
+          aws_image=$(jq -r .aws_cli_image release/role-images.json)
+          for role in online offline; do
+            docker buildx build --load --target "$role" --build-arg "AWS_CLI_IMAGE=$aws_image" \
+              -t "archive-rehearsal-$role" "$RUNNER_TEMP/archive-image"
+          done
+      - name: Run full local ceremony, pack public files, and replay without keys
+        run: |
+          set -euo pipefail
+          export RELAY_FLOW_DOCKER=1
+          export RELAY_ROLE_ONLINE_IMAGE=$(docker image inspect archive-rehearsal-online --format '{{.Id}}')
+          export RELAY_ROLE_OFFLINE_IMAGE=$(docker image inspect archive-rehearsal-offline --format '{{.Id}}')
+          export RELAY_ROLE_PLATFORM=linux/amd64
+          export RELAY_PROOF_TOOL_DIR="$RUNNER_TEMP/archive-proof-source"
+          export RELAY_VERIFY_MPC_BINARY="$RUNNER_TEMP/archive-image/mpc-ceremony"
+          go test ./cmd/relay -run '^TestRoleFlowDockerFullCeremony$' -count=1 -timeout=20m -v
