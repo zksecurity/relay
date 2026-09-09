@@ -110,7 +110,7 @@ func TestCoordinatorPreparationDoesNotExecuteHiddenChoice(t *testing.T) {
 	if err := w.menu(); err != nil {
 		t.Fatal(err)
 	}
-	if w.d.Status != "draft" || !strings.Contains(w.output.(*bytes.Buffer).String(), "Choose the displayed action") {
+	if w.d.Status != "draft" || !strings.Contains(w.output.(*bytes.Buffer).String(), "Choose a displayed action") {
 		t.Fatal("hidden action accepted")
 	}
 }

@@ -143,7 +143,10 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 	}
 	runRole := func(role, identity string, command []string) error {
 		image := online
-		if role == "release-signer" || role == "keygen" {
+		if len(command) >= 3 && command[0] == "mpc-ceremony" && command[1] == "ops" && command[2] == "sign" {
+			role = "decision-signer" // Isolated signing image; no claim the test host is offline.
+		}
+		if role == "release-signer" || role == "keygen" || role == "decision-signer" {
 			image = offline
 		}
 		o := dockerRoleOptions{role: role, image: image, platform: platform, work: work, trust: trust, keys: keyDirs[identity]}
@@ -400,13 +403,13 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 			t.Fatal(err)
 		}
 		execute("coordinator", "coordinator", phase+"-close", "beacon", nil)
-		// Explicitly same-host fixture identities: not three independent operators.
+		// Explicitly same-host fixture identities: not two independent operators.
 		relays := filepath.Join(work, phase+"-relays")
 		if err := os.Mkdir(relays, 0700); err != nil {
 			t.Fatal(err)
 		}
 		rows := "relay_id\toperator_id\tendpoint_sha256\tretrieved_at\tfilename\n"
-		for i := 1; i <= 3; i++ {
+		for i := 1; i <= 2; i++ {
 			name := fmt.Sprintf("relay-%02d.json", i)
 			if err := os.WriteFile(filepath.Join(relays, name), beaconBytes, 0600); err != nil {
 				t.Fatal(err)
@@ -461,8 +464,10 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 		execute("auditor", id, "audit", "audit", values)
 	}
 	runProofCommand(t, proofSource, operationalHelper, "--transcript-root", root, "--keys-dir", fixtureKeys, "--coordinator-public-key-file", filepath.Join(trust, "coordinator-public-key.hex"), "--phase1-relays", filepath.Join(work, "phase1-relays"), "--phase2-relays", filepath.Join(work, "phase2-relays"), "--assembled-at", time.Now().UTC().Format(time.RFC3339), "--out-dir", filepath.Join(root, "operational"))
-	execute("coordinator", "coordinator", "release", "ops-verify", nil)
-	execute("release-signer", "release-signer", "sign", "sign", map[string][]string{"audit-report": {"/work/auditor-01.json", "/work/auditor-02.json"}, "audit-signature": {"/work/auditor-01.sig", "/work/auditor-02.sig"}, "signature-key-id": {roster.ReleaseSigner.KeyID}})
+	execute("coordinator", "coordinator", "operational-evidence", "ops-prepare", map[string][]string{"out-dir": {"/work/prepared-ops"}})
+	execute("coordinator", "coordinator", "operational-evidence", "ops-sign", map[string][]string{"record": {"/work/prepared-ops/evidence-bundle.json"}, "out": {"/work/prepared-ops/evidence-bundle.sig"}})
+	execute("coordinator", "coordinator", "release", "ops-verify", map[string][]string{"record": {"/work/prepared-ops/evidence-bundle.json"}, "signature": {"/work/prepared-ops/evidence-bundle.sig"}})
+	execute("release-signer", "release-signer", "sign", "sign", map[string][]string{"audit-report": {"/work/auditor-01.json", "/work/auditor-02.json"}, "audit-signature": {"/work/auditor-01.sig", "/work/auditor-02.sig"}, "signature-key-id": {roster.ReleaseSigner.KeyID}, "operational-bundle": {"/work/prepared-ops/evidence-bundle.json"}, "operational-bundle-signature": {"/work/prepared-ops/evidence-bundle.sig"}})
 	execute("coordinator", "coordinator", "release", "release-verify", map[string][]string{"signature-key-id": {roster.ReleaseSigner.KeyID}})
 	// The negative lane must fail even though local workflow history says success.
 	var state roleFlowState
