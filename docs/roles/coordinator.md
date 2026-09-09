@@ -25,6 +25,8 @@ your authenticated source checkout and select your settings file.
 
 - Verify the current head and next participant before issuing a private grant.
   Deliver the grant only to its named owner; do not overlap turns.
+  The lifetime prompt shows the provider's configured range. Minimum remaining
+  time means time still left when work starts, not extra time added to the grant.
 - Receive the candidate manifest key, verify and accept the candidate,
   and confirm publication before notifying the next participant.
 - Close each phase, arrange actual pre-beacon witness observations, and follow
@@ -33,6 +35,11 @@ your authenticated source checkout and select your settings file.
   output. Verify the evidence and required production decision before release.
   Use **Download submitted evidence for verification** with the sender's exact
   manifest key. Matching download hashes do not replace signature verification.
+- Choose **Collect evidence and show what is missing**. Keep original public
+  records and their referenced paths in the public evidence folder. The helper
+  names missing handoffs, signatures and receipts by phase and turn. Collect
+  them from their owners and retry; never invent or backdate missing evidence.
+  Once verification passes, review/sign your bundle, then verify its signature.
 - Retain and verify the complete public archive before retiring access.
 
 The menu asks for inputs and shows each action before running it.

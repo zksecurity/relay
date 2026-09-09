@@ -44,50 +44,9 @@ while true; do
   sleep 15
 done
 
-# Do not create the output directory before the wait. If an operator closes the
-# terminal during the signed witness window, the same command can be restarted
-# without having to remove a stale directory first.
-require_fresh_path "$relay_dir"
-mkdir -m 0700 "$relay_dir"
-
-chain_hash=52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971
-url1="https://api.drand.sh/$chain_hash/public/$round"
-url2="https://api2.drand.sh/$chain_hash/public/$round"
-url3="https://api3.drand.sh/$chain_hash/public/$round"
-
-curl --fail --silent --show-error "$url1" --output "$relay_dir/api-1.json"
-retrieved1=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-curl --fail --silent --show-error "$url2" --output "$relay_dir/api-2.json"
-retrieved2=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-curl --fail --silent --show-error "$url3" --output "$relay_dir/api-3.json"
-retrieved3=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-
-python3 - "$round" "$relay_dir/api-1.json" "$relay_dir/api-2.json" "$relay_dir/api-3.json" <<'PY'
-import json
-import sys
-
-expected_round = int(sys.argv[1])
-responses = []
-for path in sys.argv[2:]:
-    with open(path, "rb") as handle:
-        value = json.load(handle)
-    if value.get("round") != expected_round:
-        raise SystemExit(f"{path}: wrong round")
-    responses.append((value.get("signature"), value.get("randomness")))
-if len(set(responses)) != 1:
-    raise SystemExit("drand endpoints disagree")
-PY
-
-hash1=$(printf '%s' "$url1" | sha256sum | cut -d ' ' -f 1)
-hash2=$(printf '%s' "$url2" | sha256sum | cut -d ' ' -f 1)
-hash3=$(printf '%s' "$url3" | sha256sum | cut -d ' ' -f 1)
-
-{
-  printf 'relay_id\toperator_id\tendpoint_sha256\tretrieved_at\tfilename\n'
-  printf 'api-1\trehearsal-operator-1\tsha256:%s\t%s\tapi-1.json\n' "$hash1" "$retrieved1"
-  printf 'api-2\trehearsal-operator-2\tsha256:%s\t%s\tapi-2.json\n' "$hash2" "$retrieved2"
-  printf 'api-3\trehearsal-operator-3\tsha256:%s\t%s\tapi-3.json\n' "$hash3" "$retrieved3"
-} >"$relay_dir/relays.tsv"
+# Resume successful retrievals without changing their original timestamps.
+# These are two actual operators, not three Protocol Labs hostnames.
+retrieved1=$(python3 "$SCRIPT_ROOT/beacon-download.py" "$relay_dir" "$round")
 
 "$MPC_BIN" "$phase" beacon \
   --ceremony "$CEREMONY_ROOT/ceremony.json" \
@@ -95,7 +54,7 @@ hash3=$(printf '%s' "$url3" | sha256sum | cut -d ' ' -f 1)
   --coordinator-public-key-file "$TRUSTED_COORDINATOR_KEY" \
   --closure "$closure" \
   --closure-signature "$closure_signature" \
-  --raw-response "$relay_dir/api-1.json" \
+  --raw-response "$relay_dir/protocol-labs.json" \
   --published-at "$retrieved1" \
   --coordinator-signing-key "$KEYS_ROOT/coordinator.ed25519.private.hex" \
   --transcript-dir "$CEREMONY_ROOT"
