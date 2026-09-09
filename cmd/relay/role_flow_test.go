@@ -121,7 +121,11 @@ func TestRoleFlowEveryRoleHasDistinctStagesAndSafeRecipes(t *testing.T) {
 				if err := validateFlowCommand(task, command); err != nil {
 					t.Fatalf("%s/%s/%s: %v", role, stage.ID, task.ID, err)
 				}
-				if role == "participant" {
+				if role == "participant" && task.Offline {
+					if len(command) < 3 || command[0] != "mpc-ceremony" || command[1] != "ops" || (command[2] != "prepare-handoff" && command[2] != "prepare-receipt" && command[2] != "sign" && command[2] != "verify") {
+						t.Fatal("participant offline action is not a custody operation")
+					}
+				} else if role == "participant" {
 					if command[0] != "run" && command[0] != "status" {
 						t.Fatal("participant bypasses supervisor")
 					}
@@ -379,5 +383,23 @@ func TestRoleFlowTransportProfileUsesSamePinnedCeremony(t *testing.T) {
 	}
 	if err := f.bindPublicInputs(command); err == nil {
 		t.Fatal("transport profile switched to a different ceremony")
+	}
+}
+
+func TestCustodyAndPublicationAppearBeforeDependentActions(t *testing.T) {
+	for _, role := range []string{"coordinator", "participant"} {
+		for _, stage := range roleFlowStages(role) {
+			positions := map[string]int{}
+			for i, task := range stage.Tasks {
+				positions[task.ID] = i
+			}
+			for _, pair := range [][2]string{{"verify-outbound-receipt", "grant"}, {"sign-return-receipt", "accept"}, {"sign-outbound-receipt", "contribute"}, {"contribute", "prepare-return-handoff"}, {"seal", "publish-phase1-seal"}, {"publish-phase1-seal", "phase2-init"}, {"beacon", "publish-beacon"}} {
+				first, a := positions[pair[0]]
+				second, b := positions[pair[1]]
+				if a && (!b || first >= second) {
+					t.Fatalf("%s/%s: %s must precede %s", role, stage.ID, pair[0], pair[1])
+				}
+			}
+		}
 	}
 }

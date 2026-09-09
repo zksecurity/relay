@@ -53,3 +53,12 @@ TESSERA_PROOF_TOOL_BINARY=/path/to/approved/mpc-ceremony \
 The optional test creates local rehearsal keys, initializes the exact website
 beacon profile and checks real signatures. Its software image map is synthetic
 test metadata; its output is not an approved release or production ceremony.
+
+## Completed ceremony verification
+
+The separate [public verification archive](../contracts/verification/v1/README.md)
+packages complete protocol evidence after setup. `relay verify-ceremony --archive FILE`
+checks the archive using the approved installed proof tool, including unsigned full
+replay. It does not change the setup-v2 format or permit new software for old frozen
+ceremonies. `relay pack-ceremony` prepares an explicit inventory of public files without
+collecting a participant workspace or publishing it.
