@@ -133,3 +133,24 @@ expect_failure bash -c '
   main "$2"
 ' installer-test "$SCRIPT_DIR/install-launcher.sh" "role-images-$test_commit"
 printf 'PASS: failed provenance stops before installation\n'
+
+# Presets skip identity questions but retain folder choice and explicit consent.
+(
+  preset_label=ceremony-a1f340d25155420cb7b1272276639b83
+  preset_role=participant
+  prepare_guided_settings <<ANSWERS >"$test_root/preset-output"
+$test_root/preset-role
+yes
+ANSWERS
+  [[ "$guided_name" == "$preset_label" && "$guided_role" == participant ]]
+  [[ "$role_folder" == "$test_root/preset-role" ]]
+  if grep -q 'Choose a role number\|Ceremony label (use' "$test_root/preset-output"; then exit 1; fi
+  grep -q 'Type yes to install' "$test_root/preset-output"
+)
+expect_failure main --guided --role admin
+expect_failure main --guided --ceremony-label '../another-folder'
+expect_failure main --guided --role participant --role auditor
+expect_failure main --role participant "role-images-$test_commit"
+expect_failure main --guided --release latest
+expect_failure main --guided --ceremony-label
+printf 'PASS: role and label presets preserve confirmation and reject invalid input\n'
