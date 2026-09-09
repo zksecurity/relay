@@ -379,7 +379,7 @@ func TestCoordinatorPostInitializationMenu(t *testing.T) {
 			if tc.local {
 				w.localAction = func(string, string, []string, bool) error { t.Fatal("unexpected action"); return nil }
 			}
-			w.input = bufio.NewReader(strings.NewReader("0\n"))
+			w.input = bufio.NewReader(strings.NewReader("17\n0\n"))
 			if err := w.menu(); err != nil {
 				t.Fatal(err)
 			}

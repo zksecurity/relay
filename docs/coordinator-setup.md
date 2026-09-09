@@ -18,9 +18,13 @@ cannot run the helper. Install a matching new release rather than mixing binarie
 
 ## Fill in the draft
 
-If the ceremony was drafted in Tessera, start with **14 — Import roster downloaded
-from Tessera**. After initialization and verification, use **15 — Export setup
-for Tessera**. See the [Tessera walkthrough](tessera.md) for the complete round trip.
+If the ceremony was drafted in Tessera, start with **Open setup downloaded
+from Tessera**. After initialization and verification, use **Export setup
+for Tessera**. See the [website setup guide](tessera-setup-v2.md).
+
+Setup highlights **NEXT REQUIRED ACTION** with its reason. Use **Show other
+actions and requirements** for edits, optional checks, and offline preparation.
+Action numbers stay stable. Choosing another action never bypasses its checks.
 
 1. Choose **Basics**: explicitly select rehearsal or production and the circuit.
    Select from the numbered choices; no internal names need to be typed.
@@ -66,7 +70,7 @@ minimum counts, software selection and beacon policy with your ceremony roles.
 You can save and exit without signing anything.
 Required prompts repeat when left blank unless a valid default is shown.
 
-Choose **Approve and initialize** only when ready. Type the full displayed
+Choose **Review and approve initialization** only when ready. Type the full displayed
 confirmation, then review the Docker command and confirm again.
 The helper first asks you to check storage, set it up, or explicitly prepare
 offline. Offline preparation does not authorize grants or publication.
@@ -87,7 +91,8 @@ retain their dedicated disconnected-host signing procedure.
 
 ## Storage and next steps
 
-After definition verification, choose **Configure storage**. This uses the
+After definition verification, find **Configure storage** under **Show other
+actions and requirements**. This uses the
 administrator's existing buckets and permissions. It writes temporary test
 objects, checks access, and attempts to remove those objects.
 Cloud costs can apply. R2 still needs the administrator's

@@ -202,3 +202,9 @@ initializes Phase 2, and publishes its initial head. The extra two minutes give
 both witness machines time to see the notification while the signed five-minute
 lead still remains. `witness watch` does not itself create a signed witness
 receipt; the optional fixture section tests that upload shape separately.
+
+Beacon downloads use Protocol Labs and Cloudflare as two distinct operators.
+Failed retrievals have bounded retries; rerun the step to reuse completed
+downloads and their original timestamps. Conflicts stop for investigation.
+If the beacon/signing step already produced output, inspect it before retrying;
+download recovery does not authorize repeating downstream ceremony actions.

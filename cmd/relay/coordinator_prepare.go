@@ -992,34 +992,45 @@ func (w *coordinatorWizard) menu() (result error) {
 	if err := w.inspectPreviousSessionCredentials(); err != nil {
 		return err
 	}
+	showOther := false
 	for {
-		if w.d.Status == "draft" {
-			fmt.Fprintf(w.output, "\nCoordinator preparation — %s (%s)\n1) Basics\n2) Generate my identity\n3) Import/replace public identity\n4) Orders, minimum contributions and reviewed beacon policy\n5) Supported computers (both architectures by default)\n6) Storage settings\n7) Review draft\n8) Approve and initialize\n9) Verify existing definition (also after interruption)\n10) Configure storage\n11) Remove an identity assignment\n0) Save and exit\n", w.d.Name, w.d.Status)
-		} else {
-			if w.d.Status == "definition-verified" {
-				fmt.Fprintf(w.output, "\nInitialization complete — %s\nThe signed ceremony definition has been verified. Identities and policy are frozen.\nThis does not verify all initialization artifacts or start participant contributions.\n", w.d.Name)
-				if w.localAction != nil {
-					fmt.Fprintln(w.output, "Local setup test complete. Choose 0 to exit; your files are saved. This helper does not run contributions or configure cloud storage.")
-				} else {
-					fmt.Fprintln(w.output, "Next: distribute the signed public definition for assignment review, collect witness/mirror enrollments, and continue with the coordinator role guide. Storage can be configured below.")
-				}
+		next := w.nextPreparationAction()
+		w.preparationHeading(next)
+		if showOther {
+			fmt.Fprintln(w.output, "\nOTHER ACTIONS AND REQUIREMENTS\nNavigation does not complete a step or waive its prerequisites.\nRequired steps may wait for inputs; review/edit and repeat checks are optional unless correcting a problem.")
+			if w.d.Status == "draft" {
+				fmt.Fprintf(w.output, "\nCoordinator preparation — %s (%s)\n1) Basics [Required settings]\n2) Generate my identity [Required if you have no existing identity]\n3) Import/replace public identity [Required roster; repeat as needed]\n4) Orders, minimum contributions and reviewed beacon policy [Required settings]\n5) Supported computers [Optional; both architectures by default]\n6) Storage settings [Required for online operation]\n7) Review draft [Optional preview; approval still required in 8]\n8) Review and approve initialization [Required; prerequisites checked; explicit offline preparation available]\n11) Remove an identity assignment [Optional correction]\n0) Save and exit\n", w.d.Name, w.d.Status)
 			} else {
-				fmt.Fprintf(w.output, "\nInitialization needs verification — %s\nSettings are frozen after an initialization attempt. Preserve the files and error output; use 9 to verify an existing definition. Do not initialize again.\n", w.d.Name)
-			}
-			fmt.Fprintln(w.output, "7) Review identities and policy\n9) Verify existing definition")
-			if w.localAction == nil && w.d.Status == "definition-verified" {
-				fmt.Fprintln(w.output, "6) Storage settings\n10) Configure storage")
-			}
-			if w.d.Status == "definition-verified" {
-				fmt.Fprintln(w.output, "12) Open ceremony operations and progress")
-				if w.localAction == nil {
-					fmt.Fprintln(w.output, "13) Prepare, review and sign MY coordinator enrollment")
+				if w.d.Status == "definition-verified" {
+					fmt.Fprintf(w.output, "\nInitialization complete — %s\nThe signed ceremony definition has been verified. Identities and policy are frozen.\nThis does not verify all initialization artifacts or start participant contributions.\n", w.d.Name)
+					if w.localAction != nil {
+						fmt.Fprintln(w.output, "Local setup test complete. Choose 0 to exit; your files are saved. This helper does not run contributions or configure cloud storage.")
+					} else {
+						fmt.Fprintln(w.output, "Next: distribute the signed public definition for assignment review, collect witness/mirror enrollments, and continue with the coordinator role guide. Storage can be configured below.")
+					}
+				} else {
+					fmt.Fprintf(w.output, "\nInitialization needs verification — %s\nSettings are frozen after an initialization attempt. Preserve the files and error output; use 9 to verify an existing definition. Do not initialize again.\n", w.d.Name)
 				}
+				fmt.Fprintln(w.output, "7) Review identities and policy [Optional read-only review]\n9) Verify existing definition [Required after interruption; otherwise repeat check]")
+				if w.localAction == nil && w.d.Status == "definition-verified" {
+					fmt.Fprintln(w.output, "6) Storage settings [Optional update]\n10) Configure storage [Required before online operation; checks access]")
+				}
+				if w.d.Status == "definition-verified" {
+					fmt.Fprintln(w.output, "12) Open ceremony operations and progress [Ready to review prerequisites]")
+					if w.localAction == nil {
+						fmt.Fprintln(w.output, "13) Prepare, review and sign MY coordinator enrollment [Required; existing output is reverified]")
+					}
+				}
+				fmt.Fprintln(w.output, "0) Save and exit")
 			}
-			fmt.Fprintln(w.output, "0) Save and exit")
-		}
-		if w.localAction == nil {
-			fmt.Fprintln(w.output, "14) Check storage access (writes and removes test objects only after approval)")
+			if w.localAction == nil {
+				fmt.Fprintln(w.output, "14) Check storage access [Requires storage settings; repeat check is optional]\n    Writes and removes test objects only after approval.")
+			}
+		} else {
+			fmt.Fprintf(w.output, "\n%s) %s\n17) Show other actions and requirements\n", next.choice, next.label)
+			if next.choice != "0" {
+				fmt.Fprintln(w.output, "0) Save and exit")
+			}
 		}
 		if w.d.Status == "draft" {
 			fmt.Fprintln(w.output, "15) Open setup downloaded from Tessera")
@@ -1027,7 +1038,8 @@ func (w *coordinatorWizard) menu() (result error) {
 		if w.d.Status == "definition-verified" && (w.d.Tessera != nil || w.d.TesseraSetup != nil) && w.localAction == nil {
 			fmt.Fprintln(w.output, "16) Export setup for Tessera")
 		}
-		choice, err := w.ask("Choose", "0")
+		fmt.Fprintln(w.output, "------------------------------------------------------------")
+		choice, err := w.ask("Choose", next.choice)
 		if err == io.EOF {
 			return nil
 		}
@@ -1037,6 +1049,15 @@ func (w *coordinatorWizard) menu() (result error) {
 		if choice == "0" {
 			return w.save()
 		}
+		if choice == "17" {
+			showOther = true
+			continue
+		}
+		if !showOther && choice != next.choice && !(choice == "15" && w.d.Status == "draft") && !(choice == "16" && w.d.Status == "definition-verified" && (w.d.Tessera != nil || w.d.TesseraSetup != nil) && w.localAction == nil) {
+			fmt.Fprintln(w.output, "Choose a displayed action, or 17 to review other actions and requirements.")
+			continue
+		}
+		showOther = false
 		if w.d.Status != "draft" && (choice == "6" || choice == "10") && (w.localAction != nil || w.d.Status != "definition-verified") {
 			fmt.Fprintln(w.output, "Storage setup is unavailable here. Choose one of the displayed actions.")
 			continue
