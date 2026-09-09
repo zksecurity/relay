@@ -144,7 +144,7 @@ yes
 ANSWERS
   [[ "$guided_name" == "$preset_label" && "$guided_role" == participant ]]
   [[ "$role_folder" == "$test_root/preset-role" ]]
-  ! grep -q 'Choose a role number\|Ceremony label (use' "$test_root/preset-output"
+  if grep -q 'Choose a role number\|Ceremony label (use' "$test_root/preset-output"; then exit 1; fi
   grep -q 'Type yes to install' "$test_root/preset-output"
 )
 expect_failure main --guided --role admin
