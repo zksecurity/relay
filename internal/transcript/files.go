@@ -112,6 +112,20 @@ func TranscriptFiles(root string, chain Chain) ([]File, error) {
 		files = append(files, File{Name: name})
 	}
 
+	// Retain every signed accepted prefix, not only the newest chain. Mirrors
+	// need each prefix to issue the per-head receipts required by the verifier.
+	for index := 0; index < chain.AcceptedCount(); index++ {
+		for _, extension := range []string{"json", "sig"} {
+			name := fmt.Sprintf("%s/chain-%04d.%s", chain.Phase, index, extension)
+			full, err := Resolve(root, name)
+			if err != nil {
+				return nil, err
+			}
+			if info, err := os.Lstat(full); err == nil && info.Mode().IsRegular() {
+				files = append(files, File{Name: name})
+			}
+		}
+	}
 	for _, file := range files {
 		if err := CheckPublishable(file.Name); err != nil {
 			return nil, err

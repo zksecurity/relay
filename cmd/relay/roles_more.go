@@ -11,7 +11,6 @@ import (
 
 	"github.com/zksecurity/relay/internal/access"
 	"github.com/zksecurity/relay/internal/state"
-	"github.com/zksecurity/relay/internal/store"
 	"github.com/zksecurity/relay/internal/transcript"
 )
 
@@ -108,46 +107,63 @@ func runSync(commandName string, args []string) error {
 	if err != nil {
 		return err
 	}
-	files, err := transcript.TranscriptFiles(o.root, pos.chain)
+	files, err := mirrorSyncFiles(pos)
 	if err != nil {
 		return err
 	}
 	var got, have int
-	if err := runWithProgress("syncing authenticated "+o.phase+" transcript", func() error {
+	if err := runWithProgress("syncing "+o.phase+" transcript and public inventory", func() error {
 		for _, file := range files {
 			local, err := transcript.Resolve(o.root, file.Name)
 			if err != nil {
 				return err
 			}
-			if _, _, err := transcript.DigestFile(local); err == nil {
-				have++
-				continue
-			}
-			if !file.HasDigest() {
-				continue
-			}
-			fmt.Fprintf(os.Stderr, "  downloading %s (%s)\n", file.Name, formatBytes(file.Digest.Size))
-			if err := os.MkdirAll(filepath.Dir(local), 0o700); err != nil {
+			if err := checkMirrorDestination(o.root, local); err != nil {
 				return err
 			}
-			if err := o.client.Get(store.Key(file.Digest.SHA256), local); err != nil {
-				return fmt.Errorf("%s: %w", file.Name, err)
+			_, err = os.Lstat(local)
+			existed := err == nil
+			if err := fetchVerified(o.client, state.Ref{Name: file.Name, SHA256: file.Digest.SHA256}, local); err != nil {
+				return err
 			}
-			sum, size, err := transcript.DigestFile(local)
+			if file.Digest.Size >= 0 {
+				_, size, err := transcript.DigestFile(local)
+				if err != nil {
+					return err
+				}
+				if size != file.Digest.Size {
+					return fmt.Errorf("%s: retained size does not match signed reference", file.Name)
+				}
+			}
+			if existed {
+				have++
+			} else {
+				got++
+			}
+		}
+		// Each historical prefix must authenticate under the separately trusted
+		// coordinator key and match the already authenticated current history.
+		for index := 0; index <= pos.accepted; index++ {
+			path := filepath.Join(o.root, fmt.Sprintf("%s/chain-%04d.json", o.phase, index))
+			sig := filepath.Join(o.root, fmt.Sprintf("%s/chain-%04d.sig", o.phase, index))
+			prefix, err := o.inspector().Chain(path, sig)
 			if err != nil {
 				return err
 			}
-			if sum != file.Digest.SHA256 || size != file.Digest.Size {
-				_ = os.Remove(local)
-				return fmt.Errorf("%s: fetched bytes do not match the chain digest", file.Name)
+			if prefix.AcceptedCount() != index {
+				return fmt.Errorf("historical prefix has the wrong index")
 			}
-			got++
-			fmt.Printf("  got    %s\n", file.Name)
+			for j, record := range prefix.Records {
+				if record.RecordID != pos.chain.Records[j].RecordID {
+					return fmt.Errorf("historical prefix disagrees with authenticated current history")
+				}
+			}
 		}
 		return nil
 	}); err != nil {
 		return err
 	}
+	fmt.Println("Inventory hashes checked. Phase-ending records still require their protocol signature and evidence verification.")
 	fmt.Printf("%d fetched, %d already held, %s at index %d\n", got, have, o.phase, pos.accepted)
 	fmt.Println()
 	fmt.Print(syncNextStep(commandName, pos.chainPath, pos.chain.ChainSignaturePath,

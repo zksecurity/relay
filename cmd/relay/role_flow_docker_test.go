@@ -43,7 +43,7 @@ func TestRoleFlowDockerRecipeFlags(t *testing.T) {
 					continue
 				}
 				command := append([]string(nil), task.Command...)
-				if role == "participant" {
+				if role == "participant" && !task.Offline {
 					command = append([]string{"relay", "participant"}, command...)
 				}
 				fields := append(append([]flowField(nil), task.Fields...), task.ExtraFields...)

@@ -978,14 +978,16 @@ func runRoleFlow(args []string) error {
 			if offline.Work != p.Work || offline.Trust != p.Trust || offline.Keys == "" || offline.Credentials != "" || offline.ReleaseCommit != p.ReleaseCommit || len(offline.Command) != 0 {
 				return errors.New("offline signing profile does not match this role's public folders and release")
 			}
-			digest, err := f.reviewOfflineRecord(command)
-			if err != nil {
-				return err
+			if len(command) >= 3 && command[0] == "mpc-ceremony" && command[1] == "ops" && command[2] == "sign" {
+				digest, err := f.reviewOfflineRecord(command)
+				if err != nil {
+					return err
+				}
+				command = append(append([]string(nil), command...), "--reviewed-sha256", digest)
 			}
-			command = append(append([]string(nil), command...), "--reviewed-sha256", digest)
 			open = []string{"ceremony", "open", alias, "--role", "decision-signer", "--settings-root", root}
 		}
-		if p.Role == "participant" {
+		if p.Role == "participant" && !task.Offline {
 			configPath := ""
 			participantArgs := []string{command[0]}
 			for n := 1; n < len(command); n += 2 {
