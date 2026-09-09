@@ -5,9 +5,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/zksecurity/relay/internal/verification"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -464,6 +466,59 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 	execute("coordinator", "coordinator", "release", "ops-verify", nil)
 	execute("release-signer", "release-signer", "sign", "sign", map[string][]string{"audit-report": {"/work/auditor-01.json", "/work/auditor-02.json"}, "audit-signature": {"/work/auditor-01.sig", "/work/auditor-02.sig"}, "signature-key-id": {roster.ReleaseSigner.KeyID}})
 	execute("coordinator", "coordinator", "release", "release-verify", map[string][]string{"signature-key-id": {roster.ReleaseSigner.KeyID}})
+	if binary := os.Getenv("RELAY_VERIFY_MPC_BINARY"); binary != "" {
+		publicTrust := filepath.Join(work, "verification-trust")
+		if err := os.Mkdir(publicTrust, 0700); err != nil {
+			t.Fatal(err)
+		}
+		copyFile(filepath.Join(trust, "coordinator-public-key.hex"), filepath.Join(publicTrust, "coordinator.pub"))
+		copyFile(filepath.Join(trust, "release-public-key.hex"), filepath.Join(publicTrust, "release.pub"))
+		m := verification.Manifest{Schema: verification.Schema, CeremonyID: definition.ID, ReleaseKeyID: roster.ReleaseSigner.KeyID, Inputs: map[string]string{
+			"ceremony": "ceremony/public/ceremony.json", "ceremony-signature": "ceremony/public/ceremony.sig", "coordinator-public-key-file": "verification-trust/coordinator.pub", "keys-dir": "release", "manifest-public-key-file": "verification-trust/release.pub",
+		}}
+		for _, field := range replayFields() {
+			value := field.Default
+			if v := replay[field.Flag]; len(v) > 0 {
+				value = v[0]
+			}
+			m.Inputs[field.Flag] = strings.TrimPrefix(value, "/work/")
+		}
+		for _, dir := range []string{root, filepath.Join(work, "release"), publicTrust} {
+			if err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if !entry.IsDir() {
+					relative, err := filepath.Rel(work, path)
+					if err != nil {
+						return err
+					}
+					m.Files = append(m.Files, verification.File{Path: filepath.ToSlash(relative)})
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		archive := filepath.Join(work, "verification.zip")
+		if err := packCeremony(work, archive, m); err != nil {
+			t.Fatal(err)
+		}
+		runner := func(args ...string) ([]byte, error) {
+			cmd := exec.Command(binary, append([]string{"--format", "json"}, args...)...)
+			cmd.Stderr = os.Stderr
+			return cmd.Output()
+		}
+		report, err := verifyCeremonyArchive(archive, 1<<30, runner)
+		if err != nil || !report.Passed {
+			t.Fatalf("public archive verification: %+v: %v", report, err)
+		}
+		raw, _ := json.MarshalIndent(report, "", "  ")
+		if err := os.WriteFile(filepath.Join(work, "public-verification-report.json"), raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+		t.Log("PASS: freshly exported public ZIP independently replays both phases and verifies release without private keys")
+	}
 	// The negative lane must fail even though local workflow history says success.
 	var state roleFlowState
 	raw, err := os.ReadFile(f.path)

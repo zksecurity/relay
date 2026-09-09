@@ -30,6 +30,10 @@ func main() {
 	case "version", "--version":
 		fmt.Printf("relay source commit: %s\n", launcherCommit())
 		return
+	case "pack-ceremony":
+		err = runPackCeremony(os.Args[2:])
+	case "verify-ceremony":
+		err = runVerifyCeremony(os.Args[2:])
 	case "role":
 		err = runDockerRole(os.Args[2:])
 	case "coordinator":
@@ -76,6 +80,8 @@ func main() {
 
 func usage() {
 	fmt.Fprint(os.Stderr, `usage:
+  relay pack-ceremony --manifest FILE --root PUBLIC_DIR --out FRESH_ZIP
+  relay verify-ceremony --archive FILE [--max-expanded-bytes N] [--mpc-ceremony PATH]
   relay ceremony setup NAME --role ROLE [saved launcher settings] -- TOOL ARGS...
   relay ceremony open NAME --role ROLE [--grant FILE] [--resume-candidate DIR]
   relay ceremony open NAME --role ROLE --action ACTION [-- TOOL ARGS...]
