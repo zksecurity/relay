@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"github.com/zksecurity/relay/internal/verification"
@@ -475,7 +476,12 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 	}
 	const preparedBundle = "/work/ceremony/public/operational/evidence-bundle"
 	execute("coordinator", "coordinator", "operational-evidence", "ops-prepare", nil)
-	execute("coordinator", "coordinator", "operational-evidence", "ops-sign", map[string][]string{"record": {preparedBundle + ".json"}, "out": {preparedBundle + ".sig"}})
+	reviewedBundle, err := os.ReadFile(filepath.Join(root, "operational", "evidence-bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewedSHA := fmt.Sprintf("%x", sha256.Sum256(bytes.TrimSpace(reviewedBundle)))
+	execute("coordinator", "coordinator", "operational-evidence", "ops-sign", map[string][]string{"record": {preparedBundle + ".json"}, "out": {preparedBundle + ".sig"}, "reviewed-sha256": {reviewedSHA}})
 	execute("coordinator", "coordinator", "release", "ops-verify", map[string][]string{"record": {preparedBundle + ".json"}, "signature": {preparedBundle + ".sig"}})
 	execute("release-signer", "release-signer", "sign", "sign", map[string][]string{"audit-report": {"/work/auditor-01.json", "/work/auditor-02.json"}, "audit-signature": {"/work/auditor-01.sig", "/work/auditor-02.sig"}, "signature-key-id": {roster.ReleaseSigner.KeyID}, "operational-bundle": {preparedBundle + ".json"}, "operational-bundle-signature": {preparedBundle + ".sig"}})
 	execute("coordinator", "coordinator", "release", "release-verify", map[string][]string{"signature-key-id": {roster.ReleaseSigner.KeyID}})
