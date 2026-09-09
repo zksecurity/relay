@@ -25,6 +25,8 @@ your authenticated source checkout and select your settings file.
 
 - Verify the current head and next participant before issuing a private grant.
   Deliver the grant only to its named owner; do not overlap turns.
+  The lifetime prompt shows the provider's configured range. Minimum remaining
+  time means time still left when work starts, not extra time added to the grant.
 - Receive the candidate manifest key, verify and accept the candidate,
   and confirm publication before notifying the next participant.
 - Close each phase, arrange actual pre-beacon witness observations, and follow

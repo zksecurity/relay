@@ -228,22 +228,29 @@ func (f *roleFlow) command(task flowTask) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read local public identity choices: %w", err)
 		}
-		var grantMaximum, grantTTL time.Duration
+		var grantRange flowGrantLimits
+		var grantTTL time.Duration
 		if field.Flag == "credential-ttl" || field.Flag == "minimum-remaining" {
-			grantMaximum, err = f.awsGrantMaximum(command)
+			grantRange, err = f.grantLimits(command)
 			if err != nil {
 				return nil, err
 			}
-			if grantMaximum > 0 {
+			if grantRange.maximum > 0 {
 				grantTTL, _ = time.ParseDuration(commandValue(command, "credential-ttl"))
 				if grantTTL == 0 {
-					grantTTL = grantMaximum
+					grantTTL = grantRange.maximum
 				}
-				current = grantDurationDefault(field.Flag, current, grantMaximum, grantTTL)
+				current = grantRange.defaultValue(field.Flag, current, grantTTL)
+				if field.Flag == "minimum-remaining" {
+					fmt.Fprintln(f.ui.output, "This is the time that must still be left when work starts, not extra time added to the grant. Leave time for delivery and setup.")
+				}
 			}
 		}
 		for {
 			label := field.Label
+			if grantRange.maximum > 0 {
+				label = grantRange.label(field.Flag, label, grantTTL)
+			}
 			if field.Optional {
 				label += " (optional; - to omit)"
 			}
@@ -278,8 +285,8 @@ func (f *roleFlow) command(task flowTask) ([]string, error) {
 				fmt.Fprintln(f.ui.output, err)
 				continue
 			}
-			if grantMaximum > 0 {
-				if err := validateAWSGrantDuration(field.Flag, value, grantMaximum, grantTTL); err != nil {
+			if grantRange.maximum > 0 {
+				if err := grantRange.validate(field.Flag, value, grantTTL); err != nil {
 					fmt.Fprintln(f.ui.output, err)
 					continue
 				}
