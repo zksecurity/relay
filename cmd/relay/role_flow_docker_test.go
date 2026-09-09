@@ -464,9 +464,15 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 		execute("auditor", id, "audit", "audit", values)
 	}
 	runProofCommand(t, proofSource, operationalHelper, "--transcript-root", root, "--keys-dir", fixtureKeys, "--coordinator-public-key-file", filepath.Join(trust, "coordinator-public-key.hex"), "--phase1-relays", filepath.Join(work, "phase1-relays"), "--phase2-relays", filepath.Join(work, "phase2-relays"), "--assembled-at", time.Now().UTC().Format(time.RFC3339), "--out-dir", filepath.Join(root, "operational"))
-	// Release verification requires the bundle itself inside the evidence root.
-	const preparedBundle = "/work/ceremony/public/prepared-ops/evidence-bundle"
-	execute("coordinator", "coordinator", "operational-evidence", "ops-prepare", map[string][]string{"out-dir": {"/work/ceremony/public/prepared-ops"}})
+	// Retain the fixture generator's bundle outside the evidence tree so the
+	// actual CLI must prepare and sign its own bundle among the existing records.
+	for _, name := range []string{"evidence-bundle.json", "evidence-bundle.sig"} {
+		if err := os.Rename(filepath.Join(root, "operational", name), filepath.Join(work, "fixture-"+name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const preparedBundle = "/work/ceremony/public/operational/evidence-bundle"
+	execute("coordinator", "coordinator", "operational-evidence", "ops-prepare", nil)
 	execute("coordinator", "coordinator", "operational-evidence", "ops-sign", map[string][]string{"record": {preparedBundle + ".json"}, "out": {preparedBundle + ".sig"}})
 	execute("coordinator", "coordinator", "release", "ops-verify", map[string][]string{"record": {preparedBundle + ".json"}, "signature": {preparedBundle + ".sig"}})
 	execute("release-signer", "release-signer", "sign", "sign", map[string][]string{"audit-report": {"/work/auditor-01.json", "/work/auditor-02.json"}, "audit-signature": {"/work/auditor-01.sig", "/work/auditor-02.sig"}, "signature-key-id": {roster.ReleaseSigner.KeyID}, "operational-bundle": {preparedBundle + ".json"}, "operational-bundle-signature": {preparedBundle + ".sig"}})
