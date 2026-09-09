@@ -283,6 +283,9 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 			t.Fatal(err)
 		}
 		for index := 1; index <= 3; index++ {
+			// Contributions use whole seconds; leave the previous acceptance
+			// behind before starting the next tiny, automated contribution.
+			time.Sleep(time.Until(time.Now().Truncate(time.Second).Add(time.Second)))
 			id := fmt.Sprintf("participant-%02d", index)
 			t.Logf("%s: real Docker contribution %s", phase, id)
 			config := access.ParticipantConfig{Schema: access.ParticipantConfigSchema, Phase: phase, Root: root, Ceremony: filepath.Join(root, "ceremony.json"), CeremonySignature: filepath.Join(root, "ceremony.sig"), CoordinatorKey: filepath.Join(trust, "coordinator-public-key.hex"), CeremonyBinary: "/usr/local/bin/mpc-ceremony", SigningKey: filepath.Join(fixtureKeys, id+".ed25519.private.hex"), Environment: filepath.Join(work, "ceremony", "config", "environment.json"), CandidateParentDir: parent, PublishedBaseURL: "https://ceremony.example", PublishedBucket: "unused", ExecutionMode: dockerExecutionMode, DockerImage: offline, DockerPlatform: platform, DockerCLI: "docker"}
