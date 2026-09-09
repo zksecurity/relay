@@ -18,9 +18,14 @@ default_role_folder() { printf '%s/ceremonies/%s/%s' "$HOME" "$1" "$2"; }
 
 prepare_guided_settings() {
   local name role folder answer ancestor instance=1 suggested folder_hash
-  printf 'Ceremony label (use the same label for all roles): '
-  IFS= read -r name
+  name=${preset_label:-}
+  role=${preset_role:-}
+  if [[ -z "$name" ]]; then
+    printf 'Ceremony label (use the same label for all roles): '
+    IFS= read -r name
+  else printf 'Ceremony label: %s\n' "$name"; fi
   [[ "$name" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]] || { echo 'Invalid ceremony name.' >&2; return 1; }
+  if [[ -z "$role" ]]; then
   printf 'Role:\n1) Coordinator\n2) Participant\n3) Witness\n4) Mirror\n5) Auditor\n6) Release-signer\n7) Upload-station\n'
   while :; do
     printf 'Choose a role number: '; IFS= read -r role || return 1
@@ -32,6 +37,7 @@ prepare_guided_settings() {
     esac
     break
   done
+  else printf 'Assigned role: %s\n' "$role"; fi
   suggested=$(default_role_folder "$name" "$role")
   if [[ -e "$suggested" || -L "$suggested" ]]; then
     printf 'A %s setup already exists for %s.\n1) Resume it (keeps its existing release)\n2) Create another %s with separate keys and progress\n' "$role" "$name" "$role"
@@ -153,23 +159,41 @@ install_verified_launcher() {
 }
 
 main() {
-local tag commit guided=false role_folder='' selection resume_start='' guided_local_name=''
-if [[ $# -eq 0 || ( $# -eq 1 && "$1" == --guided ) ]]; then
+local tag commit guided=false role_folder='' selection='' resume_start='' guided_local_name='' preset_label='' preset_role='' preset_release=''
+if [[ $# -eq 0 ]]; then guided=true; fi
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --guided) [[ "$guided" == false ]] || { echo 'Duplicate --guided.' >&2; return 1; }; guided=true; shift;;
+    --release|--ceremony-label|--role)
+      [[ $# -ge 2 && -n "$2" ]] || { echo 'Missing preset value.' >&2; return 1; }
+      case "$1" in
+        --release) [[ -z "$preset_release" ]] || return 1; preset_release=$2;;
+        --ceremony-label) [[ -z "$preset_label" ]] || return 1; preset_label=$2;;
+        --role) [[ -z "$preset_role" ]] || return 1; preset_role=$2;;
+      esac
+      shift 2;;
+    --*) echo 'Unknown installer option.' >&2; return 1;;
+    *) [[ -z "$preset_release" ]] || return 1; preset_release=$1; shift;;
+  esac
+done
+[[ -z "$preset_label" || "$preset_label" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]] || { echo 'Invalid ceremony label.' >&2; return 1; }
+case "$preset_role" in ''|coordinator|participant|witness|mirror|auditor|release-signer|upload-station) ;; *) echo 'Invalid assigned role.' >&2; return 1;; esac
+if [[ -n "$preset_label$preset_role" && "$guided" != true ]]; then echo 'Role and label presets require --guided.' >&2; return 1; fi
+if [[ -n "$preset_release" ]]; then parse_release "$preset_release"; fi
+if "$guided"; then
   [[ -t 0 ]] || { echo 'Guided setup needs an interactive terminal.' >&2; return 1; }
-  guided=true
-  printf 'Paste the exact Relay release URL or tag supplied through your agreed channel: '
-  IFS= read -r selection
-  parse_release "$selection"
+  if [[ -z "$preset_release" ]]; then
+    printf 'Paste the exact Relay release URL or tag supplied through your agreed channel: '
+    IFS= read -r selection
+    parse_release "$selection"
+  fi
   prepare_guided_settings
   if [[ -n "$resume_start" ]]; then
     printf 'Resume the existing role with:\n  '; shell_quote "$resume_start"; printf '\nNo files or release settings were changed.\n'
     return 0
   fi
-elif [[ $# -eq 1 ]]; then
-  parse_release "$1"
-else
-  echo 'Usage: ./scripts/install-launcher.sh [--guided | role-images-COMMIT]' >&2
-  return 1
+elif [[ -z "$preset_release" ]]; then
+  echo 'An exact release is required.' >&2; return 1
 fi
 for tool in gh docker shasum; do command -v "$tool" >/dev/null; done
 case "$(uname -s)" in Darwin) os=darwin;; Linux) os=linux;; *) exit 1;; esac

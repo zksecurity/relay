@@ -91,3 +91,25 @@ Manual references: [Docker Ubuntu](https://docs.docker.com/engine/install/ubuntu
 [Docker access permissions](https://docs.docker.com/engine/install/linux-postinstall/),
 [Docker Mac](https://docs.docker.com/desktop/setup/install/mac-install/),
 [GitHub CLI Linux](https://github.com/cli/cli/blob/trunk/docs/install_linux.md).
+
+### Ceremony invitation presets
+
+A website invitation can supply the exact release, a stable ceremony label and
+an assigned role to the attestation-verified installer:
+
+```sh
+bash install-launcher.sh --guided \
+  --release role-images-EXACT_40_CHARACTER_COMMIT \
+  --ceremony-label ceremony-CEREMONY_UUID_WITHOUT_DASHES \
+  --role participant
+```
+
+Replace the placeholders with the invitation's validated values. These presets
+skip the release, label and role questions; the installer still asks for a local
+folder and explicit confirmation. Existing-role resume preserves its original
+release and files. Create a separate role instance when using another signing
+identity for the same ceremony and role. A label is a local organizational aid,
+not a signed protocol identity or evidence of website authorization.
+
+The positional release and fully interactive installer remain supported. Preset
+flags require a release containing this change; older installers reject them.
