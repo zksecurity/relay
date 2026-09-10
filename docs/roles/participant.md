@@ -32,7 +32,8 @@ It does not invent tool approval or your environment statements.
   checks removal, and separately asks about retained copies.
 - Confirm cleanup precautions only if every displayed statement is true.
   Stop and report uncertainty rather than claiming a precaution you did not take.
-- Send the resulting manifest key to the coordinator and retain the public
+- With a private Tessera role connection, the CLI reports the resulting manifest
+  key automatically. Otherwise send it to the coordinator. Retain the public
   candidate. Wait for independently verified acceptance.
 
 Docker cleanup does **not** prove every secret copy was erased. Host/VM memory,

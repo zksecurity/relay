@@ -29,7 +29,8 @@ Choose **Continue the ceremony workflow** for the numbered mirror steps.
    helper signs it in the prepared offline image and verifies the signature.
    Reconnect only after signing finishes.
 7. Upload only signed public output with your scoped grant and send the
-   manifest key to the coordinator.
+   manifest key to the coordinator. A private Tessera role connection performs
+   this report automatically.
 
 Enrollment and offline receipt signing are explicit handoffs, not automatic
 approvals. Keep your signing key out of public transfers.

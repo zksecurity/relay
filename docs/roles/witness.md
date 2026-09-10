@@ -27,7 +27,8 @@ Choose **Continue the ceremony workflow** for the numbered witness steps.
    the helper uses the prepared offline image to sign with your own key and
    verify the signature. Reconnect only after signing finishes.
 6. Upload the signed public output using your private grant.
-   Send the manifest key to the coordinator and retain the observation evidence.
+   A private Tessera role connection reports the manifest key automatically.
+   Otherwise send it to the coordinator. Retain the observation evidence.
 
 Your enrollment also requires your own reviewed signature bound to this ceremony;
 a coordinator-provided signature is not your consent.

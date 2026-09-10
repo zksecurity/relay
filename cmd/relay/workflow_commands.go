@@ -153,10 +153,11 @@ func defaultParticipantConfigPath() string {
 
 func runParticipate(args []string) error {
 	set := flag.NewFlagSet("participate", flag.ContinueOnError)
-	var configPath, grantOverride, resumeCandidate string
+	var configPath, grantOverride, resumeCandidate, tesseraConnectionPath string
 	set.StringVar(&configPath, "config", defaultParticipantConfigPath(), "participant configuration created by relay participant enroll")
-	set.StringVar(&grantOverride, "grant", "", "fresh temporary participant grant; overrides the profile grant")
+	set.StringVar(&grantOverride, "grant", "", "private Tessera connection or fresh participant grant; overrides the profile grant")
 	set.StringVar(&resumeCandidate, "resume-candidate", "", "completed local candidate directory whose interrupted upload should resume")
+	set.StringVar(&tesseraConnectionPath, "tessera-connection", "", "private role connection downloaded after signing in to Tessera")
 	if err := set.Parse(args); err != nil {
 		return err
 	}
@@ -184,15 +185,29 @@ func runParticipate(args []string) error {
 		}
 	}
 	grantPath := config.GrantPath
+	var tesseraConnection *tesseraRoleConnection
+	var grant access.Grant
 	if grantOverride != "" {
 		grantPath = grantOverride
 	}
-	if grantPath == "" {
+	if tesseraConnectionPath != "" {
+		if grantOverride != "" {
+			return errors.New("use either --grant or --tessera-connection, not both")
+		}
+		var connection tesseraRoleConnection
+		grant, connection, err = tesseraGrant(tesseraConnectionPath)
+		if err != nil {
+			return err
+		}
+		tesseraConnection = &connection
+	} else if grantPath == "" {
 		return errors.New("no temporary upload grant: pass --grant FILE when the coordinator tells you it is your turn")
 	}
-	grant, err := loadGrant(grantPath)
-	if err != nil {
-		return err
+	if tesseraConnection == nil {
+		grant, tesseraConnection, err = loadUploadAccess(grantPath)
+		if err != nil {
+			return err
+		}
 	}
 	if err := grant.CheckUsable(time.Now()); err != nil {
 		return err
@@ -229,7 +244,7 @@ func runParticipate(args []string) error {
 		return fmt.Errorf("not your turn: you are index %d, %d accepted, waiting on %s", slot, pos.accepted, pos.nextID)
 	}
 	if resumeCandidate != "" {
-		return resumeCandidateUpload(config, grant, pos, resumeCandidate)
+		return resumeCandidateUpload(config, grant, pos, resumeCandidate, tesseraConnection)
 	}
 	// Keep this guard inside the supervisor's run lock, not only in a UI
 	// wrapper. Every entry point must resume retained output after interruption.
@@ -281,7 +296,7 @@ func runParticipate(args []string) error {
 	fmt.Printf("candidate submitted for coordinator review\n")
 	fmt.Printf("attempt: %s\ncandidate directory: %s\ndestroyed_at: %s\nmanifest: %s\n",
 		attempt, o.outDir, destroyedAt.UTC().Format(time.RFC3339), manifestKey)
-	return nil
+	return reportTesseraManifest(tesseraConnection, manifestKey, attempt, config.Phase, pos.nextIndex)
 }
 
 func prepareCandidateManifest(candidateDir string, grant access.Grant, phase string, pos position, attempt string) (access.CandidateManifest, error) {
@@ -303,7 +318,7 @@ func prepareCandidateManifest(candidateDir string, grant access.Grant, phase str
 	return manifest, nil
 }
 
-func resumeCandidateUpload(config access.ParticipantConfig, grant access.Grant, pos position, candidateDir string) error {
+func resumeCandidateUpload(config access.ParticipantConfig, grant access.Grant, pos position, candidateDir string, tesseraConnection *tesseraRoleConnection) error {
 	info, err := os.Lstat(candidateDir)
 	if err != nil {
 		return fmt.Errorf("load resumable candidate: %w", err)
@@ -337,7 +352,7 @@ func resumeCandidateUpload(config access.ParticipantConfig, grant access.Grant, 
 	fmt.Printf("candidate upload resumed without recomputing the contribution\n")
 	fmt.Printf("attempt: %s\ncandidate directory: %s\ndestroyed_at: %s\nmanifest: %s\n",
 		manifest.AttemptID, candidateDir, destroyedAt, manifestKey)
-	return nil
+	return reportTesseraManifest(tesseraConnection, manifestKey, manifest.AttemptID, config.Phase, pos.nextIndex)
 }
 
 func candidateDestroyedAt(candidateDir string) (string, error) {
@@ -673,19 +688,29 @@ func runReleaseEvidence(args []string) error {
 
 func runSubmitEvidenceForRole(args []string, expectedRole string) error {
 	set := flag.NewFlagSet("submit-evidence", flag.ContinueOnError)
-	var configPath, grantPath, directory string
+	var configPath, grantPath, directory, tesseraConnectionPath string
 	var files stringList
 	set.StringVar(&configPath, "config", "", "optional validated role configuration")
-	set.StringVar(&grantPath, "grant", "", "temporary role grant")
+	set.StringVar(&grantPath, "grant", "", "private Tessera connection or temporary role grant")
 	set.Var(&files, "file", "regular evidence file (repeatable)")
 	set.StringVar(&directory, "dir", "", "evidence directory; symlinks are rejected")
+	set.StringVar(&tesseraConnectionPath, "tessera-connection", "", "private role connection downloaded after signing in to Tessera")
 	if err := set.Parse(args); err != nil {
 		return err
 	}
-	if grantPath == "" || (len(files) == 0) == (directory == "") {
-		return errors.New("--grant and exactly one of --file (repeatable) or --dir are required")
+	if (grantPath == "") == (tesseraConnectionPath == "") || (len(files) == 0) == (directory == "") {
+		return errors.New("use exactly one of --grant or --tessera-connection, and exactly one of --file or --dir")
 	}
-	grant, err := loadGrant(grantPath)
+	var grant access.Grant
+	var connection *tesseraRoleConnection
+	var err error
+	if tesseraConnectionPath != "" {
+		var c tesseraRoleConnection
+		grant, c, err = tesseraGrant(tesseraConnectionPath)
+		connection = &c
+	} else {
+		grant, connection, err = loadUploadAccess(grantPath)
+	}
 	if err != nil {
 		return err
 	}
@@ -741,7 +766,7 @@ func runSubmitEvidenceForRole(args []string, expectedRole string) error {
 		return err
 	}
 	fmt.Printf("evidence submitted for coordinator review\nmanifest: %s\n", key)
-	return nil
+	return reportTesseraManifest(connection, key, attempt, "", 0)
 }
 
 type evidenceInput struct{ local, name string }
