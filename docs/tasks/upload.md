@@ -21,7 +21,8 @@ Choose **Continue the ceremony workflow**.
 3. Verify the complete signed release through the menu. Independently obtain
    the expected final signer's public key and check the ceremony and assignment.
 4. Select the directory containing only signed public output and the grant file.
-5. Upload, then send the resulting evidence manifest key to the coordinator.
+5. Upload. A private Tessera role connection reports the manifest key
+   automatically; otherwise send it to the coordinator.
 
 Transport success is not evidence acceptance. Retain the public evidence and
 logs according to the agreed retention procedure.

@@ -25,7 +25,8 @@ Choose **Continue the ceremony workflow** for the numbered audit steps.
 4. Run the audit and review both phases, warnings, cleanup claims, and result.
    Cleanup claims do not prove physical erasure or exclude host/VM remnants.
 5. Upload only the exact successful signed public audit with your scoped grant.
-   Send the resulting manifest key to the coordinator.
+   A private Tessera role connection reports the resulting manifest key
+   automatically. Otherwise send it to the coordinator.
 6. Complete any required production decision and retain the audit inputs,
    source evidence, signed output, and secret-free logs.
 
