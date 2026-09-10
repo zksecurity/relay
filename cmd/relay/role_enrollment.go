@@ -71,8 +71,7 @@ func (p *rolePreparer) enroll() error {
 	dir := filepath.Join(p.d.Work, "my-enrollment")
 	record := filepath.Join(dir, "canonical.json")
 	if _, err := os.Lstat(record); errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintln(p.ui.output, "For a same-machine rehearsal, an example disclosure is: 'I operate all ceremony roles on the same Mac.' Use that only if true; otherwise describe your actual shared people, organization or equipment.")
-		text, err := p.ui.required("Public disclosure: describe who operates this role and any shared people, organizations or machines (do not include secrets)", "")
+		text, err := p.disclosurePreset()
 		if err != nil {
 			return err
 		}
@@ -143,7 +142,11 @@ func (p *rolePreparer) enroll() error {
 			return err
 		}
 	}
-	fmt.Fprintf(p.ui.output, "Enrollment verified. Send ONLY this public directory to the coordinator: %s\nRetain its disclosure subdirectory with the public evidence. Your private key stays in %s.\n", dir, p.d.Keys)
+	if p.d.Role == "coordinator" {
+		fmt.Fprintf(p.ui.output, "Enrollment verified. Retain your public coordinator enrollment directory: %s\nKeep its disclosure subdirectory with the public evidence. Your private key stays in %s.\n", dir, p.d.Keys)
+	} else {
+		fmt.Fprintf(p.ui.output, "Enrollment verified. Send ONLY this public directory to the coordinator: %s\nRetain its disclosure subdirectory with the public evidence. Your private key stays in %s.\n", dir, p.d.Keys)
+	}
 	return p.save()
 }
 

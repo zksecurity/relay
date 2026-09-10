@@ -161,7 +161,7 @@ func (p *rolePreparer) identity() error {
 		if err := id.check(); err != nil {
 			return err
 		}
-		fmt.Fprintf(p.ui.output, "Existing public identity: %s (%s). Send ONLY %s to the coordinator. No key was generated.\n", id.DisplayName, id.ID, public)
+		fmt.Fprintf(p.ui.output, "Existing public identity: %s (%s). If you joined through Tessera, upload ONLY %s on your invitation page and wait for coordinator approval. Otherwise send that public file to the coordinator. No key was generated.\n", id.DisplayName, id.ID, public)
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -192,7 +192,7 @@ func (p *rolePreparer) identity() error {
 	}
 	err = p.open("keygen", "identity", []string{"mpc-ceremony", "identity", "generate", "--identity-id", id, "--display-name", display, "--private-key-out", "/work/signing.hex", "--public-identity-out", "/work/identity.json"})
 	if err == nil {
-		fmt.Fprintf(p.ui.output, "Send ONLY %s to the coordinator through your agreed channel. Keep signing.hex private.\n", public)
+		fmt.Fprintf(p.ui.output, "If you joined through Tessera, upload ONLY %s on your invitation page and wait for coordinator approval. Otherwise send that public file to the coordinator through your agreed channel. Keep signing.hex private.\n", public)
 	}
 	return err
 }

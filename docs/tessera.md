@@ -9,7 +9,7 @@ role images. Older releases do not support this workflow. Run
 `tessera-draft-context-v1`.
 
 1. In Tessera, add the public identities and roles. The protocol requires exactly
-   one coordinator, one release signer, at least two auditors, and participants
+   one coordinator, one release signer, at least one auditor, and participants
    for both phases. Roles need distinct identity IDs, key IDs, and public keys.
    Witness and mirror assignments are retained, but their separate protocol
    enrollment happens after the signed definition exists.

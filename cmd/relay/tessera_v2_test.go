@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zksecurity/relay/contracts/setupv2"
+	setupv2 "github.com/zksecurity/relay/contracts/setupv2r2"
 	"github.com/zksecurity/relay/internal/transcript"
 )
 
@@ -133,6 +133,14 @@ func TestSetupV2RealSignedRoundtrip(t *testing.T) {
 		}
 		var roster setupRoster
 		if err = json.Unmarshal(raw, &roster); err != nil {
+			t.Fatal(err)
+		}
+		roster.Auditors = roster.Auditors[:1]
+		rosterBytes, err := json.Marshal(roster)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(filepath.Join(root, "config/participants.json"), rosterBytes, 0600); err != nil {
 			t.Fatal(err)
 		}
 		out := filepath.Join(dir, "signed")

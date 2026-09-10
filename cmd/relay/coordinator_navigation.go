@@ -24,6 +24,12 @@ func (w *coordinatorWizard) nextPreparationAction() preparationNext {
 				return preparationNext{"13", "Prepare, review and sign MY coordinator enrollment", "Required: role procedure. This binds your key to the signed assignment; it does not establish independent people. Existing output is reviewed before reuse."}
 			}
 		}
+		if w.d.Tessera != nil || w.d.TesseraSetup != nil {
+			if w.tesseraExportPresent() {
+				return preparationNext{"0", "Save and exit — return to Tessera", "Setup exported. Upload it to Tessera, review and lock the setup. Export is not proof of website acceptance. Export again or explicitly continue to operations below."}
+			}
+			return preparationNext{"16", "Export setup for Tessera", "Export the completed setup, then upload it to Tessera for review and locking. Enrollment files are present; operations reverify their evidence."}
+		}
 		return preparationNext{"12", "Open ceremony operations and progress", "Required: role procedure. Enrollment files are present, not verified by this menu. Operations recheck the relevant evidence."}
 	}
 	if (d.Mode != "rehearsal" && d.Mode != "production") || (d.Circuit != "ownership-destination-v2" && !(d.Mode == "rehearsal" && d.Circuit == "rehearsal-tiny-v1")) {
@@ -43,7 +49,7 @@ func (w *coordinatorWizard) nextPreparationAction() preparationNext {
 		ids = append(ids, p.Identity)
 	}
 	seenID, seenKey, seenPub := map[string]bool{}, map[string]bool{}, map[string]bool{}
-	rosterReady := len(d.Identities.Auditors) >= 2 && len(d.Identities.Roster) > 0
+	rosterReady := len(d.Identities.Auditors) >= 1 && len(d.Identities.Roster) > 0
 	for _, id := range ids {
 		if id.check() != nil || seenID[id.ID] || seenKey[id.KeyID] || seenPub[id.Fingerprint] {
 			rosterReady = false
@@ -51,7 +57,7 @@ func (w *coordinatorWizard) nextPreparationAction() preparationNext {
 		seenID[id.ID], seenKey[id.KeyID], seenPub[id.Fingerprint] = true, true, true
 	}
 	if !rosterReady {
-		return preparationNext{"3", "Import or correct the required public identities", "Required: coordinator, final-parameter signer, at least two auditors and one participant, with distinct keys. Witness/mirror enrollments come after initialization."}
+		return preparationNext{"3", "Import or correct the required public identities", "Required: coordinator, final-parameter signer, at least one auditor and one participant, with distinct keys. Witness/mirror enrollments come after initialization."}
 	}
 	if d.ArchitecturePolicy != "" && d.ArchitecturePolicy != "both" && d.ArchitecturePolicy != "single" && d.ArchitecturePolicy != "custom" {
 		return preparationNext{"5", "Review supported computers", "Required: correct the saved architecture selection. Both architectures are the default."}
@@ -84,7 +90,9 @@ func (w *coordinatorWizard) preparationHeading(next preparationNext) {
 		fmt.Fprintln(w.output, "Initialization needs verification — preserve existing output.")
 	}
 	heading := "NEXT REQUIRED ACTION"
-	if next.choice == "0" {
+	if next.choice == "16" || (next.choice == "0" && w.tesseraExportPresent()) {
+		heading = "NEXT STEP — RETURN TO TESSERA"
+	} else if next.choice == "0" {
 		heading = "SETUP CHECKPOINT"
 	}
 	w.message(toneHeading, "\n%s\n  %s\n", heading, next.label)

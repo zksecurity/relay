@@ -65,3 +65,7 @@ against the reviewed exact head. The required public status is `Tessera integrat
 a new commit needs a new run. Keep private source and logs in Tessera. Changes to
 the setup schema/rules/beacon require a new versioned contract directory while
 retaining existing versions and their signed compatibility fixtures.
+
+The unreleased one-observer policy uses `contracts/setupv2r2/` and ruleset
+`two-phase-v2` version 2. Preserve `contracts/setupv2/` unchanged for old ceremonies.
+Do not activate revision 2 until the matching proof-tool and CLI releases exist.

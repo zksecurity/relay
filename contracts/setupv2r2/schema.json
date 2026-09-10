@@ -1,0 +1,437 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zksecurity.github.io/relay/ceremony-setup-v2.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "ceremony-setup-v2"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "plan_revision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "plan": {
+      "$ref": "#/$defs/Plan"
+    },
+    "result": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/Result"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "plan_revision",
+    "plan",
+    "result"
+  ],
+  "$defs": {
+    "Identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "key_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "ed25519_public_key_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "public_key_fingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "id",
+        "display_name",
+        "key_id",
+        "ed25519_public_key_hex",
+        "public_key_fingerprint"
+      ]
+    },
+    "Role": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "role": {
+          "enum": [
+            "coordinator",
+            "participant",
+            "auditor",
+            "release-signer",
+            "witness",
+            "mirror"
+          ]
+        },
+        "identity_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "identity_id"
+      ]
+    },
+    "Phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "enum": [
+            "phase1",
+            "phase2"
+          ]
+        },
+        "identity_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          },
+          "minItems": 1,
+          "maxItems": 20,
+          "uniqueItems": true
+        },
+        "minimum": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        }
+      },
+      "required": [
+        "id",
+        "identity_ids",
+        "minimum"
+      ]
+    },
+    "Ruleset": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "const": "two-phase-v2"
+        },
+        "version": {
+          "const": 2
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "sha256"
+      ]
+    },
+    "Software": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "release_tag": {
+          "type": "string",
+          "pattern": "^role-images-[0-9a-f]{40}$"
+        },
+        "cli_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "proof_tool_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "manifest_sha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "workflow_recipe_sha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "release_tag",
+        "cli_commit",
+        "proof_tool_commit",
+        "manifest_sha256",
+        "workflow_recipe_sha256"
+      ]
+    },
+    "Storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "const": "aws"
+        },
+        "region": {
+          "type": "string",
+          "pattern": "^[a-z]{2}(?:-[a-z]+)+-\\d$"
+        },
+        "public_base_url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^https://[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z](?::[1-9][0-9]{0,4})?(?:/[^?#\\\\\\x00-\\x20\\x7f]*)?$"
+        },
+        "published_bucket": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+        },
+        "inbox_bucket": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+        }
+      },
+      "required": [
+        "provider",
+        "region",
+        "public_base_url",
+        "published_bucket",
+        "inbox_bucket"
+      ]
+    },
+    "Beacon": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "const": "drand"
+        },
+        "network": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "chain_hash_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "public_key_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{192}$"
+        },
+        "scheme": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "genesis_time_unix": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "period_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "extraction": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "minimum_challenge_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "minimum_witness_lead_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "future_round_required": {
+          "const": true
+        }
+      },
+      "required": [
+        "provider",
+        "network",
+        "chain_hash_hex",
+        "public_key_hex",
+        "scheme",
+        "genesis_time_unix",
+        "period_seconds",
+        "extraction",
+        "minimum_challenge_bytes",
+        "minimum_witness_lead_seconds",
+        "future_round_required"
+      ]
+    },
+    "Artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "definition",
+            "definition-signature",
+            "coordinator-key",
+            "software-manifest",
+            "tool-receipt"
+          ]
+        },
+        "platform": {
+          "enum": [
+            "none",
+            "linux/amd64",
+            "linux/arm64"
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "byte_length": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "content_b64": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 1398104,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        }
+      },
+      "required": [
+        "kind",
+        "platform",
+        "sha256",
+        "byte_length",
+        "content_b64"
+      ]
+    },
+    "Plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "rehearsal",
+            "production"
+          ]
+        },
+        "ruleset": {
+          "$ref": "#/$defs/Ruleset"
+        },
+        "circuit": {
+          "enum": [
+            "rehearsal-tiny-v1",
+            "ownership-destination-v2"
+          ]
+        },
+        "beacon_policy": {
+          "$ref": "#/$defs/Beacon"
+        },
+        "software_release": {
+          "$ref": "#/$defs/Software"
+        },
+        "storage": {
+          "$ref": "#/$defs/Storage"
+        },
+        "identities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identity"
+          },
+          "minItems": 1,
+          "maxItems": 100
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Role"
+          },
+          "minItems": 1,
+          "maxItems": 100
+        },
+        "phases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Phase"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "required": [
+        "mode",
+        "ruleset",
+        "circuit",
+        "beacon_policy",
+        "software_release",
+        "storage",
+        "identities",
+        "roles",
+        "phases"
+      ]
+    },
+    "Result": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input_sha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "protocol_id": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Artifact"
+          },
+          "minItems": 4,
+          "maxItems": 6
+        }
+      },
+      "required": [
+        "input_sha256",
+        "protocol_id",
+        "artifacts"
+      ]
+    }
+  }
+}

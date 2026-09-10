@@ -35,7 +35,7 @@ Action numbers stay stable. Choosing another action never bypasses its checks.
    Send only `identity.json` to the ceremony roles through your agreed channel.
    Accept the offer to assign it as your coordinator identity.
 3. Import the final-parameter signer's identity, at least
-   two auditors, and the participants. Compare each full fingerprint with its
+   one auditor, and the participants. Compare each full fingerprint with its
    owner's copy through your independent channel, then type `VERIFIED` if it matches.
    Reimport the same ID to replace its draft entry; remove mistaken assignments
    with **Remove an identity assignment**. Private keys stay with their owners.
