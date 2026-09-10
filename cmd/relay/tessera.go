@@ -61,6 +61,8 @@ func runTessera(args []string) error {
 	switch args[0] {
 	case "release-manifest":
 		return runSetupManifest(args[1:])
+	case "storage-credentials":
+		return runTesseraStorageCredentials(args[1:])
 	case "complete-setup":
 		return runSetupV2(args[1:], true)
 	case "verify-setup":
@@ -89,7 +91,7 @@ func runTesseraCapabilities(args []string) error {
 	if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(commit) {
 		return errors.New("Tessera capabilities require an attested Relay release build with its source commit")
 	}
-	result := tesseraCapabilities{Schema: tesseraCapabilitiesSchema, RelayCommit: commit, FileSchemas: []string{"ceremony-setup-v2", "ceremony-software-manifest-v2", "tessera-bundle-v1", "tessera-draft-context-v1", tesseraSignRequestSchema, tesseraSignResponseSchema}, SigningPurposes: []string{"tessera:assignment-confirmation:v1", "tessera:account-recovery:v1"}}
+	result := tesseraCapabilities{Schema: tesseraCapabilitiesSchema, RelayCommit: commit, FileSchemas: []string{tesseraConnectionSchema, "ceremony-setup-v2", "ceremony-software-manifest-v2", "tessera-bundle-v1", "tessera-draft-context-v1", tesseraSignRequestSchema, tesseraSignResponseSchema}, SigningPurposes: []string{"tessera:assignment-confirmation:v1", "tessera:account-recovery:v1"}}
 	return json.NewEncoder(os.Stdout).Encode(result)
 }
 

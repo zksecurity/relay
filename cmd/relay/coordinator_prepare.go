@@ -906,9 +906,12 @@ func (w *coordinatorWizard) storage() error {
 	if err := w.requirePreviousSessionClosed(); err != nil {
 		return err
 	}
-	choice, err := w.choose("Storage settings", "", []setupChoice{{"r2", "Set up Cloudflare R2 and credentials"}, {"import", "Import the administrator's settings file"}, {"advanced", "Advanced settings: enter infrastructure fields individually"}})
+	choice, err := w.choose("Storage settings", "", []setupChoice{{"tessera", "Connect to Tessera (automatic AWS renewal)"}, {"r2", "Set up Cloudflare R2 and credentials"}, {"import", "Import the administrator's settings file"}, {"advanced", "Advanced settings: enter infrastructure fields individually"}})
 	if err != nil {
 		return err
+	}
+	if choice == "tessera" {
+		return w.connectTesseraStorage()
 	}
 	if choice == "import" {
 		return w.importStorageSettings()
