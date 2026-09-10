@@ -125,7 +125,7 @@ func (w *coordinatorWizard) importSetupV2(path string, raw []byte) error {
 		w.d = previous
 		return err
 	}
-	fmt.Fprintln(w.output, "Setup imported. Review the draft and approve initialization. After verification, export the completed setup for Tessera.")
+	w.message(toneSuccess, "Setup imported. Review the draft and approve initialization. After verification, export the completed setup for Tessera.\n")
 	return nil
 }
 func (w *coordinatorWizard) exportSetupV2() error {

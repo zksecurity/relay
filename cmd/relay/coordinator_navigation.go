@@ -73,12 +73,13 @@ func (w *coordinatorWizard) nextPreparationAction() preparationNext {
 }
 
 func (w *coordinatorWizard) preparationHeading(next preparationNext) {
-	fmt.Fprintf(w.output, "\nRELAY | COORDINATOR | %s\n------------------------------------------------------------\n", w.d.Name)
+	w.message(toneHeading, "\nRELAY | COORDINATOR | %s\n------------------------------------------------------------\n", w.d.Name)
 	switch w.d.Status {
 	case "draft":
 		fmt.Fprintln(w.output, "Ceremony setup — unsigned draft")
 	case "definition-verified":
-		fmt.Fprintln(w.output, "Initialization complete — last definition verification succeeded.\nIdentities and policy are frozen. This is not verification of all artifacts or current storage access.")
+		w.message(toneSuccess, "Initialization complete — last definition verification succeeded.\n")
+		fmt.Fprintln(w.output, "Identities and policy are frozen. This is not verification of all artifacts or current storage access.")
 	default:
 		fmt.Fprintln(w.output, "Initialization needs verification — preserve existing output.")
 	}
@@ -86,5 +87,6 @@ func (w *coordinatorWizard) preparationHeading(next preparationNext) {
 	if next.choice == "0" {
 		heading = "SETUP CHECKPOINT"
 	}
-	fmt.Fprintf(w.output, "\n%s\n  %s\n  %s\n", heading, next.label, next.reason)
+	w.message(toneHeading, "\n%s\n  %s\n", heading, next.label)
+	w.message(toneMuted, "  %s\n", next.reason)
 }

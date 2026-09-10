@@ -180,3 +180,27 @@ compatibility of existing saved workflows. Resolve these with explicit technical
 contracts and tests; return to the user only if a product/security choice changes.
 Then exercise the implementation through all-role walkthroughs and failure tests.
 Design approval does not mean implementation, release or security audit completed.
+
+## Terminal presentation
+
+Guided menus use bold headings and prompts, green success messages, amber
+missing-input notices, red stopped-action messages, and muted supporting text.
+The wording remains authoritative: color never means a ceremony is verified or
+complete. Commands, machine-readable output and child-process output are not
+wrapped or rewritten.
+
+Styling is enabled only for detected terminals with a nonempty, non-`dumb`
+`TERM`. Set `NO_COLOR` (even to an empty value) to disable it. Redirected output
+remains plain. No new terminal library is required; detection uses `/bin/stty`
+on the supported Linux/macOS hosts, and falls back to plain text if unavailable.
+
+To exercise real terminal detection separately from Go's captured test output:
+
+```sh
+go test -c -o /tmp/relay-terminal-style.test ./cmd/relay
+env -u NO_COLOR TERM=xterm-256color RELAY_STYLE_PTY_TEST=1 \
+  /tmp/relay-terminal-style.test -test.run '^TestTerminalStylePTY$' -test.v
+```
+
+Run that last command in a terminal. The normal test suite covers redirected
+output and environment overrides; it skips the opt-in real-terminal check.

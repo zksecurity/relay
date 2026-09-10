@@ -17,13 +17,13 @@ func (f *roleFlow) menu() error {
 			return f.stageMenu()
 		}
 		stage := f.stages[f.state.Stage]
-		fmt.Fprintf(f.ui.output, "\nRELAY | %s | %s\n------------------------------------------------------------\n%s\n", strings.ToUpper(f.state.Role), f.state.Name, stage.Label)
+		f.ui.message(toneHeading, "\nRELAY | %s | %s\n------------------------------------------------------------\n%s\n", strings.ToUpper(f.state.Role), f.state.Name, stage.Label)
 		f.showCurrentPhase()
 		hidden := false
 		if stage.ID == "decision" {
 			requirement, err := f.decisionRequirement()
 			if err != nil {
-				fmt.Fprintln(f.ui.output, "Waiting:", err)
+				f.ui.message(toneWarning, "Waiting: %v\n", err)
 			} else {
 				hidden = requirement == "not-applicable"
 			}
@@ -57,7 +57,7 @@ func (f *roleFlow) menu() error {
 		if f.state.Role == "coordinator" && f.state.Profile.Work != "" && strings.HasSuffix(stage.ID, "-turns") {
 			id, err := f.nextTurnAction()
 			if err != nil {
-				fmt.Fprintf(f.ui.output, "Waiting: %v\n", err)
+				f.ui.message(toneWarning, "Waiting: %v\n", err)
 			} else if id != "" {
 				for n, task := range stage.Tasks {
 					if task.ID == id {
@@ -72,7 +72,7 @@ func (f *roleFlow) menu() error {
 			task := stage.Tasks[selected]
 			label = task.Label
 			r := f.readiness(task)
-			fmt.Fprintf(f.ui.output, "\nNEXT REQUIRED ACTION\n  %s\n  %s\n  %s: %s.\n", label, r.summary(), r.Requirement, r.Source)
+			f.ui.message(toneHeading, "\nNEXT REQUIRED ACTION\n  %s\n  %s\n  %s: %s.\n", label, r.summary(), r.Requirement, r.Source)
 			if r.Status == "Waiting" {
 				label = "Review missing inputs for: " + label
 			}
