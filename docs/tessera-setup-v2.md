@@ -62,3 +62,31 @@ checks the archive using the approved installed proof tool, including unsigned f
 replay. It does not change the setup-v2 format or permit new software for old frozen
 ceremonies. `relay pack-ceremony` prepares an explicit inventory of public files without
 collecting a participant workspace or publishing it.
+
+## Automatic Tessera storage access
+
+After opening the website setup, Storage settings offers **Connect to Tessera
+(automatic AWS renewal)**. Download the private CLI connection JSON from the
+ceremony owner's Tessera page, protect it with chmod 600, then select that file.
+Review the HTTPS origin, ceremony, coordinator fingerprint and expiry, and type
+CONNECT TESSERA. The connection must match the imported ceremony, signing key,
+and storage. No signing key is uploaded or replaced.
+
+The CLI writes a dedicated mode-0600 AWS credential-process profile. For existing
+Tessera temporary credentials it explicitly replaces that dedicated file at its
+existing path so saved actions still work; unrelated AWS profiles are refused.
+The connection token remains local and is never part of public setup exports.
+
+AWS invokes the internal tessera storage-credentials command inside the trusted
+online role image. This command sends its bearer token only to the reviewed HTTPS
+origin, refuses redirects, and emits the AWS credential-process JSON on stdout.
+Do not invoke this internal command to display credentials in a terminal or log.
+Offline actions still receive no credentials mount.
+
+Tessera checks current access on every request, including cached AWS credentials.
+Connections expire after 30 days and can be disconnected on the website; existing
+AWS credentials may remain valid for up to an hour. Download/import a new
+connection after expiry or disconnection. Parent AWS login failures are reported
+without discarding the local ceremony workspace. Old CLI releases retain manual
+storage settings and one-hour credential files; never change a frozen release
+pin just to enable this feature.
