@@ -14,7 +14,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/zksecurity/relay/contracts/setupv2"
+	setupv2 "github.com/zksecurity/relay/contracts/setupv2r2"
 	"github.com/zksecurity/relay/internal/transcript"
 	releaseassets "github.com/zksecurity/relay/release"
 )
@@ -129,7 +129,7 @@ func (w *coordinatorWizard) importSetupV2(path string, raw []byte) error {
 	return nil
 }
 func (w *coordinatorWizard) exportSetupV2() error {
-	out, err := w.required("Fresh completed setup JSON path", filepath.Join(w.d.Work, "tessera-setup.json"))
+	out, err := w.required("Fresh completed setup JSON path", w.tesseraExportDefault())
 	if err != nil {
 		return err
 	}
@@ -142,7 +142,11 @@ func (w *coordinatorWizard) exportSetupV2() error {
 	if err = setupWriteNew(path, w.d.TesseraSetup); err != nil {
 		return err
 	}
-	return runSetupV2([]string{"--setup", path, "--out", out, "--ceremony", filepath.Join(w.d.Work, "ceremony/public/ceremony.json"), "--ceremony-signature", filepath.Join(w.d.Work, "ceremony/public/ceremony.sig"), "--coordinator-key-file", filepath.Join(w.d.Trust, "setup-coordinator.hex")}, true)
+	err = runSetupV2([]string{"--setup", path, "--out", out, "--ceremony", filepath.Join(w.d.Work, "ceremony/public/ceremony.json"), "--ceremony-signature", filepath.Join(w.d.Work, "ceremony/public/ceremony.sig"), "--coordinator-key-file", filepath.Join(w.d.Trust, "setup-coordinator.hex")}, true)
+	if err != nil {
+		return err
+	}
+	return w.recordTesseraExport(out)
 }
 
 func setupManifestV2(commit string, images []byte) ([]byte, error) {

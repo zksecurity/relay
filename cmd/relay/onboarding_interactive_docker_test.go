@@ -217,7 +217,7 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 		if p.d.Role == "release-signer" {
 			review = "OFFLINE AND REVIEWED"
 		}
-		input += "Same-machine local test; all roles operated by this test process.\nPUBLIC DISCLOSURE\n" + review + "\n0\n"
+		input += "4\nSame-machine local test; all roles operated by this test process.\nPUBLIC DISCLOSURE\n" + review + "\n0\n"
 		dialogue(p, input)
 		if _, err := os.Stat(filepath.Join(p.d.Work, "enrollment.sig")); err != nil {
 			t.Fatal(err)

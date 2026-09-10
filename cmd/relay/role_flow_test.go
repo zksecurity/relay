@@ -403,3 +403,51 @@ func TestCustodyAndPublicationAppearBeforeDependentActions(t *testing.T) {
 		}
 	}
 }
+
+func TestReleaseFlowRequiresOneAuditAndAllowsAdditionalPairs(t *testing.T) {
+	for _, stage := range roleFlowStages("release-signer") {
+		for _, task := range stage.Tasks {
+			if task.ID != "sign" {
+				continue
+			}
+			counts := map[string]int{}
+			for _, field := range task.Fields {
+				if !field.Optional {
+					counts[field.Flag]++
+				}
+			}
+			if counts["audit-report"] != 1 || counts["audit-signature"] != 1 {
+				t.Fatalf("mandatory audit pairs: %v", counts)
+			}
+			if len(task.ExtraFields) != 2 || task.ExtraFields[0].Flag != "audit-report" || task.ExtraFields[1].Flag != "audit-signature" {
+				t.Fatal("additional audit pairs unavailable")
+			}
+			return
+		}
+	}
+	t.Fatal("release signing task missing")
+}
+
+func TestProductionDecisionGuideRequiresOneAuditorSignature(t *testing.T) {
+	for _, stage := range coordinatorFlowStages() {
+		if stage.ID != "decision" {
+			continue
+		}
+		for _, task := range stage.Tasks {
+			if task.ID != "verify-decision" {
+				continue
+			}
+			auditors := 0
+			for _, field := range task.Fields {
+				if field.Flag == "signature" && strings.Contains(strings.ToLower(field.Label), "auditor") {
+					auditors++
+				}
+			}
+			if auditors != 1 {
+				t.Fatalf("mandatory auditor decision signatures = %d, want 1", auditors)
+			}
+			return
+		}
+	}
+	t.Fatal("coordinator production decision verification task missing")
+}

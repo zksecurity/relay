@@ -38,7 +38,7 @@ remain append-only evidence even when the default UI shows only a summary.
 
 | ID | Stage | Authoritative behavior | Required result and evidence |
 | --- | --- | --- | --- |
-| `COORD-ROSTER-01` | Roster draft | Validate at least one ordered participant, at least two auditors, and one distinct release signer. Reject duplicate identity IDs, key IDs, and public keys and prohibited role overlap. | Passing roster-validation report. |
+| `COORD-ROSTER-01` | Roster draft | Validate at least one ordered participant, at least one auditor, and one distinct release signer. Reject duplicate identity IDs, key IDs, and public keys and prohibited role overlap. | Passing roster-validation report. |
 | `COORD-ROSTER-02` | Roster export | Store only public identity fields and export the exact canonical roster and digest for native review and signing. | Canonical roster digest; a browser draft never becomes the frozen definition by itself. |
 | `COORD-FREEZE-01` | Initialization | Create the narrow ceremony directory layout, run authenticated proof-tool initialization, and bind the signed definition to the canonical roster digest. | Initialization receipt and signed definition digest. |
 | `COORD-FREEZE-02` | Definition verification | Verify definition and detached signature, ceremony ID and mode, circuit and constraint-system digests, software binding, coordinator identity, participant order, auditors, release signer, and beacon policy. | Passing definition-verification receipt. |
@@ -82,7 +82,7 @@ All three roles use `SYS-SUBMIT-01` when transporting their signed evidence.
 | ID | Role | Authoritative behavior | Required result and evidence |
 | --- | --- | --- | --- |
 | `RELEASE-ROLE-01` | Release signer | The signed definition identifies a distinct release signer and rejects prohibited overlap. | Passing assignment receipt. |
-| `RELEASE-SIGN-01` | Release signer | `mpc-ceremony release sign` verifies the candidate, two distinct enrolled auditor reports, both phases, witness quorum, independent mirrors, beacon evidence, and ceremony coherence before loading the signing key. | Fresh signed release directory and verification receipt. |
+| `RELEASE-SIGN-01` | Release signer | `mpc-ceremony release sign` verifies the candidate, at least one enrolled auditor report, both phases, witness quorum, independent mirrors, beacon evidence, and ceremony coherence before loading the signing key. | Fresh signed release directory and verification receipt. |
 | `RELEASE-VERIFY-01` | Release signer | `mpc-ceremony release verify` authenticates the completed release with the independently trusted release key and key ID. | Passing release-verification receipt. |
 | `DECISION-PREPARE-01` | Decision signer | `mpc-ceremony decision prepare` strictly parses the draft, derives release and decision IDs, and verifies ceremony, production circuit, source, and role bindings. | Canonical decision digest and evidence-inventory digest. |
 | `DECISION-SIGN-01` | Decision signer | For `GO`, `mpc-ceremony decision sign` hashes and semantically verifies the complete local evidence set before loading the signing key and rejects an identity or role mismatch. | Detached role signature over the exact canonical decision. |

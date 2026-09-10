@@ -11,7 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/zksecurity/relay/contracts/setupv2"
+	setupv2 "github.com/zksecurity/relay/contracts/setupv2r2"
 	"io"
 	"os"
 	"os/signal"
@@ -65,6 +65,8 @@ type setupPolicy struct {
 }
 type setupBinary struct{ Path, SHA256 string }
 type coordinatorDraft struct {
+	TesseraExportPath                        string          `json:"tessera_export_path,omitempty"`
+	TesseraExportSHA256                      string          `json:"tessera_export_sha256,omitempty"`
 	TesseraSetup                             *setupv2.Setup  `json:"tessera_setup,omitempty"`
 	Tessera                                  *tesseraContext `json:"tessera_context,omitempty"`
 	ArchitecturePolicy                       string          `json:"architecture_policy,omitempty"`
@@ -160,8 +162,8 @@ func (d coordinatorDraft) validate() error {
 	if d.ArchitecturePolicy != "" && d.ArchitecturePolicy != "both" && d.ArchitecturePolicy != "single" && d.ArchitecturePolicy != "custom" {
 		return errors.New("invalid architecture policy")
 	}
-	if len(d.Identities.Auditors) < 2 || len(d.Identities.Roster) == 0 {
-		return errors.New("assign at least two auditors, a final-parameter signer and one participant")
+	if len(d.Identities.Auditors) < 1 || len(d.Identities.Roster) == 0 {
+		return errors.New("assign at least one auditor, a final-parameter signer and one participant")
 	}
 	roster := map[string]bool{}
 	for _, p := range d.Identities.Roster {
@@ -756,7 +758,7 @@ func (w *coordinatorWizard) generateIdentity() error {
 		return err
 	}
 	publicPath := filepath.Join(w.d.Keys, "identity.json")
-	fmt.Fprintf(w.output, "Send ONLY %s to the ceremony roles through your agreed channel. Keep signing.hex private.\n", publicPath)
+	fmt.Fprintf(w.output, "For Tessera, upload ONLY %s on your coordinator invitation page, or add it to your draft if you manage the ceremony. Otherwise share that public file with ceremony roles through your agreed channel. Keep signing.hex private.\n", publicPath)
 	var generated setupIdentity
 	if err := setupReadJSON(publicPath, &generated); err != nil {
 		return err
@@ -1009,7 +1011,7 @@ func (w *coordinatorWizard) menu() (result error) {
 					if w.localAction != nil {
 						fmt.Fprintln(w.output, "Local setup test complete. Choose 0 to exit; your files are saved. This helper does not run contributions or configure cloud storage.")
 					} else {
-						fmt.Fprintln(w.output, "Next: distribute the signed public definition for assignment review, collect witness/mirror enrollments, and continue with the coordinator role guide. Storage can be configured below.")
+						fmt.Fprintln(w.output, "For Tessera setups, export and return to the website for review and locking first. Standalone CLI next: distribute the signed public definition for assignment review, collect witness/mirror enrollments, and continue with the coordinator role guide. Storage can be configured below.")
 					}
 				} else {
 					fmt.Fprintf(w.output, "\nInitialization needs verification — %s\nSettings are frozen after an initialization attempt. Preserve the files and error output; use 9 to verify an existing definition. Do not initialize again.\n", w.d.Name)
@@ -1039,7 +1041,16 @@ func (w *coordinatorWizard) menu() (result error) {
 			fmt.Fprintln(w.output, "15) Open setup downloaded from Tessera")
 		}
 		if w.d.Status == "definition-verified" && (w.d.Tessera != nil || w.d.TesseraSetup != nil) && w.localAction == nil {
-			fmt.Fprintln(w.output, "16) Export setup for Tessera")
+			if next.choice != "16" || showOther {
+				if w.tesseraExportPresent() {
+					fmt.Fprintln(w.output, "16) Export again for Tessera")
+				} else {
+					fmt.Fprintln(w.output, "16) Export setup for Tessera")
+				}
+			}
+			if !showOther && w.tesseraExportPresent() {
+				fmt.Fprintln(w.output, "12) Continue to ceremony operations (website acceptance is not checked)")
+			}
 		}
 		fmt.Fprintln(w.output, "------------------------------------------------------------")
 		choice, err := w.ask("Choose", next.choice)
@@ -1056,7 +1067,7 @@ func (w *coordinatorWizard) menu() (result error) {
 			showOther = true
 			continue
 		}
-		if !showOther && choice != next.choice && !(choice == "15" && w.d.Status == "draft") && !(choice == "16" && w.d.Status == "definition-verified" && (w.d.Tessera != nil || w.d.TesseraSetup != nil) && w.localAction == nil) {
+		if !showOther && choice != next.choice && !(choice == "12" && w.d.Status == "definition-verified" && w.tesseraExportPresent()) && !(choice == "15" && w.d.Status == "draft") && !(choice == "16" && w.d.Status == "definition-verified" && (w.d.Tessera != nil || w.d.TesseraSetup != nil) && w.localAction == nil) {
 			fmt.Fprintln(w.output, "Choose a displayed action, or 17 to review other actions and requirements.")
 			continue
 		}

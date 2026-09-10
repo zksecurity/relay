@@ -31,7 +31,7 @@ These images are local test artifacts, not approved production releases.
    ./scripts/local-coordinator.sh identity "$HOME/ceremonies/local-coordinator-test"
    ```
 
-   Repeat for one participant, two auditors, and a final-parameter signer.
+   Repeat for one participant, one auditor, and a final-parameter signer.
    Each gets a separate folder under `test-roles` with its own private key.
    The generator prints the public `identity.json` path and fingerprint to share.
 2. Choose **2** to generate your test coordinator identity in Docker.

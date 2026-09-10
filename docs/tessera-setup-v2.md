@@ -90,3 +90,44 @@ connection after expiry or disconnection. Parent AWS login failures are reported
 without discarding the local ceremony workspace. Old CLI releases retain manual
 storage settings and one-hour credential files; never change a frozen release
 pin just to enable this feature.
+
+## Guided handoff update (unreleased)
+
+After coordinator enrollment files are present, a Tessera-linked draft recommends
+**Export setup for Tessera** instead of entering operations. A successful export
+records its local absolute path and digest. On resume, an unchanged, present file
+shows a return-to-Tessera checkpoint with **Save and exit**, **Export again**, and
+explicit **Continue to ceremony operations**. Missing or changed exported files
+recommend exporting again; exports use fresh paths and never overwrite an earlier
+file. This local receipt is not proof of enrollment validity, website import,
+review, locking, or publication. Operations retain their evidence checks.
+
+Setup import distinguishes the private CLI connection schema and directs it to
+Storage settings. Public-identity handoff text describes the Tessera invitation
+upload path while retaining the standalone private-channel path.
+
+Enrollment offers editable public-disclosure templates for shared operators,
+shared organizations/equipment, no known shared signing operation, and custom
+text. All choices are available in rehearsal and production. Required details
+must be supplied; the exact statement is reviewed before public disclosure and
+again with each enrollment's signed bytes. Existing enrollment records remain
+immutable on resume, and their signatures are reverified. A preset neither proves
+independence nor waives production role-separation requirements. Coordinator
+output says to retain its public enrollment rather than send it to itself.
+
+These menu changes require a new compatible release before existing installations
+can use them. Existing ceremony release pins are not automatically upgraded.
+
+## Role minimums: ruleset revision 2 (unreleased)
+
+`contracts/setupv2r2/` defines `two-phase-v2` version 2: at least one auditor,
+one witness per phase and one mirror per accepted contribution, in both modes.
+Production still requires two participants per phase. All signature, identity,
+independence and explicitly higher witness-quorum checks remain in force. The
+release-signing menu requires one audit pair and allows additional signed reports.
+
+The original `contracts/setupv2/` bytes are retained. Older ceremonies use their
+original pinned CLI and proof-tool; no automatic conversion is supported. Release
+order is proof-tool, then update real proof-tool pins and release the CLI, then
+provision its attested manifest in Tessera and choose it as the default for new
+ceremonies. Current `release/role-images.json` pins have not yet changed.

@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/zksecurity/relay/contracts/setupv2"
+	setupv2 "github.com/zksecurity/relay/contracts/setupv2r2"
 	"net/http"
 	"net/http/httptest"
 	"os"

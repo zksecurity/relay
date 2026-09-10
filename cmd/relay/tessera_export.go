@@ -194,8 +194,8 @@ func (c tesseraContext) validate() error {
 		keyIDs[a.Identity.KeyID] = true
 		counts[a.Role]++
 	}
-	if counts["coordinator"] != 1 || counts["release-signer"] != 1 || counts["auditor"] < 2 {
-		return errors.New("the CLI requires one coordinator, one release signer and at least two auditors; update the website roster")
+	if counts["coordinator"] != 1 || counts["release-signer"] != 1 || counts["auditor"] < 1 {
+		return errors.New("the CLI requires one coordinator, one release signer and at least one auditor; update the website roster")
 	}
 	phases := map[string]bool{}
 	for _, s := range c.Schedules {

@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/zksecurity/relay/contracts/setupv2"
+	setupv2 "github.com/zksecurity/relay/contracts/setupv2r2"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func checkTesseraDraft(d coordinatorDraft) error {
@@ -32,7 +33,7 @@ func (w *coordinatorWizard) importTesseraRoster() error {
 	if w.d.Status != "draft" {
 		return errors.New("Tessera roster cannot change after initialization has been attempted")
 	}
-	path, err := w.required("Path to roster JSON downloaded from Tessera", "")
+	path, err := w.required("Path to setup JSON downloaded from Tessera (not the CLI connection file)", "")
 	if err != nil {
 		return err
 	}
@@ -45,6 +46,9 @@ func (w *coordinatorWizard) importTesseraRoster() error {
 	}
 	if err = json.Unmarshal(raw, &header); err != nil {
 		return err
+	}
+	if strings.Contains(header.Schema, "connection") {
+		return errors.New("this is a private CLI connection file, not a ceremony setup; choose Storage settings, then Connect to Tessera (automatic AWS renewal). For this action, use Download setup on the website")
 	}
 	if header.Schema == "ceremony-setup-v2" {
 		return w.importSetupV2(path, raw)
@@ -69,7 +73,7 @@ func (w *coordinatorWizard) importTesseraRoster() error {
 		w.d = previous
 		return err
 	}
-	fmt.Fprintln(w.output, "Roster imported. Review Basics and beacon policy, then choose Review draft and Approve and initialize. Export setup for Tessera becomes available after verification.")
+	fmt.Fprintln(w.output, "Roster imported. Review Basics and beacon policy, then follow NEXT REQUIRED ACTION for storage checks and initialization approval. Export setup for Tessera becomes available after verification.")
 	return nil
 }
 func (w *coordinatorWizard) exportTesseraSetup() error {
@@ -86,7 +90,7 @@ func (w *coordinatorWizard) exportTesseraSetup() error {
 	if err := storage.validate(); err != nil {
 		return err
 	}
-	out, err := w.required("Fresh output JSON path for Tessera", filepath.Join(w.d.Work, "tessera-setup.json"))
+	out, err := w.required("Fresh output JSON path for Tessera", w.tesseraExportDefault())
 	if err != nil {
 		return err
 	}
@@ -102,5 +106,9 @@ func (w *coordinatorWizard) exportTesseraSetup() error {
 	if err = setupWriteNew(storagePath, storage); err != nil {
 		return err
 	}
-	return runTesseraExport([]string{"--context", contextPath, "--ceremony", filepath.Join(w.d.Work, "ceremony/public/ceremony.json"), "--ceremony-signature", filepath.Join(w.d.Work, "ceremony/public/ceremony.sig"), "--coordinator-key-file", filepath.Join(w.d.Trust, "setup-coordinator.hex"), "--release", w.d.Release, "--storage-public", storagePath, "--out", out})
+	err = runTesseraExport([]string{"--context", contextPath, "--ceremony", filepath.Join(w.d.Work, "ceremony/public/ceremony.json"), "--ceremony-signature", filepath.Join(w.d.Work, "ceremony/public/ceremony.sig"), "--coordinator-key-file", filepath.Join(w.d.Trust, "setup-coordinator.hex"), "--release", w.d.Release, "--storage-public", storagePath, "--out", out})
+	if err != nil {
+		return err
+	}
+	return w.recordTesseraExport(out)
 }
