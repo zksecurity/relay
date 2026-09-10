@@ -265,6 +265,6 @@ func (w *coordinatorWizard) connectTesseraStorage() error {
 	if err = w.save(); err != nil {
 		return err
 	}
-	fmt.Fprintln(w.output, "Tessera connected. AWS access renews automatically when needed. Keep this role folder; remove the original downloaded connection file when you no longer need it.")
+	w.message(toneSuccess, "Tessera connected. AWS access renews automatically when needed. Keep this role folder; remove the original downloaded connection file when you no longer need it.\n")
 	return nil
 }

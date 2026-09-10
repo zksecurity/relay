@@ -256,9 +256,9 @@ func (w *coordinatorWizard) ask(label, current string) (string, error) {
 		}
 	}
 	if current == "" {
-		fmt.Fprintf(w.output, "%s: ", label)
+		w.message(toneHeading, "%s: ", label)
 	} else {
-		fmt.Fprintf(w.output, "%s [%s]: ", label, current)
+		w.message(toneHeading, "%s [%s]: ", label, current)
 	}
 	var value string
 	var err error
@@ -296,7 +296,7 @@ func (w *coordinatorWizard) required(label, current string) (string, error) {
 		if strings.TrimSpace(value) != "" {
 			return value, nil
 		}
-		fmt.Fprintln(w.output, "This value is required. Please enter it, or press Ctrl-C to stop.")
+		w.message(toneWarning, "This value is required. Please enter it, or press Ctrl-C to stop.\n")
 	}
 }
 
@@ -306,7 +306,7 @@ func (w *coordinatorWizard) choose(label, current string, choices []setupChoice)
 	if len(choices) == 0 {
 		return "", errors.New("no choices available yet")
 	}
-	fmt.Fprintln(w.output, label)
+	w.message(toneHeading, "%s\n", label)
 	defaultNumber := ""
 	byNumber := map[int]string{}
 	nextNumber := 1
@@ -340,7 +340,7 @@ func (w *coordinatorWizard) participantOrder(label string, current []string) ([]
 	if len(w.d.Identities.Roster) == 0 {
 		return nil, errors.New("import participants before choosing their order")
 	}
-	fmt.Fprintln(w.output, label)
+	w.message(toneHeading, "%s\n", label)
 	positions := map[string]string{}
 	for n, p := range w.d.Identities.Roster {
 		fmt.Fprintf(w.output, "%d) %s (%s)\n", n+1, p.Identity.DisplayName, p.Identity.ID)
@@ -1123,7 +1123,7 @@ func (w *coordinatorWizard) menu() (result error) {
 			if errors.Is(err, errSecretPromptInterrupted) {
 				return err
 			}
-			fmt.Fprintf(w.output, "Stopped: %v\nDraft retained. Review the error before retrying; never bypass verification.\n", err)
+			w.message(toneError, "Stopped: %v\nDraft retained. Review the error before retrying; never bypass verification.\n", err)
 		}
 	}
 }

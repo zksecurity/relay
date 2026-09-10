@@ -375,7 +375,8 @@ func (p *rolePreparer) workflow() error {
 }
 func (p *rolePreparer) menu() error {
 	for {
-		fmt.Fprintf(p.ui.output, "\n%s — %s onboarding\n1) Prepare approved images (online; before disconnecting a signer)\n", p.d.Name, p.d.Role)
+		p.ui.message(toneHeading, "\n%s — %s onboarding\n", p.d.Name, p.d.Role)
+		fmt.Fprintln(p.ui.output, "1) Prepare approved images (online; before disconnecting a signer)")
 		if p.d.Role != "upload-station" {
 			fmt.Fprintln(p.ui.output, "2) Generate/review MY identity and public handoff")
 		}
@@ -425,7 +426,7 @@ func (p *rolePreparer) menu() error {
 			err = errors.New("choose a listed number")
 		}
 		if err != nil {
-			fmt.Fprintf(p.ui.output, "Stopped: %v\nSaved state and outputs retained. Resolve the cause; do not bypass verification.\n", err)
+			p.ui.message(toneError, "Stopped: %v\nSaved state and outputs retained. Resolve the cause; do not bypass verification.\n", err)
 		}
 	}
 }

@@ -786,7 +786,7 @@ func (f *roleFlow) stageMenu() error {
 				fmt.Fprintf(f.ui.output, "Waiting: %v\n", err)
 			}
 		}
-		fmt.Fprintf(f.ui.output, "\nRELAY | %s | %s\n------------------------------------------------------------\n%s (%d/%d)\n", strings.ToUpper(f.state.Role), f.state.Name, stage.Label, f.state.Stage+1, len(f.stages))
+		f.ui.message(toneHeading, "\nRELAY | %s | %s\n------------------------------------------------------------\n%s (%d/%d)\n", strings.ToUpper(f.state.Role), f.state.Name, stage.Label, f.state.Stage+1, len(f.stages))
 		f.showCurrentPhase()
 		for n, task := range stage.Tasks {
 			if decisionState == "not-applicable" {
