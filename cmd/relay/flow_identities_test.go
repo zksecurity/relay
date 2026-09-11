@@ -29,7 +29,7 @@ func TestFlowIdentityChoicesUsePublicDisplayNames(t *testing.T) {
 	}
 }
 
-func TestScheduledGrantIdentityShowsAuthenticatedOrderAndLocksExpectedTurn(t *testing.T) {
+func TestScheduledTurnParticipantShowsAuthenticatedOrderAndLocksExpectedTurn(t *testing.T) {
 	f := flowFixture(t)
 	f.state.Role = "coordinator"
 	f.state.Profile.Work = t.TempDir()
@@ -38,11 +38,19 @@ func TestScheduledGrantIdentityShowsAuthenticatedOrderAndLocksExpectedTurn(t *te
 	f.definition = func() (transcript.Definition, error) {
 		return transcript.Definition{Phase1Participants: []string{"participant-a", "participant-b", "participant-c"}}, nil
 	}
-	choices, expected, err := f.scheduledGrantIdentity(flowTask{ID: "grant"}, ft("identity", "Next participant ID", ""))
-	if err != nil || expected != "participant-b" || len(choices) != 3 {
-		t.Fatalf("choices=%v expected=%q err=%v", choices, expected, err)
-	}
-	if choices[0].value != "participant-a" || choices[1].value != "participant-b" || choices[2].value != "participant-c" || choices[1].label != "2. participant-b — expected next" {
-		t.Fatalf("unexpected authenticated schedule display: %+v", choices)
+	for _, input := range []struct {
+		task  flowTask
+		field flowField
+	}{
+		{flowTask{ID: "prepare-outbound-handoff"}, ft("participant-id", "Next scheduled participant ID", "")},
+		{flowTask{ID: "grant"}, ft("identity", "Next participant ID", "")},
+	} {
+		choices, expected, err := f.scheduledTurnParticipant(input.task, input.field)
+		if err != nil || expected != "participant-b" || len(choices) != 3 {
+			t.Fatalf("choices=%v expected=%q err=%v", choices, expected, err)
+		}
+		if choices[0].value != "participant-a" || choices[1].value != "participant-b" || choices[2].value != "participant-c" || choices[1].label != "2. participant-b — expected next" {
+			t.Fatalf("unexpected authenticated schedule display: %+v", choices)
+		}
 	}
 }

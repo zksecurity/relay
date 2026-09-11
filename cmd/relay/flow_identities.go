@@ -49,11 +49,13 @@ func (f *roleFlow) identityChoices(task flowTask, field flowField) ([]setupChoic
 	return choices, nil
 }
 
-// scheduledGrantIdentity derives the one allowed grant recipient from the
-// authenticated definition and accepted-head scope. The complete ordered list
-// is presentation context; it is not an editable roster.
-func (f *roleFlow) scheduledGrantIdentity(task flowTask, field flowField) ([]setupChoice, string, error) {
-	if f.state.Role != "coordinator" || task.ID != "grant" || field.Flag != "identity" || f.turnScope == nil || !strings.HasSuffix(f.stages[f.state.Stage].ID, "-turns") {
+// scheduledTurnParticipant derives the one allowed participant reference from
+// the authenticated definition and accepted-head scope. Both the outbound
+// custody packet and the later grant must name that same participant. The
+// complete ordered list is presentation context; it is not editable.
+func (f *roleFlow) scheduledTurnParticipant(task flowTask, field flowField) ([]setupChoice, string, error) {
+	isParticipantReference := (task.ID == "grant" && field.Flag == "identity") || (task.ID == "prepare-outbound-handoff" && field.Flag == "participant-id")
+	if f.state.Role != "coordinator" || !isParticipantReference || f.turnScope == nil || !strings.HasSuffix(f.stages[f.state.Stage].ID, "-turns") {
 		return nil, "", nil
 	}
 	phase := strings.TrimSuffix(f.stages[f.state.Stage].ID, "-turns")

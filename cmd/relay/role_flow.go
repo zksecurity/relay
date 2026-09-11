@@ -234,7 +234,7 @@ func (f *roleFlow) command(task flowTask) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read local public identity choices: %w", err)
 		}
-		schedule, expectedParticipant, err := f.scheduledGrantIdentity(task, field)
+		schedule, expectedParticipant, err := f.scheduledTurnParticipant(task, field)
 		if err != nil {
 			return nil, fmt.Errorf("read authenticated participant order: %w", err)
 		}
