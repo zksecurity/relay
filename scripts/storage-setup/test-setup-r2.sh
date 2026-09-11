@@ -7,7 +7,9 @@ set -euo pipefail
 umask 077
 
 STORAGE_SETUP_SCRIPT_ROOT=$(cd "$(dirname "$0")" && pwd)
-TEST_ROOT=$(mktemp -d /tmp/relay-r2-setup-test.XXXXXXXX)
+# shellcheck source=portable.sh
+source "$STORAGE_SETUP_SCRIPT_ROOT/portable.sh"
+TEST_ROOT=$(portable_realpath "$(mktemp -d /tmp/relay-r2-setup-test.XXXXXXXX)")
 cleanup() {
   local status=$?
   if [[ $status -ne 0 && -f "${TEST_ROOT:-}/stderr" ]]; then
@@ -18,14 +20,27 @@ cleanup() {
     printf 'mocked token-file R2 setup stderr:\n' >&2
     sed -n '1,200p' "$TEST_ROOT/token-file.stderr" >&2
   fi
-  if [[ -n "${TEST_ROOT:-}" && "$TEST_ROOT" == /tmp/relay-r2-setup-test.* ]]; then
-    rm -rf -- "$TEST_ROOT"
-  fi
+  case "${TEST_ROOT:-}" in
+    /tmp/relay-r2-setup-test.* | /private/tmp/relay-r2-setup-test.*) rm -rf -- "$TEST_ROOT" ;;
+  esac
   exit "$status"
 }
 trap cleanup EXIT
 
 mkdir -m 0700 "$TEST_ROOT/bin" "$TEST_ROOT/config"
+
+# Exercise the fallbacks used on macOS releases that do not include realpath
+# or GNU coreutils. The actual macOS CI run separately covers BSD stat.
+mkdir -m 0700 "$TEST_ROOT/portable-bin"
+if command -v perl >/dev/null 2>&1; then
+  ln -s "$(command -v perl)" "$TEST_ROOT/portable-bin/perl"
+  [[ "$(PATH="$TEST_ROOT/portable-bin" portable_realpath "$TEST_ROOT/config")" == "$TEST_ROOT/config" ]]
+fi
+if command -v shasum >/dev/null 2>&1; then
+  ln -s "$(command -v shasum)" "$TEST_ROOT/portable-bin/shasum"
+  fallback_hash=$(printf '%s' portable-check | PATH="$TEST_ROOT/portable-bin" portable_sha256_stdin)
+  [[ "$fallback_hash" == 9a17abfca4612221545e6d0559c9d05d2338f6576f83a17943674a51a8f90d8b ]]
+fi
 
 # The mock files are runtime fixtures under a freshly allocated /tmp root. They
 # let CI exercise the interactive orchestration without contacting Cloudflare.
@@ -86,10 +101,12 @@ install -m 0600 \
   "$TEST_ROOT/machine-1.env"
 # A kit created before the token-source fields existed should be upgraded
 # atomically rather than forcing the rehearsal to be rebuilt from scratch.
-sed -i '/^R2_\(PARENT_TOKEN_FILE\|CONTROL_TOKEN_FILE\|CONTROL_WRANGLER_BIN\)=/d' \
-  "$TEST_ROOT/machine-1.env"
+sed -E '/^R2_(PARENT_TOKEN_FILE|CONTROL_TOKEN_FILE|CONTROL_WRANGLER_BIN)=/d' \
+  "$TEST_ROOT/machine-1.env" >"$TEST_ROOT/machine-1.env.updated"
+mv "$TEST_ROOT/machine-1.env.updated" "$TEST_ROOT/machine-1.env"
+chmod 0600 "$TEST_ROOT/machine-1.env"
 
-parent_hash=$(printf '%s' parent-token | sha256sum)
+parent_hash=$(printf '%s' parent-token | portable_sha256_stdin)
 input=$(printf '\n\n\nyes\nparent-access\ncoordinator-access\n%s\nparent-token\n%s\n' \
   'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "${parent_hash%% *}")
 PATH="$TEST_ROOT/bin:$PATH" \
@@ -102,7 +119,7 @@ XDG_CONFIG_HOME="$TEST_ROOT/config" \
 
 parent_file="$TEST_ROOT/config/relay/relay-ceremony-r2/inbox-parent-api-token"
 [[ -f "$parent_file" && ! -L "$parent_file" ]]
-[[ "$(stat -c '%a' -- "$parent_file")" == 600 ]]
+[[ "$(portable_stat_mode "$parent_file")" == 600 ]]
 [[ "$(<"$parent_file")" == parent-token ]]
 
 jq -e '.schema == "relay-coordinator-storage-settings-v1" and
@@ -110,7 +127,7 @@ jq -e '.schema == "relay-coordinator-storage-settings-v1" and
   .settings["parent-access-key-id"] == "parent-access" and
   (.settings | length) == 9' "$TEST_ROOT/coordinator-settings.json" >/dev/null
 ! grep -Fq 'parent-token' "$TEST_ROOT/coordinator-settings.json"
-[[ "$(stat -c '%a' -- "$TEST_ROOT/coordinator-settings.json")" == 600 ]]
+[[ "$(portable_stat_mode "$TEST_ROOT/coordinator-settings.json")" == 600 ]]
 
 grep -Fx 'STORAGE_PROVIDER=r2' "$TEST_ROOT/machine-1.env"
 grep -Fx 'PUBLISHED_BUCKET=relay-ceremony-111111111111-published' "$TEST_ROOT/machine-1.env"
@@ -121,7 +138,7 @@ grep -Fx 'STORAGE_ENDPOINT=https://11111111111111111111111111111111.r2.cloudflar
 grep -Fx 'R2_ACCOUNT_ID=11111111111111111111111111111111' "$TEST_ROOT/machine-1.env"
 grep -Fx 'R2_PARENT_ACCESS_KEY_ID=parent-access' "$TEST_ROOT/machine-1.env"
 grep -Fx "R2_PARENT_TOKEN_FILE=$parent_file" "$TEST_ROOT/machine-1.env"
-grep -Fx "R2_CONTROL_WRANGLER_BIN=$(realpath -e "$TEST_ROOT/bin/wrangler")" \
+grep -Fx "R2_CONTROL_WRANGLER_BIN=$(portable_realpath "$TEST_ROOT/bin/wrangler")" \
   "$TEST_ROOT/machine-1.env"
 
 ! grep -Fq 'oauth-token' "$TEST_ROOT/stdout" "$TEST_ROOT/stderr"
@@ -129,18 +146,22 @@ grep -Fx "R2_CONTROL_WRANGLER_BIN=$(realpath -e "$TEST_ROOT/bin/wrangler")" \
 ! grep -Fq 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
   "$TEST_ROOT/stdout" "$TEST_ROOT/stderr"
 
-# shellcheck source=../three-machine-rehearsal/lib.sh
-source "$STORAGE_SETUP_SCRIPT_ROOT/../three-machine-rehearsal/lib.sh"
-STORAGE_PROVIDER=r2
-R2_PARENT_TOKEN_FILE=$parent_file
-R2_CONTROL_WRANGLER_BIN=$(realpath -e "$TEST_ROOT/bin/wrangler")
-unset RELAY_R2_PARENT_TOKEN RELAY_R2_CONTROL_TOKEN
-read_r2_parent_token_if_needed
-[[ "$RELAY_R2_PARENT_TOKEN" == parent-token ]]
-clear_r2_parent_token
-read_r2_control_token_if_needed
-[[ "$RELAY_R2_CONTROL_TOKEN" == oauth-token ]]
-clear_r2_control_token
+# The legacy three-machine library remains Linux-only. Its integration with the
+# portable R2 output stays covered by Linux CI; R2 setup runs below on both OSes.
+if [[ "$(uname -s)" == Linux ]]; then
+  # shellcheck source=../three-machine-rehearsal/lib.sh
+  source "$STORAGE_SETUP_SCRIPT_ROOT/../three-machine-rehearsal/lib.sh"
+  STORAGE_PROVIDER=r2
+  R2_PARENT_TOKEN_FILE=$parent_file
+  R2_CONTROL_WRANGLER_BIN=$(portable_realpath "$TEST_ROOT/bin/wrangler")
+  unset RELAY_R2_PARENT_TOKEN RELAY_R2_CONTROL_TOKEN
+  read_r2_parent_token_if_needed
+  [[ "$RELAY_R2_PARENT_TOKEN" == parent-token ]]
+  clear_r2_parent_token
+  read_r2_control_token_if_needed
+  [[ "$RELAY_R2_CONTROL_TOKEN" == oauth-token ]]
+  clear_r2_control_token
+fi
 
 # Exercise the headless path used when a VPS receives a bot challenge during
 # OAuth exchange. The transferred token remains in a protected file and is
@@ -192,14 +213,14 @@ auto_root="$TEST_ROOT/config-auto/relay/relay-ceremony-r2"
 [[ "$(<"$auto_root/coordinator-access-key-id")" == 33333333333333333333333333333333 ]]
 [[ "$(<"$auto_root/inbox-parent-access-key-id")" == 44444444444444444444444444444444 ]]
 [[ "$(<"$auto_root/inbox-parent-api-token")" == parent-api-token-value ]]
-coordinator_hash=$(printf '%s' coordinator-api-token-value | sha256sum)
-parent_hash=$(printf '%s' parent-api-token-value | sha256sum)
+coordinator_hash=$(printf '%s' coordinator-api-token-value | portable_sha256_stdin)
+parent_hash=$(printf '%s' parent-api-token-value | portable_sha256_stdin)
 [[ "$(<"$auto_root/coordinator-secret-access-key")" == "${coordinator_hash%% *}" ]]
 [[ "$(<"$auto_root/inbox-parent-secret-access-key")" == "${parent_hash%% *}" ]]
-[[ "$(stat -c '%a' -- "$auto_root")" == 700 ]]
+[[ "$(portable_stat_mode "$auto_root")" == 700 ]]
 for secret_file in "$auto_root"/*; do
   [[ -f "$secret_file" && ! -L "$secret_file" ]]
-  [[ "$(stat -c '%a' -- "$secret_file")" == 600 ]]
+  [[ "$(portable_stat_mode "$secret_file")" == 600 ]]
 done
 grep -Fx 'R2_PARENT_ACCESS_KEY_ID=44444444444444444444444444444444' \
   "$TEST_ROOT/machine-1-auto.env"

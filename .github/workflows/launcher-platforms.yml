@@ -23,3 +23,5 @@ jobs:
       - run: go build -trimpath -buildvcs=true -o relay ./cmd/relay
       - run: ./relay --help
       - run: bash -n scripts/install-launcher.sh
+      - name: Test portable R2 administrator setup
+        run: scripts/storage-setup/test-setup-r2.sh
