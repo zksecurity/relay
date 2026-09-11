@@ -58,9 +58,12 @@ type roleFlowState struct {
 	CatalogDigest      string
 	Profile            guidedProfile
 	Stage              int
-	Values             map[string]string
-	Attempts           []flowAttempt
-	PublicBindings     map[string]string
+	// ViewHistory records local screen navigation only. It never marks a
+	// ceremony action complete and is deliberately separate from Attempts.
+	ViewHistory    []int `json:"view_history,omitempty"`
+	Values         map[string]string
+	Attempts       []flowAttempt
+	PublicBindings map[string]string
 }
 type roleFlow struct {
 	state      roleFlowState
@@ -755,30 +758,28 @@ func (f *roleFlow) stageMenu() error {
 	for {
 		if f.state.Stage == len(f.stages) {
 			fmt.Fprintln(f.ui.output, "End of the selected ceremony areas. Review recorded results and any unfinished earlier work; reaching this screen does not establish ceremony completion or release authorization.")
-			fmt.Fprintln(f.ui.output, "1) Review an earlier stage\n0) Save and exit")
+			fmt.Fprintln(f.ui.output, "\nNAVIGATION\n  [M] Ceremony map\n  [B] Back to previous view\n  [Q] Save and exit")
 			choice, err := f.ui.ask("Choose", "0")
-			if err == io.EOF || choice == "0" {
+			if err == io.EOF || strings.EqualFold(choice, "q") || choice == "0" {
 				return f.save()
 			}
 			if err != nil {
 				return err
 			}
-			if choice != "1" {
+			if strings.EqualFold(choice, "b") {
+				if err := f.goBack(); err != nil {
+					fmt.Fprintf(f.ui.output, "Paused: %v\n", err)
+				}
+				return nil
+			}
+			if !strings.EqualFold(choice, "m") {
+				fmt.Fprintln(f.ui.output, "Choose a displayed letter.")
 				continue
 			}
-			choices := []setupChoice{}
-			for i, stage := range f.stages {
-				choices = append(choices, setupChoice{value: strconv.Itoa(i), label: stage.Label})
-			}
-			value, err := f.ui.choose("Review stage", "", choices)
-			if err != nil {
+			if _, err := f.ceremonyMap(); err != nil {
 				return err
 			}
-			f.state.Stage, _ = strconv.Atoi(value)
-			if err := f.save(); err != nil {
-				return err
-			}
-			continue
+			return nil
 		}
 		stage := f.stages[f.state.Stage]
 		decisionState := ""
@@ -851,36 +852,32 @@ func (f *roleFlow) stageMenu() error {
 		if f.state.Stage+1 < len(f.stages) {
 			nextLabel = "Open " + f.stages[f.state.Stage+1].Label
 		}
-		fmt.Fprintf(f.ui.output, "\n%d) %s\n%d) Review/recover earlier stage\n0) Save and exit\n", len(stage.Tasks)+1, nextLabel, len(stage.Tasks)+2)
+		fmt.Fprintf(f.ui.output, "\n%d) %s\n", len(stage.Tasks)+1, nextLabel)
+		fmt.Fprintln(f.ui.output, "\nNAVIGATION\n  [B] Back to overview\n  [M] Ceremony map\n  [Q] Save and exit")
 		choice, err := f.ui.ask("Choose", "0")
-		if err == io.EOF {
+		if err == io.EOF || strings.EqualFold(choice, "q") || choice == "0" {
 			return f.save()
 		}
 		if err != nil {
 			return err
 		}
+		if strings.EqualFold(choice, "b") {
+			return nil
+		}
+		if strings.EqualFold(choice, "m") {
+			if _, err := f.ceremonyMap(); err != nil {
+				return err
+			}
+			return nil
+		}
 		n, err := strconv.Atoi(choice)
-		if err != nil || n < 0 || n > len(stage.Tasks)+2 {
+		if err != nil || n < 1 || n > len(stage.Tasks)+1 {
 			fmt.Fprintln(f.ui.output, "Choose a displayed number.")
 			continue
-		}
-		if n == 0 {
-			return f.save()
 		}
 		switch n {
 		case len(stage.Tasks) + 1:
 			err = f.advance()
-		case len(stage.Tasks) + 2:
-			choices := []setupChoice{}
-			for i := 0; i <= f.state.Stage; i++ {
-				choices = append(choices, setupChoice{value: strconv.Itoa(i), label: f.stages[i].Label})
-			}
-			var value string
-			value, err = f.ui.choose("Review stage", strconv.Itoa(f.state.Stage), choices)
-			if err == nil {
-				f.state.Stage, _ = strconv.Atoi(value)
-				err = f.save()
-			}
 		default:
 			err = f.execute(stage.Tasks[n-1])
 		}
@@ -961,6 +958,11 @@ func runRoleFlow(args []string) error {
 		}
 		if f.state.Schema != roleFlowSchema || f.state.CatalogDigest != catalogDigest || f.state.Name != p.Name || f.state.Role != p.Role || !reflect.DeepEqual(f.state.Profile, p) || f.state.Stage < 0 || f.state.Stage > len(stages) || f.state.Values == nil {
 			return errors.New("workflow does not match saved role settings")
+		}
+		for _, index := range f.state.ViewHistory {
+			if index < 0 || index >= len(stages) {
+				return errors.New("workflow navigation history is invalid; preserve the workflow folder and contact the coordinator")
+			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err

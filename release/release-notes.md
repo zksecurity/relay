@@ -7,6 +7,7 @@
 - Guided custody now keeps the coordinator's online workflow and offline signer under one ceremony name. Older local profiles are migrated with a retained backup, or Relay stops if two possible profiles would make the choice ambiguous.
 - Participant custody setup now retains its public work, trust, and key-folder references so handoff receipts can use the already-prepared offline signer.
 - Guided menus now explain why each action is needed in plain language. Production decision actions are shown as required only after Relay authenticates that the ceremony is production; rehearsal actions remain hidden.
+- Guided role menus now separate numbered ceremony actions from letter-keyed navigation: view an area's details, open the ceremony map, review results, go back, or save and exit. These navigation controls never complete or skip work.
 
 ## Tessera compatibility
 

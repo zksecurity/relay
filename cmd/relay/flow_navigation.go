@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -20,6 +21,78 @@ func taskWhy(task flowTask, readiness flowReadiness) string {
 		return "The authenticated production ceremony requires this decision before release authorization. " + why
 	}
 	return why
+}
+
+// openStage changes only the local view. It does not advance a ceremony stage,
+// complete a task, or alter authenticated ceremony state.
+func (f *roleFlow) openStage(index int) error {
+	if index < 0 || index >= len(f.stages) {
+		return errors.New("selected ceremony area is unavailable")
+	}
+	if index == f.state.Stage {
+		return nil
+	}
+	f.state.ViewHistory = append(f.state.ViewHistory, f.state.Stage)
+	f.state.Stage = index
+	return f.save()
+}
+
+// goBack reverses only a prior local view jump. In particular, it never
+// reverses a completed command or moves authenticated ceremony state backward.
+func (f *roleFlow) goBack() error {
+	if len(f.state.ViewHistory) == 0 {
+		fmt.Fprintln(f.ui.output, "No earlier local view is available. Use the ceremony map to open another area.")
+		return nil
+	}
+	index := f.state.ViewHistory[len(f.state.ViewHistory)-1]
+	if index < 0 || index >= len(f.stages) {
+		return errors.New("saved navigation history is invalid; preserve the workflow folder and contact the coordinator")
+	}
+	f.state.ViewHistory = f.state.ViewHistory[:len(f.state.ViewHistory)-1]
+	f.state.Stage = index
+	return f.save()
+}
+
+func (f *roleFlow) showRecordedResults(stage flowStage) {
+	for _, task := range stage.Tasks {
+		fmt.Fprintf(f.ui.output, "\n%s\n  %s\n", task.Label, f.taskProgress(task))
+		if a := f.last(task); a != nil {
+			fmt.Fprintf(f.ui.output, "  Last attempt: %s at %s\n", a.ID, a.FinishedAt)
+		}
+	}
+}
+
+// ceremonyMap is navigation, not workflow progress. The numbered entries are
+// destinations; the letter commands are controls that apply everywhere.
+func (f *roleFlow) ceremonyMap() (bool, error) {
+	for {
+		f.ui.message(toneHeading, "\nCEREMONY MAP\n")
+		for i, stage := range f.stages {
+			marker := ""
+			if i == f.state.Stage {
+				marker = " [current view]"
+			}
+			fmt.Fprintf(f.ui.output, "  %d) %s%s\n", i+1, stage.Label, marker)
+		}
+		fmt.Fprintln(f.ui.output, "\nChoosing an area changes only this screen. It does not complete earlier work or waive verification.")
+		fmt.Fprintln(f.ui.output, "\nNAVIGATION\n  [B] Back to previous view\n  [Q] Save and exit")
+		value, err := f.ui.ask("Open area", "")
+		if err == io.EOF || strings.EqualFold(value, "q") || value == "0" {
+			return true, f.save()
+		}
+		if err != nil {
+			return false, err
+		}
+		if strings.EqualFold(value, "b") {
+			return false, f.goBack()
+		}
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 1 || n > len(f.stages) {
+			fmt.Fprintln(f.ui.output, "Choose a displayed number or letter.")
+			continue
+		}
+		return false, f.openStage(n - 1)
+	}
 }
 
 func (f *roleFlow) menu() error {
@@ -96,42 +169,34 @@ func (f *roleFlow) menu() error {
 				label = "Review missing inputs for: " + label
 			}
 		}
-		fmt.Fprintf(f.ui.output, "\n1) %s\n2) Show other actions and requirements\n3) Review recorded results\n4) Choose another ceremony area\n0) Save and exit\n------------------------------------------------------------\n", label)
+		fmt.Fprintf(f.ui.output, "\nACTION\n  1) %s\n", label)
+		fmt.Fprintln(f.ui.output, "\nNAVIGATION\n  [V] View this area's actions and requirements\n  [M] Ceremony map\n  [R] Review recorded results\n  [B] Back to previous view\n  [Q] Save and exit\n------------------------------------------------------------")
 		value, err := f.ui.ask("Choose", "1")
-		if err == io.EOF || value == "0" {
+		if err == io.EOF || strings.EqualFold(value, "q") || value == "0" {
 			return f.save()
 		}
 		if err != nil {
 			return err
 		}
-		switch value {
+		switch strings.ToLower(value) {
 		case "1":
 			if selected >= 0 {
 				err = f.execute(stage.Tasks[selected])
 			} else {
 				err = f.advance()
 			}
-		case "2":
+		case "v", "2": // 2 is a compatibility alias for saved operator habits.
 			return f.stageMenu()
-		case "3":
-			for _, task := range stage.Tasks {
-				fmt.Fprintf(f.ui.output, "\n%s\n  %s\n", task.Label, f.taskProgress(task))
-				if a := f.last(task); a != nil {
-					fmt.Fprintf(f.ui.output, "  Last attempt: %s at %s\n", a.ID, a.FinishedAt)
-				}
+		case "r", "3": // 3 is a compatibility alias for saved operator habits.
+			f.showRecordedResults(stage)
+		case "m", "4": // 4 is a compatibility alias for saved operator habits.
+			var exit bool
+			exit, err = f.ceremonyMap()
+			if exit {
+				return err
 			}
-		case "4":
-			choices := []setupChoice{}
-			for n, s := range f.stages {
-				choices = append(choices, setupChoice{value: strconv.Itoa(n), label: s.Label})
-			}
-			fmt.Fprintln(f.ui.output, "Choosing an area changes navigation only. It does not complete earlier work or waive verification.")
-			var area string
-			area, err = f.ui.choose("Open ceremony area", "", choices)
-			if err == nil {
-				f.state.Stage, _ = strconv.Atoi(area)
-				err = f.save()
-			}
+		case "b":
+			err = f.goBack()
 		default:
 			fmt.Fprintln(f.ui.output, "Choose a displayed number.")
 		}
