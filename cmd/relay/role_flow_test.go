@@ -142,6 +142,21 @@ func TestRoleFlowEveryRoleHasDistinctStagesAndSafeRecipes(t *testing.T) {
 	}
 }
 
+func TestCustodyDirectionIsFixedByWorkflow(t *testing.T) {
+	f := flowFixture(t)
+	task := flowTask{ID: "prepare-outbound-handoff", Command: []string{"mpc-ceremony", "ops", "prepare-handoff"}, Fields: []flowField{ft("direction", "Handoff direction", "outbound")}}
+	command, err := f.command(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := commandValue(command, "direction"); got != "outbound" {
+		t.Fatalf("workflow allowed an editable direction: %q (%q)", got, command)
+	}
+	if !strings.Contains(f.ui.output.(*bytes.Buffer).String(), "Handoff direction: outbound (fixed by workflow)") {
+		t.Fatal("fixed direction was not shown for review")
+	}
+}
+
 func TestRoleFlowConsentJournalAndResume(t *testing.T) {
 	f := flowFixture(t)
 	task := f.stages[0].Tasks[0]
