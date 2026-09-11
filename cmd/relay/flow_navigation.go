@@ -30,6 +30,15 @@ func (f *roleFlow) menu() error {
 		}
 		selected := -1
 		waiting := -1
+		turnHint := ""
+		if f.state.Role == "coordinator" && f.state.Profile.Work != "" && strings.HasSuffix(stage.ID, "-turns") {
+			id, err := f.nextTurnAction()
+			if err != nil {
+				f.ui.message(toneWarning, "Waiting: %v\n", err)
+			} else {
+				turnHint = id
+			}
+		}
 		if hidden {
 			fmt.Fprintln(f.ui.output, "Production decision actions hidden: not applicable to this authenticated rehearsal.")
 		} else {
@@ -54,16 +63,15 @@ func (f *roleFlow) menu() error {
 		if selected < 0 {
 			selected = waiting
 		}
-		if f.state.Role == "coordinator" && f.state.Profile.Work != "" && strings.HasSuffix(stage.ID, "-turns") {
-			id, err := f.nextTurnAction()
-			if err != nil {
-				f.ui.message(toneWarning, "Waiting: %v\n", err)
-			} else if id != "" {
-				for n, task := range stage.Tasks {
-					if task.ID == id {
-						selected = n
-						break
-					}
+		// The schedule answers who may act next; it does not prove that this
+		// participant has received and acknowledged their outbound custody
+		// handoff. Never let that convenience hint skip an earlier required
+		// workflow task.
+		if selected < 0 && turnHint != "" {
+			for n, task := range stage.Tasks {
+				if task.ID == turnHint {
+					selected = n
+					break
 				}
 			}
 		}

@@ -128,8 +128,11 @@ func runGuidedSetup(args []string) error {
 		return errors.New("saved profile already exists or cannot be inspected; use a new name instead of overwriting it")
 	}
 	if p.Role == "participant" {
-		if len(set.Args()) != 0 || p.Config == "" || p.Image != "" || amd64Image != "" || arm64Image != "" || p.Work != "" || p.Trust != "" || p.Keys != "" || p.Credentials != "" {
-			return errors.New("participant setup takes --config; execution settings come from that authenticated Docker profile")
+		if len(set.Args()) != 0 || p.Config == "" || p.Image != "" || amd64Image != "" || arm64Image != "" || p.Credentials != "" {
+			return errors.New("participant setup takes --config and optional --work/--trust/--keys; execution settings come from that authenticated Docker profile")
+		}
+		if (p.Work != "" || p.Trust != "" || p.Keys != "") && (p.Work == "" || p.Trust == "" || p.Keys == "") {
+			return errors.New("participant custody settings require all of --work, --trust and --keys")
 		}
 		config, err := loadRoleConfig(p.Config, "participant")
 		if err != nil {
