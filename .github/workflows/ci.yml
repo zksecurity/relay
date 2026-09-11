@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * *'
 
 permissions:
   contents: read
@@ -429,6 +431,11 @@ jobs:
               -t "archive-rehearsal-$role" "$RUNNER_TEMP/archive-image"
           done
       - name: Run full local ceremony, pack public files, and replay without keys
+        env:
+          # Pull requests retain real future Quicknet rounds with a short,
+          # explicitly non-production window. Main and scheduled runs exercise
+          # Tessera's full 180-second rehearsal window.
+          RELAY_FLOW_BEACON_LEAD_SECONDS: ${{ github.event_name == 'pull_request' && '12' || '180' }}
         run: |
           set -euo pipefail
           export RELAY_FLOW_DOCKER=1
