@@ -12,6 +12,7 @@
 - When preparing a participant's outbound custody packet or issuing their grant, Relay now displays the ordered participant IDs from the authenticated phase schedule, marks the expected next participant, and fills that value without allowing an out-of-order substitution.
 - Guided workflows create a required offline signing profile when it is missing, before offline custody work begins. Recipe-fixed custody direction is displayed for review and cannot be mistyped as a menu number.
 - Guided-operation failures now render their `Paused:` diagnostic in red on an interactive terminal, while retained-state recovery guidance remains plain text and redirected logs remain unstyled.
+- Recovery no longer offers an exact retry when a retained command is incompatible with the current authored workflow. Relay requires an investigation record before it will collect fresh corrected inputs.
 
 ## Tessera compatibility
 

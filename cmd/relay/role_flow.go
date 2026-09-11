@@ -289,11 +289,10 @@ func (f *roleFlow) command(task flowTask) ([]string, error) {
 			}
 			fmt.Fprintln(f.ui.output, "Relay fills the expected next participant from that signed schedule. It is not editable; stop and investigate if it is unexpected.")
 		}
-		if (task.ID == "prepare-outbound-handoff" || task.ID == "prepare-return-handoff") && field.Flag == "direction" {
+		if value, fixed := fixedWorkflowValue(task, field); fixed {
 			// A recipe-fixed value is shown for
 			// review but never asks the operator to translate a menu number into
 			// a protocol value.
-			value := field.Default
 			fmt.Fprintf(f.ui.output, "%s: %s (fixed by workflow)\n", field.Label, value)
 			f.state.Values[key] = value
 			command = append(command, "--"+field.Flag, value)
@@ -438,13 +437,22 @@ func (f *roleFlow) execute(task flowTask) error {
 	}
 	fmt.Fprintln(f.ui.output, "\n"+task.Label+"\n"+task.Help)
 	previous := f.last(task)
-	retry := previous != nil && (previous.Status == "running" || previous.Status == "failed" || f.checkAttemptEvidence(previous) != nil)
+	var savedRecipeErr error
+	if previous != nil && len(previous.Command) != 0 {
+		savedRecipeErr = validateFlowCommand(task, previous.Command)
+	}
+	retry := previous != nil && (previous.Status == "running" || previous.Status == "failed" || f.checkAttemptEvidence(previous) != nil || savedRecipeErr != nil)
 	var command []string
 	id := ""
 	if retry {
 		fmt.Fprintf(f.ui.output, "Previous attempt may have written output: %s\n", previous.ID)
 		writeActionSummary(f.ui.output, f.state.Profile, previous.Command)
-		choices := []setupChoice{{value: "retry", label: "Retry the exact saved action"}, {value: "resolve", label: "Record investigation; prepare a corrected/resume action next"}}
+		choices := []setupChoice{{value: "resolve", label: "Record investigation; prepare a corrected/resume action next"}}
+		if savedRecipeErr == nil {
+			choices = append([]setupChoice{{value: "retry", label: "Retry the exact saved action"}}, choices...)
+		} else {
+			f.ui.message(toneWarning, "Exact retry unavailable: the saved action no longer matches this workflow: %v\n", savedRecipeErr)
+		}
 		if f.state.Role != "participant" && !task.Handoff {
 			choices = append(choices, setupChoice{value: "external", label: "Record completion already verified outside this guide"})
 		}
@@ -730,6 +738,13 @@ func flowRepeatable(task flowTask) bool {
 	return len(c) > 2 && c[0] == "relay" && (c[2] == "run" || c[2] == "candidates" || c[2] == "evidence")
 }
 
+func fixedWorkflowValue(task flowTask, field flowField) (string, bool) {
+	if (task.ID == "prepare-outbound-handoff" || task.ID == "prepare-return-handoff") && field.Flag == "direction" {
+		return field.Default, true
+	}
+	return "", false
+}
+
 // Persisted commands are data, never an escape hatch into arbitrary CLI actions.
 func validateFlowCommand(task flowTask, command []string) error {
 	if len(command) < len(task.Command) || !reflect.DeepEqual(command[:len(task.Command)], task.Command) {
@@ -742,6 +757,9 @@ func validateFlowCommand(task flowTask, command []string) error {
 				continue
 			}
 			return fmt.Errorf("saved command is missing --%s", field.Flag)
+		}
+		if expected, fixed := fixedWorkflowValue(task, field); fixed && args[1] != expected {
+			return fmt.Errorf("saved command has --%s %q; this workflow requires %q", field.Flag, args[1], expected)
 		}
 		if err := validateFlowValue(field, args[1]); err != nil {
 			return err
