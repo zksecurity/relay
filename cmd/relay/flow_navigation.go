@@ -62,6 +62,39 @@ func (f *roleFlow) showRecordedResults(stage flowStage) {
 	}
 }
 
+// prepareCurrentTurnScope is the one intentionally dynamic branch in the
+// recipe: repeated coordinator turns are scoped to the next identity in the
+// authenticated schedule and accepted transcript. It establishes that scope;
+// it does not choose a task out of order.
+func (f *roleFlow) prepareCurrentTurnScope(stage flowStage) error {
+	f.turnScope = nil
+	if f.state.Role != "coordinator" || f.state.Profile.Work == "" || !strings.HasSuffix(stage.ID, "-turns") {
+		return nil
+	}
+	_, err := f.nextTurnAction()
+	return err
+}
+
+// firstUnfinishedRequiredTask follows the authored task list exactly. Readiness
+// is deliberately not an input to this decision: it explains whether the next
+// prescribed task is waiting, but never permits a later task to leapfrog it.
+func (f *roleFlow) firstUnfinishedRequiredTask(stage flowStage, hidden bool) int {
+	if hidden {
+		return -1
+	}
+	for n, task := range stage.Tasks {
+		r := f.readiness(task)
+		if r.Requirement == "Optional" || r.Requirement == "Not applicable" {
+			continue
+		}
+		a := f.last(task)
+		if a == nil || f.checkAttemptEvidence(a) != nil || (a.Status != "succeeded" && !(task.Handoff && a.Status == "reported")) {
+			return n
+		}
+	}
+	return -1
+}
+
 // ceremonyMap is navigation, not workflow progress. The numbered entries are
 // destinations; the letter commands are controls that apply everywhere.
 func (f *roleFlow) ceremonyMap() (bool, error) {
@@ -113,47 +146,13 @@ func (f *roleFlow) menu() error {
 				hidden = requirement == "not-applicable"
 			}
 		}
-		selected := -1
-		turnHint := ""
-		if f.state.Role == "coordinator" && f.state.Profile.Work != "" && strings.HasSuffix(stage.ID, "-turns") {
-			id, err := f.nextTurnAction()
-			if err != nil {
-				f.ui.message(toneWarning, "Waiting: %v\n", err)
-			} else {
-				turnHint = id
-			}
+		if err := f.prepareCurrentTurnScope(stage); err != nil {
+			f.ui.message(toneWarning, "Waiting: %v\n", err)
 		}
 		if hidden {
 			fmt.Fprintln(f.ui.output, "Production decision actions hidden: not applicable to this authenticated rehearsal.")
-		} else {
-			for n, task := range stage.Tasks {
-				a := f.last(task)
-				r := f.readiness(task)
-				if r.Requirement == "Optional" || r.Requirement == "Not applicable" {
-					continue
-				}
-				if a == nil || f.checkAttemptEvidence(a) != nil || (a.Status != "succeeded" && !(task.Handoff && a.Status == "reported")) {
-					// Preserve the ceremony order in the recommendation. A later
-					// handoff may be locally ready because it has no file inputs, but
-					// it cannot become the suggested next step while contribution (or
-					// any earlier required action) is still waiting for its inputs.
-					selected = n
-					break
-				}
-			}
 		}
-		// The schedule answers who may act next; it does not prove that this
-		// participant has received and acknowledged their outbound custody
-		// handoff. Never let that convenience hint skip an earlier required
-		// workflow task.
-		if selected < 0 && turnHint != "" {
-			for n, task := range stage.Tasks {
-				if task.ID == turnHint {
-					selected = n
-					break
-				}
-			}
-		}
+		selected := f.firstUnfinishedRequiredTask(stage, hidden)
 		label := "Review requirements before opening the next area"
 		if selected >= 0 {
 			task := stage.Tasks[selected]
