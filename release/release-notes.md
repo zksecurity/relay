@@ -9,7 +9,7 @@
 - Guided menus now explain why each action is needed in plain language. Production decision actions are shown as required only after Relay authenticates that the ceremony is production; rehearsal actions remain hidden.
 - Guided role menus now separate numbered ceremony actions from letter-keyed navigation: view an area's details, open the ceremony map, review results, go back, or save and exit. These navigation controls never complete or skip work.
 - Guided recommendations follow the authored workflow order, not a local readiness heuristic. Readiness explains why the prescribed next action is waiting; it cannot let a later handoff leapfrog a contribution awaiting a fresh grant or profile.
-- When issuing a participant grant, Relay now displays the ordered participant IDs from the authenticated phase schedule, marks the expected next participant, and fills that value without allowing an out-of-order substitution.
+- When preparing a participant's outbound custody packet or issuing their grant, Relay now displays the ordered participant IDs from the authenticated phase schedule, marks the expected next participant, and fills that value without allowing an out-of-order substitution.
 
 ## Tessera compatibility
 
