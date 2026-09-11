@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -92,7 +93,8 @@ func TestRoleFlowDockerRecipeFlags(t *testing.T) {
 
 // This opt-in integration runs real tiny phase1 AND phase2 contributions in
 // disposable Docker containers, followed by the guide's finalization/audit/
-// release recipes. It waits for two real future Quicknet rounds. Public-file
+// release recipes. It waits for two real future Quicknet rounds; CI may use an
+// explicitly short non-production witness window. Public-file
 // handoff and explicitly same-host operational fixtures replace cloud transport
 // and independent humans; neither is claimed to be tested by this lane.
 func TestRoleFlowDockerFullCeremony(t *testing.T) {
@@ -104,6 +106,14 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 	proofSource := os.Getenv("RELAY_PROOF_TOOL_DIR")
 	if proofSource == "" || online == "" || offline == "" {
 		t.Fatal("missing test inputs")
+	}
+	beaconLeadSeconds := uint64(12)
+	if raw := os.Getenv("RELAY_FLOW_BEACON_LEAD_SECONDS"); raw != "" {
+		parsed, err := strconv.ParseUint(raw, 10, 32)
+		if err != nil || parsed < 12 {
+			t.Fatalf("RELAY_FLOW_BEACON_LEAD_SECONDS must be an integer of at least 12 seconds, got %q", raw)
+		}
+		beaconLeadSeconds = parsed
 	}
 	work := os.Getenv("RELAY_FLOW_WORK")
 	if work == "" {
@@ -162,7 +172,7 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 		}
 		return bound.Attached(os.Stdout, os.Stderr, args...)
 	}
-	if err := runRole("coordinator", "", []string{"mpc-ceremony", "rehearsal", "init", "--created-at", time.Now().UTC().Add(-time.Minute).Format(time.RFC3339), "--out-dir", "/work/ceremony"}); err != nil {
+	if err := runRole("coordinator", "", []string{"mpc-ceremony", "rehearsal", "init", "--created-at", time.Now().UTC().Add(-time.Minute).Format(time.RFC3339), "--out-dir", "/work/ceremony", "--beacon-lead-seconds", strconv.FormatUint(beaconLeadSeconds, 10)}); err != nil {
 		t.Fatal(err)
 	}
 	root := filepath.Join(work, "ceremony", "public")
@@ -368,7 +378,7 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		values := map[string][]string{"chain": {"/work/ceremony/public/" + phase + "/chain-0003.json"}, "chain-signature": {"/work/ceremony/public/" + phase + "/chain-0003.sig"}, "beacon-round-lead": {"305"}}
+		values := map[string][]string{"chain": {"/work/ceremony/public/" + phase + "/chain-0003.json"}, "chain-signature": {"/work/ceremony/public/" + phase + "/chain-0003.sig"}, "beacon-round-lead": {strconv.FormatUint(beaconLeadSeconds+5, 10)}}
 		execute("coordinator", "coordinator", phase+"-close", "close", values)
 		publishCloud(phase, 3, true)
 		var closure struct {
@@ -566,5 +576,5 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 	if cloud {
 		transport = "real AWS scoped candidate uploads, coordinator downloads/acceptance and S3/CloudFront head publication; audit/final-signer handoffs remain local"
 	}
-	t.Logf("PASS: 3+3 Docker contributions, removal+signed cleanup, real future beacons, both-phase replay, public proof, two audits, operational fixture verification, release signing/verification. Transport: %s. Same-host operational fixtures, not independent operators or production approval. Public outputs: %s", transport, work)
+	t.Logf("PASS: 3+3 Docker contributions, removal+signed cleanup, real future beacons with a %d-second signed witness window, both-phase replay, public proof, one audit, operational fixture verification, release signing/verification. Transport: %s. Same-host operational fixtures, not independent operators or production approval. Public outputs: %s", beaconLeadSeconds, transport, work)
 }
