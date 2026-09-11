@@ -152,6 +152,11 @@ func TestCustodyDirectionIsFixedByWorkflow(t *testing.T) {
 	if got := commandValue(command, "direction"); got != "outbound" {
 		t.Fatalf("workflow allowed an editable direction: %q (%q)", got, command)
 	}
+	invalid := append([]string(nil), command...)
+	invalid[len(invalid)-1] = "1"
+	if err := validateFlowCommand(task, invalid); err == nil {
+		t.Fatal("obsolete editable custody direction was accepted for retry")
+	}
 	if !strings.Contains(f.ui.output.(*bytes.Buffer).String(), "Handoff direction: outbound (fixed by workflow)") {
 		t.Fatal("fixed direction was not shown for review")
 	}
