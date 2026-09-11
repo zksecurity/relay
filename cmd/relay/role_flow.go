@@ -837,7 +837,7 @@ func (f *roleFlow) stageMenu() error {
 			}
 			if strings.EqualFold(choice, "b") {
 				if err := f.goBack(); err != nil {
-					fmt.Fprintf(f.ui.output, "Paused: %v\n", err)
+					f.ui.message(toneError, "Paused: %v\n", err)
 				}
 				return nil
 			}
@@ -945,7 +945,8 @@ func (f *roleFlow) stageMenu() error {
 			err = f.execute(stage.Tasks[n-1])
 		}
 		if err != nil {
-			fmt.Fprintf(f.ui.output, "Paused: %v\nFiles and progress retained. Do not bypass verification.\n", err)
+			f.ui.message(toneError, "Paused: %v\n", err)
+			fmt.Fprintln(f.ui.output, "Files and progress retained. Do not bypass verification.")
 		}
 	}
 }
