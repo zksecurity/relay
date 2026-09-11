@@ -114,7 +114,6 @@ func (f *roleFlow) menu() error {
 			}
 		}
 		selected := -1
-		waiting := -1
 		turnHint := ""
 		if f.state.Role == "coordinator" && f.state.Profile.Work != "" && strings.HasSuffix(stage.ID, "-turns") {
 			id, err := f.nextTurnAction()
@@ -134,19 +133,14 @@ func (f *roleFlow) menu() error {
 					continue
 				}
 				if a == nil || f.checkAttemptEvidence(a) != nil || (a.Status != "succeeded" && !(task.Handoff && a.Status == "reported")) {
-					if r.Status == "Waiting" {
-						if waiting < 0 {
-							waiting = n
-						}
-						continue
-					}
+					// Preserve the ceremony order in the recommendation. A later
+					// handoff may be locally ready because it has no file inputs, but
+					// it cannot become the suggested next step while contribution (or
+					// any earlier required action) is still waiting for its inputs.
 					selected = n
 					break
 				}
 			}
-		}
-		if selected < 0 {
-			selected = waiting
 		}
 		// The schedule answers who may act next; it does not prove that this
 		// participant has received and acknowledged their outbound custody

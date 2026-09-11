@@ -105,6 +105,37 @@ func TestFlowLetterNavigationReturnsToPriorViewWithoutChangingWork(t *testing.T)
 	}
 }
 
+func TestParticipantRecommendationDoesNotSkipWaitingContribution(t *testing.T) {
+	stages := roleFlowStages("participant")
+	f := flowFixture(t)
+	f.state.Role = "participant"
+	f.state.Stage = 1 // phase1 contribution; assignment is stage zero.
+	f.state.Profile.Work = t.TempDir()
+	f.stages = stages
+	phase := stages[1]
+	// The participant has completed the input custody sequence. Their fresh
+	// grant/profile is absent, so contribution is waiting. The later output
+	// delivery handoff has no local file prerequisite and used to leapfrog it.
+	for _, task := range phase.Tasks[:4] {
+		status := "succeeded"
+		if task.Handoff {
+			status = "reported"
+		}
+		f.state.Attempts = append(f.state.Attempts, flowAttempt{Task: task.ID, Stage: phase.ID, Status: status})
+	}
+	f.ui.input = bufio.NewReader(strings.NewReader("q\n"))
+	if err := f.menu(); err != nil {
+		t.Fatal(err)
+	}
+	out := f.ui.output.(*bytes.Buffer).String()
+	if !strings.Contains(out, "NEXT REQUIRED ACTION\n  Contribute, confirm cleanup and upload") {
+		t.Fatalf("contribution was not retained as the next action:\n%s", out)
+	}
+	if strings.Contains(out, "NEXT REQUIRED ACTION\n  Deliver the public candidate") {
+		t.Fatalf("later return handoff leapfrogged the contribution:\n%s", out)
+	}
+}
+
 func TestFlowExternalReportIsWaitingNotVerified(t *testing.T) {
 	f := flowFixture(t)
 	task := f.stages[0].Tasks[0]
