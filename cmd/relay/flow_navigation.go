@@ -197,7 +197,8 @@ func (f *roleFlow) menu() error {
 			fmt.Fprintln(f.ui.output, "Choose a displayed number.")
 		}
 		if err != nil {
-			fmt.Fprintf(f.ui.output, "Paused: %v\nFiles and progress retained.\n", err)
+			f.ui.message(toneError, "Paused: %v\n", err)
+			fmt.Fprintln(f.ui.output, "Files and progress retained.")
 		}
 	}
 }
