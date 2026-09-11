@@ -231,6 +231,9 @@ jobs:
     needs: [build, launchers, docker-smoke]
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: release-*
@@ -278,7 +281,7 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           target_commitish: ${{ env.RELAY_COMMIT }}
           name: Role images ${{ env.RELEASE_TAG }}
-          body: GitHub-attested CI role-image release for protected-main commit `${{ env.RELAY_COMMIT }}`.
+          body_path: release/release-notes.md
           files: |
             relay-role-images.release.json
             ceremony-software-manifest-v2.json

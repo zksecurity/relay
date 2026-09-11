@@ -56,6 +56,9 @@ Published availability requires the compatible protected-main release workflow,
 including its attested manifest; passing PR tests alone is insufficient. Respect
 required reviews and do not bypass release protections. Website activation also
 requires its separate trusted-release provisioning and deployment smoke check.
+Every PR must update `release/release-notes.md` with a short human-readable summary
+and an explicit Tessera compatibility statement; the protected-main release uses
+that reviewed text instead of a generated commit list.
 For documentation-only edits, verify referenced paths and content; a full test
 run is unnecessary.
 
