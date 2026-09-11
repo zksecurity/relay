@@ -22,6 +22,23 @@ func TestProductionDecisionCannotBeSkippedAsOptional(t *testing.T) {
 	}
 }
 
+func TestProductionDecisionMenuMarksEveryDecisionActionRequired(t *testing.T) {
+	f := flowFixture(t)
+	f.stages = []flowStage{decisionFlow("coordinator")}
+	f.definition = func() (transcript.Definition, error) { return transcript.Definition{Mode: "production"}, nil }
+	f.ui.input = bufio.NewReader(strings.NewReader("0\n"))
+	if err := f.stageMenu(); err != nil {
+		t.Fatal(err)
+	}
+	out := f.ui.output.(*bytes.Buffer).String()
+	if !strings.Contains(out, "Suggested next step: 1 — Prepare the canonical GO/NO-GO decision") {
+		t.Fatalf("production decision menu suggested the wrong action:\n%s", out)
+	}
+	if strings.Contains(out, "[Optional]") || !strings.Contains(out, "[Required]") {
+		t.Fatalf("production decision actions were not displayed as required:\n%s", out)
+	}
+}
+
 func TestRehearsalDecisionHiddenOnlyAfterAuthentication(t *testing.T) {
 	f := flowFixture(t)
 	f.stages = []flowStage{decisionFlow("coordinator")}

@@ -210,6 +210,22 @@ func TestRolePreparationRejectsChangedProfileAndMissingImages(t *testing.T) {
 	}
 }
 
+func TestRolePreparationExplainsHostDisconnectionPrecisely(t *testing.T) {
+	for _, role := range []string{"participant", "release-signer"} {
+		t.Run(role, func(t *testing.T) {
+			p := preparationFixture(t, role)
+			p.ui.input = bufio.NewReader(strings.NewReader("6\n0\n"))
+			if err := p.menu(); err != nil {
+				t.Fatal(err)
+			}
+			out := p.ui.output.(*bytes.Buffer).String()
+			if !strings.Contains(out, "Only the final signer must disconnect the host") || strings.Contains(out, "Disconnect the signing host when prompted") {
+				t.Fatalf("imprecise host-disconnection guidance: %s", out)
+			}
+		})
+	}
+}
+
 func TestRolePreparationParticipantWorkflowDefaults(t *testing.T) {
 	f := flowFixture(t)
 	f.state.Role = "participant"

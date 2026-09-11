@@ -14,14 +14,14 @@ func (w *coordinatorWizard) nextPreparationAction() preparationNext {
 	d := w.d
 	if d.Status != "draft" {
 		if d.Status != "definition-verified" {
-			return preparationNext{"9", "Verify existing definition (recover an interrupted initialization)", "Required: recovery procedure. Settings are frozen; do not initialize again."}
+			return preparationNext{"9", "Verify existing definition (recover an interrupted initialization)", "Settings are frozen after an interrupted initialization. Verify the retained definition instead of initializing again."}
 		}
 		if w.localAction != nil {
 			return preparationNext{"0", "Save and exit", "Local setup test complete. No contributions or cloud setup were performed."}
 		}
 		for _, name := range []string{"canonical.json", "enrollment.sig"} {
 			if info, err := os.Lstat(filepath.Join(d.Work, "my-enrollment", name)); err != nil || !info.Mode().IsRegular() {
-				return preparationNext{"13", "Prepare, review and sign MY coordinator enrollment", "Required: role procedure. This binds your key to the signed assignment; it does not establish independent people. Existing output is reviewed before reuse."}
+				return preparationNext{"13", "Prepare, review and sign MY coordinator enrollment", "Bind your key to the signed coordinator assignment. This proves key control, not independent people. Existing output is reviewed before reuse."}
 			}
 		}
 		if w.d.Tessera != nil || w.d.TesseraSetup != nil {
@@ -30,18 +30,18 @@ func (w *coordinatorWizard) nextPreparationAction() preparationNext {
 			}
 			return preparationNext{"16", "Export setup for Tessera", "Export the completed setup, then upload it to Tessera for review and locking. Enrollment files are present; operations reverify their evidence."}
 		}
-		return preparationNext{"12", "Open ceremony operations and progress", "Required: role procedure. Enrollment files are present, not verified by this menu. Operations recheck the relevant evidence."}
+		return preparationNext{"12", "Open ceremony operations and progress", "Continue with the coordinator workflow. Enrollment files are present but this menu has not verified them; operations recheck the relevant evidence."}
 	}
 	if (d.Mode != "rehearsal" && d.Mode != "production") || (d.Circuit != "ownership-destination-v2" && !(d.Mode == "rehearsal" && d.Circuit == "rehearsal-tiny-v1")) {
-		return preparationNext{"1", "Basics: choose ceremony mode and circuit", "Required: signed ceremony definition."}
+		return preparationNext{"1", "Basics: choose ceremony mode and circuit", "A signed definition must identify the ceremony mode and circuit."}
 	}
 	if d.Identities.Coordinator.check() != nil {
 		for _, name := range []string{"identity.json", "signing.hex"} {
 			if _, err := os.Lstat(filepath.Join(d.Keys, name)); !os.IsNotExist(err) {
-				return preparationNext{"3", "Import or recover your existing coordinator identity", "Required: signing identity. Key output already exists or cannot be inspected; preserve it rather than generate over it."}
+				return preparationNext{"3", "Import or recover your existing coordinator identity", "Use your existing coordinator signing identity. A key output already exists or cannot be inspected, so Relay will not generate over it."}
 			}
 		}
-		return preparationNext{"2", "Generate MY coordinator identity", "Required: your own signing identity. Other roles provide their public identity files."}
+		return preparationNext{"2", "Generate MY coordinator identity", "Create the signing identity for your coordinator role. Other roles provide their own public identity files."}
 	}
 	ids := []setupIdentity{d.Identities.Coordinator, d.Identities.ReleaseSigner}
 	ids = append(ids, d.Identities.Auditors...)
@@ -57,25 +57,25 @@ func (w *coordinatorWizard) nextPreparationAction() preparationNext {
 		seenID[id.ID], seenKey[id.KeyID], seenPub[id.Fingerprint] = true, true, true
 	}
 	if !rosterReady {
-		return preparationNext{"3", "Import or correct the required public identities", "Required: coordinator, final-parameter signer, at least one auditor and one participant, with distinct keys. Witness/mirror enrollments come after initialization."}
+		return preparationNext{"3", "Import or correct the required public identities", "The definition needs a coordinator, final signer, at least one auditor, and at least one participant with distinct keys. Witness and mirror enrollments come after initialization."}
 	}
 	if d.ArchitecturePolicy != "" && d.ArchitecturePolicy != "both" && d.ArchitecturePolicy != "single" && d.ArchitecturePolicy != "custom" {
-		return preparationNext{"5", "Review supported computers", "Required: correct the saved architecture selection. Both architectures are the default."}
+		return preparationNext{"5", "Review supported computers", "Correct the saved architecture selection. Both supported Linux architectures are selected by default."}
 	}
 	if err := d.validate(); err != nil {
-		return preparationNext{"4", "Review participant orders, minimums and beacon policy", "Required: signed ceremony policy. " + err.Error()}
+		return preparationNext{"4", "Review participant orders, minimums and beacon policy", "The signed definition needs a valid participant order, contribution minimum, and beacon policy. " + err.Error()}
 	}
 	if w.localAction == nil && !d.OfflinePreparation {
 		s := coordinatorStorageSettings{"relay-coordinator-storage-settings-v1", d.Storage}
 		if _, err := s.infrastructure(); err != nil || d.Credentials == "" || (d.Storage["provider"] == "r2" && (d.R2Parent == "" || d.R2Control == "")) {
-			return preparationNext{"6", "Set up storage and protected credentials", "Required for online operation: Relay procedure, not cryptography. Explicit offline preparation is available under other actions."}
+			return preparationNext{"6", "Set up storage and protected credentials", "Online operations need verified storage settings and protected credentials. This is Relay safety workflow, not a cryptographic requirement. Explicit offline preparation is available under other actions."}
 		}
 	}
 	label := "Check storage, review and approve initialization"
 	if w.localAction != nil || d.OfflinePreparation {
 		label = "Review and approve initialization"
 	}
-	return preparationNext{"8", label, "Required: explicit approval. Saved settings are not proof of live storage access. Initialization revalidates inputs and asks before signing."}
+	return preparationNext{"8", label, "Freeze the reviewed settings into the signed definition. Saved settings do not prove live storage access; initialization rechecks inputs and asks before signing."}
 }
 
 func (w *coordinatorWizard) preparationHeading(next preparationNext) {
@@ -95,6 +95,6 @@ func (w *coordinatorWizard) preparationHeading(next preparationNext) {
 	} else if next.choice == "0" {
 		heading = "SETUP CHECKPOINT"
 	}
-	w.message(toneHeading, "\n%s\n  %s\n", heading, next.label)
+	w.message(toneHeading, "\n%s\n  %s\n\nWHY THIS STEP IS NEEDED\n", heading, next.label)
 	w.message(toneMuted, "  %s\n", next.reason)
 }

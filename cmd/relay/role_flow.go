@@ -795,12 +795,20 @@ func (f *roleFlow) stageMenu() error {
 			if decisionState == "not-applicable" {
 				break
 			}
+			// Until the signed definition is authenticated, decision work is
+			// deliberately waiting rather than merely optional.  In production,
+			// every decision task is mandatory despite being marked Optional in
+			// the reusable catalog so rehearsal can hide the whole stage.
+			if stage.ID == "decision" && decisionState == "" {
+				break
+			}
 			last := f.last(task)
 			if last != nil && (last.Status == "running" || last.Status == "failed") {
 				fmt.Fprintf(f.ui.output, "Needs attention: %d — %s. Review the retained attempt before retrying.\n", n+1, task.Label)
 				break
 			}
-			if !task.Optional && (last == nil || (last.Status != "succeeded" && last.Status != "reported")) {
+			required := !task.Optional || (stage.ID == "decision" && decisionState == "required")
+			if required && (last == nil || (last.Status != "succeeded" && last.Status != "reported")) {
 				fmt.Fprintf(f.ui.output, "Suggested next step: %d — %s. This is local progress guidance, not ceremony authorization.\n", n+1, task.Label)
 				break
 			}
@@ -828,16 +836,13 @@ func (f *roleFlow) stageMenu() error {
 					status = "Needs attention — " + err.Error()
 				}
 			}
-			label := task.Label
-			status = f.taskProgress(task)
-			reason := "Required by the role's operating procedure; commands enforce cryptographic checks"
-			if task.Optional {
-				reason = "Conditional helper; required evidence and production gates still apply"
+			readiness := f.readiness(task)
+			status = readiness.summary()
+			kind := readiness.Requirement
+			if stage.ID == "decision" && decisionState == "" {
+				kind = "Waiting for authenticated ceremony mode"
 			}
-			if stage.ID == "decision" {
-				reason = "Required for production authorization; cannot be skipped"
-			}
-			fmt.Fprintf(f.ui.output, "\n%d) %s\n   %s\n   %s\n", n+1, label, reason, status)
+			fmt.Fprintf(f.ui.output, "\n%d) %s [%s]\n   Why: %s\n   Status: %s\n", n+1, task.Label, kind, taskWhy(task, readiness), status)
 		}
 		if decisionState == "not-applicable" {
 			fmt.Fprintln(f.ui.output, "Production decision actions hidden: not applicable to this authenticated rehearsal.")
