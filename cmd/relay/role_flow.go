@@ -77,6 +77,49 @@ type roleFlow struct {
 
 func (f *roleFlow) save() error { return saveJSONAtomic(f.path, f.state) }
 
+func flowNeedsOfflineSigner(stages []flowStage) bool {
+	for _, stage := range stages {
+		for _, task := range stage.Tasks {
+			if task.Offline {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ensureOfflineSigningProfile makes the guided workflow self-contained. The
+// profile is only created when absent; each later signing action still checks
+// that its public folders and release match before it can run.
+func ensureOfflineSigningProfile(p guidedProfile, root string) error {
+	alias := offlineRoleAlias(p.Name, p.Role)
+	dir, err := guidedDirectory(root, alias, "decision-signer")
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "profile.json")); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	image := p.Image
+	if p.ReleaseCommit == "" && image == "" && p.Role == "participant" {
+		config, err := loadRoleConfig(p.Config, "participant")
+		if err != nil {
+			return err
+		}
+		image = config.DockerImage
+	}
+	args := []string{alias, "--settings-root", root, "--role", "decision-signer", "--work", p.Work, "--trust", p.Trust, "--keys", p.Keys}
+	if p.ReleaseCommit != "" {
+		args = append(args, "--release", "role-images-"+p.ReleaseCommit)
+	} else {
+		args = append(args, "--image", image, "--download=false")
+	}
+	fmt.Fprintln(os.Stdout, "Preparing the required offline signing profile for this guided workflow.")
+	return runGuidedSetup(args)
+}
+
 func saveJSONAtomic(path string, value any) error {
 	// Private, fsynced replacement; callers hold the workflow lock.
 	raw, err := json.Marshal(value)
@@ -245,6 +288,16 @@ func (f *roleFlow) command(task flowTask) ([]string, error) {
 				fmt.Fprintf(f.ui.output, "  %s\n", choice.label)
 			}
 			fmt.Fprintln(f.ui.output, "Relay fills the expected next participant from that signed schedule. It is not editable; stop and investigate if it is unexpected.")
+		}
+		if (task.ID == "prepare-outbound-handoff" || task.ID == "prepare-return-handoff") && field.Flag == "direction" {
+			// A recipe-fixed value is shown for
+			// review but never asks the operator to translate a menu number into
+			// a protocol value.
+			value := field.Default
+			fmt.Fprintf(f.ui.output, "%s: %s (fixed by workflow)\n", field.Label, value)
+			f.state.Values[key] = value
+			command = append(command, "--"+field.Flag, value)
+			continue
 		}
 		var grantRange flowGrantLimits
 		var grantTTL time.Duration
@@ -931,6 +984,11 @@ func runRoleFlow(args []string) error {
 	stages := roleFlowStages(*role)
 	if len(stages) == 0 {
 		return errors.New("no guided workflow for this role")
+	}
+	if flowNeedsOfflineSigner(stages) {
+		if err := ensureOfflineSigningProfile(p, root); err != nil {
+			return fmt.Errorf("prepare the offline signing profile before guided work: %w", err)
+		}
 	}
 	if err := ensurePrivateDirectory(filepath.Join(dir, "workflow")); err != nil {
 		return err

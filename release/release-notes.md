@@ -10,6 +10,7 @@
 - Guided role menus now separate numbered ceremony actions from letter-keyed navigation: view an area's details, open the ceremony map, review results, go back, or save and exit. These navigation controls never complete or skip work.
 - Guided recommendations follow the authored workflow order, not a local readiness heuristic. Readiness explains why the prescribed next action is waiting; it cannot let a later handoff leapfrog a contribution awaiting a fresh grant or profile.
 - When preparing a participant's outbound custody packet or issuing their grant, Relay now displays the ordered participant IDs from the authenticated phase schedule, marks the expected next participant, and fills that value without allowing an out-of-order substitution.
+- Guided workflows create a required offline signing profile when it is missing, before offline custody work begins. Recipe-fixed custody direction is displayed for review and cannot be mistyped as a menu number.
 
 ## Tessera compatibility
 
