@@ -75,7 +75,8 @@ func (f *roleFlow) ceremonyMap() (bool, error) {
 			fmt.Fprintf(f.ui.output, "  %d) %s%s\n", i+1, stage.Label, marker)
 		}
 		fmt.Fprintln(f.ui.output, "\nChoosing an area changes only this screen. It does not complete earlier work or waive verification.")
-		fmt.Fprintln(f.ui.output, "\nNAVIGATION\n  [B] Back to previous view\n  [Q] Save and exit")
+		f.ui.message(toneMuted, "\nNAVIGATION\n")
+		fmt.Fprintln(f.ui.output, "  [B] Back to previous view\n  [Q] Save and exit")
 		value, err := f.ui.ask("Open area", "")
 		if err == io.EOF || strings.EqualFold(value, "q") || value == "0" {
 			return true, f.save()
@@ -169,8 +170,10 @@ func (f *roleFlow) menu() error {
 				label = "Review missing inputs for: " + label
 			}
 		}
-		fmt.Fprintf(f.ui.output, "\nACTION\n  1) %s\n", label)
-		fmt.Fprintln(f.ui.output, "\nNAVIGATION\n  [V] View this area's actions and requirements\n  [M] Ceremony map\n  [R] Review recorded results\n  [B] Back to previous view\n  [Q] Save and exit\n------------------------------------------------------------")
+		f.ui.message(toneSuccess, "\nACTION\n")
+		fmt.Fprintf(f.ui.output, "  1) %s\n", label)
+		f.ui.message(toneMuted, "\nNAVIGATION\n")
+		fmt.Fprintln(f.ui.output, "  [V] View this area's actions and requirements\n  [M] Ceremony map\n  [R] Review recorded results\n  [B] Back to previous view\n  [Q] Save and exit\n------------------------------------------------------------")
 		value, err := f.ui.ask("Choose", "1")
 		if err == io.EOF || strings.EqualFold(value, "q") || value == "0" {
 			return f.save()

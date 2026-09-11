@@ -758,7 +758,8 @@ func (f *roleFlow) stageMenu() error {
 	for {
 		if f.state.Stage == len(f.stages) {
 			fmt.Fprintln(f.ui.output, "End of the selected ceremony areas. Review recorded results and any unfinished earlier work; reaching this screen does not establish ceremony completion or release authorization.")
-			fmt.Fprintln(f.ui.output, "\nNAVIGATION\n  [M] Ceremony map\n  [B] Back to previous view\n  [Q] Save and exit")
+			f.ui.message(toneMuted, "\nNAVIGATION\n")
+			fmt.Fprintln(f.ui.output, "  [M] Ceremony map\n  [B] Back to previous view\n  [Q] Save and exit")
 			choice, err := f.ui.ask("Choose", "0")
 			if err == io.EOF || strings.EqualFold(choice, "q") || choice == "0" {
 				return f.save()
@@ -852,8 +853,10 @@ func (f *roleFlow) stageMenu() error {
 		if f.state.Stage+1 < len(f.stages) {
 			nextLabel = "Open " + f.stages[f.state.Stage+1].Label
 		}
-		fmt.Fprintf(f.ui.output, "\n%d) %s\n", len(stage.Tasks)+1, nextLabel)
-		fmt.Fprintln(f.ui.output, "\nNAVIGATION\n  [B] Back to overview\n  [M] Ceremony map\n  [Q] Save and exit")
+		f.ui.message(toneSuccess, "\nWORKFLOW ACTION\n")
+		fmt.Fprintf(f.ui.output, "  %d) %s\n", len(stage.Tasks)+1, nextLabel)
+		f.ui.message(toneMuted, "\nNAVIGATION\n")
+		fmt.Fprintln(f.ui.output, "  [B] Back to overview\n  [M] Ceremony map\n  [Q] Save and exit")
 		choice, err := f.ui.ask("Choose", "0")
 		if err == io.EOF || strings.EqualFold(choice, "q") || choice == "0" {
 			return f.save()
