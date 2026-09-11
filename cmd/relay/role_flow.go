@@ -50,7 +50,9 @@ type flowAttempt struct {
 	InputBindings           map[string]string `json:",omitempty"`
 	DirectoryBindings       map[string]string `json:",omitempty"`
 	ReceiptScope            *flowReceiptScope `json:",omitempty"`
+	TurnScope               *flowTurnScope    `json:",omitempty"`
 }
+type flowTurnScope struct{ Phase, Participant, Head string }
 type roleFlowState struct {
 	Schema, Name, Role string
 	CatalogDigest      string
@@ -67,6 +69,7 @@ type roleFlow struct {
 	ui         coordinatorWizard
 	run        func(flowTask, []string, string, bool) error
 	definition func() (transcript.Definition, error)
+	turnScope  *flowTurnScope
 }
 
 func (f *roleFlow) save() error { return saveJSONAtomic(f.path, f.state) }
@@ -337,7 +340,7 @@ func flowHostPath(p guidedProfile, value string) string {
 func (f *roleFlow) last(task flowTask) *flowAttempt {
 	for n := len(f.state.Attempts) - 1; n >= 0; n-- {
 		a := &f.state.Attempts[n]
-		if a.Task == task.ID && a.Stage == f.stages[f.state.Stage].ID {
+		if a.Task == task.ID && a.Stage == f.stages[f.state.Stage].ID && (f.turnScope == nil || (a.TurnScope != nil && *a.TurnScope == *f.turnScope)) {
 			return a
 		}
 	}
@@ -437,7 +440,7 @@ func (f *roleFlow) execute(task flowTask) error {
 			if err := f.checkAttemptEvidence(&flowAttempt{InputBindings: bindings}); err != nil {
 				return err
 			}
-			f.state.Attempts = append(f.state.Attempts, flowAttempt{ID: id, Task: task.ID, Stage: f.stages[f.state.Stage].ID, Status: status, Note: note, InputBindings: bindings, FinishedAt: time.Now().UTC().Format(time.RFC3339Nano)})
+			f.state.Attempts = append(f.state.Attempts, flowAttempt{ID: id, Task: task.ID, Stage: f.stages[f.state.Stage].ID, Status: status, Note: note, InputBindings: bindings, TurnScope: f.turnScope, FinishedAt: time.Now().UTC().Format(time.RFC3339Nano)})
 			return f.save()
 		}
 		command, err = f.command(task)
@@ -495,7 +498,7 @@ func (f *roleFlow) execute(task flowTask) error {
 		return err
 	}
 	// Persist before invoking Docker. A crash is an uncertain attempt, not success.
-	f.state.Attempts = append(f.state.Attempts, flowAttempt{ID: id, Task: task.ID, Stage: f.stages[f.state.Stage].ID, Status: "running", Command: append([]string(nil), command...), StartedAt: time.Now().UTC().Format(time.RFC3339Nano), InputBindings: inputBindings})
+	f.state.Attempts = append(f.state.Attempts, flowAttempt{ID: id, Task: task.ID, Stage: f.stages[f.state.Stage].ID, Status: "running", Command: append([]string(nil), command...), StartedAt: time.Now().UTC().Format(time.RFC3339Nano), InputBindings: inputBindings, TurnScope: f.turnScope})
 	index := len(f.state.Attempts) - 1
 	f.state.Attempts[index].ReceiptScope = receiptScope
 	f.state.Attempts[index].DirectoryBindings = directoryBindings

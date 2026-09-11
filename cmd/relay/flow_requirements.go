@@ -130,6 +130,7 @@ func (f *roleFlow) nextTurnAction() (string, error) {
 		return "", nil
 	}
 	next := schedule[len(head.Chain.Records)]
+	f.turnScope = &flowTurnScope{Phase: phase, Participant: next, Head: head.Digest}
 	fmt.Fprintf(f.ui.output, "Next scheduled participant: %s (%d/%d). Acceptance must be independently verified.\n", next, len(head.Chain.Records)+1, len(schedule))
 	for _, task := range f.stages[f.state.Stage].Tasks {
 		if task.ID == "grant" {

@@ -73,10 +73,40 @@ func (p *rolePreparer) profile(role string) (guidedProfile, error) {
 		if v.Config != filepath.Join(p.d.Work, "ceremony/config/participant-phase1.json") {
 			return v, errors.New("unexpected participant profile")
 		}
+		// Older participant profiles deliberately stored only --config.  Custody
+		// actions also need the same public folders as the already-prepared
+		// offline signer.  These paths are fully derivable from this preparation,
+		// so migrate them once while retaining an exact private backup.
+		if v.Work == "" && v.Trust == "" && v.Keys == "" {
+			if err := p.migrateLegacyParticipantProfile(role, v); err != nil {
+				return v, err
+			}
+			v.Work, v.Trust, v.Keys = p.d.Work, p.d.Trust, p.d.Keys
+		}
+		if v.Work != p.d.Work || v.Trust != p.d.Trust || v.Keys != p.d.Keys {
+			return v, errors.New("saved participant profile uses different role directories")
+		}
 	} else if v.Work != work || v.Keys != keys || (role != "keygen" && v.Trust != p.d.Trust) {
 		return v, errors.New("saved profile uses different role directories")
 	}
 	return v, nil
+}
+
+func (p *rolePreparer) migrateLegacyParticipantProfile(role string, profile guidedProfile) error {
+	dir, err := guidedDirectory(p.settingsRoot, p.alias(role), role)
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(dir, "profile.json")
+	if err := backupPrivateFile(path, ".pre-custody-v1.bak"); err != nil {
+		return fmt.Errorf("cannot safely migrate older participant profile: %w", err)
+	}
+	profile.Work, profile.Trust, profile.Keys = p.d.Work, p.d.Trust, p.d.Keys
+	if err := saveJSONAtomic(path, profile); err != nil {
+		return err
+	}
+	fmt.Fprintln(p.ui.output, "Updated your older participant settings for custody signing; kept profile.json.pre-custody-v1.bak.")
+	return nil
 }
 func (p *rolePreparer) setup(role string) error {
 	dir, err := guidedDirectory(p.settingsRoot, p.alias(role), role)
@@ -92,7 +122,7 @@ func (p *rolePreparer) setup(role string) error {
 	args := []string{"ceremony", "setup", p.alias(role), "--settings-root", p.settingsRoot, "--role", role, "--release", p.d.Release}
 	switch role {
 	case "participant":
-		args = append(args, "--config", filepath.Join(p.d.Work, "ceremony/config/participant-phase1.json"))
+		args = append(args, "--config", filepath.Join(p.d.Work, "ceremony/config/participant-phase1.json"), "--work", p.d.Work, "--trust", p.d.Trust, "--keys", p.d.Keys)
 	case "keygen":
 		args = append(args, "--work", p.d.Keys)
 	default:

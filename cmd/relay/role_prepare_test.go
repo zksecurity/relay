@@ -229,6 +229,52 @@ func TestRolePreparationParticipantWorkflowDefaults(t *testing.T) {
 	}
 }
 
+func TestRolePreparationMigratesLegacyParticipantProfileForCustody(t *testing.T) {
+	p := preparationFixture(t, "participant")
+	dir, err := guidedDirectory(p.settingsRoot, p.d.Name, "participant")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	legacy := guidedProfile{Schema: guidedSchema, Name: p.d.Name, Role: "participant", ReleaseCommit: strings.Repeat("a", 40), Config: filepath.Join(p.d.Work, "ceremony/config/participant-phase1.json")}
+	profilePath := filepath.Join(dir, "profile.json")
+	if err := writeJSONNoReplace(profilePath, legacy, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.profile("participant")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Work != p.d.Work || got.Trust != p.d.Trust || got.Keys != p.d.Keys {
+		t.Fatalf("participant directories were not migrated: %#v", got)
+	}
+	var backup guidedProfile
+	if err := setupReadJSON(profilePath+".pre-custody-v1.bak", &backup); err != nil {
+		t.Fatal(err)
+	}
+	if backup.Work != "" || backup.Trust != "" || backup.Keys != "" {
+		t.Fatal("migration backup was changed")
+	}
+}
+
+func TestRolePreparationParticipantSetupSavesCustodyDirectories(t *testing.T) {
+	p := preparationFixture(t, "participant")
+	p.run = func(args []string) error {
+		joined := strings.Join(args, "\x00")
+		for _, want := range []string{"--config", "--work", p.d.Work, "--trust", p.d.Trust, "--keys", p.d.Keys} {
+			if !strings.Contains(joined, want) {
+				t.Fatalf("participant setup omitted %q: %q", want, args)
+			}
+		}
+		return nil
+	}
+	if err := p.setup("participant"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRolePreparationInstallerEntryPoint(t *testing.T) {
 	root := t.TempDir()
 	launcher := filepath.Join(root, "release")
