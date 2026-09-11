@@ -46,6 +46,14 @@ func TestCoordinatorPreparationRecommendations(t *testing.T) {
 			if got.reason == "" || got.label == "" {
 				t.Fatal("missing explanation")
 			}
+			if strings.HasPrefix(got.reason, "Required:") {
+				t.Fatalf("generic requirement prefix leaked into %s: %q", tc.name, got.reason)
+			}
+			w.output = new(bytes.Buffer)
+			w.preparationHeading(got)
+			if out := w.output.(*bytes.Buffer).String(); !strings.Contains(out, "WHY THIS STEP IS NEEDED") || !strings.Contains(out, got.reason) {
+				t.Fatalf("preparation reason not rendered clearly: %s", out)
+			}
 		})
 	}
 }
@@ -57,7 +65,7 @@ func TestCoordinatorPreparationCompactMenuAndExplicitOtherActions(t *testing.T) 
 		t.Fatal(err)
 	}
 	out := w.output.(*bytes.Buffer).String()
-	for _, expected := range []string{"NEXT REQUIRED ACTION", "6) Set up storage", "17) Show other actions and requirements", "0) Save and exit"} {
+	for _, expected := range []string{"NEXT REQUIRED ACTION", "WHY THIS STEP IS NEEDED", "Online operations need verified storage settings", "6) Set up storage", "17) Show other actions and requirements", "0) Save and exit"} {
 		if !strings.Contains(out, expected) {
 			t.Fatal("missing", expected, out)
 		}
@@ -94,7 +102,7 @@ func TestCoordinatorPreparationFilesAreNotVerifiedCompletion(t *testing.T) {
 		}
 	}
 	next := w.nextPreparationAction()
-	if next.choice != "12" || !strings.Contains(next.reason, "not verified by this menu") {
+	if next.choice != "12" || !strings.Contains(next.reason, "menu has not verified") {
 		t.Fatal(next)
 	}
 	w.d.Status = "initialization-attempted"

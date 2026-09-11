@@ -11,6 +11,17 @@ func (f *roleFlow) taskProgress(task flowTask) string {
 	return f.readiness(task).summary()
 }
 
+// taskWhy keeps the main menu as useful as the detailed task view.  The
+// requirement source alone (for example, "Relay role procedure") is an
+// implementation label, not an explanation an operator can act on.
+func taskWhy(task flowTask, readiness flowReadiness) string {
+	why := task.Help
+	if readiness.Source == "authenticated production policy" {
+		return "The authenticated production ceremony requires this decision before release authorization. " + why
+	}
+	return why
+}
+
 func (f *roleFlow) menu() error {
 	for {
 		if f.state.Stage >= len(f.stages) {
@@ -80,7 +91,7 @@ func (f *roleFlow) menu() error {
 			task := stage.Tasks[selected]
 			label = task.Label
 			r := f.readiness(task)
-			f.ui.message(toneHeading, "\nNEXT REQUIRED ACTION\n  %s\n  %s\n  %s: %s.\n", label, r.summary(), r.Requirement, r.Source)
+			f.ui.message(toneHeading, "\nNEXT REQUIRED ACTION\n  %s\n\nWHY THIS STEP IS NEEDED\n  %s\n\nSTATUS\n  %s\n", label, taskWhy(task, r), r.summary())
 			if r.Status == "Waiting" {
 				label = "Review missing inputs for: " + label
 			}

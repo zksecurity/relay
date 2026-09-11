@@ -441,7 +441,7 @@ func (p *rolePreparer) menu() error {
 		case "5":
 			err = p.workflow()
 		case "6":
-			fmt.Fprintf(p.ui.output, "Work/public outputs: %s\nTrusted public files: %s\nPRIVATE keys: %s\nObtain signed ceremony files and public storage configuration through the agreed channel. Prepare approved images to create your local tool record. Participant environment questions are included in profile setup. Use option 7 for your own enrollment; upload stations instead import the final signer's public enrollment. Witness/mirror receipts are reviewed and signed with the offline image in the workflow. Disconnect the signing host when prompted. Complete phase transcripts and operational evidence are exchanged separately; importing a definition does not fetch them.\n", p.d.Work, p.d.Trust, p.d.Keys)
+			fmt.Fprintf(p.ui.output, "Work/public outputs: %s\nTrusted public files: %s\nPRIVATE keys: %s\nObtain signed ceremony files and public storage configuration through the agreed channel. Prepare approved images to create your local tool record. Participant environment questions are included in profile setup. Use option 7 for your own enrollment; upload stations instead import the final signer's public enrollment. Witness/mirror receipts are reviewed and signed with the offline image in the workflow. Only the final signer must disconnect the host before signing; other roles sign in a network-disabled container unless a stricter ceremony policy applies. Complete phase transcripts and operational evidence are exchanged separately; importing a definition does not fetch them.\n", p.d.Work, p.d.Trust, p.d.Keys)
 		case "7":
 			err = p.enroll()
 		case "8":
