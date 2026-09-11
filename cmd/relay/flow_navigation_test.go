@@ -85,6 +85,26 @@ func TestFlowAreaNavigationDoesNotCompleteTasks(t *testing.T) {
 	}
 }
 
+func TestFlowLetterNavigationReturnsToPriorViewWithoutChangingWork(t *testing.T) {
+	f := flowFixture(t)
+	f.stages = append(f.stages, flowStage{ID: "storage", Label: "Storage", Tasks: []flowTask{handoff("prepare", "Prepare storage", "Administrator task")}})
+	// Map → Storage → Back → quit. The only persisted effect of the visit is
+	// temporary local navigation history, which Back removes again.
+	f.ui.input = bufio.NewReader(strings.NewReader("m\n2\nb\nq\n"))
+	if err := f.menu(); err != nil {
+		t.Fatal(err)
+	}
+	if f.state.Stage != 0 || len(f.state.ViewHistory) != 0 || len(f.state.Attempts) != 0 {
+		t.Fatalf("letter navigation changed workflow state: %+v", f.state)
+	}
+	out := f.ui.output.(*bytes.Buffer).String()
+	for _, want := range []string{"ACTION", "NAVIGATION", "[V] View this area's actions and requirements", "[M] Ceremony map", "[B] Back to previous view", "[Q] Save and exit"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing navigation control %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestFlowExternalReportIsWaitingNotVerified(t *testing.T) {
 	f := flowFixture(t)
 	task := f.stages[0].Tasks[0]
