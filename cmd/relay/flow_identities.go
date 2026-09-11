@@ -2,8 +2,10 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Public local identities are display hints. They never replace the protocol's
@@ -45,4 +47,36 @@ func (f *roleFlow) identityChoices(task flowTask, field flowField) ([]setupChoic
 		choices = append(choices, setupChoice{value, id.DisplayName + " (" + id.ID + ")"})
 	}
 	return choices, nil
+}
+
+// scheduledGrantIdentity derives the one allowed grant recipient from the
+// authenticated definition and accepted-head scope. The complete ordered list
+// is presentation context; it is not an editable roster.
+func (f *roleFlow) scheduledGrantIdentity(task flowTask, field flowField) ([]setupChoice, string, error) {
+	if f.state.Role != "coordinator" || task.ID != "grant" || field.Flag != "identity" || f.turnScope == nil || !strings.HasSuffix(f.stages[f.state.Stage].ID, "-turns") {
+		return nil, "", nil
+	}
+	phase := strings.TrimSuffix(f.stages[f.state.Stage].ID, "-turns")
+	d, err := f.authenticatedDefinition()
+	if err != nil {
+		return nil, "", err
+	}
+	schedule, err := d.Schedule(phase)
+	if err != nil {
+		return nil, "", err
+	}
+	found := false
+	choices := make([]setupChoice, 0, len(schedule))
+	for index, id := range schedule {
+		label := fmt.Sprintf("%d. %s", index+1, id)
+		if id == f.turnScope.Participant {
+			label += " — expected next"
+			found = true
+		}
+		choices = append(choices, setupChoice{value: id, label: label})
+	}
+	if !found {
+		return nil, "", errors.New("next participant is absent from the authenticated schedule")
+	}
+	return choices, f.turnScope.Participant, nil
 }
