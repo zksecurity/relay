@@ -32,8 +32,8 @@ jobs:
         run: |
           set -euo pipefail
           test -s release/release-notes.md
-          rg -q '^## What changed$' release/release-notes.md
-          rg -q '^## Tessera compatibility$' release/release-notes.md
+          grep -q '^## What changed$' release/release-notes.md
+          grep -q '^## Tessera compatibility$' release/release-notes.md
           if [[ "$EVENT_NAME" == pull_request ]] && git diff --quiet "$BASE_SHA"...HEAD -- release/release-notes.md; then
             echo 'Update release/release-notes.md with a short human-readable summary for this release.' >&2
             exit 1
