@@ -783,6 +783,9 @@ func (f *roleFlow) stageMenu() error {
 			return nil
 		}
 		stage := f.stages[f.state.Stage]
+		if err := f.prepareCurrentTurnScope(stage); err != nil {
+			f.ui.message(toneWarning, "Waiting: %v\n", err)
+		}
 		decisionState := ""
 		if stage.ID == "decision" {
 			var err error
@@ -793,26 +796,15 @@ func (f *roleFlow) stageMenu() error {
 		}
 		f.ui.message(toneHeading, "\nRELAY | %s | %s\n------------------------------------------------------------\n%s (%d/%d)\n", strings.ToUpper(f.state.Role), f.state.Name, stage.Label, f.state.Stage+1, len(f.stages))
 		f.showCurrentPhase()
-		for n, task := range stage.Tasks {
-			if decisionState == "not-applicable" {
-				break
-			}
-			// Until the signed definition is authenticated, decision work is
-			// deliberately waiting rather than merely optional.  In production,
-			// every decision task is mandatory despite being marked Optional in
-			// the reusable catalog so rehearsal can hide the whole stage.
-			if stage.ID == "decision" && decisionState == "" {
-				break
-			}
-			last := f.last(task)
-			if last != nil && (last.Status == "running" || last.Status == "failed") {
-				fmt.Fprintf(f.ui.output, "Needs attention: %d — %s. Review the retained attempt before retrying.\n", n+1, task.Label)
-				break
-			}
-			required := !task.Optional || (stage.ID == "decision" && decisionState == "required")
-			if required && (last == nil || (last.Status != "succeeded" && last.Status != "reported")) {
-				fmt.Fprintf(f.ui.output, "Suggested next step: %d — %s. This is local progress guidance, not ceremony authorization.\n", n+1, task.Label)
-				break
+		if stage.ID != "decision" || decisionState != "" {
+			hidden := decisionState == "not-applicable"
+			if n := f.firstUnfinishedRequiredTask(stage, hidden); n >= 0 {
+				task := stage.Tasks[n]
+				if a := f.last(task); a != nil && (a.Status == "running" || a.Status == "failed") {
+					fmt.Fprintf(f.ui.output, "Needs attention: %d — %s. Review the retained attempt before retrying.\n", n+1, task.Label)
+				} else {
+					fmt.Fprintf(f.ui.output, "Suggested next step: %d — %s. This is the next authored workflow action; readiness only explains whether it is waiting.\n", n+1, task.Label)
+				}
 			}
 		}
 		for n, task := range stage.Tasks {
