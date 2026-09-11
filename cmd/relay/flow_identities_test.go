@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/zksecurity/relay/internal/transcript"
 )
 
 func TestFlowIdentityChoicesUsePublicDisplayNames(t *testing.T) {
@@ -24,5 +26,23 @@ func TestFlowIdentityChoicesUsePublicDisplayNames(t *testing.T) {
 	choices, err = f.identityChoices(flowTask{}, ft("auditor-id", "Auditor", ""))
 	if err != nil || len(choices) != 0 {
 		t.Fatal("invented an identity without a local public file")
+	}
+}
+
+func TestScheduledGrantIdentityShowsAuthenticatedOrderAndLocksExpectedTurn(t *testing.T) {
+	f := flowFixture(t)
+	f.state.Role = "coordinator"
+	f.state.Profile.Work = t.TempDir()
+	f.stages = []flowStage{{ID: "phase1-turns", Tasks: []flowTask{{ID: "grant"}}}}
+	f.turnScope = &flowTurnScope{Phase: "phase1", Participant: "participant-b", Head: "sha256:head"}
+	f.definition = func() (transcript.Definition, error) {
+		return transcript.Definition{Phase1Participants: []string{"participant-a", "participant-b", "participant-c"}}, nil
+	}
+	choices, expected, err := f.scheduledGrantIdentity(flowTask{ID: "grant"}, ft("identity", "Next participant ID", ""))
+	if err != nil || expected != "participant-b" || len(choices) != 3 {
+		t.Fatalf("choices=%v expected=%q err=%v", choices, expected, err)
+	}
+	if choices[0].value != "participant-a" || choices[1].value != "participant-b" || choices[2].value != "participant-c" || choices[1].label != "2. participant-b — expected next" {
+		t.Fatalf("unexpected authenticated schedule display: %+v", choices)
 	}
 }

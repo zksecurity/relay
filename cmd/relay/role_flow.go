@@ -234,6 +234,18 @@ func (f *roleFlow) command(task flowTask) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read local public identity choices: %w", err)
 		}
+		schedule, expectedParticipant, err := f.scheduledGrantIdentity(task, field)
+		if err != nil {
+			return nil, fmt.Errorf("read authenticated participant order: %w", err)
+		}
+		if expectedParticipant != "" {
+			current = expectedParticipant
+			fmt.Fprintln(f.ui.output, "Authenticated participant order:")
+			for _, choice := range schedule {
+				fmt.Fprintf(f.ui.output, "  %s\n", choice.label)
+			}
+			fmt.Fprintln(f.ui.output, "Relay fills the expected next participant from that signed schedule. It is not editable; stop and investigate if it is unexpected.")
+		}
 		var grantRange flowGrantLimits
 		var grantTTL time.Duration
 		if field.Flag == "credential-ttl" || field.Flag == "minimum-remaining" {
@@ -262,7 +274,10 @@ func (f *roleFlow) command(task flowTask) ([]string, error) {
 			}
 			var value string
 			var err error
-			if len(identities) > 0 {
+			if expectedParticipant != "" {
+				value = expectedParticipant
+				fmt.Fprintf(f.ui.output, "%s: %s (authenticated next participant)\n", label, value)
+			} else if len(identities) > 0 {
 				fmt.Fprintln(f.ui.output, "Names below come from your saved public identities, not proof of assignment or whose turn it is. Check the authenticated schedule before issuing a grant.")
 				value, err = f.ui.choose(label, current, identities)
 			} else if len(field.Choices) != 0 {
