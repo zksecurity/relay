@@ -17,8 +17,11 @@ usage() {
 
 config=
 coordinator_settings=
+script_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=portable.sh
+source "$script_root/portable.sh"
 # shellcheck source=coordinator-settings.sh
-source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/coordinator-settings.sh"
+source "$script_root/coordinator-settings.sh"
 machine_env=
 provision_token_file=
 parent_token_file=
@@ -137,7 +140,7 @@ esac
   "$R2_PARENT_ACCESS_KEY_ID" == REPLACE_* ]] ||
   die "R2_PARENT_ACCESS_KEY_ID is malformed"
 
-for command_name in aws curl jq grep mktemp realpath sha256sum sleep stat; do
+for command_name in aws curl jq grep mktemp sleep stat; do
   command -v "$command_name" >/dev/null 2>&1 || die "required command is missing: $command_name"
 done
 
@@ -146,9 +149,9 @@ validate_input_secret_file() {
   local label=$2
   [[ "$path" == /* ]] || die "$label must use an absolute path"
   [[ -f "$path" && ! -L "$path" ]] || die "$label must be a regular non-symlink file: $path"
-  [[ "$(stat -c '%a' -- "$path")" == 600 ]] || die "$label must have mode 0600: $path"
-  [[ "$(stat -c '%u' -- "$path")" == "$EUID" ]] || die "$label must be owned by the current user: $path"
-  [[ "$(stat -c '%h' -- "$path")" == 1 ]] || die "$label must not have hard links: $path"
+  [[ "$(portable_stat_mode "$path")" == 600 ]] || die "$label must have mode 0600: $path"
+  [[ "$(portable_stat_uid "$path")" == "$EUID" ]] || die "$label must be owned by the current user: $path"
+  [[ "$(portable_stat_links "$path")" == 1 ]] || die "$label must not have hard links: $path"
 }
 
 prepare_output_secret_file() {
@@ -158,7 +161,7 @@ prepare_output_secret_file() {
   [[ ! -L "$path" ]] || die "$label must not be a symbolic link: $path"
   [[ ! -e "$path" || -f "$path" ]] || die "$label must be a regular file: $path"
   local parent
-  parent=$(realpath -e -- "$(dirname -- "$path")")
+  parent=$(portable_realpath "$(dirname -- "$path")")
   [[ -d "$parent" && ! -L "$parent" && -w "$parent" ]] ||
     die "$label parent must be a writable real directory"
 }
@@ -167,12 +170,9 @@ read_secret_file() {
   local path=$1
   local label=$2
   local value
-  local -a lines
   validate_input_secret_file "$path" "$label"
-  mapfile -t lines <"$path"
-  [[ ${#lines[@]} -eq 1 && -n "${lines[0]}" ]] ||
+  value=$(portable_read_single_line "$path") ||
     die "$label must contain exactly one non-empty line"
-  value=${lines[0]}
   [[ "$value" =~ ^[A-Za-z0-9._-]+$ ]] || die "$label contains unexpected characters"
   printf '%s' "$value"
 }
@@ -219,15 +219,15 @@ validate_machine_env() {
   [[ "$machine_env" == /* ]] || die "--machine-env must be an absolute path"
   [[ -f "$machine_env" && ! -L "$machine_env" ]] ||
     die "machine env must be a regular non-symlink file: $machine_env"
-  [[ "$(stat -c '%a' -- "$machine_env")" == 600 ]] ||
+  [[ "$(portable_stat_mode "$machine_env")" == 600 ]] ||
     die "machine env must have mode 0600: $machine_env"
-  [[ "$(stat -c '%u' -- "$machine_env")" == "$EUID" ]] ||
+  [[ "$(portable_stat_uid "$machine_env")" == "$EUID" ]] ||
     die "machine env must be owned by the current user: $machine_env"
-  [[ "$(stat -c '%h' -- "$machine_env")" == 1 ]] ||
+  [[ "$(portable_stat_links "$machine_env")" == 1 ]] ||
     die "machine env must not have hard links: $machine_env"
 
   local parent field count
-  parent=$(realpath -e -- "$(dirname -- "$machine_env")")
+  parent=$(portable_realpath "$(dirname -- "$machine_env")")
   [[ -d "$parent" && ! -L "$parent" && -w "$parent" ]] ||
     die "machine env parent must be a writable real directory"
   machine_env="$parent/$(basename -- "$machine_env")"
@@ -250,12 +250,12 @@ validate_machine_env
 [[ -z "$control_token_file" ]] || prepare_output_secret_file "$control_token_file" "control token file"
 if [[ -n "$credential_root" ]]; then
   [[ "$credential_root" == /* ]] || die "--credential-root must use an absolute path"
-  credential_root=$(realpath -e -- "$credential_root")
+  credential_root=$(portable_realpath "$credential_root")
   [[ -d "$credential_root" && ! -L "$credential_root" ]] ||
     die "credential root must be a real directory: $credential_root"
-  [[ "$(stat -c '%a' -- "$credential_root")" == 700 ]] ||
+  [[ "$(portable_stat_mode "$credential_root")" == 700 ]] ||
     die "credential root must have mode 0700: $credential_root"
-  [[ "$(stat -c '%u' -- "$credential_root")" == "$EUID" ]] ||
+  [[ "$(portable_stat_uid "$credential_root")" == "$EUID" ]] ||
     die "credential root must be owned by the current user: $credential_root"
 fi
 [[ -z "$token_manager_file" || -n "$credential_root" ]] ||
@@ -520,10 +520,10 @@ if [[ -n "$credential_root" ]]; then
     parent_token=$(jq -er '.result.value' <<<"$parent_response")
     created_token_ids+=("$R2_PARENT_ACCESS_KEY_ID")
 
-    coordinator_hash=$(printf '%s' "$coordinator_token" | sha256sum)
-    coordinator_secret=${coordinator_hash%% *}
-    parent_hash=$(printf '%s' "$parent_token" | sha256sum)
-    parent_secret=${parent_hash%% *}
+    coordinator_secret=$(printf '%s' "$coordinator_token" | portable_sha256_stdin) ||
+      die "could not hash the coordinator credential"
+    parent_secret=$(printf '%s' "$parent_token" | portable_sha256_stdin) ||
+      die "could not hash the inbox credential"
     unset coordinator_token coordinator_hash parent_hash permission_groups \
       coordinator_response parent_response
 
@@ -602,8 +602,9 @@ elif [[ -z "${parent_secret:-}" ]]; then
 fi
 [[ "$parent_secret" =~ ^[0-9a-f]{64}$ ]] ||
   die "the inbox parent Secret Access Key must be a SHA-256 hex value"
-parent_hash=$(printf '%s' "$parent_token" | sha256sum)
-[[ "$parent_secret" == "${parent_hash%% *}" ]] ||
+parent_hash=$(printf '%s' "$parent_token" | portable_sha256_stdin) ||
+  die "could not hash the inbox credential"
+[[ "$parent_secret" == "$parent_hash" ]] ||
   die "the inbox parent API token and Secret Access Key do not match"
 if ! AWS_ACCESS_KEY_ID="$R2_PARENT_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$parent_secret" \
   AWS_SESSION_TOKEN='' aws --endpoint-url "$endpoint" --region auto \

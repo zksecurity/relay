@@ -15,8 +15,11 @@ usage() {
 
 machine_env=
 coordinator_settings=
+script_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=portable.sh
+source "$script_root/portable.sh"
 # shellcheck source=coordinator-settings.sh
-source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/coordinator-settings.sh"
+source "$script_root/coordinator-settings.sh"
 machine_env_explicit=no
 wrangler_bin=${WRANGLER_BIN:-}
 cloudflare_token_file=
@@ -69,7 +72,7 @@ prepare_coordinator_settings_export "$coordinator_settings"
 [[ -z "$cloudflare_token_file" || -z "$wrangler_bin" ]] ||
   die "choose only one of --wrangler-bin and --cloudflare-token-file"
 
-for command_name in curl jq mktemp realpath stat; do
+for command_name in curl jq mktemp stat; do
   command -v "$command_name" >/dev/null 2>&1 || die "required command is missing: $command_name"
 done
 
@@ -78,27 +81,28 @@ validate_token_file() {
   [[ "$path" == /* ]] || die "--cloudflare-token-file must use an absolute path"
   [[ -f "$path" && ! -L "$path" ]] ||
     die "Cloudflare token file must be a regular non-symlink file: $path"
-  [[ "$(stat -c '%a' -- "$path")" == 600 ]] ||
+  [[ "$(portable_stat_mode "$path")" == 600 ]] ||
     die "Cloudflare token file must have mode 0600: $path"
-  [[ "$(stat -c '%u' -- "$path")" == "$EUID" ]] ||
+  [[ "$(portable_stat_uid "$path")" == "$EUID" ]] ||
     die "Cloudflare token file must be owned by the current user: $path"
-  [[ "$(stat -c '%h' -- "$path")" == 1 ]] ||
+  [[ "$(portable_stat_links "$path")" == 1 ]] ||
     die "Cloudflare token file must not have hard links: $path"
-  local -a lines
-  mapfile -t lines <"$path"
-  [[ ${#lines[@]} -eq 1 && "${lines[0]}" =~ ^[A-Za-z0-9._-]+$ ]] ||
+  local token
+  token=$(portable_read_single_line "$path") ||
+    die "Cloudflare token file must contain exactly one valid token line"
+  [[ "$token" =~ ^[A-Za-z0-9._-]+$ ]] ||
     die "Cloudflare token file must contain exactly one valid token line"
 }
 
 if [[ -n "$cloudflare_token_file" ]]; then
-  cloudflare_token_file=$(realpath -e -- "$cloudflare_token_file")
+  cloudflare_token_file=$(portable_realpath "$cloudflare_token_file")
   validate_token_file "$cloudflare_token_file"
 else
   if [[ -z "$wrangler_bin" ]]; then
     wrangler_bin=$(command -v wrangler || true)
   fi
   [[ -n "$wrangler_bin" ]] || die "Wrangler v4 is required; install it, then run wrangler login"
-  wrangler_bin=$(realpath -e -- "$wrangler_bin")
+  wrangler_bin=$(portable_realpath "$wrangler_bin")
   [[ -f "$wrangler_bin" && -x "$wrangler_bin" && ! -L "$wrangler_bin" ]] ||
     die "Wrangler must resolve to a non-symlink executable file"
   wrangler_version=$("$wrangler_bin" --version 2>/dev/null || true)
@@ -106,7 +110,7 @@ else
     die "Wrangler v4 is required, got: ${wrangler_version:-unknown}"
 fi
 if [[ -n "$token_manager_file" ]]; then
-  token_manager_file=$(realpath -e -- "$token_manager_file")
+  token_manager_file=$(portable_realpath "$token_manager_file")
   validate_token_file "$token_manager_file"
 fi
 
@@ -136,8 +140,10 @@ if [[ -n "$cloudflare_token_file" ]]; then
     --data-urlencode 'per_page=50') || die "could not list accounts with the Cloudflare token"
   jq -e '.success == true and .result_info.total_pages <= 1' >/dev/null <<<"$accounts_response" ||
     die "Cloudflare account discovery failed or returned more than 50 accounts"
-  mapfile -t account_ids < <(jq -r '.result[].id' <<<"$accounts_response")
-  mapfile -t account_names < <(jq -r '.result[].name' <<<"$accounts_response")
+  account_ids=()
+  while IFS= read -r value; do account_ids+=("$value"); done < <(jq -r '.result[].id' <<<"$accounts_response")
+  account_names=()
+  while IFS= read -r value; do account_names+=("$value"); done < <(jq -r '.result[].name' <<<"$accounts_response")
   unset accounts_response
 else
   if ! "$wrangler_bin" whoami --json >"$work_dir/whoami.json" 2>"$work_dir/whoami.err"; then
@@ -155,8 +161,10 @@ else
     die "Wrangler must be logged in with OAuth; unset CLOUDFLARE_API_TOKEN and run wrangler login"
   jq -e '(.accounts | length > 0)' "$work_dir/whoami.json" >/dev/null ||
     die "Wrangler returned no authenticated Cloudflare accounts"
-  mapfile -t account_ids < <(jq -r '.accounts[].id' "$work_dir/whoami.json")
-  mapfile -t account_names < <(jq -r '.accounts[].name' "$work_dir/whoami.json")
+  account_ids=()
+  while IFS= read -r value; do account_ids+=("$value"); done < <(jq -r '.accounts[].id' "$work_dir/whoami.json")
+  account_names=()
+  while IFS= read -r value; do account_names+=("$value"); done < <(jq -r '.accounts[].name' "$work_dir/whoami.json")
 
   oauth_response=$("$wrangler_bin" auth token --json) ||
     die "Wrangler could not provide its current OAuth token"
@@ -194,8 +202,10 @@ zones_response=$(curl --proto '=https' --tlsv1.2 --fail-with-body --silent --sho
   --data-urlencode 'per_page=50') || die "could not list active zones for the selected account"
 jq -e '.success == true and .result_info.total_pages <= 1' >/dev/null <<<"$zones_response" ||
   die "Cloudflare zone discovery failed or returned more than 50 zones"
-mapfile -t zone_ids < <(jq -r '.result[].id' <<<"$zones_response")
-mapfile -t zone_names < <(jq -r '.result[].name' <<<"$zones_response")
+zone_ids=()
+while IFS= read -r value; do zone_ids+=("$value"); done < <(jq -r '.result[].id' <<<"$zones_response")
+zone_names=()
+while IFS= read -r value; do zone_names+=("$value"); done < <(jq -r '.result[].name' <<<"$zones_response")
 if [[ ${#zone_ids[@]} -eq 0 ]]; then
   PUBLISHED_ACCESS_MODE=r2dev
   R2_ZONE_ID=
