@@ -6,6 +6,8 @@ Coordinators can then use [guided ceremony preparation](coordinator-setup.md).
 Other roles use [guided onboarding](role-onboarding.md), then the
 [resumable role workflow](role-workflow.md). Start or resume with the installer's
 printed `start.sh` command; no settings-loading command is needed.
+Use the [ceremony flow map](ceremony-flow.md) to see how the role lanes and
+handoffs fit together before starting.
 
 | Your assignment | Guide |
 | --- | --- |

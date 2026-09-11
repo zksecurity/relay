@@ -19,7 +19,8 @@ recovery; choose a fresh alias for shared workflow settings.
 
 ## What you see
 
-- A named next action, with **Show other actions and requirements** for details.
+- A named next action. **View this area's actions and requirements** shows the
+  complete authored task order for the current area.
 - Labeled inputs and local paths before you approve with `RUN`; enter
   `DETAILS` to inspect the exact command.
 - A suggested next step based on saved progress, not authorization to act.
@@ -32,8 +33,10 @@ recovery; choose a fresh alias for shared workflow settings.
   each imported public enrollment, signature and disclosure. Observer minimums
   are shown separately; a higher agreed witness quorum still needs review.
 - **Save and exit**; reopening the same guide resumes your progress.
-- **Choose another ceremony area** for independent preparation or recovery;
-  this changes navigation only, not completion or verification requirements.
+- **Ceremony map** opens another area for independent preparation or recovery;
+  **Back** returns to the prior local view. Navigation does not complete work
+  or waive verification requirements. See the [ceremony flow map](ceremony-flow.md)
+  for the role lanes and handoffs across the whole ceremony.
 
 Chain prompts discover and authenticate the most advanced consistent **local**
 head, rejecting forks and rollback from a previously seen head. Import or sync
