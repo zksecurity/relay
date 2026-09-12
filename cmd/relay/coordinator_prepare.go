@@ -1105,7 +1105,7 @@ func (w *coordinatorWizard) menu() (result error) {
 			fmt.Fprintf(w.output, "\n%s) %s\n", next.choice, next.label)
 		}
 		if w.d.Status == "draft" {
-			fmt.Fprintln(w.output, "15) Optional: open setup downloaded from Tessera")
+			fmt.Fprintln(w.output, "15) Open setup downloaded from Tessera [Optional]")
 		}
 		if w.d.Status == "definition-verified" && (w.d.Tessera != nil || w.d.TesseraSetup != nil) && w.localAction == nil {
 			if next.choice != "16" || showOther {
