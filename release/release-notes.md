@@ -24,9 +24,10 @@
 - Guided witness, mirror, auditor, and release uploads now keep one attempt ID and manifest time across interruption. Existing immutable objects are downloaded and checked byte-for-byte, and the manifest remains the last object written before Tessera is notified.
 - If temporary-grant issuance wrote a protected grant but Relay stopped before recording success, restart authenticates that exact file and adopts it without issuing a second credential. A missing grant file remains blocked with a conservative possible-validity bound.
 - Documentation now includes a split Mermaid ceremony-flow map: setup/enrollment, each participant turn, phase closure, and final release.
+- Role onboarding now names and defaults to the first incomplete step in its fixed setup order instead of defaulting to exit. Network-disabled signing is distinguished from disconnecting the host; only the final signer is instructed to disconnect unless the ceremony adopts a stricter procedure.
 - Maintainer documentation specifies scoped V1 crash recovery for one active workspace per role identity and audits the implemented foundation separately from the remaining state-changing, Docker, storage, proof-tool and Tessera work. One machine may host several separate role workspaces; distributed role failover and cross-machine fencing are explicitly deferred.
 - The remaining recovery plan now separates production-critical reconciliation and Docker work from later workspace-maintenance work, documents provider limitations, and defines deterministic fault-injection plus LLM role-journey validation.
 
 ## Tessera compatibility
 
-Ceremony data, guided actions, and the Tessera request fields are unchanged. Retry semantics are stricter: an attempt is deduplicated by protocol and assignment even after a role connection is refreshed. The proof-tool pin is updated to the protected-main release containing the corrected one-auditor gate.
+Ceremony data and Tessera request fields are unchanged. Retry semantics are stricter: an attempt is deduplicated by protocol and assignment even after a role connection is refreshed. The proof-tool pin is updated to protected-main release `mpc-ci-8500f65578dd33a3e897fea33813e75bd3bb2faf`, which adds atomic initialization/identity recovery, structured command outcomes, and portable finalization staging.
