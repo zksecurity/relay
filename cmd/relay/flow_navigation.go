@@ -95,6 +95,45 @@ func (f *roleFlow) firstUnfinishedRequiredTask(stage flowStage, hidden bool) int
 	return -1
 }
 
+func (f *roleFlow) requiredTaskComplete(task flowTask) bool {
+	r := f.readiness(task)
+	if r.Requirement == "Optional" || r.Requirement == "Not applicable" {
+		return true
+	}
+	a := f.last(task)
+	return a != nil && f.checkAttemptEvidence(a) == nil && (a.Status == "succeeded" || (task.Handoff && a.Status == "reported"))
+}
+
+// The detailed action list is useful for inspection and recovery, but it must
+// not become an escape hatch around the role's authored procedure. Read-only
+// checks may be opened independently; every action that can write, upload,
+// sign, grant, contribute, or record a handoff waits for earlier required
+// actions in the same ceremony area.
+func (f *roleFlow) requireTaskPredecessors(task flowTask) error {
+	class := flowTaskRecoveryClass(task)
+	if class == recoveryReadOnly || class == recoveryCheckpoint {
+		return nil
+	}
+	// An action whose child may have run must remain reachable so Relay can
+	// inspect or recover its uncertain result. A merely prepared action is not
+	// exempt: Relay durably knows that its child never started.
+	if a := f.last(task); a != nil {
+		if a.Status == "running" || a.Status == "failed" || f.checkAttemptEvidence(a) != nil {
+			return nil
+		}
+	}
+	stage := f.stages[f.state.Stage]
+	for _, earlier := range stage.Tasks {
+		if earlier.ID == task.ID {
+			return nil
+		}
+		if !f.requiredTaskComplete(earlier) {
+			return fmt.Errorf("complete %q first; other actions cannot bypass required workflow order", earlier.Label)
+		}
+	}
+	return errors.New("selected action is not part of this ceremony area")
+}
+
 // ceremonyMap is navigation, not workflow progress. The numbered entries are
 // destinations; the letter commands are controls that apply everywhere.
 func (f *roleFlow) ceremonyMap() (bool, error) {

@@ -136,6 +136,108 @@ func TestParticipantRecommendationDoesNotSkipWaitingContribution(t *testing.T) {
 	}
 }
 
+func TestLaterStateChangingActionsCannotBypassRequiredOrder(t *testing.T) {
+	tests := []struct {
+		role, stageID, target, want string
+		completeBefore              int
+	}{
+		{"coordinator", "phase1-turns", "grant", "Prepare outbound custody handoff", 1},
+		{"participant", "phase1", "deliver-output", "Contribute, confirm cleanup and upload", 4},
+	}
+	for _, test := range tests {
+		t.Run(test.role+"/"+test.target, func(t *testing.T) {
+			f := flowFixture(t)
+			f.state.Role = test.role
+			f.stages = roleFlowStages(test.role)
+			f.run = func(flowTask, []string, string, bool) error {
+				t.Fatal("out-of-order action reached execution")
+				return nil
+			}
+			for i, stage := range f.stages {
+				if stage.ID == test.stageID {
+					f.state.Stage = i
+					for _, task := range stage.Tasks[:test.completeBefore] {
+						status := "succeeded"
+						if task.Handoff {
+							status = "reported"
+						}
+						f.state.Attempts = append(f.state.Attempts, flowAttempt{Task: task.ID, Stage: stage.ID, Status: status})
+					}
+					for _, task := range stage.Tasks {
+						if task.ID == test.target {
+							if err := f.execute(task); err == nil || !strings.Contains(err.Error(), test.want) {
+								t.Fatalf("later action was not blocked by %q: %v", test.want, err)
+							}
+							return
+						}
+					}
+				}
+			}
+			t.Fatal("test stage or action not found")
+		})
+	}
+}
+
+func TestReadOnlyActionMayBeOpenedWithoutCompletingEarlierWork(t *testing.T) {
+	f := flowFixture(t)
+	f.stages = []flowStage{{ID: "review", Tasks: []flowTask{
+		handoff("handoff", "Report handoff", "Report it"),
+		{ID: "inspect", Label: "Inspect public state", Help: "Read only", Command: []string{"mpc-ceremony", "inspect", "definition"}},
+	}}}
+	if err := f.requireTaskPredecessors(f.stages[0].Tasks[1]); err != nil {
+		t.Fatalf("read-only inspection was unnecessarily ordered: %v", err)
+	}
+}
+
+func TestUncertainLaterActionRemainsReachableForRecovery(t *testing.T) {
+	f := flowFixture(t)
+	first := handoff("first", "Required first step", "Do this first")
+	later := flowTask{ID: "later", Label: "Later write", Help: "Writes output", Command: []string{"mpc-ceremony", "ops", "sign"}}
+	f.stages = []flowStage{{ID: "recovery", Tasks: []flowTask{first, later}}}
+	f.state.Attempts = []flowAttempt{{Task: later.ID, Stage: "recovery", Status: "running"}}
+	if err := f.requireTaskPredecessors(later); err != nil {
+		t.Fatalf("uncertain action could not be inspected for recovery: %v", err)
+	}
+}
+
+func TestPreparedLaterActionStillRequiresPredecessors(t *testing.T) {
+	f := flowFixture(t)
+	first := handoff("first", "Required first step", "Do this first")
+	later := flowTask{ID: "later", Label: "Later write", Help: "Writes output", Command: []string{"mpc-ceremony", "ops", "sign"}}
+	f.stages = []flowStage{{ID: "recovery", Tasks: []flowTask{first, later}}}
+	f.state.Attempts = []flowAttempt{{Task: later.ID, Stage: "recovery", Status: "prepared"}}
+	if err := f.requireTaskPredecessors(later); err == nil || !strings.Contains(err.Error(), first.Label) {
+		t.Fatalf("never-started action bypassed its predecessor: %v", err)
+	}
+}
+
+func TestEveryRoleMutationHonorsEarlierRequiredTasks(t *testing.T) {
+	for _, role := range []string{"coordinator", "participant", "witness", "mirror", "auditor", "release-signer", "upload-station"} {
+		stages := roleFlowStages(role)
+		for stageIndex, stage := range stages {
+			for taskIndex, task := range stage.Tasks {
+				class := flowTaskRecoveryClass(task)
+				if taskIndex == 0 || class == recoveryReadOnly || class == recoveryCheckpoint {
+					continue
+				}
+				f := flowFixture(t)
+				f.state.Role, f.state.Stage, f.stages = role, stageIndex, stages
+				hasRequiredPredecessor := false
+				for _, earlier := range stage.Tasks[:taskIndex] {
+					r := f.readiness(earlier)
+					if r.Requirement != "Optional" && r.Requirement != "Not applicable" {
+						hasRequiredPredecessor = true
+						break
+					}
+				}
+				if hasRequiredPredecessor && f.requireTaskPredecessors(task) == nil {
+					t.Fatalf("%s/%s/%s bypassed an earlier required task", role, stage.ID, task.ID)
+				}
+			}
+		}
+	}
+}
+
 func TestFlowExternalReportIsWaitingNotVerified(t *testing.T) {
 	f := flowFixture(t)
 	task := f.stages[0].Tasks[0]
