@@ -15,10 +15,11 @@ This is a code-level self-review, not an independent security audit.
 - Repeating read-only verification was incorrectly treated like repeating a
   write. Verification/synchronization can now run again; identical completed
   write commands remain guarded.
-- Failed commands could strand an operator with already-created outputs.
-  Recovery retains the exact attempt, supports reviewed retries/corrected
-  actions, and distinguishes externally reported verification from success
-  actually returned by the command. Participants still use candidate resume.
+- Failed commands retain their resolved operation and outputs. The guided UI no
+  longer offers generic retries, investigation notes, or a manual completion
+  override. Read-only checks and stable immutable uploads can continue exactly;
+  participant candidates use their lifecycle-aware resume path; other uncertain
+  mutations stop until a task-specific reconciler can prove their result.
 - Saved commands are checked against compiled recipes before retry, rather
   than executed as arbitrary stored command lines. Shell fragments are not used.
 - Progress now pins launcher settings, recipe contents and selected public

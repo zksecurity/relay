@@ -58,8 +58,9 @@ required; image availability alone does not authenticate a role.
 confirmation. A participant open without a grant checks status.
 A saved action is not permission to repeat a signature or state transition.
 
-After an interrupted ordinary action, inspect signed/public outputs before
-using `--reviewed-retry`. Preserve failed activity records.
+`--reviewed-retry` is a low-level maintainer acknowledgement for an exact named
+action, not proof that rerunning a mutation is safe. The guided workflow does not
+offer it as generic recovery; preserve failed activity records.
 Participants use their existing tracked cleanup and candidate-resume flow;
 status alone does not remove an orphan container.
 

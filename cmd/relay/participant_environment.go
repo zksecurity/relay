@@ -33,7 +33,7 @@ func (p *rolePreparer) environment() (string, error) {
 	if err := preflight(); err != nil {
 		return "", err
 	}
-	fmt.Fprintln(p.ui.output, "Relay checked the local Docker endpoint, image platform and applicable swap requirements. During contribution it enforces an offline disposable container, disabled core dumps/logging, and verified cleanup. Those execution checks run again during your turn.")
+	fmt.Fprintln(p.ui.output, "Relay checked the local Docker endpoint, image platform and applicable swap requirements. During contribution it enforces a network-disabled disposable container, disabled core dumps/logging, and verified cleanup. Those execution checks run again during your turn.")
 	fmt.Fprintln(p.ui.output, "Use the agreed machine and backup precautions. Do not deliberately retain contribution randomness, memory dumps or snapshots. Docker cleanup cannot exclude host/VM remnants; this is not proof of physical erasure.")
 	if err := p.ui.confirm("Confirm these are the precautions you will follow and that you understand the host/VM limitation", "PRECAUTIONS REVIEWED"); err != nil {
 		return "", err

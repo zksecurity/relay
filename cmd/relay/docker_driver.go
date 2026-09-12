@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strconv"
@@ -28,7 +30,8 @@ const (
 	dockerExecutionMode       = "docker"
 	nativeExecutionMode       = "native"
 	dockerLifecycleSchema     = "relay-docker-lifecycle-v2"
-	dockerActiveStateSchema   = "relay-docker-active-container-v2"
+	dockerActiveStateSchemaV2 = "relay-docker-active-container-v2"
+	dockerActiveStateSchema   = "relay-docker-active-container-v3"
 	dockerLifecycleLogName    = "relay-lifecycle.json"
 	dockerActiveStateFileName = ".relay-active-container.json"
 	dockerLinuxSwapDisabled   = "disabled-relay-linux-host-local-unix-daemon"
@@ -96,9 +99,9 @@ func dockerEnvironmentWithoutTargetOverrides() []string {
 }
 
 type dockerMount struct {
-	Source      string
-	Destination string
-	ReadOnly    bool
+	Source      string `json:"source"`
+	Destination string `json:"destination"`
+	ReadOnly    bool   `json:"read_only"`
 }
 
 type dockerDriver struct {
@@ -120,14 +123,19 @@ type dockerDriver struct {
 }
 
 type dockerActiveState struct {
-	Schema         string `json:"schema"`
-	ContainerID    string `json:"container_id"`
-	Image          string `json:"image"`
-	Platform       string `json:"platform"`
-	DaemonID       string `json:"daemon_id"`
-	DaemonEndpoint string `json:"daemon_endpoint"`
-	HandoffDir     string `json:"handoff_dir"`
-	CreatedAt      string `json:"created_at"`
+	Schema         string        `json:"schema"`
+	OperationID    string        `json:"operation_id,omitempty"`
+	WorkspaceID    string        `json:"workspace_id,omitempty"`
+	ContainerName  string        `json:"container_name,omitempty"`
+	ContainerID    string        `json:"container_id"`
+	Image          string        `json:"image"`
+	Platform       string        `json:"platform"`
+	DaemonID       string        `json:"daemon_id"`
+	DaemonEndpoint string        `json:"daemon_endpoint"`
+	HandoffDir     string        `json:"handoff_dir"`
+	CreatedAt      string        `json:"created_at"`
+	MountDigest    string        `json:"mount_digest,omitempty"`
+	Mounts         []dockerMount `json:"mounts,omitempty"`
 }
 
 type dockerDaemonFacts struct {
@@ -180,6 +188,7 @@ type dockerLifecycleReceipt struct {
 	Security                dockerSecurityFacts `json:"security"`
 	ParticipantConfirmation string              `json:"participant_confirmation,omitempty"`
 	ConfirmedAt             string              `json:"confirmed_at,omitempty"`
+	ErasureDestroyedAt      string              `json:"erasure_destroyed_at,omitempty"`
 }
 
 func dockerDriverForParticipant(config access.ParticipantConfig) *dockerDriver {
@@ -399,32 +408,77 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 		_ = os.RemoveAll(handoff)
 		return nil, err
 	}
+	operationID := o.operationID
+	if operationID == "" {
+		operationID, err = randomID()
+		if err != nil {
+			_ = os.RemoveAll(handoff)
+			return nil, err
+		}
+	} else if !validFlowAttemptID(operationID) {
+		_ = os.RemoveAll(handoff)
+		return nil, errors.New("contributor operation ID is invalid")
+	}
+	workspaceDigest := sha256.Sum256([]byte(filepath.Clean(d.candidateRoot)))
+	mountBytes, err := json.Marshal(mounts)
+	if err != nil {
+		_ = os.RemoveAll(handoff)
+		return nil, fmt.Errorf("encode contributor mounts: %w", err)
+	}
+	mountDigest := sha256.Sum256(mountBytes)
+	state := dockerActiveState{
+		Schema: dockerActiveStateSchema, OperationID: operationID,
+		WorkspaceID: fmt.Sprintf("sha256:%x", workspaceDigest), ContainerName: "relay-contributor-" + operationID,
+		Image: d.image, Platform: d.platform, DaemonID: d.daemon.ID, DaemonEndpoint: d.daemon.Endpoint,
+		HandoffDir: handoff, CreatedAt: receipt.CreatedAt, MountDigest: fmt.Sprintf("sha256:%x", mountDigest), Mounts: append([]dockerMount(nil), mounts...),
+	}
+	// Save the intended unique name before Docker can create anything. If the
+	// create response is lost, cleanup resolves this exact labelled container
+	// by name instead of starting a second contributor.
+	if err := writeJSONNoReplace(d.activeStatePath(), state, 0o600); err != nil {
+		_ = os.RemoveAll(handoff)
+		return nil, fmt.Errorf("persist contributor intent: %w", err)
+	}
 	createArgs := d.baseCreateArgs(mounts)
 	createArgs = append(createArgs,
+		"--name", state.ContainerName,
 		"--label", "org.zksecurity.relay.role=participant-contributor",
+		"--label", "org.zksecurity.relay.operation="+state.OperationID,
+		"--label", "org.zksecurity.relay.workspace="+state.WorkspaceID,
+		"--label", "org.zksecurity.relay.mounts="+state.MountDigest,
 		d.image,
 	)
 	createArgs = append(createArgs, args...)
 	stdout, stderr, err := d.client.Output(createArgs...)
 	if err != nil {
-		_ = os.RemoveAll(handoff)
-		return nil, fmt.Errorf("create contributor container: %s", dockerDiagnostic(stderr, err))
+		containerID, found, reconcileErr := d.resolveTrackedContainer(state)
+		if reconcileErr != nil {
+			return nil, fmt.Errorf("create contributor response was uncertain and reconciliation failed: %w", reconcileErr)
+		}
+		if !found {
+			_ = os.Remove(d.activeStatePath())
+			_ = syncDirectory(filepath.Dir(d.activeStatePath()))
+			_ = os.RemoveAll(handoff)
+			return nil, fmt.Errorf("create contributor container: %s", dockerDiagnostic(stderr, err))
+		}
+		stdout = []byte(containerID)
 	}
 	containerID := strings.TrimSpace(string(stdout))
 	if !validContainerID(containerID) {
-		_ = os.RemoveAll(handoff)
-		return nil, errors.New("Docker returned an invalid contributor container ID")
+		return nil, errors.New("Docker returned an invalid contributor container ID; retained the recorded name for recovery")
+	}
+	var retained dockerActiveState
+	if err := setupReadJSON(d.activeStatePath(), &retained); err != nil || !reflect.DeepEqual(retained, state) {
+		if verifyErr := d.verifyTrackedContainer(containerID, state); verifyErr == nil {
+			_ = d.removeAndVerify(containerID)
+		}
+		return nil, errors.New("persist contributor cleanup state: lifecycle state changed while Docker created the container")
 	}
 	receipt.ContainerID = containerID
-	state := dockerActiveState{
-		Schema: dockerActiveStateSchema, ContainerID: containerID, Image: d.image,
-		Platform: d.platform, DaemonID: d.daemon.ID, DaemonEndpoint: d.daemon.Endpoint,
-		HandoffDir: handoff, CreatedAt: receipt.CreatedAt,
-	}
-	if err := writeJSONNoReplace(d.activeStatePath(), state, 0o600); err != nil {
+	state.ContainerID = containerID
+	if err := writeJSONAtomic(d.activeStatePath(), state, 0o600); err != nil {
 		_ = d.removeAndVerify(containerID)
-		_ = os.RemoveAll(handoff)
-		return nil, fmt.Errorf("persist contributor cleanup state: %w", err)
+		return nil, fmt.Errorf("persist created contributor identity: %w", err)
 	}
 
 	removed := false
@@ -835,10 +889,70 @@ func (d *dockerDriver) removeAndVerify(containerID string) error {
 	return nil
 }
 
-func (d *dockerDriver) cleanupTrackedContainer(containerID string) error {
-	if err := d.removeAndVerify(containerID); err != nil {
-		return err
+func validDockerActiveState(state dockerActiveState) bool {
+	if state.Schema != dockerActiveStateSchema && state.Schema != dockerActiveStateSchemaV2 {
+		return false
 	}
+	if state.Image == "" || state.Platform == "" || state.DaemonID == "" || state.DaemonEndpoint == "" || !filepath.IsAbs(state.HandoffDir) || filepath.Clean(state.HandoffDir) != state.HandoffDir || !strings.HasPrefix(filepath.Base(state.HandoffDir), ".relay-handoff-") {
+		return false
+	}
+	if state.Schema == dockerActiveStateSchemaV2 {
+		return validContainerID(state.ContainerID)
+	}
+	return len(state.OperationID) == 32 && strings.HasPrefix(state.WorkspaceID, "sha256:") && len(state.WorkspaceID) == 71 && state.ContainerName == "relay-contributor-"+state.OperationID && (state.ContainerID == "" || validContainerID(state.ContainerID)) && strings.HasPrefix(state.MountDigest, "sha256:") && len(state.MountDigest) == 71 && len(state.Mounts) != 0
+}
+
+func (d *dockerDriver) verifyTrackedContainer(containerID string, state dockerActiveState) error {
+	stdout, stderr, err := d.client.Output("inspect", containerID)
+	if err != nil {
+		return fmt.Errorf("inspect recorded contributor identity: %s", dockerDiagnostic(stderr, err))
+	}
+	var records []struct {
+		Name   string `json:"Name"`
+		Config struct {
+			Image  string            `json:"Image"`
+			Labels map[string]string `json:"Labels"`
+		} `json:"Config"`
+	}
+	if err := json.Unmarshal(stdout, &records); err != nil || len(records) != 1 {
+		return errors.New("decode recorded contributor identity")
+	}
+	record := records[0]
+	if strings.TrimPrefix(record.Name, "/") != state.ContainerName || record.Config.Image != state.Image ||
+		record.Config.Labels["org.zksecurity.relay.role"] != "participant-contributor" ||
+		record.Config.Labels["org.zksecurity.relay.operation"] != state.OperationID ||
+		record.Config.Labels["org.zksecurity.relay.workspace"] != state.WorkspaceID ||
+		record.Config.Labels["org.zksecurity.relay.mounts"] != state.MountDigest {
+		return errors.New("recorded contributor name, image, or lifecycle labels do not match")
+	}
+	return nil
+}
+
+func (d *dockerDriver) resolveTrackedContainer(state dockerActiveState) (string, bool, error) {
+	if !validDockerActiveState(state) || state.Schema != dockerActiveStateSchema {
+		return "", false, errors.New("recorded contributor intent is invalid")
+	}
+	containerID := state.ContainerID
+	if containerID == "" {
+		stdout, stderr, err := d.client.Output("inspect", "--format", "{{.Id}}", state.ContainerName)
+		if err != nil {
+			if strings.Contains(strings.ToLower(string(stderr)), "no such") {
+				return "", false, nil
+			}
+			return "", false, fmt.Errorf("resolve recorded contributor name: %s", dockerDiagnostic(stderr, err))
+		}
+		containerID = strings.TrimSpace(string(stdout))
+		if !validContainerID(containerID) {
+			return "", false, errors.New("Docker returned an invalid ID for the recorded contributor name")
+		}
+	}
+	if err := d.verifyTrackedContainer(containerID, state); err != nil {
+		return "", false, err
+	}
+	return containerID, true, nil
+}
+
+func (d *dockerDriver) cleanupTrackedContainer(containerID string) error {
 	path := d.activeStatePath()
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -848,15 +962,23 @@ func (d *dockerDriver) cleanupTrackedContainer(containerID string) error {
 		return fmt.Errorf("read contributor cleanup state after removal: %w", err)
 	}
 	var state dockerActiveState
-	if err := json.Unmarshal(raw, &state); err != nil || state.Schema != dockerActiveStateSchema ||
+	if err := json.Unmarshal(raw, &state); err != nil || !validDockerActiveState(state) ||
 		state.ContainerID != containerID || state.Image != d.image || state.Platform != d.platform ||
 		state.DaemonID != d.daemon.ID || state.DaemonEndpoint != d.daemon.Endpoint {
-		return errors.New("contributor container was removed but its lifecycle state changed unexpectedly")
+		return errors.New("contributor lifecycle state changed unexpectedly; refusing removal")
+	}
+	if state.Schema == dockerActiveStateSchema {
+		if err := d.verifyTrackedContainer(containerID, state); err != nil {
+			return err
+		}
+	}
+	if err := d.removeAndVerify(containerID); err != nil {
+		return err
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove contributor cleanup state: %w", err)
 	}
-	return nil
+	return syncDirectory(filepath.Dir(path))
 }
 
 func (d *dockerDriver) cleanupOrphan() error {
@@ -869,15 +991,31 @@ func (d *dockerDriver) cleanupOrphan() error {
 		return fmt.Errorf("read recorded contributor cleanup state: %w", err)
 	}
 	var state dockerActiveState
-	if err := json.Unmarshal(raw, &state); err != nil || state.Schema != dockerActiveStateSchema ||
-		!validContainerID(state.ContainerID) || state.Image != d.image || state.Platform != d.platform ||
+	if err := json.Unmarshal(raw, &state); err != nil || !validDockerActiveState(state) || state.Image != d.image || state.Platform != d.platform ||
 		state.DaemonID == "" || state.DaemonEndpoint == "" {
 		return errors.New("recorded contributor cleanup state is invalid; refusing to start another contribution")
 	}
 	if d.daemon.ID == "" || state.DaemonID != d.daemon.ID || state.DaemonEndpoint != d.daemon.Endpoint {
 		return errors.New("recorded contributor belongs to a different Docker daemon; refusing to discard its cleanup state")
 	}
-	if err := d.removeAndVerify(state.ContainerID); err != nil {
+	containerID := state.ContainerID
+	if state.Schema == dockerActiveStateSchema {
+		var found bool
+		containerID, found, err = d.resolveTrackedContainer(state)
+		if err != nil {
+			return fmt.Errorf("resolve recorded contributor before cleanup: %w", err)
+		}
+		if !found {
+			if safeHandoffPath(d.candidateRoot, state.HandoffDir) {
+				_ = os.RemoveAll(state.HandoffDir)
+			}
+			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			return syncDirectory(filepath.Dir(path))
+		}
+	}
+	if err := d.removeAndVerify(containerID); err != nil {
 		return fmt.Errorf("clean recorded contributor before continuing: %w", err)
 	}
 	if safeHandoffPath(d.candidateRoot, state.HandoffDir) {
@@ -886,8 +1024,8 @@ func (d *dockerDriver) cleanupOrphan() error {
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "removed recorded contributor container %s before continuing\n", shortContainerID(state.ContainerID))
-	return nil
+	fmt.Fprintf(os.Stderr, "removed recorded contributor container %s before continuing\n", shortContainerID(containerID))
+	return syncDirectory(filepath.Dir(path))
 }
 
 func (d *dockerDriver) activeStatePath() string {
@@ -1113,7 +1251,10 @@ func writeJSONAtomic(path string, value any, mode os.FileMode) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	return os.Rename(temporaryPath, path)
+	if err := os.Rename(temporaryPath, path); err != nil {
+		return err
+	}
+	return syncDirectory(filepath.Dir(path))
 }
 
 func verifiedLifecycleFacts(f dockerSecurityFacts) bool {

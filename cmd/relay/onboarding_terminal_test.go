@@ -73,7 +73,7 @@ reply CONTINUE
 reply ` + signNumber + `
 for {set i 0} {$i < 7} {incr i} {reply {}}
 reply RUN
-reply {OFFLINE AND REVIEWED}
+reply {REVIEWED}
 reply y
 expect {
  -exact {Command completed.} {}

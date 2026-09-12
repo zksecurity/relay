@@ -207,6 +207,9 @@ func TestGuidedBlocksUnknownCandidateState(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".relay-participant-run-abc.lock"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, ".relay-workspace.lock"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := check(); err != nil {
 		t.Fatal(err)
 	}

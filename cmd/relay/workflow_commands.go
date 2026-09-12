@@ -153,13 +153,17 @@ func defaultParticipantConfigPath() string {
 
 func runParticipate(args []string) error {
 	set := flag.NewFlagSet("participate", flag.ContinueOnError)
-	var configPath, grantOverride, resumeCandidate, tesseraConnectionPath string
+	var configPath, grantOverride, resumeCandidate, tesseraConnectionPath, attemptOverride string
 	set.StringVar(&configPath, "config", defaultParticipantConfigPath(), "participant configuration created by relay participant enroll")
 	set.StringVar(&grantOverride, "grant", "", "private Tessera connection or fresh participant grant; overrides the profile grant")
 	set.StringVar(&resumeCandidate, "resume-candidate", "", "completed local candidate directory whose interrupted upload should resume")
 	set.StringVar(&tesseraConnectionPath, "tessera-connection", "", "private role connection downloaded after signing in to Tessera")
+	set.StringVar(&attemptOverride, "attempt-id", "", "stable guided-operation attempt identifier")
 	if err := set.Parse(args); err != nil {
 		return err
+	}
+	if attemptOverride != "" && !validFlowAttemptID(attemptOverride) {
+		return errors.New("--attempt-id must be 32 lowercase hexadecimal characters")
 	}
 	if configPath == "" {
 		return errors.New("--config is required because no default configuration directory is available")
@@ -244,20 +248,24 @@ func runParticipate(args []string) error {
 		return fmt.Errorf("not your turn: you are index %d, %d accepted, waiting on %s", slot, pos.accepted, pos.nextID)
 	}
 	if resumeCandidate != "" {
-		return resumeCandidateUpload(config, grant, pos, resumeCandidate, tesseraConnection)
+		return resumeCandidateUpload(config, grant, pos, resumeCandidate, attemptOverride, tesseraConnection, preparedDocker)
 	}
 	// Keep this guard inside the supervisor's run lock, not only in a UI
 	// wrapper. Every entry point must resume retained output after interruption.
 	if err := guardFreshGuidedContribution(config.CandidateParentDir, config.Phase, participant.CeremonyID, participant.ParticipantID); err != nil {
 		return err
 	}
+	attempt := attemptOverride
+	if attempt == "" {
+		attempt, err = randomID()
+		if err != nil {
+			return err
+		}
+	}
+	o.operationID = attempt
 	if err := runWithProgress("downloading authenticated transcript", func() error {
 		return fetchForContribution(o, pos)
 	}); err != nil {
-		return err
-	}
-	attempt, err := randomID()
-	if err != nil {
 		return err
 	}
 	o.outDir = filepath.Join(config.CandidateParentDir, fmt.Sprintf("%s-%04d-%s", config.Phase, pos.nextIndex, attempt))
@@ -271,7 +279,7 @@ func runParticipate(args []string) error {
 	if err != nil {
 		return err
 	}
-	manifest, err := prepareCandidateManifest(o.outDir, grant, config.Phase, pos, attempt)
+	manifest, err := prepareCandidateManifest(o.outDir, grant, config.Phase, pos, attempt, destroyedAt)
 	if err != nil {
 		return err
 	}
@@ -299,11 +307,11 @@ func runParticipate(args []string) error {
 	return reportTesseraManifest(tesseraConnection, manifestKey, attempt, config.Phase, pos.nextIndex)
 }
 
-func prepareCandidateManifest(candidateDir string, grant access.Grant, phase string, pos position, attempt string) (access.CandidateManifest, error) {
+func prepareCandidateManifest(candidateDir string, grant access.Grant, phase string, pos position, attempt string, completedAt time.Time) (access.CandidateManifest, error) {
 	manifest := access.CandidateManifest{
 		Schema: access.CandidateManifestSchema, CeremonyID: grant.CeremonyID, Phase: phase,
 		Index: pos.nextIndex, ParticipantID: grant.IdentityID, ParentChainSHA256: pos.pointer.Chain.SHA256,
-		AttemptID: attempt, CompletedAt: time.Now().UTC().Truncate(time.Second).Format(time.RFC3339),
+		AttemptID: attempt, CompletedAt: completedAt.UTC().Truncate(time.Second).Format(time.RFC3339),
 	}
 	for _, name := range candidateFileNames {
 		ref, err := regularFileRef(filepath.Join(candidateDir, name), name)
@@ -318,7 +326,7 @@ func prepareCandidateManifest(candidateDir string, grant access.Grant, phase str
 	return manifest, nil
 }
 
-func resumeCandidateUpload(config access.ParticipantConfig, grant access.Grant, pos position, candidateDir string, tesseraConnection *tesseraRoleConnection) error {
+func resumeCandidateUpload(config access.ParticipantConfig, grant access.Grant, pos position, candidateDir, expectedAttempt string, tesseraConnection *tesseraRoleConnection, preparedDocker *dockerDriver) error {
 	info, err := os.Lstat(candidateDir)
 	if err != nil {
 		return fmt.Errorf("load resumable candidate: %w", err)
@@ -328,6 +336,12 @@ func resumeCandidateUpload(config access.ParticipantConfig, grant access.Grant, 
 	}
 	localManifest := filepath.Join(candidateDir, localCandidateManifestName)
 	raw, err := os.ReadFile(localManifest)
+	if errors.Is(err, os.ErrNotExist) {
+		if err := finishResumableCandidateMetadata(config, grant, pos, candidateDir, preparedDocker); err != nil {
+			return err
+		}
+		raw, err = os.ReadFile(localManifest)
+	}
 	if err != nil {
 		return fmt.Errorf("load resumable candidate metadata: %w", err)
 	}
@@ -337,6 +351,9 @@ func resumeCandidateUpload(config access.ParticipantConfig, grant access.Grant, 
 	}
 	if err := validateResumableCandidate(manifest, config, grant, pos); err != nil {
 		return err
+	}
+	if expectedAttempt != "" && manifest.AttemptID != expectedAttempt {
+		return errors.New("retained candidate belongs to a different guided operation attempt")
 	}
 	if err := verifyLocalCandidate(candidateDir, manifest); err != nil {
 		return err
@@ -353,6 +370,74 @@ func resumeCandidateUpload(config access.ParticipantConfig, grant access.Grant, 
 	fmt.Printf("attempt: %s\ncandidate directory: %s\ndestroyed_at: %s\nmanifest: %s\n",
 		manifest.AttemptID, candidateDir, destroyedAt, manifestKey)
 	return reportTesseraManifest(tesseraConnection, manifestKey, manifest.AttemptID, config.Phase, pos.nextIndex)
+}
+
+func finishResumableCandidateMetadata(config access.ParticipantConfig, grant access.Grant, pos position, candidateDir string, preparedDocker *dockerDriver) error {
+	base := filepath.Base(candidateDir)
+	prefix := fmt.Sprintf("%s-%04d-", config.Phase, pos.nextIndex)
+	if !strings.HasPrefix(base, prefix) {
+		return errors.New("candidate without resumable metadata does not have the expected phase and turn name")
+	}
+	attempt := strings.TrimPrefix(base, prefix)
+	if !validFlowAttemptID(attempt) {
+		return errors.New("candidate without resumable metadata has an invalid attempt ID")
+	}
+	o := participantRoleOptions(config, grant.IdentityID)
+	o.outDir = candidateDir
+	if effectiveExecutionMode(config.ExecutionMode) == dockerExecutionMode {
+		if preparedDocker == nil {
+			return errors.New("resume requires the authenticated Docker runtime prepared for this participant")
+		}
+		o.docker = preparedDocker
+	}
+	_, erasureErr := os.Lstat(filepath.Join(candidateDir, "erasure.json"))
+	_, signatureErr := os.Lstat(filepath.Join(candidateDir, "erasure.sig"))
+	if erasureErr != nil || signatureErr != nil {
+		if (!errors.Is(erasureErr, os.ErrNotExist) && erasureErr != nil) || (!errors.Is(signatureErr, os.ErrNotExist) && signatureErr != nil) {
+			return errors.New("inspect retained erasure output before resume")
+		}
+		if o.docker == nil {
+			return errors.New("retained native candidate has no complete erasure record; preserve it for review")
+		}
+		destroyedAt, confirmed, err := dockerErasureIntent(o)
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			if err := confirmErasure(o); err != nil {
+				return err
+			}
+			destroyedAt = time.Time{}
+		}
+		if destroyedAt.IsZero() && errors.Is(erasureErr, os.ErrNotExist) != errors.Is(signatureErr, os.ErrNotExist) {
+			return errors.New("retained candidate has a partial legacy erasure record without a saved signing time; preserve it for review")
+		}
+		if destroyedAt.IsZero() {
+			destroyedAt = erasureTimestamp(candidateDir, time.Now().UTC())
+			if err := persistDockerErasureIntent(o, destroyedAt); err != nil {
+				return err
+			}
+		}
+		if err := runErasureAt(o, destroyedAt); err != nil {
+			return fmt.Errorf("finish retained erasure attestation: %w", err)
+		}
+	}
+	destroyedAt, err := candidateDestroyedAt(candidateDir)
+	if err != nil {
+		return fmt.Errorf("authenticate retained cleanup time: %w", err)
+	}
+	completedAt, err := time.Parse(time.RFC3339, destroyedAt)
+	if err != nil {
+		return errors.New("saved erasure record has an invalid destroyed_at")
+	}
+	manifest, err := prepareCandidateManifest(candidateDir, grant, config.Phase, pos, attempt, completedAt)
+	if err != nil {
+		return fmt.Errorf("verify retained candidate before rebuilding upload metadata: %w", err)
+	}
+	if err := writeJSONNoReplace(filepath.Join(candidateDir, localCandidateManifestName), manifest, 0o600); err != nil {
+		return fmt.Errorf("save recovered candidate metadata: %w", err)
+	}
+	return nil
 }
 
 func candidateDestroyedAt(candidateDir string) (string, error) {
@@ -584,7 +669,62 @@ func erasureTimestamp(candidateDir string, now time.Time) time.Time {
 
 func runErasure(o roleOpts) (time.Time, error) {
 	destroyedAt := erasureTimestamp(o.outDir, time.Now().UTC())
+	if o.docker != nil {
+		if err := persistDockerErasureIntent(o, destroyedAt); err != nil {
+			return time.Time{}, err
+		}
+	}
 	return destroyedAt, runErasureAt(o, destroyedAt)
+}
+
+func dockerErasureIntent(o roleOpts) (time.Time, bool, error) {
+	raw, err := os.ReadFile(filepath.Join(o.outDir, dockerLifecycleLogName))
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("read Docker lifecycle record: %w", err)
+	}
+	var receipt dockerLifecycleReceipt
+	if err := json.Unmarshal(raw, &receipt); err != nil || receipt.Schema != dockerLifecycleSchema || !receipt.RemovalVerified ||
+		o.docker == nil || receipt.Image != o.docker.image || receipt.Platform != o.docker.platform ||
+		!verifiedDaemonFacts(receipt.Daemon) || !verifiedLifecycleFacts(receipt.Security) ||
+		!verifiedHostSwapStatus(runtime.GOOS, receipt.HostSwapStatus) {
+		return time.Time{}, false, errors.New("Docker lifecycle record is invalid")
+	}
+	confirmed := receipt.ParticipantConfirmation == "CLEANUP PRECAUTIONS CONFIRMED" && receipt.ConfirmedAt != ""
+	if confirmed {
+		if _, err := time.Parse(time.RFC3339, receipt.ConfirmedAt); err != nil {
+			return time.Time{}, false, errors.New("Docker lifecycle record has an invalid confirmation time")
+		}
+	}
+	if receipt.ErasureDestroyedAt == "" {
+		return time.Time{}, confirmed, nil
+	}
+	destroyedAt, err := time.Parse(time.RFC3339, receipt.ErasureDestroyedAt)
+	if err != nil {
+		return time.Time{}, confirmed, errors.New("Docker lifecycle record has an invalid erasure time")
+	}
+	return destroyedAt, confirmed, nil
+}
+
+func persistDockerErasureIntent(o roleOpts, destroyedAt time.Time) error {
+	path := filepath.Join(o.outDir, dockerLifecycleLogName)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read Docker lifecycle record: %w", err)
+	}
+	var receipt dockerLifecycleReceipt
+	if err := json.Unmarshal(raw, &receipt); err != nil || receipt.Schema != dockerLifecycleSchema || !receipt.RemovalVerified ||
+		o.docker == nil || receipt.Image != o.docker.image || receipt.Platform != o.docker.platform ||
+		!verifiedDaemonFacts(receipt.Daemon) || !verifiedLifecycleFacts(receipt.Security) ||
+		!verifiedHostSwapStatus(runtime.GOOS, receipt.HostSwapStatus) ||
+		receipt.ParticipantConfirmation != "CLEANUP PRECAUTIONS CONFIRMED" {
+		return errors.New("Docker cleanup confirmation must be durably recorded before erasure signing")
+	}
+	value := destroyedAt.UTC().Format(time.RFC3339)
+	if receipt.ErasureDestroyedAt != "" && receipt.ErasureDestroyedAt != value {
+		return errors.New("Docker lifecycle record already binds a different erasure time")
+	}
+	receipt.ErasureDestroyedAt = value
+	return writeJSONAtomic(path, receipt, 0o600)
 }
 
 func runErasureAt(o roleOpts, destroyedAt time.Time) error {
@@ -673,6 +813,23 @@ func uploadJSONLast(client store.Client, key string, value any) error {
 	return putFresh(client, key, local)
 }
 
+func uploadJSONLastOrVerify(client candidateObjectStore, key string, value any) error {
+	dir, err := os.MkdirTemp("", "relay-manifest-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	local := filepath.Join(dir, "manifest.json")
+	if err := writeJSONNoReplace(local, value, 0o600); err != nil {
+		return err
+	}
+	ref, err := regularFileRef(local, "manifest.json")
+	if err != nil {
+		return err
+	}
+	return putFreshOrVerify(client, key, local, ref)
+}
+
 type stringList []string
 
 func (values *stringList) String() string         { return strings.Join(*values, ",") }
@@ -688,13 +845,15 @@ func runReleaseEvidence(args []string) error {
 
 func runSubmitEvidenceForRole(args []string, expectedRole string) error {
 	set := flag.NewFlagSet("submit-evidence", flag.ContinueOnError)
-	var configPath, grantPath, directory, tesseraConnectionPath string
+	var configPath, grantPath, directory, tesseraConnectionPath, attempt, completedAt string
 	var files stringList
 	set.StringVar(&configPath, "config", "", "optional validated role configuration")
 	set.StringVar(&grantPath, "grant", "", "private Tessera connection or temporary role grant")
 	set.Var(&files, "file", "regular evidence file (repeatable)")
 	set.StringVar(&directory, "dir", "", "evidence directory; symlinks are rejected")
 	set.StringVar(&tesseraConnectionPath, "tessera-connection", "", "private role connection downloaded after signing in to Tessera")
+	set.StringVar(&attempt, "attempt-id", "", "stable lowercase-hex upload attempt ID (normally supplied by the guided workflow)")
+	set.StringVar(&completedAt, "completed-at", "", "stable UTC manifest time (normally supplied by the guided workflow)")
 	if err := set.Parse(args); err != nil {
 		return err
 	}
@@ -736,32 +895,46 @@ func runSubmitEvidenceForRole(args []string, expectedRole string) error {
 	if err != nil {
 		return err
 	}
-	attempt, err := randomID()
-	if err != nil {
-		return err
+	if attempt == "" {
+		attempt, err = randomID()
+		if err != nil {
+			return err
+		}
+	} else if !validFlowAttemptID(attempt) {
+		return errors.New("--attempt-id must be 32 lowercase hexadecimal characters")
+	}
+	if completedAt == "" {
+		completedAt = time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
+	} else if parsed, parseErr := time.Parse(time.RFC3339, completedAt); parseErr != nil {
+		return errors.New("--completed-at must be an RFC3339 UTC time")
+	} else if _, offset := parsed.Zone(); offset != 0 {
+		return errors.New("--completed-at must be an RFC3339 UTC time")
 	}
 	prefix := grant.Prefix + attempt + "/"
 	manifest := access.SubmissionManifest{Schema: access.SubmissionManifestSchema, CeremonyID: grant.CeremonyID,
 		Role: grant.Role, IdentityID: grant.IdentityID, AttemptID: attempt,
-		CompletedAt: time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)}
+		CompletedAt: completedAt}
 	client := grantClient(grant)
 	key := prefix + "manifest.json"
-	if err := runWithProgress("uploading signed role evidence", func() error {
-		for _, input := range inputs {
-			ref, err := regularFileRef(input.local, input.name)
-			if err != nil {
-				return err
-			}
-			manifest.Files = append(manifest.Files, ref)
-			fmt.Fprintf(os.Stderr, "  uploading %s (%s)\n", ref.Name, formatBytes(ref.Size))
-			if err := putFresh(client, prefix+"files/"+ref.Name, input.local); err != nil {
-				return err
-			}
-		}
-		if err := manifest.Validate(); err != nil {
+	for _, input := range inputs {
+		ref, err := regularFileRef(input.local, input.name)
+		if err != nil {
 			return err
 		}
-		return uploadJSONLast(client, key, manifest)
+		manifest.Files = append(manifest.Files, ref)
+	}
+	if err := manifest.Validate(); err != nil {
+		return err
+	}
+	if err := runWithProgress("uploading signed role evidence", func() error {
+		for index, input := range inputs {
+			ref := manifest.Files[index]
+			fmt.Fprintf(os.Stderr, "  uploading %s (%s)\n", ref.Name, formatBytes(ref.Size))
+			if err := putFreshOrVerify(client, prefix+"files/"+ref.Name, input.local, ref); err != nil {
+				return err
+			}
+		}
+		return uploadJSONLastOrVerify(client, key, manifest)
 	}); err != nil {
 		return err
 	}

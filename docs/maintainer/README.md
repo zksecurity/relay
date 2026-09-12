@@ -10,6 +10,8 @@ These references support release engineering, profile preparation, and recovery.
 | Try the coordinator setup UI locally | [Local coordinator test](local-coordinator.md) |
 | Review/test the guided role workflows | [Workflow review](role-workflow-review.md) |
 | Implement the agreed guided-journey redesign | [Journey design](guided-journey-design.md) |
+| Design and audit crash-safe recovery | [Design](crash-recovery-design.md) · [Audit](crash-recovery-audit.md) |
+| Plan remaining recovery work and review its risks | [Remaining plan](crash-recovery-remaining-plan.md) |
 | Review/test role onboarding | [Onboarding review](onboarding-review.md) |
 | Prepare authenticated role profiles | [Profiles](profiles.md) |
 | Understand mounts and saved actions | [Launcher reference](launcher.md) |

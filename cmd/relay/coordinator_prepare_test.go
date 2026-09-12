@@ -371,7 +371,7 @@ func TestCoordinatorPostInitializationMenu(t *testing.T) {
 	}{
 		{"verified", "definition-verified", "Initialization complete", false, true},
 		{"local", "definition-verified", "Local setup test complete", true, false},
-		{"interrupted", "initialization-attempted", "Initialization needs verification", false, false},
+		{"interrupted", "initialization-attempted", "Initialization needs recovery", false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := setupFixture(t)
@@ -413,15 +413,17 @@ func TestCoordinatorInitializationRequiresConsentAndFreezesOnFailure(t *testing.
 	if err := w.initialize(); err == nil || calls != 1 || w.d.Status != "initialization-attempted" {
 		t.Fatal("uncertain attempt not frozen")
 	}
-	if err := w.initialize(); err == nil || calls != 1 {
-		t.Fatal("repeated uncertain initialization")
+	w.run = func([]string) error { calls++; return nil }
+	w.input = bufio.NewReader(strings.NewReader("RESUME INITIALIZATION\n"))
+	if err := w.initialize(); err != nil || calls != 5 || w.d.Status != "definition-verified" {
+		t.Fatal("exact interrupted initialization did not resume", err, calls, w.d.Status)
 	}
 	var frozen coordinatorDraft
 	if err := setupReadJSON(filepath.Join(w.d.Work, "coordinator-setup", "frozen", "draft.json"), &frozen); err != nil {
 		t.Fatal(err)
 	}
-	if frozen.CreatedAt == "" {
-		t.Fatal("missing frozen creation time")
+	if frozen.CreatedAt == "" || len(frozen.SessionNonceHex) != 64 {
+		t.Fatal("missing frozen creation time or session nonce")
 	}
 	w.input = bufio.NewReader(strings.NewReader("1\n0\n"))
 	if err := w.menu(); err != nil {
@@ -443,7 +445,7 @@ func TestCoordinatorInitializationUsesProofToolAndExternalTrust(t *testing.T) {
 		t.Fatal(calls, w.d.Status)
 	}
 	joined := strings.Join(calls[0], " ")
-	for _, s := range []string{"mpc-ceremony init --mode rehearsal", "--key-version rehearsal-tiny-v1", "--coordinator-signing-key /keys/signing.hex", "--out-dir /work/ceremony/public"} {
+	for _, s := range []string{"mpc-ceremony init --mode rehearsal", "--key-version rehearsal-tiny-v1", "--session-nonce-hex", "--coordinator-signing-key /keys/signing.hex", "--out-dir /work/ceremony/public"} {
 		if !strings.Contains(joined, s) {
 			t.Fatal(joined)
 		}

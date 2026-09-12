@@ -29,7 +29,7 @@ func TestCoordinatorPreparationRecommendations(t *testing.T) {
 		{"storage", "6", func(w *coordinatorWizard) {}},
 		{"offline exception", "8", func(w *coordinatorWizard) { w.d.OfflinePreparation = true }},
 		{"local initialize", "8", func(w *coordinatorWizard) { w.localAction = func(string, string, []string, bool) error { return nil } }},
-		{"recovery", "9", func(w *coordinatorWizard) { w.d.Status = "initialization-attempted" }},
+		{"recovery", "8", func(w *coordinatorWizard) { w.d.Status = "initialization-attempted" }},
 		{"enrollment", "13", func(w *coordinatorWizard) { w.d.Status = "definition-verified" }},
 		{"local complete", "0", func(w *coordinatorWizard) {
 			w.d.Status = "definition-verified"
@@ -106,7 +106,7 @@ func TestCoordinatorPreparationFilesAreNotVerifiedCompletion(t *testing.T) {
 		t.Fatal(next)
 	}
 	w.d.Status = "initialization-attempted"
-	if next = w.nextPreparationAction(); next.choice != "9" {
+	if next = w.nextPreparationAction(); next.choice != "8" {
 		t.Fatal("existing files bypassed recovery", next)
 	}
 }

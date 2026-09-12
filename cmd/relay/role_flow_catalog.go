@@ -91,7 +91,7 @@ func importReceiptFlow(role, phase string) flowTask {
 	if role == "mirror" {
 		kind = "mirror-receipt"
 	}
-	task := withFields(flowProof("sign-receipt", "Review and sign YOUR receipt offline", "The offline image checks the authenticated ceremony, record binding and owner key before signing. You must personally confirm the observation; the program cannot observe it for you.", "ops", "sign", "--reviewed"), ft("record-type", "Receipt type", kind), ff("record", "Exact public receipt to review", "/work/"+phase+"-receipt/canonical.json"), ff("signing-key", "Your private signing key (offline image only)", "/keys/signing.hex"), ff("out", "Fresh verified detached signature", "/work/"+phase+"-receipt/receipt.sig"))
+	task := withFields(flowProof("sign-receipt", "Review and sign YOUR receipt in the network-disabled signer", "The signing image checks the authenticated ceremony, record binding and owner key before signing. You must personally confirm the observation; the program cannot observe it for you. This does not claim the host is disconnected.", "ops", "sign", "--reviewed"), ft("record-type", "Receipt type", kind), ff("record", "Exact public receipt to review", "/work/"+phase+"-receipt/canonical.json"), ff("signing-key", "Your private signing key (signing container only)", "/keys/signing.hex"), ff("out", "Fresh verified detached signature", "/work/"+phase+"-receipt/receipt.sig"))
 	task.Offline = true
 	return task
 }
@@ -227,7 +227,7 @@ func roleFlowStages(role string) []flowStage {
 					submit.Fields[n].Default = "/work/" + phase + "-receipt"
 				}
 			}
-			tasks = append(tasks, prepare, importReceiptFlow(role, phase), handoff("reconnect", "Reconnect only after offline signing finishes", "Only public receipt files are uploaded. Keep your private signing key out of the online container."), submit)
+			tasks = append(tasks, prepare, importReceiptFlow(role, phase), handoff("reconnect", "Return to the online handoff after signing", "Only public receipt files are uploaded. Keep your private signing key out of the online container."), submit)
 			stages = append(stages, flowStage{ID: phase, Label: phase + " observation and signed receipt", Tasks: tasks})
 		}
 	case "auditor":

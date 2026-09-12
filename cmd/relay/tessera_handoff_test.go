@@ -64,7 +64,7 @@ func TestTesseraHandoffResumeAndLostExport(t *testing.T) {
 		t.Fatal("missing export trusted")
 	}
 	w.d.Status = "initialization-attempted"
-	if w.nextPreparationAction().choice != "9" {
+	if w.nextPreparationAction().choice != "8" {
 		t.Fatal("recovery bypass")
 	}
 }

@@ -86,10 +86,43 @@ func (p *rolePreparer) profile(role string) (guidedProfile, error) {
 		if v.Work != p.d.Work || v.Trust != p.d.Trust || v.Keys != p.d.Keys {
 			return v, errors.New("saved participant profile uses different role directories")
 		}
+		config, err := loadRoleConfig(v.Config, "participant")
+		if err != nil {
+			return v, fmt.Errorf("load participant phase profile: %w", err)
+		}
+		if v.Image == "" && v.Platform == "" {
+			if err := p.migrateLegacyParticipantRuntimeProfile(role, v, config.DockerImage, config.DockerPlatform); err != nil {
+				return v, err
+			}
+			v.Image, v.Platform = config.DockerImage, config.DockerPlatform
+		}
+		if v.Image != config.DockerImage || v.Platform != config.DockerPlatform {
+			return v, errors.New("saved participant launcher image differs from its authenticated phase profile")
+		}
 	} else if v.Work != work || v.Keys != keys || (role != "keygen" && v.Trust != p.d.Trust) {
 		return v, errors.New("saved profile uses different role directories")
 	}
 	return v, nil
+}
+
+func (p *rolePreparer) migrateLegacyParticipantRuntimeProfile(role string, profile guidedProfile, image, platform string) error {
+	if !roleImagePattern.MatchString(image) || (platform != "linux/amd64" && platform != "linux/arm64") {
+		return errors.New("participant phase profile has no approved Docker runtime")
+	}
+	dir, err := guidedDirectory(p.settingsRoot, p.alias(role), role)
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(dir, "profile.json")
+	if err := backupPrivateFile(path, ".pre-runtime-v1.bak"); err != nil {
+		return fmt.Errorf("cannot safely migrate older participant runtime: %w", err)
+	}
+	profile.Image, profile.Platform = image, platform
+	if err := saveJSONAtomic(path, profile); err != nil {
+		return err
+	}
+	fmt.Fprintln(p.ui.output, "Updated your older participant settings for transcript inspection; kept profile.json.pre-runtime-v1.bak.")
+	return nil
 }
 
 func (p *rolePreparer) migrateLegacyParticipantProfile(role string, profile guidedProfile) error {
@@ -334,7 +367,7 @@ func (p *rolePreparer) importFile() error {
 func (p *rolePreparer) initProfile() error {
 	role := p.d.Role
 	if role == "release-signer" {
-		return errors.New("offline final-parameter signing uses the prepared workflow directly, not a transport profile")
+		return errors.New("final-parameter signing uses its network-disabled workflow directly, not a transport profile")
 	}
 	if role == "upload-station" {
 		role = "release"
@@ -403,10 +436,71 @@ func (p *rolePreparer) workflow() error {
 	}
 	return p.run([]string{"ceremony", "guide", p.d.Name, "--role", p.d.Role, "--settings-root", p.settingsRoot})
 }
+
+type rolePreparationNext struct{ choice, label, reason string }
+
+func regularPreparationFile(path string) bool {
+	info, err := os.Lstat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
+// This is an authored setup order, not a readiness heuristic. A waiting step
+// remains next instead of allowing a later, locally runnable action to jump it.
+func (p *rolePreparer) nextPreparationAction() rolePreparationNext {
+	profileExists := func(role string) bool {
+		dir, err := guidedDirectory(p.settingsRoot, p.alias(role), role)
+		return err == nil && regularPreparationFile(filepath.Join(dir, "profile.json"))
+	}
+	imagesReady := profileExists(p.d.Role)
+	if p.d.Role == "participant" {
+		imagesReady = profileExists("keygen") && profileExists("decision-signer") &&
+			roleImagePattern.MatchString(p.d.Values["image"]) && p.d.Values["binary"] != ""
+	} else if p.d.Role != "upload-station" {
+		imagesReady = imagesReady && profileExists("keygen") && profileExists("decision-signer")
+	}
+	if !imagesReady {
+		return rolePreparationNext{"1", "Prepare and verify the approved Docker images", "Every later command must use the approved tools for your role and computer."}
+	}
+	if p.d.Role != "upload-station" && !regularPreparationFile(filepath.Join(p.d.Keys, "identity.json")) {
+		return rolePreparationNext{"2", "Generate or review MY role identity", "Your role needs its own signing identity. Relay shares only the public identity file."}
+	}
+	for _, path := range []string{
+		filepath.Join(p.d.Work, "ceremony/public/ceremony.json"),
+		filepath.Join(p.d.Work, "ceremony/public/ceremony.sig"),
+		filepath.Join(p.d.Trust, "coordinator-public-key.hex"),
+	} {
+		if !regularPreparationFile(path) {
+			return rolePreparationNext{"3", "Import the next required public ceremony file", "Import the signed definition, its signature, and the independently authenticated coordinator public key one at a time."}
+		}
+	}
+	for _, name := range []string{"enrollment.json", "enrollment.sig"} {
+		if !regularPreparationFile(filepath.Join(p.d.Work, name)) {
+			if p.d.Role == "upload-station" {
+				return rolePreparationNext{"3", "Import the final signer's public enrollment", "The upload station verifies the final signer's public enrollment but never receives that signer's private key."}
+			}
+			return rolePreparationNext{"7", "Prepare, review and sign MY enrollment", "This binds your signing key to your assigned role in the signed ceremony definition."}
+		}
+	}
+	if p.d.Role != "release-signer" {
+		role := p.d.Role
+		if role == "upload-station" {
+			role = "release"
+		}
+		if !regularPreparationFile(filepath.Join(p.d.Work, "ceremony/config", role+"-phase1.json")) {
+			return rolePreparationNext{"4", "Authenticate the ceremony and create the Phase 1 profile", "This saves the exact signed inputs and approved runtime used by your Phase 1 commands."}
+		}
+	}
+	return rolePreparationNext{"5", "Open ceremony operations and progress", "Onboarding is ready. The role workflow will show the next required ceremony action in its authored order."}
+}
+
 func (p *rolePreparer) menu() error {
 	for {
-		p.ui.message(toneHeading, "\n%s — %s onboarding\n", p.d.Name, p.d.Role)
-		fmt.Fprintln(p.ui.output, "1) Prepare approved images (online; before disconnecting a signer)")
+		next := p.nextPreparationAction()
+		p.ui.message(toneHeading, "\nRELAY | %s | %s\n------------------------------------------------------------\n", strings.ToUpper(p.d.Role), p.d.Name)
+		p.ui.message(toneHeading, "NEXT SETUP STEP\n  %s\n\nWHY THIS STEP IS NEEDED\n", next.label)
+		p.ui.message(toneMuted, "  %s\n\nALL SETUP ACTIONS\n", next.reason)
+		fmt.Fprintln(p.ui.output, "Numbers stay stable across roles; actions that do not apply are hidden.")
+		fmt.Fprintln(p.ui.output, "1) Prepare and verify approved Docker images")
 		if p.d.Role != "upload-station" {
 			fmt.Fprintln(p.ui.output, "2) Generate/review MY identity and public handoff")
 		}
@@ -419,7 +513,7 @@ func (p *rolePreparer) menu() error {
 			fmt.Fprintln(p.ui.output, "7) Prepare, review and sign MY enrollment (after receiving the signed definition)")
 		}
 		fmt.Fprintln(p.ui.output, "8) Show all setup steps (including those that do not apply)\n0) Save and exit")
-		choice, err := p.ui.ask("Choose", "0")
+		choice, err := p.ui.ask("Choose", next.choice)
 		if err != nil {
 			return err
 		}
@@ -441,7 +535,7 @@ func (p *rolePreparer) menu() error {
 		case "5":
 			err = p.workflow()
 		case "6":
-			fmt.Fprintf(p.ui.output, "Work/public outputs: %s\nTrusted public files: %s\nPRIVATE keys: %s\nObtain signed ceremony files and public storage configuration through the agreed channel. Prepare approved images to create your local tool record. Participant environment questions are included in profile setup. Use option 7 for your own enrollment; upload stations instead import the final signer's public enrollment. Witness/mirror receipts are reviewed and signed with the offline image in the workflow. Only the final signer must disconnect the host before signing; other roles sign in a network-disabled container unless a stricter ceremony policy applies. Complete phase transcripts and operational evidence are exchanged separately; importing a definition does not fetch them.\n", p.d.Work, p.d.Trust, p.d.Keys)
+			fmt.Fprintf(p.ui.output, "Your folders\n  Public work and outputs: %s\n  Independently trusted public files: %s\n  Your PRIVATE signing keys: %s\n\nWhat you receive\n  Get the signed ceremony files and public storage settings through the agreed coordination channel. Importing the definition does not download transcripts or evidence.\n\nSigning safety\n  Witness, mirror, participant and coordinator records are signed in a network-disabled container. Only the final signer must disconnect the host, unless your ceremony adopts a stricter procedure.\n", p.d.Work, p.d.Trust, p.d.Keys)
 		case "7":
 			err = p.enroll()
 		case "8":
@@ -466,7 +560,7 @@ func onboardingNotApplicable(role, choice string) string {
 		return "Upload stations do not own signing keys; import the final signer's public enrollment instead."
 	}
 	if role == "release-signer" && choice == "4" {
-		return "Final signers use the offline signing workflow, not an online transport phase profile."
+		return "Final signers use the network-disabled signing workflow, not an online transport phase profile."
 	}
 	return ""
 }

@@ -25,9 +25,9 @@ Choose **Continue the ceremony workflow** for the numbered mirror steps.
    out of shared logs.
 5. Run the receipt verification over the complete retained files. Synchronizing
    alone does not rehash every pre-existing local file.
-6. Review your receipt and disconnect the signing host when prompted. The
-   helper signs it in the prepared offline image and verifies the signature.
-   Reconnect only after signing finishes.
+6. Review your receipt. The helper signs it in the prepared network-disabled
+   image and verifies the signature. Disconnecting the host too is an optional
+   extra precaution unless ceremony policy requires it.
 7. Upload only signed public output with your scoped grant and send the
    manifest key to the coordinator. A private Tessera role connection performs
    this report automatically.
@@ -38,5 +38,5 @@ approvals. Keep your signing key out of public transfers.
 ## Retain and recover
 
 Retain the exact transcript for the agreed period. Report loss, mutation, or
-changed administrative control. Preserve outputs after failure and use
-[reviewed recovery](../role-workflow.md#recovery); do not edit signed receipts.
+changed administrative control. Preserve outputs after failure and restart the
+same [guided workflow](../role-workflow.md#recovery); do not edit signed receipts.

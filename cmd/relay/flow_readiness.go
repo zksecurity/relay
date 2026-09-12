@@ -41,8 +41,24 @@ func (f *roleFlow) readiness(task flowTask) flowReadiness {
 			return r
 		}
 		switch a.Status {
+		case "prepared":
+			r.Status, r.Missing = "Ready to review inputs", []string{"The previous action stopped before launch; no command ran"}
+			return r
 		case "running", "failed", "reviewed-incomplete":
-			r.Status, r.Missing = "Needs attention", []string{"Inspect retained output and resolve the previous attempt"}
+			class := flowTaskRecoveryClass(task)
+			if class == recoveryReadOnly {
+				r.Status, r.Missing = "Needs attention", []string{"Relay will recheck the previous read-only action"}
+			} else if class == recoveryCheckpoint {
+				r.Status, r.Missing = "Needs attention", []string{"Relay will reauthenticate the public state and safely update its local checkpoint"}
+			} else if class == recoveryUpload {
+				r.Status, r.Missing = "Needs attention", []string{"Relay will verify and continue the exact immutable upload"}
+			} else if class == recoveryDocker && f.state.Role == "participant" {
+				r.Status, r.Missing = "Needs attention", []string{"Relay will look for and verify the exact retained candidate; it will not recompute"}
+			} else if class == recoveryGrant {
+				r.Status, r.Missing = "Needs attention", []string{"Relay will adopt an exact protected grant if one was saved; otherwise it blocks possible duplicate issuance"}
+			} else {
+				r.Status, r.Missing = "Needs attention", []string{"The previous action may have changed state and will not be repeated automatically"}
+			}
 			return r
 		case "succeeded":
 			r.Status = "Command completed; scoped verification only"

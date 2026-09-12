@@ -84,6 +84,7 @@ The participant run repeats the authoritative Phase 1 replay and Phase 2
 initialization checks before generating randomness.
 Do not issue a grant as a substitute for preparing these prerequisites.
 
-For an unfinished ordinary saved action, inspect outputs before
-`open --reviewed-retry`. For a participant, preserve the public candidate and
-use the same profile's recovery/resume flow. Do not overwrite signed state.
+The low-level `open --reviewed-retry` switch exists for maintainer-operated named
+actions; it is not the guided workflow's recovery policy. Guided roles use
+task-specific checks. For a participant, preserve the public candidate and use
+the same profile's recovery/resume flow. Do not overwrite signed state.

@@ -39,5 +39,6 @@ Cleanup statements do not prove physical erasure or exclude host/VM remnants.
 ## If something fails
 
 Retain the output and investigate before signing or retrying.
-Use [reviewed recovery](../role-workflow.md#recovery); do not sign substitute
-files or infer success from an upload. Report suspected key exposure immediately.
+Restart the same [guided workflow](../role-workflow.md#recovery); do not sign
+substitute files or infer success from an upload. Report suspected key exposure
+immediately.

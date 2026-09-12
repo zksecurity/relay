@@ -72,6 +72,7 @@ type coordinatorDraft struct {
 	ArchitecturePolicy                       string          `json:"architecture_policy,omitempty"`
 	Schema, Name, Release, Work, Trust, Keys string
 	Mode, Circuit, Status, CreatedAt         string
+	SessionNonceHex                          string `json:"session_nonce_hex,omitempty"`
 	Identities                               setupRoster
 	Policy                                   setupPolicy
 	Binaries                                 []setupBinary
@@ -232,6 +233,48 @@ func setupWriteNew(path string, v any) error {
 		return err
 	}
 	return f.Close()
+}
+
+func setupWriteNewOrExact(path string, v any) error {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	return setupWriteBytesNewOrExact(path, raw, 0o600)
+}
+
+func setupWriteBytesNewOrExact(path string, expected []byte, mode os.FileMode) error {
+	if info, err := os.Lstat(path); err == nil {
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o077 != 0 {
+			return errors.New("existing initialization file is not a protected regular file")
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(raw, expected) {
+			return errors.New("existing initialization file differs from the frozen value")
+		}
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	if _, err = f.Write(expected); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	return syncDirectory(filepath.Dir(path))
 }
 
 type coordinatorWizard struct {
@@ -619,7 +662,7 @@ func (w *coordinatorWizard) binary() error {
 	return w.save()
 }
 
-func (w *coordinatorWizard) action(name, role string, command []string, credentials bool) error {
+func (w *coordinatorWizard) action(name, role string, command []string, credentials bool, approvedRetry ...bool) error {
 	if w.localAction != nil {
 		return w.localAction(name, role, command, credentials)
 	}
@@ -676,8 +719,10 @@ func (w *coordinatorWizard) action(name, role string, command []string, credenti
 			return errors.New("existing saved action has different R2 credential file references")
 		}
 		if err := checkGuidedAttempts(filepath.Join(dir, "activity")); err != nil && !errors.Is(err, os.ErrNotExist) {
-			if err := w.confirm("Earlier action failed or was interrupted. Review its output and container state first; this does not authorize overwriting files", "REVIEWED RETRY"); err != nil {
-				return err
+			if len(approvedRetry) == 0 || !approvedRetry[0] {
+				if err := w.confirm("Earlier action failed or was interrupted. Review its output and container state first; this does not authorize overwriting files", "REVIEWED RETRY"); err != nil {
+					return err
+				}
 			}
 			openArgs = append(openArgs, "--reviewed-retry")
 		}
@@ -781,6 +826,7 @@ func (w *coordinatorWizard) generateIdentity() error {
 }
 
 func (w *coordinatorWizard) initialize() error {
+	resume := w.d.Status == "initialization-attempted"
 	if w.d.Tessera != nil || w.d.TesseraSetup != nil {
 		if err := checkTesseraDraft(w.d); err != nil {
 			return err
@@ -789,15 +835,19 @@ func (w *coordinatorWizard) initialize() error {
 	if w.localAction != nil && (w.d.Mode != "rehearsal" || w.d.Circuit != "rehearsal-tiny-v1" || len(w.d.Binaries) != 0) {
 		return errors.New("local tests require the tiny rehearsal circuit and the supplied local images only")
 	}
-	if w.d.Status != "draft" {
+	if w.d.Status != "draft" && !resume {
 		return errors.New("initialization already attempted; edits and automatic retry are blocked")
 	}
 	if err := w.d.validate(); err != nil {
 		return err
 	}
 	root := filepath.Join(w.d.Work, "ceremony")
-	if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
-		return errors.New("ceremony output already exists or cannot be checked; preserve it and investigate")
+	if !resume {
+		if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
+			return errors.New("ceremony output already exists or cannot be checked; preserve it and investigate")
+		}
+	} else if len(w.d.SessionNonceHex) != 64 {
+		return errors.New("interrupted initialization predates a saved session nonce and cannot be reconstructed safely")
 	}
 	if st, err := os.Lstat(filepath.Join(w.d.Keys, "signing.hex")); err != nil || !st.Mode().IsRegular() {
 		return errors.New("coordinator signing.hex is missing or unsafe")
@@ -809,66 +859,83 @@ func (w *coordinatorWizard) initialize() error {
 	}
 	w.summary()
 	fmt.Fprintln(w.output, "This signs the definition and computes Phase 1 genesis. Production can require substantial RAM, disk and time. It does NOT publish or start participant turns.")
-	if err := w.confirm("Approve exactly this draft", "INITIALIZE "+strings.ToUpper(w.d.Mode)); err != nil {
-		return err
-	}
-	w.d.CreatedAt = time.Now().UTC().Format(time.RFC3339)
-	w.d.Status = "initialization-attempted"
-	if err := w.save(); err != nil {
-		return err
+	if resume {
+		if err := w.confirm("Resume the exact frozen initialization. Existing files must match byte-for-byte and will not be overwritten", "RESUME INITIALIZATION"); err != nil {
+			return err
+		}
+	} else {
+		if err := w.confirm("Approve exactly this draft", "INITIALIZE "+strings.ToUpper(w.d.Mode)); err != nil {
+			return err
+		}
+		if w.d.CreatedAt == "" {
+			w.d.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+		if w.d.SessionNonceHex == "" {
+			first, err := randomID()
+			if err != nil {
+				return err
+			}
+			second, err := randomID()
+			if err != nil {
+				return err
+			}
+			w.d.SessionNonceHex = first + second
+		}
+		w.d.Status = "initialization-attempted"
+		if err := w.save(); err != nil {
+			return err
+		}
 	}
 	snapshot := filepath.Join(filepath.Dir(w.draftPath), "frozen")
-	if err := os.Mkdir(snapshot, 0700); err != nil {
+	if err := ensurePrivateDirectory(snapshot); err != nil {
 		return err
 	}
-	if err := setupWriteNew(filepath.Join(snapshot, "participants.json"), w.d.Identities); err != nil {
+	if err := setupWriteNewOrExact(filepath.Join(snapshot, "participants.json"), w.d.Identities); err != nil {
 		return err
 	}
-	if err := setupWriteNew(filepath.Join(snapshot, "policy.json"), w.d.Policy); err != nil {
+	if err := setupWriteNewOrExact(filepath.Join(snapshot, "policy.json"), w.d.Policy); err != nil {
 		return err
 	}
-	if err := setupWriteNew(filepath.Join(snapshot, "draft.json"), w.d); err != nil {
+	if err := setupWriteNewOrExact(filepath.Join(snapshot, "draft.json"), w.d); err != nil {
 		return err
 	}
 	// The external trust anchor comes from the operator-confirmed identity, not
 	// from a public-key file embedded in the generated transcript.
 	trust := filepath.Join(w.d.Trust, "setup-coordinator.hex")
-	f, err := os.OpenFile(trust, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
+	if err := setupWriteBytesNewOrExact(trust, []byte(w.d.Identities.Coordinator.PublicKey), 0o600); err != nil {
 		return err
 	}
-	_, err = f.WriteString(w.d.Identities.Coordinator.PublicKey)
-	closeErr := f.Close()
-	if err != nil {
+	if err := ensurePrivateDirectory(root); err != nil {
 		return err
 	}
-	if closeErr != nil {
-		return closeErr
-	}
-	if err := os.Mkdir(root, 0700); err != nil {
-		return err
-	}
-	command := []string{"mpc-ceremony", "init", "--mode", w.d.Mode, "--key-version", w.d.Circuit, "--created-at", w.d.CreatedAt, "--participants", "/work/coordinator-setup/frozen/participants.json", "--policy", "/work/coordinator-setup/frozen/policy.json", "--coordinator-key-id", w.d.Identities.Coordinator.KeyID, "--coordinator-signing-key", "/keys/signing.hex", "--out-dir", "/work/ceremony/public"}
+	command := []string{"mpc-ceremony", "init", "--mode", w.d.Mode, "--key-version", w.d.Circuit, "--created-at", w.d.CreatedAt, "--session-nonce-hex", w.d.SessionNonceHex, "--participants", "/work/coordinator-setup/frozen/participants.json", "--policy", "/work/coordinator-setup/frozen/policy.json", "--coordinator-key-id", w.d.Identities.Coordinator.KeyID, "--coordinator-signing-key", "/keys/signing.hex", "--out-dir", "/work/ceremony/public"}
 	for n, b := range w.d.Binaries {
 		// Copy first, then hash the copy. Never execute a host-provided binary.
 		target := filepath.Join(snapshot, fmt.Sprintf("allowed-%d", n))
+		if info, statErr := os.Lstat(target); statErr == nil {
+			if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o077 != 0 {
+				return errors.New("frozen additional binary is not a protected regular file")
+			}
+			digest, err := setupFileHash(target)
+			if err != nil || digest != b.SHA256 {
+				return errors.New("frozen additional binary differs from the reviewed value")
+			}
+			command = append(command, "--allowed-binary", fmt.Sprintf("/work/coordinator-setup/frozen/allowed-%d", n))
+			continue
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return statErr
+		}
 		src, err := os.Open(b.Path)
 		if err != nil {
 			return err
 		}
-		dst, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-		if err != nil {
-			src.Close()
-			return err
-		}
-		_, copyErr := io.Copy(dst, src)
+		raw, readErr := io.ReadAll(src)
 		src.Close()
-		closeErr := dst.Close()
-		if copyErr != nil {
-			return copyErr
+		if readErr != nil {
+			return readErr
 		}
-		if closeErr != nil {
-			return closeErr
+		if err := setupWriteBytesNewOrExact(target, raw, 0o600); err != nil {
+			return err
 		}
 		digest, err := setupFileHash(target)
 		if err != nil {
@@ -879,7 +946,7 @@ func (w *coordinatorWizard) initialize() error {
 		}
 		command = append(command, "--allowed-binary", fmt.Sprintf("/work/coordinator-setup/frozen/allowed-%d", n))
 	}
-	if err := w.action("initialize", "coordinator", command, false); err != nil {
+	if err := w.action("initialize", "coordinator", command, false, resume); err != nil {
 		return err
 	}
 	return w.verify()
@@ -1004,7 +1071,7 @@ func (w *coordinatorWizard) menu() (result error) {
 		if showOther {
 			fmt.Fprintln(w.output, "\nOTHER ACTIONS AND REQUIREMENTS\nNavigation does not complete a step or waive its prerequisites.\nRequired steps may wait for inputs; review/edit and repeat checks are optional unless correcting a problem.")
 			if w.d.Status == "draft" {
-				fmt.Fprintf(w.output, "\nCoordinator preparation — %s (%s)\n1) Basics [Required settings]\n2) Generate my identity [Required if you have no existing identity]\n3) Import/replace public identity [Required roster; repeat as needed]\n4) Orders, minimum contributions and reviewed beacon policy [Required settings]\n5) Supported computers [Optional; both architectures by default]\n6) Storage settings [Required for online operation]\n7) Review draft [Optional preview; approval still required in 8]\n8) Review and approve initialization [Required; prerequisites checked; explicit offline preparation available]\n11) Remove an identity assignment [Optional correction]\n0) Save and exit\n", w.d.Name, w.d.Status)
+				fmt.Fprintf(w.output, "\nCoordinator preparation — %s (%s)\n1) Basics [Required settings]\n2) Generate my identity [Required if you have no existing identity]\n3) Import/replace public identity [Required roster; repeat as needed]\n4) Orders, minimum contributions and reviewed beacon policy [Required settings]\n5) Supported computers [Optional; both architectures by default]\n6) Storage settings [Required for online operation]\n7) Review draft [Optional preview; approval still required in 8]\n8) Review and approve initialization [Required; prerequisites checked; explicit offline preparation available]\n11) Remove an identity assignment [Optional correction]\n", w.d.Name, w.d.Status)
 			} else {
 				if w.d.Status == "definition-verified" {
 					fmt.Fprintf(w.output, "\nInitialization complete — %s\nThe signed ceremony definition has been verified. Identities and policy are frozen.\nThis does not verify all initialization artifacts or start participant contributions.\n", w.d.Name)
@@ -1014,9 +1081,13 @@ func (w *coordinatorWizard) menu() (result error) {
 						fmt.Fprintln(w.output, "For Tessera setups, export and return to the website for review and locking first. Standalone CLI next: distribute the signed public definition for assignment review, collect witness/mirror enrollments, and continue with the coordinator role guide. Storage can be configured below.")
 					}
 				} else {
-					fmt.Fprintf(w.output, "\nInitialization needs verification — %s\nSettings are frozen after an initialization attempt. Preserve the files and error output; use 9 to verify an existing definition. Do not initialize again.\n", w.d.Name)
+					fmt.Fprintf(w.output, "\nInitialization needs recovery — %s\nSettings are frozen. Use 8 to resume the exact saved initialization; Relay verifies matching files and never overwrites a conflict.\n", w.d.Name)
 				}
-				fmt.Fprintln(w.output, "7) Review identities and policy [Optional read-only review]\n9) Verify existing definition [Required after interruption; otherwise repeat check]")
+				fmt.Fprintln(w.output, "7) Review identities and policy [Optional read-only review]")
+				if w.d.Status == "initialization-attempted" {
+					fmt.Fprintln(w.output, "8) Resume exact initialization [Required after interruption]")
+				}
+				fmt.Fprintln(w.output, "9) Verify existing definition [Optional repeat check]")
 				if w.localAction == nil && w.d.Status == "definition-verified" {
 					fmt.Fprintln(w.output, "6) Storage settings [Optional update]\n10) Configure storage [Required before online operation; checks access]")
 				}
@@ -1026,19 +1097,15 @@ func (w *coordinatorWizard) menu() (result error) {
 						fmt.Fprintln(w.output, "13) Prepare, review and sign MY coordinator enrollment [Required; existing output is reverified]")
 					}
 				}
-				fmt.Fprintln(w.output, "0) Save and exit")
 			}
 			if w.localAction == nil {
 				fmt.Fprintln(w.output, "14) Check storage access [Requires storage settings; repeat check is optional]\n    Writes and removes test objects only after approval.")
 			}
 		} else {
-			fmt.Fprintf(w.output, "\n%s) %s\n17) Show other actions and requirements\n", next.choice, next.label)
-			if next.choice != "0" {
-				fmt.Fprintln(w.output, "0) Save and exit")
-			}
+			fmt.Fprintf(w.output, "\n%s) %s\n", next.choice, next.label)
 		}
 		if w.d.Status == "draft" {
-			fmt.Fprintln(w.output, "15) Open setup downloaded from Tessera")
+			fmt.Fprintln(w.output, "15) Optional: open setup downloaded from Tessera")
 		}
 		if w.d.Status == "definition-verified" && (w.d.Tessera != nil || w.d.TesseraSetup != nil) && w.localAction == nil {
 			if next.choice != "16" || showOther {
@@ -1051,6 +1118,12 @@ func (w *coordinatorWizard) menu() (result error) {
 			if !showOther && w.tesseraExportPresent() {
 				fmt.Fprintln(w.output, "12) Continue to ceremony operations (website acceptance is not checked)")
 			}
+		}
+		if !showOther {
+			fmt.Fprintln(w.output, "17) Show other actions and requirements")
+		}
+		if showOther || next.choice != "0" {
+			fmt.Fprintln(w.output, "0) Save and exit")
 		}
 		fmt.Fprintln(w.output, "------------------------------------------------------------")
 		choice, err := w.ask("Choose", next.choice)
@@ -1076,7 +1149,7 @@ func (w *coordinatorWizard) menu() (result error) {
 			fmt.Fprintln(w.output, "Storage setup is unavailable here. Choose one of the displayed actions.")
 			continue
 		}
-		if w.d.Status != "draft" && (choice == "1" || choice == "2" || choice == "3" || choice == "4" || choice == "5" || choice == "8" || choice == "11") {
+		if w.d.Status != "draft" && (choice == "1" || choice == "2" || choice == "3" || choice == "4" || choice == "5" || (choice == "8" && w.d.Status != "initialization-attempted") || choice == "11") {
 			fmt.Fprintln(w.output, "Ceremony draft frozen after initialization attempt. Do not edit signed settings or delete output to force a retry.")
 			continue
 		}

@@ -144,6 +144,11 @@ func runGuidedSetup(args []string) error {
 		if releaseImage != "" && (config.DockerImage != releaseImage || config.DockerPlatform != "linux/"+runtime.GOARCH) {
 			return errors.New("participant profile does not match the verified release image and platform")
 		}
+		// The guided workflow performs shared, read-only transcript inspection
+		// before it invokes a participant command.  That inspection runs from the
+		// launcher profile, so keep the already-authenticated participant runtime
+		// there as well as in the phase configuration.
+		p.Image, p.Platform = config.DockerImage, config.DockerPlatform
 		p.Config, err = filepath.Abs(p.Config)
 		if err != nil {
 			return err
@@ -555,7 +560,7 @@ func guardFreshGuidedContribution(parent, phase, ceremony, identity string) erro
 		return err
 	}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".relay-participant-run-") && strings.HasSuffix(entry.Name(), ".lock") {
+		if entry.Name() == ".relay-workspace.lock" || (strings.HasPrefix(entry.Name(), ".relay-participant-run-") && strings.HasSuffix(entry.Name(), ".lock")) {
 			continue
 		}
 		// Retain completed candidates from the other phase. Unknown/partial
