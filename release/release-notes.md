@@ -32,4 +32,4 @@
 
 ## Tessera compatibility
 
-Ceremony data and Tessera request fields are unchanged. Retry semantics are stricter: an attempt is deduplicated by protocol and assignment even after a role connection is refreshed. The proof-tool pin is updated to protected-main release `mpc-ci-8500f65578dd33a3e897fea33813e75bd3bb2faf`, which adds atomic initialization/identity recovery, structured command outcomes, and portable finalization staging.
+Ceremony data and Tessera request fields are unchanged. Guided execution now enforces already-authored same-area prerequisites before starting a new state-changing action; read-only checks and recovery of a possibly started action remain available. The proof-tool pin is updated to protected-main release `mpc-ci-7ba406f0a6066f10b668ae8c553ab45e897f9fe4`, which retains the prior atomic recovery behavior and adds safe first-use parent creation for operational signing exports.
