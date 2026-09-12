@@ -21,7 +21,12 @@ import (
 	"github.com/zksecurity/relay/internal/transcript"
 )
 
-const roleFlowSchema = "relay-role-flow-v1"
+const (
+	roleFlowSchemaV1      = "relay-role-flow-v1"
+	roleFlowSchema        = "relay-role-flow-v2"
+	flowWorkspaceSchema   = "relay-workspace-marker-v1"
+	flowWorkspaceFileName = ".relay-workspace.json"
+)
 
 type flowField struct {
 	Flag, Label, Default, Kind string
@@ -44,9 +49,15 @@ type flowStage struct {
 }
 type flowAttempt struct {
 	ID, Task, Stage, Status string
+	OperationSchema         string            `json:"operation_schema,omitempty"`
+	RecoveryClass           flowRecoveryClass `json:"recovery_class,omitempty"`
+	ImageDigest             string            `json:"image_digest,omitempty"`
+	Platform                string            `json:"platform,omitempty"`
 	Command                 []string
 	StartedAt, FinishedAt   string
 	Note                    string
+	Mounts                  map[string]string `json:"mounts,omitempty"`
+	ExpectedOutputs         map[string]string `json:"expected_outputs,omitempty"`
 	InputBindings           map[string]string `json:",omitempty"`
 	DirectoryBindings       map[string]string `json:",omitempty"`
 	ReceiptScope            *flowReceiptScope `json:",omitempty"`
@@ -55,9 +66,12 @@ type flowAttempt struct {
 type flowTurnScope struct{ Phase, Participant, Head string }
 type roleFlowState struct {
 	Schema, Name, Role string
+	WorkspaceID        string `json:"workspace_id,omitempty"`
+	WorkspaceStatus    string `json:"workspace_status,omitempty"`
 	CatalogDigest      string
 	Profile            guidedProfile
 	Stage              int
+	StageID            string `json:"stage_id,omitempty"`
 	// ViewHistory records local screen navigation only. It never marks a
 	// ceremony action complete and is deliberately separate from Attempts.
 	ViewHistory    []int `json:"view_history,omitempty"`
@@ -65,17 +79,153 @@ type roleFlowState struct {
 	Attempts       []flowAttempt
 	PublicBindings map[string]string
 }
+
+type flowWorkspaceMarker struct {
+	Schema      string `json:"schema"`
+	WorkspaceID string `json:"workspace_id"`
+	Name        string `json:"name"`
+	Role        string `json:"role"`
+}
 type roleFlow struct {
-	state      roleFlowState
-	stages     []flowStage
-	path       string
-	ui         coordinatorWizard
-	run        func(flowTask, []string, string, bool) error
-	definition func() (transcript.Definition, error)
-	turnScope  *flowTurnScope
+	state        roleFlowState
+	stages       []flowStage
+	path         string
+	settingsRoot string
+	ui           coordinatorWizard
+	run          func(flowTask, []string, string, bool) error
+	definition   func() (transcript.Definition, error)
+	turnScope    *flowTurnScope
 }
 
-func (f *roleFlow) save() error { return saveJSONAtomic(f.path, f.state) }
+func (f *roleFlow) save() error {
+	if f.state.Stage == len(f.stages) {
+		f.state.StageID = "complete"
+	} else if f.state.Stage >= 0 && f.state.Stage < len(f.stages) {
+		f.state.StageID = f.stages[f.state.Stage].ID
+	}
+	return saveJSONAtomic(f.path, f.state)
+}
+
+func migrateFlowCatalog(statePath, digest string, stages []flowStage, state *roleFlowState) error {
+	if state.CatalogDigest == digest {
+		if state.StageID == "" {
+			if state.Stage == len(stages) {
+				state.StageID = "complete"
+			} else if state.Stage >= 0 && state.Stage < len(stages) {
+				state.StageID = stages[state.Stage].ID
+			}
+			if state.Schema == roleFlowSchema {
+				return saveJSONAtomic(statePath, state)
+			}
+		}
+		return nil
+	}
+	if state.Schema != roleFlowSchema || state.StageID == "" {
+		return errors.New("workflow uses an older menu catalog without a stable stage ID; preserve it for compatibility review")
+	}
+	stage := -1
+	if state.StageID == "complete" {
+		stage = len(stages)
+	} else {
+		for index := range stages {
+			if stages[index].ID == state.StageID {
+				stage = index
+				break
+			}
+		}
+	}
+	if stage < 0 {
+		return fmt.Errorf("saved workflow stage %q is not present in this release", state.StageID)
+	}
+	old := strings.TrimPrefix(state.CatalogDigest, "sha256:")
+	if len(old) < 12 {
+		return errors.New("saved workflow catalog digest is invalid")
+	}
+	if err := backupPrivateFile(statePath, ".pre-catalog-"+old[:12]+".bak"); err != nil {
+		return fmt.Errorf("preserve workflow before catalog migration: %w", err)
+	}
+	state.Stage, state.CatalogDigest, state.ViewHistory = stage, digest, nil
+	if err := saveJSONAtomic(statePath, state); err != nil {
+		return err
+	}
+	return nil
+}
+
+func flowWorkspaceMarkerPath(p guidedProfile) (string, error) {
+	if p.Work == "" || !filepath.IsAbs(p.Work) || filepath.Clean(p.Work) != p.Work {
+		return "", errors.New("guided recovery requires an absolute role work directory")
+	}
+	return filepath.Join(p.Work, flowWorkspaceFileName), nil
+}
+
+// ensureFlowWorkspace makes loss of the host-only recovery document visible.
+// The state file is written first as initializing, then the create-only marker
+// is installed in the role work directory, and only then is the state ready.
+// Re-entering while initializing can finish that same sequence safely.
+func ensureFlowWorkspace(statePath string, p guidedProfile, state *roleFlowState, existed bool) error {
+	markerPath, err := flowWorkspaceMarkerPath(p)
+	if err != nil {
+		return err
+	}
+	var marker flowWorkspaceMarker
+	markerErr := setupReadJSON(markerPath, &marker)
+	markerExists := markerErr == nil
+	if markerErr != nil && !errors.Is(markerErr, os.ErrNotExist) {
+		return fmt.Errorf("read recovery workspace marker: %w", markerErr)
+	}
+	if !existed {
+		if markerExists {
+			return errors.New("recovery state is missing for an existing role workspace; preserve the folder and do not start another operation")
+		}
+		id, err := randomID()
+		if err != nil {
+			return err
+		}
+		state.Schema, state.WorkspaceID, state.WorkspaceStatus = roleFlowSchema, id, "initializing"
+		if err := saveJSONAtomic(statePath, state); err != nil {
+			return err
+		}
+	}
+	if state.Schema == roleFlowSchemaV1 {
+		if markerExists {
+			return errors.New("an old workflow has an unexpected recovery marker; preserve both files for review")
+		}
+		if err := backupPrivateFile(statePath, ".pre-recovery-v2.bak"); err != nil {
+			return fmt.Errorf("preserve old workflow before recovery migration: %w", err)
+		}
+		id, err := randomID()
+		if err != nil {
+			return err
+		}
+		state.Schema, state.WorkspaceID, state.WorkspaceStatus = roleFlowSchema, id, "initializing"
+		if err := saveJSONAtomic(statePath, state); err != nil {
+			return err
+		}
+	}
+	if state.Schema != roleFlowSchema || state.WorkspaceID == "" || (state.WorkspaceStatus != "initializing" && state.WorkspaceStatus != "ready") {
+		return errors.New("recovery workspace state is invalid")
+	}
+	want := flowWorkspaceMarker{Schema: flowWorkspaceSchema, WorkspaceID: state.WorkspaceID, Name: state.Name, Role: state.Role}
+	if markerExists {
+		if marker != want {
+			return errors.New("recovery workspace marker does not match saved state; preserve both files and stop")
+		}
+	} else {
+		if state.WorkspaceStatus == "ready" {
+			return errors.New("recovery workspace marker is missing; do not treat this as a new role workspace")
+		}
+		if err := writeJSONNoReplace(markerPath, want, 0o600); err != nil {
+			return fmt.Errorf("create recovery workspace marker: %w", err)
+		}
+	}
+	if state.WorkspaceStatus == "initializing" {
+		state.WorkspaceStatus = "ready"
+		if err := saveJSONAtomic(statePath, state); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 func flowNeedsOfflineSigner(stages []flowStage) bool {
 	for _, stage := range stages {
@@ -86,6 +236,26 @@ func flowNeedsOfflineSigner(stages []flowStage) bool {
 		}
 	}
 	return false
+}
+
+func normalizeSavedParticipantProfile(saved *guidedProfile, current guidedProfile) bool {
+	if saved.Role != "participant" || current.Role != "participant" {
+		return false
+	}
+	candidate := *saved
+	for _, pair := range []struct{ old, current *string }{
+		{&candidate.Work, &current.Work}, {&candidate.Trust, &current.Trust}, {&candidate.Keys, &current.Keys},
+		{&candidate.Image, &current.Image}, {&candidate.Platform, &current.Platform},
+	} {
+		if *pair.old == "" {
+			*pair.old = *pair.current
+		}
+	}
+	if !reflect.DeepEqual(candidate, current) {
+		return false
+	}
+	*saved = candidate
+	return true
 }
 
 // ensureOfflineSigningProfile makes the guided workflow self-contained. The
@@ -116,7 +286,7 @@ func ensureOfflineSigningProfile(p guidedProfile, root string) error {
 	} else {
 		args = append(args, "--image", image, "--download=false")
 	}
-	fmt.Fprintln(os.Stdout, "Preparing the required offline signing profile for this guided workflow.")
+	fmt.Fprintln(os.Stdout, "Preparing the required network-disabled signing profile for this guided workflow.")
 	return runGuidedSetup(args)
 }
 
@@ -146,7 +316,19 @@ func saveJSONAtomic(path string, value any) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(name, path)
+	if err := os.Rename(name, path); err != nil {
+		return err
+	}
+	return syncDirectory(filepath.Dir(path))
+}
+
+func syncDirectory(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 func validateFlowValue(field flowField, value string) error {
@@ -408,6 +590,19 @@ func flowHostPath(p guidedProfile, value string) string {
 }
 
 func (f *roleFlow) last(task flowTask) *flowAttempt {
+	// An unresolved older turn must not disappear merely because local head
+	// discovery moved the menu to a newer scope.
+	seenOperations := map[string]bool{}
+	for n := len(f.state.Attempts) - 1; n >= 0; n-- {
+		a := &f.state.Attempts[n]
+		if seenOperations[a.ID] {
+			continue
+		}
+		seenOperations[a.ID] = true
+		if a.Task == task.ID && a.Stage == f.stages[f.state.Stage].ID && (a.Status == "prepared" || a.Status == "running" || a.Status == "failed" || a.Status == "reviewed-incomplete") {
+			return a
+		}
+	}
 	for n := len(f.state.Attempts) - 1; n >= 0; n-- {
 		a := &f.state.Attempts[n]
 		if a.Task == task.ID && a.Stage == f.stages[f.state.Stage].ID && (f.turnScope == nil || (a.TurnScope != nil && *a.TurnScope == *f.turnScope)) {
@@ -437,6 +632,27 @@ func (f *roleFlow) execute(task flowTask) error {
 	}
 	fmt.Fprintln(f.ui.output, "\n"+task.Label+"\n"+task.Help)
 	previous := f.last(task)
+	if previous != nil && previous.Status == "prepared" {
+		// The only transition out of prepared is a separately synced running
+		// record immediately before f.run. Seeing prepared after restart proves
+		// that Relay never invoked the child operation.
+		previous.Status = "not-started"
+		previous.FinishedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		if err := f.save(); err != nil {
+			return err
+		}
+		fmt.Fprintln(f.ui.output, "The previous action stopped before launch; no command ran. Review this action again to continue.")
+		previous = f.last(task)
+	}
+	if previous != nil {
+		adopted, err := f.adoptWrittenGrant(task, previous)
+		if err != nil {
+			return err
+		}
+		if adopted {
+			return nil
+		}
+	}
 	var savedRecipeErr error
 	if previous != nil && len(previous.Command) != 0 {
 		savedRecipeErr = validateFlowCommand(task, previous.Command)
@@ -445,48 +661,11 @@ func (f *roleFlow) execute(task flowTask) error {
 	var command []string
 	id := ""
 	if retry {
-		fmt.Fprintf(f.ui.output, "Previous attempt may have written output: %s\n", previous.ID)
-		writeActionSummary(f.ui.output, f.state.Profile, previous.Command)
-		choices := []setupChoice{{value: "resolve", label: "Record investigation; prepare a corrected/resume action next"}}
-		if savedRecipeErr == nil {
-			choices = append([]setupChoice{{value: "retry", label: "Retry the exact saved action"}}, choices...)
-		} else {
-			f.ui.message(toneWarning, "Exact retry unavailable: the saved action no longer matches this workflow: %v\n", savedRecipeErr)
-		}
-		if f.state.Role != "participant" && !task.Handoff {
-			choices = append(choices, setupChoice{value: "external", label: "Record completion already verified outside this guide"})
-		}
-		choices = append(choices, setupChoice{value: "inspect", label: "Return to inspect existing outputs before deciding"})
-		choice, err := f.ui.choose("Recovery — no automatic retry", "", choices)
+		var err error
+		command, id, retry, err = f.reconcilePrevious(task, previous, savedRecipeErr)
 		if err != nil {
 			return err
 		}
-		if choice == "inspect" {
-			return nil
-		}
-		if choice == "resolve" || choice == "external" {
-			note, err := f.ui.required("What did you verify? Record retained outputs and the recovery decision, never secrets", "")
-			if err != nil {
-				return err
-			}
-			message, phrase, status := "This does NOT mark the task successful. Keep existing outputs; for participants use resume-candidate instead of recomputing", "REVIEWED", "reviewed-incomplete"
-			if choice == "external" {
-				message, phrase, status = "Only if the exact intended outputs were independently verified. This records YOUR report, not a verifier result or a waiver of any protocol check", "RECOVERY VERIFIED", "reported"
-			}
-			if err := f.ui.confirm(message, phrase); err != nil {
-				return err
-			}
-			recoveryID, err := randomID()
-			if err != nil {
-				return err
-			}
-			f.state.Attempts = append(f.state.Attempts, flowAttempt{ID: recoveryID, Task: task.ID, Stage: f.stages[f.state.Stage].ID, Status: status, Note: "Recovery of " + previous.ID + ": " + note, FinishedAt: time.Now().UTC().Format(time.RFC3339Nano)})
-			return f.save()
-		}
-		if err := f.ui.confirm("Inspect existing outputs and authenticated heads first. Retrying preserves the exact command", "REVIEWED RETRY"); err != nil {
-			return err
-		}
-		command, id = previous.Command, previous.ID
 	} else {
 		var err error
 		if task.Handoff {
@@ -526,6 +705,15 @@ func (f *roleFlow) execute(task flowTask) error {
 		if err != nil {
 			return err
 		}
+		id, err = randomID()
+		if err != nil {
+			return err
+		}
+		id = "flow-" + id
+		command, err = prepareRecoveryCommand(task, command, id, time.Now())
+		if err != nil {
+			return err
+		}
 		if err := f.bindPublicInputs(command); err != nil {
 			return fmt.Errorf("required input unavailable; return to setup or import the indicated public files before running: %w", err)
 		}
@@ -546,11 +734,6 @@ func (f *roleFlow) execute(task flowTask) error {
 		if err := f.checkDirectoryBindings(directories); err != nil {
 			return err
 		}
-		id, err = randomID()
-		if err != nil {
-			return err
-		}
-		id = "flow-" + id
 		if previous != nil && reflect.DeepEqual(previous.Command, command) && previous.Status == "succeeded" && !flowRepeatable(task) {
 			return errors.New("this exact action already completed; use verification to inspect its result, not another write")
 		}
@@ -576,11 +759,21 @@ func (f *roleFlow) execute(task flowTask) error {
 	if err != nil {
 		return err
 	}
-	// Persist before invoking Docker. A crash is an uncertain attempt, not success.
-	f.state.Attempts = append(f.state.Attempts, flowAttempt{ID: id, Task: task.ID, Stage: f.stages[f.state.Stage].ID, Status: "running", Command: append([]string(nil), command...), StartedAt: time.Now().UTC().Format(time.RFC3339Nano), InputBindings: inputBindings, TurnScope: f.turnScope})
+	image, platform, mounts, expectedOutputs, err := f.recoveryMetadata(task, command)
+	if err != nil {
+		return err
+	}
+	// Save a fully resolved intent first. Only a separately synced transition to
+	// running permits child execution, so a retained prepared record proves no
+	// child was launched and can safely return to normal review.
+	f.state.Attempts = append(f.state.Attempts, flowAttempt{ID: id, Task: task.ID, Stage: f.stages[f.state.Stage].ID, Status: "prepared", OperationSchema: flowOperationSchema, RecoveryClass: flowTaskRecoveryClass(task), ImageDigest: image, Platform: platform, Command: append([]string(nil), command...), StartedAt: time.Now().UTC().Format(time.RFC3339Nano), Mounts: mounts, ExpectedOutputs: expectedOutputs, InputBindings: inputBindings, TurnScope: f.turnScope})
 	index := len(f.state.Attempts) - 1
 	f.state.Attempts[index].ReceiptScope = receiptScope
 	f.state.Attempts[index].DirectoryBindings = directoryBindings
+	if err := f.save(); err != nil {
+		return err
+	}
+	f.state.Attempts[index].Status = "running"
 	if err := f.save(); err != nil {
 		return err
 	}
@@ -784,6 +977,35 @@ func validateFlowCommand(task flowTask, command []string) error {
 			}
 		}
 	}
+	if flowTaskRecoveryClass(task) == recoveryUpload {
+		// The authored catalog recipe has no allocated identity yet. A persisted
+		// invocation always does; recovery separately rejects legacy uploads that
+		// lack it.
+		if len(args) == 0 {
+			return checkSavedCommand(command)
+		}
+		if len(args) != 4 || args[0] != "--attempt-id" || args[2] != "--completed-at" {
+			return errors.New("saved upload command is missing its stable attempt identity")
+		}
+		if !validFlowAttemptID(args[1]) {
+			return errors.New("saved upload attempt ID is invalid")
+		}
+		if _, err := time.Parse(time.RFC3339, args[3]); err != nil {
+			return errors.New("saved upload completion time is invalid")
+		}
+		args = args[4:]
+	}
+	if flowTaskRecoveryClass(task) == recoveryDocker && task.ID == "contribute" {
+		if len(args) == 0 {
+			// Compatibility with operations saved before guided and participant
+			// attempt identities were unified. Recovery never invents this value.
+			return checkSavedCommand(command)
+		}
+		if len(args) != 2 || args[0] != "--attempt-id" || !validFlowAttemptID(args[1]) {
+			return errors.New("saved participant command has an invalid stable attempt identity")
+		}
+		args = args[2:]
+	}
 	if len(args) != 0 {
 		return errors.New("unexpected saved command arguments")
 	}
@@ -907,7 +1129,7 @@ func (f *roleFlow) stageMenu() error {
 				case "running", "failed":
 					status = "Needs attention — inspect retained output"
 				default:
-					status = "Waiting — unresolved investigation"
+					status = "Waiting — reported problem unresolved"
 				}
 				if a.FinishedAt != "" {
 					status += " (" + a.FinishedAt + ")"
@@ -1006,7 +1228,7 @@ func runRoleFlow(args []string) error {
 	}
 	if flowNeedsOfflineSigner(stages) {
 		if err := ensureOfflineSigningProfile(p, root); err != nil {
-			return fmt.Errorf("prepare the offline signing profile before guided work: %w", err)
+			return fmt.Errorf("prepare the network-disabled signing profile before guided work: %w", err)
 		}
 	}
 	if err := ensurePrivateDirectory(filepath.Join(dir, "workflow")); err != nil {
@@ -1033,18 +1255,27 @@ func runRoleFlow(args []string) error {
 		return err
 	}
 	catalogDigest := fmt.Sprintf("sha256:%x", sha256.Sum256(catalogBytes))
-	f := roleFlow{state: roleFlowState{Schema: roleFlowSchema, Name: p.Name, Role: p.Role, CatalogDigest: catalogDigest, Profile: p, Values: map[string]string{}}, stages: stages, path: statePath, ui: coordinatorWizard{input: bufio.NewReader(os.Stdin), output: os.Stdout}}
+	f := roleFlow{state: roleFlowState{Schema: roleFlowSchema, Name: p.Name, Role: p.Role, CatalogDigest: catalogDigest, Profile: p, Values: map[string]string{}}, stages: stages, path: statePath, settingsRoot: root, ui: coordinatorWizard{input: bufio.NewReader(os.Stdin), output: os.Stdout}}
 	if p.Role == "coordinator" {
 		if st, err := os.Lstat(filepath.Join(p.Trust, "setup-coordinator.hex")); err == nil && st.Mode().IsRegular() {
 			f.state.Values["shared/coordinator-public-key-file"] = "/trust/setup-coordinator.hex"
 		}
 	}
+	stateExisted := false
 	if _, err := os.Lstat(statePath); err == nil {
+		stateExisted = true
 		if err := setupReadJSON(statePath, &f.state); err != nil {
 			return err
 		}
-		if f.state.Schema != roleFlowSchema || f.state.CatalogDigest != catalogDigest || f.state.Name != p.Name || f.state.Role != p.Role || !reflect.DeepEqual(f.state.Profile, p) || f.state.Stage < 0 || f.state.Stage > len(stages) || f.state.Values == nil {
+		profileMatches := reflect.DeepEqual(f.state.Profile, p) || normalizeSavedParticipantProfile(&f.state.Profile, p)
+		if (f.state.Schema != roleFlowSchemaV1 && f.state.Schema != roleFlowSchema) || f.state.Name != p.Name || f.state.Role != p.Role || !profileMatches || f.state.Stage < 0 || f.state.Values == nil {
 			return errors.New("workflow does not match saved role settings")
+		}
+		if err := migrateFlowCatalog(statePath, catalogDigest, stages, &f.state); err != nil {
+			return err
+		}
+		if f.state.Stage < 0 || f.state.Stage > len(stages) {
+			return errors.New("saved workflow stage is outside this release's catalog")
 		}
 		for _, index := range f.state.ViewHistory {
 			if index < 0 || index >= len(stages) {
@@ -1052,6 +1283,9 @@ func runRoleFlow(args []string) error {
 			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := ensureFlowWorkspace(statePath, p, &f.state, stateExisted); err != nil {
 		return err
 	}
 	if p.Role == "participant" {
@@ -1077,10 +1311,10 @@ func runRoleFlow(args []string) error {
 			}
 			offline, err := readGuidedProfile(filepath.Join(dir, "profile.json"), alias, "decision-signer")
 			if err != nil {
-				return fmt.Errorf("prepare the offline signing image in onboarding first: %w", err)
+				return fmt.Errorf("prepare the network-disabled signing image in onboarding first: %w", err)
 			}
 			if offline.Work != p.Work || offline.Trust != p.Trust || offline.Keys == "" || offline.Credentials != "" || offline.ReleaseCommit != p.ReleaseCommit || len(offline.Command) != 0 {
-				return errors.New("offline signing profile does not match this role's public folders and release")
+				return errors.New("network-disabled signing profile does not match this role's public folders and release")
 			}
 			if len(command) >= 3 && command[0] == "mpc-ceremony" && command[1] == "ops" && command[2] == "sign" {
 				digest, err := f.reviewOfflineRecord(command)
@@ -1095,6 +1329,9 @@ func runRoleFlow(args []string) error {
 			configPath := ""
 			participantArgs := []string{command[0]}
 			for n := 1; n < len(command); n += 2 {
+				if n+1 >= len(command) {
+					return errors.New("participant workflow command has an incomplete flag")
+				}
 				if command[n] == "--config" {
 					configPath = command[n+1]
 				} else {

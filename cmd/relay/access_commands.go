@@ -565,7 +565,14 @@ func writeJSONNoReplace(path string, value any, mode os.FileMode) error {
 		_ = os.Remove(path)
 		return err
 	}
-	return file.Close()
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return syncDirectory(filepath.Dir(path))
 }
 
 func randomID() (string, error) {

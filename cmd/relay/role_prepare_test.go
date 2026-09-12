@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/zksecurity/relay/internal/access"
 )
 
 func preparationFixture(t *testing.T, role string) *rolePreparer {
@@ -57,6 +59,38 @@ func prepareTestIdentity(t *testing.T, p *rolePreparer) {
 	if err := writeJSONNoReplace(filepath.Join(p.d.Keys, "identity.json"), i, 0600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func prepareParticipantRoleConfig(t *testing.T, p *rolePreparer, image, platform string) string {
+	t.Helper()
+	ceremonyID := "sha256:" + strings.Repeat("1", 64)
+	configDir := filepath.Join(p.d.Work, "ceremony", "config")
+	storagePath := filepath.Join(configDir, "relay-storage.json")
+	storage := access.StorageConfig{
+		Schema: access.StorageConfigSchema, Provider: "r2", CeremonyID: ceremonyID,
+		Endpoint: "https://account.invalid", AccountID: "account", ParentAccessKeyID: "parent",
+		PublishedBucket: "published", PublishedBaseURL: "https://public.invalid", InboxBucket: "inbox",
+		CoordinatorProfile: "coordinator", CeremonyPath: filepath.Join(p.d.Work, "ceremony/public/ceremony.json"),
+		CeremonySignature:    filepath.Join(p.d.Work, "ceremony/public/ceremony.sig"),
+		CoordinatorPublicKey: filepath.Join(p.d.Trust, "coordinator-public-key.hex"), CeremonyBinary: "/usr/local/bin/mpc-ceremony",
+	}
+	if err := writeJSONNoReplace(storagePath, storage, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(configDir, "participant-phase1.json")
+	config := access.RoleConfig{
+		Schema: access.RoleConfigSchema, Role: access.RoleParticipant, IdentityID: "participant-1", Phase: "phase1", CeremonyID: ceremonyID,
+		CeremonyHome: filepath.Join(p.d.Work, "ceremony"), Root: filepath.Join(p.d.Work, "ceremony/public"),
+		Ceremony: storage.CeremonyPath, CeremonySignature: storage.CeremonySignature, CoordinatorKey: storage.CoordinatorPublicKey,
+		CeremonyBinary: storage.CeremonyBinary, SigningKey: filepath.Join(p.d.Keys, "signing.hex"),
+		Environment: filepath.Join(configDir, "environment.json"), RunRoot: p.d.Work, StorageConfig: storagePath,
+		PublishedBaseURL: storage.PublishedBaseURL, PublishedBucket: storage.PublishedBucket,
+		ExecutionMode: dockerExecutionMode, DockerImage: image, DockerPlatform: platform, DockerCLI: "docker",
+	}
+	if err := writeJSONNoReplace(configPath, config, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return configPath
 }
 func TestRolePreparationIdentityAndOfflineResume(t *testing.T) {
 	p := preparationFixture(t, "release-signer")
@@ -226,6 +260,50 @@ func TestRolePreparationExplainsHostDisconnectionPrecisely(t *testing.T) {
 	}
 }
 
+func TestRolePreparationUsesAuthoredSetupOrder(t *testing.T) {
+	p := preparationFixture(t, "participant")
+	if got := p.nextPreparationAction().choice; got != "1" {
+		t.Fatalf("initial step = %s, want images", got)
+	}
+	prepareTestProfile(t, p, "keygen")
+	prepareTestProfile(t, p, "decision-signer")
+	p.d.Values["image"] = "sha256:" + strings.Repeat("b", 64)
+	p.d.Values["binary"] = "/usr/local/bin/mpc-ceremony"
+	if got := p.nextPreparationAction().choice; got != "2" {
+		t.Fatalf("after images = %s, want identity", got)
+	}
+	prepareTestIdentity(t, p)
+	if got := p.nextPreparationAction().choice; got != "3" {
+		t.Fatalf("after identity = %s, want public inputs", got)
+	}
+	for _, path := range []string{
+		filepath.Join(p.d.Work, "ceremony/public/ceremony.json"),
+		filepath.Join(p.d.Work, "ceremony/public/ceremony.sig"),
+		filepath.Join(p.d.Trust, "coordinator-public-key.hex"),
+	} {
+		if err := os.WriteFile(path, []byte("fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := p.nextPreparationAction().choice; got != "7" {
+		t.Fatalf("after public inputs = %s, want enrollment", got)
+	}
+	for _, name := range []string{"enrollment.json", "enrollment.sig"} {
+		if err := os.WriteFile(filepath.Join(p.d.Work, name), []byte("fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := p.nextPreparationAction().choice; got != "4" {
+		t.Fatalf("after enrollment = %s, want phase profile", got)
+	}
+	if err := os.WriteFile(filepath.Join(p.d.Work, "ceremony/config/participant-phase1.json"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.nextPreparationAction().choice; got != "5" {
+		t.Fatalf("after phase profile = %s, want operations", got)
+	}
+}
+
 func TestRolePreparationParticipantWorkflowDefaults(t *testing.T) {
 	f := flowFixture(t)
 	f.state.Role = "participant"
@@ -247,6 +325,8 @@ func TestRolePreparationParticipantWorkflowDefaults(t *testing.T) {
 
 func TestRolePreparationMigratesLegacyParticipantProfileForCustody(t *testing.T) {
 	p := preparationFixture(t, "participant")
+	image, platform := "sha256:"+strings.Repeat("b", 64), "linux/arm64"
+	configPath := prepareParticipantRoleConfig(t, p, image, platform)
 	dir, err := guidedDirectory(p.settingsRoot, p.d.Name, "participant")
 	if err != nil {
 		t.Fatal(err)
@@ -254,7 +334,7 @@ func TestRolePreparationMigratesLegacyParticipantProfileForCustody(t *testing.T)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	legacy := guidedProfile{Schema: guidedSchema, Name: p.d.Name, Role: "participant", ReleaseCommit: strings.Repeat("a", 40), Config: filepath.Join(p.d.Work, "ceremony/config/participant-phase1.json")}
+	legacy := guidedProfile{Schema: guidedSchema, Name: p.d.Name, Role: "participant", ReleaseCommit: strings.Repeat("a", 40), Config: configPath}
 	profilePath := filepath.Join(dir, "profile.json")
 	if err := writeJSONNoReplace(profilePath, legacy, 0600); err != nil {
 		t.Fatal(err)
@@ -266,12 +346,41 @@ func TestRolePreparationMigratesLegacyParticipantProfileForCustody(t *testing.T)
 	if got.Work != p.d.Work || got.Trust != p.d.Trust || got.Keys != p.d.Keys {
 		t.Fatalf("participant directories were not migrated: %#v", got)
 	}
+	if got.Image != image || got.Platform != platform {
+		t.Fatalf("participant runtime was not migrated: %#v", got)
+	}
 	var backup guidedProfile
 	if err := setupReadJSON(profilePath+".pre-custody-v1.bak", &backup); err != nil {
 		t.Fatal(err)
 	}
 	if backup.Work != "" || backup.Trust != "" || backup.Keys != "" {
 		t.Fatal("migration backup was changed")
+	}
+	if err := setupReadJSON(profilePath+".pre-runtime-v1.bak", &backup); err != nil {
+		t.Fatal(err)
+	}
+	if backup.Image != "" || backup.Platform != "" || backup.Work != p.d.Work {
+		t.Fatal("runtime migration backup was changed")
+	}
+}
+
+func TestRolePreparationRejectsParticipantRuntimeMismatch(t *testing.T) {
+	p := preparationFixture(t, "participant")
+	image, platform := "sha256:"+strings.Repeat("b", 64), "linux/arm64"
+	configPath := prepareParticipantRoleConfig(t, p, image, platform)
+	dir, err := guidedDirectory(p.settingsRoot, p.d.Name, "participant")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	profile := guidedProfile{Schema: guidedSchema, Name: p.d.Name, Role: "participant", ReleaseCommit: strings.Repeat("a", 40), Config: configPath, Work: p.d.Work, Trust: p.d.Trust, Keys: p.d.Keys, Image: "sha256:" + strings.Repeat("c", 64), Platform: platform}
+	if err := writeJSONNoReplace(filepath.Join(dir, "profile.json"), profile, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.profile("participant"); err == nil || !strings.Contains(err.Error(), "differs") {
+		t.Fatalf("participant runtime mismatch accepted: %v", err)
 	}
 }
 

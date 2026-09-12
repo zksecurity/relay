@@ -74,3 +74,22 @@ func TestMigrateLegacyCoordinatorWorkflowRefusesTwoProfiles(t *testing.T) {
 		t.Fatalf("ambiguous profiles were accepted: %v", err)
 	}
 }
+
+func TestBackupPrivateFileResumesOnlyForIdenticalSource(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "profile.json")
+	if err := os.WriteFile(path, []byte("first"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := backupPrivateFile(path, ".bak"); err != nil {
+		t.Fatal(err)
+	}
+	if err := backupPrivateFile(path, ".bak"); err != nil {
+		t.Fatalf("identical interrupted migration did not resume: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("changed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := backupPrivateFile(path, ".bak"); err == nil {
+		t.Fatal("different source reused an old migration backup")
+	}
+}

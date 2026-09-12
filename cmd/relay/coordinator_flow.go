@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -147,7 +148,14 @@ func backupPrivateFile(path, suffix string) error {
 	f, err := os.OpenFile(backup, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
-			return errors.New("a previous migration backup exists; review it before retrying")
+			existing, readErr := os.ReadFile(backup)
+			if readErr != nil {
+				return fmt.Errorf("read previous migration backup: %w", readErr)
+			}
+			if bytes.Equal(existing, raw) {
+				return nil
+			}
+			return errors.New("a different previous migration backup exists; preserve both files for review")
 		}
 		return fmt.Errorf("preserve local profile backup: %w", err)
 	}
@@ -164,5 +172,5 @@ func backupPrivateFile(path, suffix string) error {
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("close local profile backup: %w", err)
 	}
-	return nil
+	return syncDirectory(filepath.Dir(backup))
 }

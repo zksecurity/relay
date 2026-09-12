@@ -57,7 +57,7 @@ func TestAWSLiveCandidateTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest, err := prepareCandidateManifest(candidate, grant, phase, pos, attempt)
+	manifest, err := prepareCandidateManifest(candidate, grant, phase, pos, attempt, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

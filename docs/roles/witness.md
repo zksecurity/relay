@@ -23,9 +23,9 @@ Choose **Continue the ceremony workflow** for the numbered witness steps.
    Polling alone does not preserve all observation evidence.
 4. Enter when **you actually observed** publication. Check that it precedes
    the beacon round by the required lead time; do not copy someone else's time.
-5. Prepare and review your receipt. Disconnect the signing host when prompted;
-   the helper uses the prepared offline image to sign with your own key and
-   verify the signature. Reconnect only after signing finishes.
+5. Prepare and review your receipt. The helper uses the prepared network-disabled
+   signing image with your own key and verifies the signature. Disconnecting the
+   host too is an optional extra precaution unless ceremony policy requires it.
 6. Upload the signed public output using your private grant.
    A private Tessera role connection reports the manifest key automatically.
    Otherwise send it to the coordinator. Retain the observation evidence.
@@ -36,5 +36,5 @@ a coordinator-provided signature is not your consent.
 ## If something fails
 
 Report a missed window or clock error instead of signing an unsupported claim.
-Keep the evidence and use [reviewed recovery](../role-workflow.md#recovery).
+Keep the evidence and restart the same [guided workflow](../role-workflow.md#recovery).
 Never change a timestamp or signed file to make verification pass.

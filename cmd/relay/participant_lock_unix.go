@@ -3,7 +3,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -15,16 +14,11 @@ type participantRunLock struct {
 	file *os.File
 }
 
-func acquireParticipantRunLock(configPath, candidateParent string) (*participantRunLock, error) {
+func acquireParticipantRunLock(_ string, candidateParent string) (*participantRunLock, error) {
 	if err := ensurePrivateDirectory(candidateParent); err != nil {
 		return nil, fmt.Errorf("prepare participant run lock directory: %w", err)
 	}
-	absoluteConfig, err := filepath.Abs(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("resolve participant profile for locking: %w", err)
-	}
-	digest := sha256.Sum256([]byte(filepath.Clean(absoluteConfig)))
-	path := filepath.Join(candidateParent, fmt.Sprintf(".relay-participant-run-%x.lock", digest[:16]))
+	path := filepath.Join(candidateParent, ".relay-workspace.lock")
 	if info, err := os.Lstat(path); err == nil {
 		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 			return nil, errors.New("participant run lock is not a regular non-symlink file")

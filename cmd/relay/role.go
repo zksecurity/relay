@@ -28,6 +28,7 @@ type roleOpts struct {
 	signingKey     string
 	envPath        string
 	outDir         string
+	operationID    string
 	phase1Seal     string
 	phase1SealSig  string
 	docker         *dockerDriver

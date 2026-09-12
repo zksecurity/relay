@@ -35,5 +35,6 @@ A different signing key does not establish an independent person or organization
 ## If something fails
 
 Report failed replay or conflicting sources even if transport succeeded.
-Preserve evidence, stop signing, and use [reviewed recovery](../role-workflow.md#recovery).
+Preserve evidence, stop signing, and restart the same
+[guided workflow](../role-workflow.md#recovery).
 An upload does not mean the coordinator accepted your audit.

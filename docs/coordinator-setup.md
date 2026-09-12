@@ -108,7 +108,8 @@ the remaining stages without repeating initialization. The
 Your draft is in `work/coordinator-setup/draft.json`. Frozen inputs and launch
 activity records are retained. Never delete them just to make a retry pass.
 After an initialization attempt, ceremony-setting edits are blocked; storage
-settings remain separate. Use **Verify existing definition** after an interruption
-if the signed output exists. A failed verification removes the success status.
-For partial initialization, inspect the saved action and outputs with a maintainer;
-the helper does not automatically re-sign, overwrite output, or restart a ceremony.
+settings remain separate. Choose **Resume and verify the exact frozen
+initialization**. Relay reuses the saved creation time, nonce, identities and
+policy, accepts only byte-identical retained setup files, and relies on the proof
+tool's atomic publication before verifying the signed definition. A conflict is
+preserved and stops the workflow.

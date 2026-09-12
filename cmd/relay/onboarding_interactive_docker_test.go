@@ -430,7 +430,7 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 			}
 			answers.WriteString("RUN\n")
 			if task.Offline {
-				answers.WriteString("OFFLINE AND REVIEWED\n")
+				answers.WriteString("REVIEWED\n")
 			}
 			f.ui.input = bufio.NewReader(strings.NewReader(answers.String()))
 			if err := f.execute(task); err != nil {

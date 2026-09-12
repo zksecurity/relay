@@ -57,6 +57,6 @@ Storage administration is covered in [AWS](../maintainer/aws.md) and
 ## If something fails
 
 Pause the affected turn and retain outputs and secret-free error logs.
-Inspect signed local and public heads: an interrupted action may have advanced
-the ceremony. Use the workflow's reviewed recovery path, not a fresh attempt
-that forgets the earlier result. Never edit signed files or relax verification.
+Restart the same workflow. Relay rechecks safe operations and states the exact
+fact missing for any mutation it cannot resolve. Do not create a fresh attempt,
+edit signed files, or relax verification to forget the earlier result.

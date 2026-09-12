@@ -13,8 +13,11 @@ type preparationNext struct{ choice, label, reason string }
 func (w *coordinatorWizard) nextPreparationAction() preparationNext {
 	d := w.d
 	if d.Status != "draft" {
+		if d.Status == "initialization-attempted" {
+			return preparationNext{"8", "Resume and verify the exact frozen initialization", "Relay reuses the saved time, nonce, identities and policy. Existing files must match and are never overwritten."}
+		}
 		if d.Status != "definition-verified" {
-			return preparationNext{"9", "Verify existing definition (recover an interrupted initialization)", "Settings are frozen after an interrupted initialization. Verify the retained definition instead of initializing again."}
+			return preparationNext{"9", "Verify existing definition", "Authenticate the retained signed definition before continuing."}
 		}
 		if w.localAction != nil {
 			return preparationNext{"0", "Save and exit", "Local setup test complete. No contributions or cloud setup were performed."}

@@ -41,7 +41,7 @@ func (p *rolePreparer) enroll() error {
 		return errors.New("an upload station has no signing identity; import the final signer's enrollment instead")
 	}
 	if _, err := p.profile("decision-signer"); err != nil {
-		return fmt.Errorf("prepare approved images first, including the offline signing image: %w", err)
+		return fmt.Errorf("prepare approved images first, including the network-disabled signing image: %w", err)
 	}
 	var identity setupIdentity
 	if err := setupReadJSON(filepath.Join(p.d.Keys, "identity.json"), &identity); err != nil {
@@ -206,7 +206,7 @@ func writePublicTextOnce(path, text string) error {
 func (f *roleFlow) reviewOfflineRecord(command []string) (string, error) {
 	path := commandValue(command, "record")
 	if path == "" {
-		return "", errors.New("offline operational signing requires an exact record")
+		return "", errors.New("operational signing requires an exact public record")
 	}
 	local, err := f.publicHostPath(path)
 	if err != nil {
@@ -220,6 +220,10 @@ func (f *roleFlow) reviewOfflineRecord(command []string) (string, error) {
 		return "", errors.New("expected canonical public JSON")
 	}
 	fmt.Fprintf(f.ui.output, "Exact public record to sign:\n%s\n", raw)
-	err = f.ui.confirm("Confirm that these are YOUR truthful observations. Disconnect the signing host; Docker network isolation alone is not host disconnection", "OFFLINE AND REVIEWED")
+	prompt, phrase := "Confirm that these are YOUR truthful observations. Relay signs this record in a network-disabled container; this does not claim the host is disconnected", "REVIEWED"
+	if f.state.Role == "release-signer" {
+		prompt, phrase = "Confirm that these are YOUR truthful observations. Disconnect the signing host; Docker network isolation alone is not host disconnection", "OFFLINE AND REVIEWED"
+	}
+	err = f.ui.confirm(prompt, phrase)
 	return fmt.Sprintf("%x", sha256.Sum256(raw)), err
 }

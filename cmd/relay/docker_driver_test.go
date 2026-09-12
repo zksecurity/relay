@@ -28,6 +28,7 @@ type dockerClientFake struct {
 	stillPresent      bool
 	unsafe            bool
 	onCreate          func()
+	createErrAfter    bool
 	host              string
 	endpoint          string
 	daemonID          string
@@ -83,12 +84,20 @@ func (f *dockerClientFake) Output(args ...string) ([]byte, []byte, error) {
 		if f.onCreate != nil {
 			f.onCreate()
 		}
+		if f.createErrAfter {
+			return nil, []byte("lost create response"), errors.New("transport closed")
+		}
 		return []byte(testContainerID + "\n"), nil, nil
 	case len(args) == 2 && args[0] == "inspect":
 		if f.removed && !f.stillPresent {
 			return nil, []byte("No such container"), errors.New("exit status 1")
 		}
 		return f.inspectionJSON(), nil, nil
+	case len(args) == 4 && args[0] == "inspect" && args[1] == "--format" && args[2] == "{{.Id}}":
+		if f.removed && !f.stillPresent {
+			return nil, []byte("No such container"), errors.New("exit status 1")
+		}
+		return []byte(testContainerID + "\n"), nil, nil
 	case len(args) >= 3 && args[0] == "inspect" && args[1] == "--format":
 		return []byte("0\n"), nil, nil
 	case len(args) > 0 && args[0] == "rm":
@@ -141,7 +150,18 @@ func (f *dockerClientFake) inspectionJSON() []byte {
 	}
 	var mounts []map[string]any
 	var runtimeMounts []map[string]any
+	name := ""
+	labels := map[string]string{}
 	for index, arg := range f.createArgs {
+		if arg == "--name" && index+1 < len(f.createArgs) {
+			name = f.createArgs[index+1]
+		}
+		if arg == "--label" && index+1 < len(f.createArgs) {
+			key, value, ok := strings.Cut(f.createArgs[index+1], "=")
+			if ok {
+				labels[key] = value
+			}
+		}
 		if arg == "--user" && index+1 < len(f.createArgs) {
 			user = f.createArgs[index+1]
 		}
@@ -169,7 +189,8 @@ func (f *dockerClientFake) inspectionJSON() []byte {
 		})
 	}
 	record := []map[string]any{{
-		"Config": map[string]any{"Image": image, "User": user},
+		"Name":   "/" + name,
+		"Config": map[string]any{"Image": image, "User": user, "Labels": labels},
 		"HostConfig": map[string]any{
 			"NetworkMode": network, "ReadonlyRootfs": true, "Privileged": false,
 			"CapDrop": []string{"ALL"}, "SecurityOpt": []string{"no-new-privileges=true"},
@@ -267,6 +288,7 @@ func dockerContributionFixture(t *testing.T) (roleOpts, position, *dockerDriver,
 
 func TestDockerContributionRemovesContainerBeforePromotingPublicOutput(t *testing.T) {
 	o, pos, _, fake := dockerContributionFixture(t)
+	o.operationID = strings.Repeat("d", 32)
 	if err := runNextAt(o, pos, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -284,6 +306,10 @@ func TestDockerContributionRemovesContainerBeforePromotingPublicOutput(t *testin
 	if fake.host != "unix:///var/run/docker.sock" {
 		t.Fatalf("Docker commands were not pinned to the inspected endpoint: %q", fake.host)
 	}
+	create := strings.Join(fake.createArgs, " ")
+	if !strings.Contains(create, "--name relay-contributor-"+o.operationID) || !strings.Contains(create, "org.zksecurity.relay.operation="+o.operationID) {
+		t.Fatalf("contributor did not use the preallocated guided operation ID: %s", create)
+	}
 	raw, err := os.ReadFile(filepath.Join(o.outDir, dockerLifecycleLogName))
 	if err != nil {
 		t.Fatal(err)
@@ -294,6 +320,23 @@ func TestDockerContributionRemovesContainerBeforePromotingPublicOutput(t *testin
 	}
 	if receipt.Daemon.ID != "test-daemon-id" || !receipt.Daemon.LocalUnixEndpoint {
 		t.Fatalf("daemon identity was not recorded: %#v", receipt.Daemon)
+	}
+}
+
+func TestDockerContributionAdoptsContainerAfterLostCreateResponse(t *testing.T) {
+	o, pos, driver, fake := dockerContributionFixture(t)
+	fake.createErrAfter = true
+	if err := runNextAt(o, pos, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if !fake.removed {
+		t.Fatal("reconciled contributor container was not removed")
+	}
+	if _, err := os.Lstat(driver.activeStatePath()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("active container state remains after reconciled run: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(o.outDir, dockerLifecycleLogName)); err != nil {
+		t.Fatalf("reconciled contribution output was not promoted: %v", err)
 	}
 }
 
@@ -411,7 +454,7 @@ func TestDockerOrphanCleanupRequiresMatchingDaemon(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := dockerActiveState{
-		Schema: dockerActiveStateSchema, ContainerID: testContainerID,
+		Schema: dockerActiveStateSchemaV2, ContainerID: testContainerID,
 		Image: driver.image, Platform: driver.platform,
 		DaemonID: "different-daemon", DaemonEndpoint: driver.daemon.Endpoint,
 		HandoffDir: filepath.Join(driver.candidateRoot, ".relay-handoff-orphan"),

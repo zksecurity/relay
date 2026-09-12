@@ -61,8 +61,9 @@ The guide runs existing verification, contribution, acceptance, phase-transition
 audit and release commands. These checks—not menu progress—establish validity.
 A tiny rehearsal cannot satisfy the production GO/NO-GO evidence gates.
 
-Witness and mirror receipt signing uses a separately prepared offline image.
-Review your exact record, disconnect the host, and confirm your own observations.
+Witness and mirror receipt signing uses a separately prepared network-disabled
+image. Review your exact record and confirm your own observations. Disconnecting
+the host is an optional extra precaution unless ceremony policy requires it.
 Signing is bound to the displayed bytes. Online observer images receive no keys.
 
 Storage provisioning, public identity exchange, other operational-record authoring,
@@ -78,21 +79,22 @@ or extra files in an immutable bundle require review. Transcripts may grow with
 new signed heads, but previously retained files must not change or disappear.
 Private keys and temporary grants are not included in these public snapshots.
 
-An interrupted action is uncertain, even if it printed success before stopping.
-Preserve outputs and authenticate the current state before **REVIEWED RETRY**.
-Retries retain the exact command. After investigation, you can record the
-finding and prepare a corrected action; that does not mark the task complete.
+On restart, Relay checks the previous action. It automatically closes a saved
+pre-launch action because no command ran, repeats an exact read-only check, or
+continues a stable immutable upload. A retained participant candidate resumes
+without recomputation. A complete matching grant file can be adopted without
+issuing another credential. Any other uncertain mutation stops with the specific
+missing fact; there is no generic retry, investigation form, or “mark complete.”
 New independent output files get an unused suggested filename; successful
 output locations are remembered for later steps. Receipt exports also get fresh
 directories, carried forward to signing and upload. Existing files are never
 overwritten. Protocol-layout directories and uncertain retries still require
 review rather than automatic relocation.
 
-For non-participant actions that actually completed before interruption, first
-verify the exact output with the appropriate tool. You can then record that
-external verification as a **reported** recovery, preserving the failed attempt.
-This does not complete a required verification command or waive protocol checks.
-Changed or missing bound input files require investigation and re-verification.
+For a state-changing action Relay cannot reconcile, preserve its output and stop
+at the displayed blocker. There is no manual “mark complete” or generic retry.
+Changed or missing bound inputs must be restored from authenticated sources and
+reverified through the same workflow.
 
 Participants: preserve the public candidate and use `resume-candidate` with a
 replacement grant if needed. Do not recompute after an upload interruption.

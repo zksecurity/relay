@@ -152,8 +152,10 @@ Final signers retain disconnected-host enrollment/signing confirmation.
 Witness/mirror observation-receipt offline procedures are unchanged by that choice.
 Show committed beacon times and witness deadlines with explicit time zones.
 An expired observation window requires investigation, not backdating or blind retry.
-After interruption recommend Inspect existing output; preserve attempts and files.
-Verify before retry, resume existing participant candidates, and never infer success.
+After interruption follow the [crash-safe operation design](crash-recovery-design.md).
+Relay automatically verifies or continues the exact operation when safe; it does
+not show a generic recovery menu or ask for an investigation narrative. Preserve
+artifacts, resume existing participant candidates, and never infer success.
 Changed evidence, failed verification and missing requirements cannot be bypassed.
 
 ## Delivery and acceptance
