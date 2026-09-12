@@ -233,6 +233,30 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 		t.Helper()
 		f.stages, f.state.Role = roleFlowStages(role), role
 		task := find(role, stage, id)
+		// This integration invokes selected cryptographic recipes directly; its
+		// same-host fixture performs the intervening synchronization, publication,
+		// and human handoffs outside roleFlow.execute. Record those fixture steps
+		// explicitly so the production prerequisite guard remains enabled here.
+		for _, prerequisite := range f.stages[f.state.Stage].Tasks {
+			if prerequisite.ID == task.ID {
+				break
+			}
+			if f.requiredTaskComplete(prerequisite) {
+				continue
+			}
+			status := "succeeded"
+			if prerequisite.Handoff {
+				status = "reported"
+			}
+			f.state.Attempts = append(f.state.Attempts, flowAttempt{
+				ID:         "fixture-" + role + "-" + stage + "-" + prerequisite.ID,
+				Task:       prerequisite.ID,
+				Stage:      stage,
+				Status:     status,
+				Note:       "same-host integration fixture completed this prerequisite outside the guided executor",
+				FinishedAt: time.Now().UTC().Format(time.RFC3339Nano),
+			})
+		}
 		used := map[string]int{}
 		var input strings.Builder
 		if len(task.ExtraFields) > 0 {

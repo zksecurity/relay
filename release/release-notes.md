@@ -10,6 +10,8 @@
 - Guided menus now explain why each action is needed in plain language. Production decision actions are shown as required only after Relay authenticates that the ceremony is production; rehearsal actions remain hidden.
 - Guided role menus now separate numbered ceremony actions from letter-keyed navigation: view an area's details, open the ceremony map, review results, go back, or save and exit. These navigation controls never complete or skip work.
 - Guided recommendations follow the authored workflow order, not a local readiness heuristic. Readiness explains why the prescribed next action is waiting; it cannot let a later handoff leapfrog a contribution awaiting a fresh grant or profile.
+- The detailed action list now enforces that same order for state-changing work within each ceremony area. It cannot issue a participant grant before the outbound custody receipt or contribute before the participant's required receipt steps. Read-only inspection remains available, and an already-started uncertain action remains reachable for safe recovery.
+- First-use custody exports now create missing parent folders while still requiring the final signed-output folder to be fresh; existing exports are never overwritten.
 - When preparing a participant's outbound custody packet or issuing their grant, Relay now displays the ordered participant IDs from the authenticated phase schedule, marks the expected next participant, and fills that value without allowing an out-of-order substitution.
 - Guided workflows create a required offline signing profile when it is missing, before offline custody work begins. Recipe-fixed custody direction is displayed for review and cannot be mistyped as a menu number.
 - Guided-operation failures now render their `Paused:` diagnostic in red on an interactive terminal, while retained-state recovery guidance remains plain text and redirected logs remain unstyled.
@@ -30,4 +32,4 @@
 
 ## Tessera compatibility
 
-Ceremony data and Tessera request fields are unchanged. Retry semantics are stricter: an attempt is deduplicated by protocol and assignment even after a role connection is refreshed. The proof-tool pin is updated to protected-main release `mpc-ci-8500f65578dd33a3e897fea33813e75bd3bb2faf`, which adds atomic initialization/identity recovery, structured command outcomes, and portable finalization staging.
+Ceremony data and Tessera request fields are unchanged. Guided execution now enforces already-authored same-area prerequisites before starting a new state-changing action; read-only checks and recovery of a possibly started action remain available. The proof-tool pin is updated to protected-main release `mpc-ci-7ba406f0a6066f10b668ae8c553ab45e897f9fe4`, which retains the prior atomic recovery behavior and adds safe first-use parent creation for operational signing exports.

@@ -613,6 +613,9 @@ func (f *roleFlow) last(task flowTask) *flowAttempt {
 }
 
 func (f *roleFlow) execute(task flowTask) error {
+	if err := f.requireTaskPredecessors(task); err != nil {
+		return err
+	}
 	if f.state.Role == "coordinator" && task.ID == "enrollment" && f.state.Profile.Work != "" {
 		return f.collectEnrollment(task)
 	}
