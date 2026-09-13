@@ -3,6 +3,19 @@
 # before execution. Installs into a fresh versioned directory without sudo.
 set -euo pipefail
 umask 077
+
+# Match the CLI's line-input handling: disable focus reporting on terminals and
+# discard only actual focus-in/out events already queued by the terminal.
+# Do not enable reporting on exit; the next interactive program owns its modes.
+read_installer_answer() {
+  local installer_answer
+  if [[ -t 0 && -t 1 ]]; then printf '\033[?1004l'; fi
+  IFS= read -r installer_answer || return 1
+  installer_answer=${installer_answer//$'\033[I'/}
+  installer_answer=${installer_answer//$'\033[O'/}
+  printf -v "$1" '%s' "$installer_answer"
+}
+
 parse_release() {
   local selection=$1
   selection=${selection#https://github.com/zksecurity/relay/releases/tag/}
@@ -22,13 +35,13 @@ prepare_guided_settings() {
   role=${preset_role:-}
   if [[ -z "$name" ]]; then
     printf 'Ceremony label (use the same label for all roles): '
-    IFS= read -r name
+    read_installer_answer name
   else printf 'Ceremony label: %s\n' "$name"; fi
   [[ "$name" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]] || { echo 'Invalid ceremony name.' >&2; return 1; }
   if [[ -z "$role" ]]; then
   printf 'Choose your task or role:\n1) Coordinator\n2) Participant\n3) Witness\n4) Mirror\n5) Auditor\n6) Release-signer\n7) Upload-station\n'
   while :; do
-    printf 'Choose a number: '; IFS= read -r role || return 1
+    printf 'Choose a number: '; read_installer_answer role || return 1
     case "$role" in
       1|coordinator) role=coordinator;; 2|participant) role=participant;;
       3|witness) role=witness;; 4|mirror) role=mirror;; 5|auditor) role=auditor;;
@@ -42,7 +55,7 @@ prepare_guided_settings() {
   if [[ -e "$suggested" || -L "$suggested" ]]; then
     printf 'A %s setup already exists for %s.\n1) Resume it (keeps its existing release)\n2) Create another %s with separate keys and progress\n' "$role" "$name" "$role"
     while :; do
-      printf 'Choose 1 or 2: '; IFS= read -r answer || return 1
+      printf 'Choose 1 or 2: '; read_installer_answer answer || return 1
       case "$answer" in
         1)
           [[ -d "$suggested" && ! -L "$suggested" && -f "$suggested/start.sh" && ! -L "$suggested/start.sh" ]] || { echo 'Existing setup needs review; nothing changed.' >&2; return 1; }
@@ -60,7 +73,7 @@ prepare_guided_settings() {
     done
   fi
   printf 'Role folder [press Enter for %s]: ' "$suggested"
-  IFS= read -r folder
+  read_installer_answer folder
   folder=${folder:-$suggested}
   # Require a fresh, unambiguous path; never reuse another role's data.
   case "$folder" in /*) ;; *) echo 'Use an absolute folder path.' >&2; return 1 ;; esac
@@ -74,7 +87,7 @@ prepare_guided_settings() {
     ancestor=$(dirname "$ancestor")
   done
   printf '\nRelease: %s\nRole: %s / %s\nFolder: %s\nType yes to install and save these settings: ' "$tag" "$name" "$role" "$folder"
-  IFS= read -r answer
+  read_installer_answer answer
   [[ "$answer" == yes ]] || { echo 'Cancelled.' >&2; return 1; }
   role_folder=$folder
   guided_role=$role
@@ -184,7 +197,7 @@ if "$guided"; then
   [[ -t 0 ]] || { echo 'Guided setup needs an interactive terminal.' >&2; return 1; }
   if [[ -z "$preset_release" ]]; then
     printf 'Paste the exact Relay release URL or tag supplied through your agreed channel: '
-    IFS= read -r selection
+    read_installer_answer selection
     parse_release "$selection"
   fi
   prepare_guided_settings

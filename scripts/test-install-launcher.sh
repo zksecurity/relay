@@ -24,6 +24,19 @@ expect_failure parse_release 'role-images-$(touch injected)'
 expect_failure main --guided </dev/null
 printf 'PASS: exact release parsing and interactive guard\n'
 
+# Focus notifications can arrive before or in the middle of any answer. Keep
+# literal caret text, other escape sequences, whitespace and backslashes intact.
+answer=''
+read_installer_answer answer <<< $'\033[Orole-images-\033[I0123\033[O'
+[[ "$answer" == role-images-0123 ]]
+read_installer_answer answer <<< $'  ^[[I \\ literal \033[A  '
+[[ "$answer" == $'  ^[[I \\ literal \033[A  ' ]]
+read_installer_answer answer <<< $'\033[I\033[O'
+[[ -z "$answer" ]]
+expect_failure read_installer_answer answer </dev/null
+[[ -z "$(read_installer_answer answer <<< yes)" ]]
+printf 'PASS: installer focus-event filtering, literal preservation and EOF\n'
+
 test_root=$(mktemp -d)
 # Use the physical path: /tmp itself is a symlink on macOS.
 test_root=$(cd "$test_root" && pwd -P)
