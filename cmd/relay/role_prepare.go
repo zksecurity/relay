@@ -269,7 +269,7 @@ func (p *rolePreparer) identity() error {
 // Fixed destinations prevent a received filename from selecting a key or saved
 // settings path. Importing public bytes is not authenticating their signatures.
 func preparationImports() []setupChoice {
-	return []setupChoice{{"definition", "Signed ceremony definition"}, {"signature", "Definition signature"}, {"coordinator", "Independently obtained coordinator public key"}, {"storage", "Public storage configuration (not credentials)"}, {"enrollment", "Your reviewed public enrollment"}, {"enrollment-signature", "Your enrollment signature"}, {"receipt", "Advanced: existing tool record for this exact installation"}, {"ceremony-set", "Import all three ceremony files from a folder (recommended)"}}
+	return []setupChoice{{"definition", "Signed ceremony definition"}, {"signature", "Definition signature"}, {"coordinator", "Independently obtained coordinator public key"}, {"storage", "Public storage configuration (not credentials)"}, {"enrollment", "Your reviewed public enrollment"}, {"enrollment-signature", "Your enrollment signature"}, {"receipt", "Advanced: existing tool record for this exact installation"}, {"ceremony-set", "Import all three ceremony files from a folder (recommended)"}, {"observer-setup", "Witness/mirror setup instructions from the coordinator"}}
 }
 func preparationDestination(d rolePreparation, kind string) string {
 	switch kind {
@@ -323,6 +323,9 @@ func (p *rolePreparer) importFile() error {
 	}
 	if kind == "ceremony-set" {
 		return p.importCeremonySet()
+	}
+	if kind == "observer-setup" {
+		return p.importObserverSetup()
 	}
 	source, err := p.ui.required("Absolute path to the public file (never a signing key or grant)", "")
 	if err != nil {

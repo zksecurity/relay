@@ -1,5 +1,12 @@
 ## What changed
 
+- Fix guided enrollment collection rejecting valid one-witness, one-mirror and
+  one-auditor requirements from the authenticated proof-tool projection. Higher
+  reported requirements still apply; signatures and roster checks remain required.
+- Coordinators can issue recipient-bound witness/mirror setup files that assign
+  enrollment numbers. Observers import the file instead of typing a number.
+  These are unsigned instructions, not enrollments; existing signed records and
+  previously saved numbers remain resumable.
 - Role onboarding can import the definition, signature and coordinator public
   key together from one folder. It retains independent fingerprint confirmation,
   authenticates the staged set with proof-tool and never replaces different files.

@@ -118,7 +118,7 @@ output says to retain its public enrollment rather than send it to itself.
 These menu changes require a new compatible release before existing installations
 can use them. Existing ceremony release pins are not automatically upgraded.
 
-## Role minimums: ruleset revision 2 (unreleased)
+## Role minimums: ruleset revision 2
 
 `contracts/setupv2r2/` defines `two-phase-v2` version 2: at least one auditor,
 one witness per phase and one mirror per accepted contribution, in both modes.
@@ -130,4 +130,4 @@ The original `contracts/setupv2/` bytes are retained. Older ceremonies use their
 original pinned CLI and proof-tool; no automatic conversion is supported. Release
 order is proof-tool, then update real proof-tool pins and release the CLI, then
 provision its attested manifest in Tessera and choose it as the default for new
-ceremonies. Current `release/role-images.json` pins have not yet changed.
+ceremonies. Current `release/role-images.json` pins include revision 2 support.

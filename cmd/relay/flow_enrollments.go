@@ -195,13 +195,17 @@ func (f *roleFlow) collectEnrollment(task flowTask) error {
 	if _, err := f.collectedEnrollments(); err != nil {
 		fmt.Fprintf(f.ui.output, "Collection not verified: %v\nInspect or archive incorrect imports; no completion is recorded.\n", err)
 	}
-	choice, err := f.ui.choose("Enrollment collection", "", []setupChoice{{"import", "Import and verify one public enrollment folder"}, {"request", "Show what to request from each role"}, {"archive", "Inspect and archive an incorrect or duplicate import"}, {"cancel", "Return to ceremony actions"}})
+	choice, err := f.ui.choose("Enrollment collection", "", []setupChoice{{"import", "Import and verify one public enrollment folder"}, {"request", "Show what to request from each role"}, {"archive", "Inspect and archive an incorrect or duplicate import"}, {"observer-setup", "Prepare a witness/mirror setup file (assigns their number)"}, {"cancel", "Return to ceremony actions"}})
 	if err != nil {
 		return err
 	}
 	if choice == "request" {
 		fmt.Fprintln(f.ui.output, "Ask each role for its exported public enrollment folder: canonical.json, enrollment.sig, and the referenced public disclosure. Never request signing.hex, credentials or private grants. Request witness and mirror enrollments too; their identities are not part of the frozen participant roster.")
+		fmt.Fprintln(f.ui.output, "First collect each witness/mirror's public identity.json, then choose 4 here to prepare and send their setup file. Their CLI reads the assigned number; they review and sign their own enrollment.")
 		return nil
+	}
+	if choice == "observer-setup" {
+		return f.prepareObserverSetup()
 	}
 	if choice == "cancel" {
 		return nil

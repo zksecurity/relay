@@ -45,7 +45,7 @@ func (d Definition) RequireJourney() (DefinitionJourney, error) {
 		return DefinitionJourney{}, errors.New("approved proof-tool does not provide authenticated journey requirements; use a matching new release")
 	}
 	j := *d.Journey
-	if j.MinimumPublicWitnesses < 2 || j.MinimumMirrorsPerAcceptedHead < 2 || j.ObserverRequirementSource == "" {
+	if j.MinimumPublicWitnesses < 1 || j.MinimumMirrorsPerAcceptedHead < 1 || j.ObserverRequirementSource == "" {
 		return j, errors.New("incomplete observer requirements from proof-tool")
 	}
 	roles := map[string]int{}
@@ -57,7 +57,7 @@ func (d Definition) RequireJourney() (DefinitionJourney, error) {
 		}
 		ids[e.Identity.ID] = true
 	}
-	if roles["coordinator"] != 1 || roles["release-signer"] != 1 || roles["auditor"] < 2 || roles["participant"] < 1 || len(roles) != 4 {
+	if roles["coordinator"] != 1 || roles["release-signer"] != 1 || roles["auditor"] < 1 || roles["participant"] < 1 || len(roles) != 4 {
 		return j, errors.New("required ceremony roster is incomplete")
 	}
 	return j, nil

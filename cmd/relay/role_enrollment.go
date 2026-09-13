@@ -57,20 +57,16 @@ func (p *rolePreparer) enroll() error {
 	if role == "mirror" {
 		role = "mirror-operator"
 	}
-	index := "1"
-	var err error
-	if role == "public-witness" || role == "mirror-operator" {
-		index, err = p.value("enrollment-index", "Your one-based enrollment number supplied by the coordinator", "")
-		if err != nil {
-			return err
-		}
-		if err := validateFlowValue(flowField{Kind: "number"}, index); err != nil {
-			return err
-		}
-	}
 	dir := filepath.Join(p.d.Work, "my-enrollment")
 	record := filepath.Join(dir, "canonical.json")
 	if _, err := os.Lstat(record); errors.Is(err, os.ErrNotExist) {
+		index := "1"
+		if role == "public-witness" || role == "mirror-operator" {
+			index, err = p.observerEnrollmentIndex()
+			if err != nil {
+				return err
+			}
+		}
 		text, err := p.disclosurePreset()
 		if err != nil {
 			return err
@@ -107,6 +103,29 @@ func (p *rolePreparer) enroll() error {
 	}
 	if summary.Identity != identity || summary.Role != role || summary.RoleIndex < 1 {
 		return errors.New("enrollment record differs from your selected identity or role; do not sign")
+	}
+	if role == "public-witness" || role == "mirror-operator" {
+		if summary.RoleIndex > 65535 {
+			return errors.New("enrollment number exceeds protocol limit")
+		}
+		if old := p.d.Values["enrollment-index"]; old != "" && old != fmt.Sprint(summary.RoleIndex) {
+			return errors.New("existing enrollment conflicts with your saved observer number")
+		}
+		path := filepath.Join(p.d.Work, "observer-setup.json")
+		if _, err := os.Lstat(path); err == nil {
+			var setup observerSetup
+			if err := setupReadJSON(path, &setup); err != nil {
+				return err
+			}
+			if err := p.checkObserverSetup(setup); err != nil {
+				return err
+			}
+			if setup.Index != summary.RoleIndex {
+				return errors.New("existing enrollment conflicts with observer setup number")
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 	}
 	fmt.Fprintf(p.ui.output, "\nYOUR PUBLIC ENROLLMENT\n------------------------------------------------------------\nName: %q\nIdentity: %s\nRole: %s (assignment %d)\nCeremony: %s\nRecorded time: %s\nPublic key fingerprint: %s\n", summary.Identity.DisplayName, summary.Identity.ID, summary.Role, summary.RoleIndex, summary.CeremonyID, summary.EnrolledAt, summary.Identity.Fingerprint)
 	disclosure, err := readPreparationInput(filepath.Join(dir, "enrollments", identity.ID, "disclosure.txt"))

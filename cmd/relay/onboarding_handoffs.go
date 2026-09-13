@@ -20,30 +20,7 @@ func (p *rolePreparer) needsPhase2Profile() (bool, error) {
 	if err := identity.check(); err != nil {
 		return false, err
 	}
-	var definition transcript.Definition
-	var err error
-	if p.inspectDefinition != nil {
-		definition, err = p.inspectDefinition()
-	} else {
-		profile, profileErr := p.profile("decision-signer")
-		if profileErr != nil {
-			return false, profileErr
-		}
-		client := osDockerCommandClient{binary: "docker"}
-		_, endpoint, endpointErr := resolveDockerEndpoint(client)
-		if endpointErr != nil {
-			return false, endpointErr
-		}
-		if err := validateLocalDockerEndpoint(endpoint); err != nil {
-			return false, err
-		}
-		if err := prepareGuidedImage(profile.Image, profile.Platform, "docker", false); err != nil {
-			return false, err
-		}
-		root := filepath.Join(p.d.Work, "ceremony/public")
-		driver := dockerDriver{image: profile.Image, platform: profile.Platform, ceremonyBinary: "/usr/local/bin/mpc-ceremony", root: root, definition: filepath.Join(root, "ceremony.json"), definitionSig: filepath.Join(root, "ceremony.sig"), coordinatorKey: filepath.Join(p.d.Trust, "coordinator-public-key.hex"), client: client.BindHost(endpoint)}
-		definition, err = driver.inspector().Definition()
-	}
+	definition, err := p.authenticatedSetupDefinition()
 	if err != nil {
 		return false, err
 	}
@@ -53,6 +30,34 @@ func (p *rolePreparer) needsPhase2Profile() (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+func (p *rolePreparer) authenticatedSetupDefinition() (transcript.Definition, error) {
+	var definition transcript.Definition
+	var err error
+	if p.inspectDefinition != nil {
+		definition, err = p.inspectDefinition()
+	} else {
+		profile, profileErr := p.profile("decision-signer")
+		if profileErr != nil {
+			return definition, profileErr
+		}
+		client := osDockerCommandClient{binary: "docker"}
+		_, endpoint, endpointErr := resolveDockerEndpoint(client)
+		if endpointErr != nil {
+			return definition, endpointErr
+		}
+		if err := validateLocalDockerEndpoint(endpoint); err != nil {
+			return definition, err
+		}
+		if err := prepareGuidedImage(profile.Image, profile.Platform, "docker", false); err != nil {
+			return definition, err
+		}
+		root := filepath.Join(p.d.Work, "ceremony/public")
+		driver := dockerDriver{image: profile.Image, platform: profile.Platform, ceremonyBinary: "/usr/local/bin/mpc-ceremony", root: root, definition: filepath.Join(root, "ceremony.json"), definitionSig: filepath.Join(root, "ceremony.sig"), coordinatorKey: filepath.Join(p.d.Trust, "coordinator-public-key.hex"), client: client.BindHost(endpoint)}
+		definition, err = driver.inspector().Definition()
+	}
+	return definition, err
 }
 
 func (p *rolePreparer) transportRole() string {
