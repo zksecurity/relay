@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	setupv2 "github.com/zksecurity/relay/contracts/setupv2r2"
 )
 
 func TestCoordinatorPreparationRecommendations(t *testing.T) {
@@ -120,5 +122,57 @@ func TestCoordinatorPreparationDoesNotExecuteHiddenChoice(t *testing.T) {
 	}
 	if w.d.Status != "draft" || !strings.Contains(w.output.(*bytes.Buffer).String(), "Choose a displayed action") {
 		t.Fatal("hidden action accepted")
+	}
+}
+
+func TestCoordinatorOptionalIdentityShortcut(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*coordinatorWizard)
+		want   bool
+	}{
+		{"policy", func(w *coordinatorWizard) { w.d.Policy.Phase1.Minimum = 0 }, true},
+		{"architecture", func(w *coordinatorWizard) { w.d.ArchitecturePolicy = "invalid" }, true},
+		{"storage", func(w *coordinatorWizard) {}, true},
+		{"approval", func(w *coordinatorWizard) { w.d.OfflinePreparation = true }, true},
+		{"basics", func(w *coordinatorWizard) { w.d.Mode = "" }, false},
+		{"missing coordinator", func(w *coordinatorWizard) { w.d.Identities.Coordinator = setupIdentity{} }, false},
+		{"required roster", func(w *coordinatorWizard) { w.d.Identities.Auditors = nil }, false},
+		{"frozen", func(w *coordinatorWizard) { w.d.Status = "initialization-attempted" }, false},
+		{"signed", func(w *coordinatorWizard) { w.d.Status = "definition-verified" }, false},
+		{"website", func(w *coordinatorWizard) { w.d.Tessera = &tesseraContext{} }, false},
+		{"website setup", func(w *coordinatorWizard) { w.d.TesseraSetup = &setupv2.Setup{} }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := setupFixture(t)
+			tc.change(&w)
+			next := w.nextPreparationAction()
+			if got := w.showOptionalIdentityImport(next); got != tc.want {
+				t.Fatalf("visibility %v, want %v", got, tc.want)
+			}
+			w.input = bufio.NewReader(strings.NewReader("0\n"))
+			if err := w.menu(); err != nil {
+				t.Fatal(err)
+			}
+			out := w.output.(*bytes.Buffer).String()
+			if strings.Contains(out, "3) Add or replace a public identity [Optional]") != tc.want {
+				t.Fatal(out)
+			}
+			if strings.Count(out, "3) ") > 1 {
+				t.Fatal("duplicate identity action", out)
+			}
+			if tc.want {
+				if !strings.Contains(out, "Choose ["+next.choice+"]") {
+					t.Fatal("default recommendation changed", out)
+				}
+				w.output = new(bytes.Buffer)
+				w.input = bufio.NewReader(strings.NewReader("3\n"))
+				_ = w.menu() // EOF at the import prompt; no identity is changed.
+				out = w.output.(*bytes.Buffer).String()
+				if !strings.Contains(out, "Import role") || strings.Contains(out, "Choose a displayed action") {
+					t.Fatal("displayed shortcut rejected", out)
+				}
+			}
+		})
 	}
 }

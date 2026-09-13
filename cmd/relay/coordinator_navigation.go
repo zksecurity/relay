@@ -10,6 +10,20 @@ import (
 // validate, ask for consent, and freeze the draft at the initialization boundary.
 type preparationNext struct{ choice, label, reason string }
 
+// An allowed alternative is not the recommended next action. These choices
+// follow a sufficient roster; imported website assignments remain website-owned.
+func (w *coordinatorWizard) showOptionalIdentityImport(next preparationNext) bool {
+	if w.d.Status != "draft" || w.d.Tessera != nil || w.d.TesseraSetup != nil {
+		return false
+	}
+	switch next.choice {
+	case "4", "5", "6", "8":
+		return true
+	default:
+		return false
+	}
+}
+
 func (w *coordinatorWizard) nextPreparationAction() preparationNext {
 	d := w.d
 	if d.Status != "draft" {

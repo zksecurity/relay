@@ -1,5 +1,8 @@
 ## What changed
 
+- Standalone coordinator drafts keep optional identity import visible once the
+  required roster is present, without changing the recommended next step.
+  Beacon help explains rehearsal versus production witness lead times.
 - The Bash launcher installer now disables terminal focus reporting and filters
   queued focus events at every prompt, matching the CLI's input handling.
 - Role setup explicitly guides public identity/enrollment delivery, requests the
