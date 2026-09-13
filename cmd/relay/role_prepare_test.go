@@ -144,6 +144,7 @@ func TestRolePreparationTransportProfilesBindOwnIdentity(t *testing.T) {
 		t.Run(role, func(t *testing.T) {
 			p := preparationFixture(t, role)
 			prepareTestProfile(t, p, role)
+			prepareTestPublicStorage(t, p)
 			if role != "upload-station" {
 				prepareTestIdentity(t, p)
 			}
@@ -273,6 +274,10 @@ func TestRolePreparationUsesAuthoredSetupOrder(t *testing.T) {
 		t.Fatalf("after images = %s, want identity", got)
 	}
 	prepareTestIdentity(t, p)
+	if got := p.nextPreparationAction().choice; got != "9" {
+		t.Fatalf("after identity = %s, want public handoff", got)
+	}
+	reportTestPublicHandoff(t, p, "identity")
 	if got := p.nextPreparationAction().choice; got != "3" {
 		t.Fatalf("after identity = %s, want public inputs", got)
 	}
@@ -293,10 +298,25 @@ func TestRolePreparationUsesAuthoredSetupOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if got := p.nextPreparationAction().choice; got != "10" {
+		t.Fatalf("after enrollment = %s, want enrollment handoff", got)
+	}
+	prepareTestEnrollmentHandoff(t, p)
+	reportTestPublicHandoff(t, p, "enrollment")
+	if got := p.nextPreparationAction().choice; got != "3" {
+		t.Fatalf("before storage = %s, want import", got)
+	}
+	prepareTestPublicStorage(t, p)
 	if got := p.nextPreparationAction().choice; got != "4" {
-		t.Fatalf("after enrollment = %s, want phase profile", got)
+		t.Fatalf("after storage = %s, want phase profile", got)
 	}
 	if err := os.WriteFile(filepath.Join(p.d.Work, "ceremony/config/participant-phase1.json"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.nextPreparationAction(); got.choice != "4" || !strings.Contains(got.label, "Phase 2") {
+		t.Fatalf("after phase1: %+v", got)
+	}
+	if err := writePublicTextOnce(filepath.Join(p.d.Work, "ceremony/config/participant-phase2.json"), "fixture"); err != nil {
 		t.Fatal(err)
 	}
 	if got := p.nextPreparationAction().choice; got != "5" {

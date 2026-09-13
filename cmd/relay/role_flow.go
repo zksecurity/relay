@@ -653,6 +653,14 @@ func (f *roleFlow) execute(task flowTask) (result error) {
 	if err := f.requireTaskPredecessors(task); err != nil {
 		return err
 	}
+	if grantDeliveryTask(task) {
+		return f.deliverPrivateGrant(task)
+	}
+	var preparationErr error
+	task, preparationErr = f.prepareAuditUpload(task)
+	if preparationErr != nil {
+		return preparationErr
+	}
 	if f.state.Role == "coordinator" && task.ID == "enrollment" && f.state.Profile.Work != "" {
 		return f.collectEnrollment(task)
 	}
@@ -1092,7 +1100,7 @@ func (f *roleFlow) advance() error {
 		if last != nil && (last.Status == "running" || last.Status == "failed") {
 			return errors.New("resolve the interrupted/failed action before moving on")
 		}
-		if (decisionRequired || !task.Optional) && (last == nil || (last.Status != "succeeded" && !(task.Handoff && last.Status == "reported"))) {
+		if (decisionRequired || !task.Optional) && !f.requiredTaskComplete(task) {
 			return fmt.Errorf("complete %q first", task.Label)
 		}
 	}

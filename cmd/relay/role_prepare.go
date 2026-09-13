@@ -375,6 +375,9 @@ func (p *rolePreparer) initProfile() error {
 	if role == "upload-station" {
 		role = "release"
 	}
+	if err := p.requirePublicStorage(); err != nil {
+		return err
+	}
 	if role != "participant" {
 		for _, name := range []string{"enrollment.json", "enrollment.sig"} {
 			if _, err := readPreparationInput(filepath.Join(p.d.Work, name)); err != nil {
@@ -385,7 +388,11 @@ func (p *rolePreparer) initProfile() error {
 			}
 		}
 	}
-	phase, err := p.ui.choose("Phase for this profile", "phase1", []setupChoice{{"phase1", "Phase 1"}, {"phase2", "Phase 2"}})
+	defaultPhase := "phase1"
+	if p.phaseProfilePresent("phase1") && !p.phaseProfilePresent("phase2") {
+		defaultPhase = "phase2"
+	}
+	phase, err := p.ui.choose("Phase for this profile", defaultPhase, []setupChoice{{"phase1", "Phase 1"}, {"phase2", "Phase 2"}})
 	if err != nil {
 		return err
 	}
@@ -467,6 +474,9 @@ func (p *rolePreparer) nextPreparationAction() rolePreparationNext {
 	if p.d.Role != "upload-station" && !regularPreparationFile(filepath.Join(p.d.Keys, "identity.json")) {
 		return rolePreparationNext{"2", "Generate or review MY role identity", "Your role needs its own signing identity. Relay shares only the public identity file."}
 	}
+	if p.d.Role != "upload-station" && !p.historicalOnboarding() && !p.publicHandoffReported("identity") {
+		return rolePreparationNext{"9", "Send your public identity to the coordinator", "Send only identity.json (or upload it on your Tessera invitation page), then request the signed ceremony files. Keep signing.hex private."}
+	}
 	for _, path := range []string{
 		filepath.Join(p.d.Work, "ceremony/public/ceremony.json"),
 		filepath.Join(p.d.Work, "ceremony/public/ceremony.sig"),
@@ -484,13 +494,22 @@ func (p *rolePreparer) nextPreparationAction() rolePreparationNext {
 			return rolePreparationNext{"7", "Prepare, review and sign MY enrollment", "This binds your signing key to your assigned role in the signed ceremony definition."}
 		}
 	}
+	if p.d.Role != "upload-station" && !p.historicalOnboarding() && !p.publicHandoffReported("enrollment") {
+		return rolePreparationNext{"10", "Send your public enrollment folder to the coordinator", "Send my-enrollment, including its signature and disclosure. Report sending separately; coordinator verification and acceptance are not implied."}
+	}
 	if p.d.Role != "release-signer" {
+		if err := p.requirePublicStorage(); err != nil {
+			return rolePreparationNext{"3", "Get public storage settings from your coordinator and import them", err.Error()}
+		}
 		role := p.d.Role
 		if role == "upload-station" {
 			role = "release"
 		}
 		if !regularPreparationFile(filepath.Join(p.d.Work, "ceremony/config", role+"-phase1.json")) {
 			return rolePreparationNext{"4", "Authenticate the ceremony and create the Phase 1 profile", "This saves the exact signed inputs and approved runtime used by your Phase 1 commands."}
+		}
+		if !p.phaseProfilePresent("phase2") {
+			return rolePreparationNext{"4", "Create the Phase 2 profile for later ceremony steps", "Phase 1 is configured. Choose Phase 2 (the default) now; this prepares settings only and does not start Phase 2 or a contribution."}
 		}
 	}
 	return rolePreparationNext{"5", "Open ceremony operations and progress", "Onboarding is ready. The role workflow will show the next required ceremony action in its authored order."}
@@ -514,6 +533,7 @@ func (p *rolePreparer) menu() error {
 		fmt.Fprintln(p.ui.output, "5) Open ceremony operations and progress\n6) Show folders and remaining input requirements")
 		if p.d.Role != "upload-station" {
 			fmt.Fprintln(p.ui.output, "7) Prepare, review and sign MY enrollment (after receiving the signed definition)")
+			fmt.Fprintln(p.ui.output, "9) Send my public identity to the coordinator\n10) Send my public enrollment folder to the coordinator")
 		}
 		fmt.Fprintln(p.ui.output, "8) Show all setup steps (including those that do not apply)\n[E] Export bug report\n0) Save and exit")
 		choice, err := p.ui.ask("Choose", next.choice)
@@ -549,6 +569,10 @@ func (p *rolePreparer) menu() error {
 			fmt.Fprintf(p.ui.output, "Your folders\n  Public work and outputs: %s\n  Independently trusted public files: %s\n  Your PRIVATE signing keys: %s\n\nWhat you receive\n  Get the signed ceremony files and public storage settings through the agreed coordination channel. Importing the definition does not download transcripts or evidence.\n\nSigning safety\n  Witness, mirror, participant and coordinator records are signed in a network-disabled container. Only the final signer must disconnect the host, unless your ceremony adopts a stricter procedure.\n", p.d.Work, p.d.Trust, p.d.Keys)
 		case "7":
 			err = p.enroll()
+		case "9":
+			err = p.reportPublicHandoff("identity")
+		case "10":
+			err = p.reportPublicHandoff("enrollment")
 		case "8":
 			for n, label := range []string{"Prepare approved images", "Generate/review MY identity", "Import a public file", "Create a phase profile", "Open the ceremony workflow", "Show folders and requirements", "Prepare and sign MY enrollment"} {
 				status := "Applies; prerequisites may still be missing"
@@ -572,7 +596,7 @@ func (p *rolePreparer) menu() error {
 }
 
 func onboardingNotApplicable(role, choice string) string {
-	if role == "upload-station" && (choice == "2" || choice == "7") {
+	if role == "upload-station" && (choice == "2" || choice == "7" || choice == "9" || choice == "10") {
 		return "Upload stations do not own signing keys; import the final signer's public enrollment instead."
 	}
 	if role == "release-signer" && choice == "4" {

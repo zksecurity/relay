@@ -20,6 +20,18 @@ type flowReadiness struct {
 
 func (f *roleFlow) readiness(task flowTask) flowReadiness {
 	r := flowReadiness{Requirement: "Required", Source: "Relay role procedure", Status: "Ready to review inputs"}
+	if grantDeliveryTask(task) {
+		if f.grantDeliveryComplete(task) {
+			if f.grantForDelivery(task) == nil {
+				r.Requirement, r.Status = "Not applicable", "No standalone evidence grant issued here"
+			} else {
+				r.Status = "Delivery reported — receipt not verified"
+			}
+		} else if f.grantForDelivery(task) == nil {
+			r.Status, r.Missing = "Waiting", []string{"Issue this participant's grant first"}
+		}
+		return r
+	}
 	if task.Optional {
 		r.Requirement = "Optional"
 	}
@@ -111,7 +123,14 @@ func (f *roleFlow) readiness(task flowTask) flowReadiness {
 		}
 		st, err := os.Lstat(local)
 		if err != nil {
-			r.Missing = append(r.Missing, field.Label+": supply "+value)
+			message := field.Label + ": supply " + value
+			if field.Flag == "config" {
+				message += ". Return to setup (save/exit operations, reopen start.sh); choose 4) Create a phase profile and select the phase named in this filename. Import the coordinator's public relay-storage.json with setup 3 -> 4 first if missing."
+			}
+			if field.Flag == "grant" {
+				message += ". Ask your coordinator for fresh access for this role, or use your private Tessera CLI connection; never publish it."
+			}
+			r.Missing = append(r.Missing, message)
 			continue
 		}
 		if st.Mode()&os.ModeSymlink != 0 || (!st.IsDir() && !st.Mode().IsRegular()) {

@@ -87,6 +87,9 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 	for n, role := range roles {
 		p := preparationFixture(t, role)
 		p.d.Name = fmt.Sprintf("local-role-%d", n)
+		if role == "participant" {
+			p.d.Values["image"], p.d.Values["binary"] = offline, "/usr/local/bin/mpc-ceremony"
+		}
 		if role != "upload-station" {
 			prepareTestProfile(t, p, "keygen")
 			prepareTestProfile(t, p, "decision-signer")
@@ -138,6 +141,12 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 			input += "GENERATE\n0\n"
 		}
 		dialogue(p, input)
+		if role != "upload-station" {
+			if next := p.nextPreparationAction(); next.choice != "9" {
+				t.Fatalf("identity must recommend public handoff: %+v", next)
+			}
+			dialogue(p, "\n1\n0\n")
+		}
 		var id setupIdentity
 		if role != "upload-station" {
 			if err := setupReadJSON(filepath.Join(p.d.Keys, "identity.json"), &id); err != nil {
@@ -209,7 +218,10 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 		if p.d.Role == "upload-station" {
 			continue
 		}
-		input := "7\n"
+		if next := p.nextPreparationAction(); next.choice != "7" {
+			t.Fatalf("definition import must recommend enrollment: %+v", next)
+		}
+		input := "\n"
 		if p.d.Role == "witness" || p.d.Role == "mirror" {
 			input += "1\n"
 		}
@@ -219,6 +231,10 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 		}
 		input += "4\nSame-machine local test; all roles operated by this test process.\nPUBLIC DISCLOSURE\n" + review + "\n0\n"
 		dialogue(p, input)
+		if next := p.nextPreparationAction(); next.choice != "10" {
+			t.Fatalf("enrollment must recommend sending public folder: %+v", next)
+		}
+		dialogue(p, "\n1\n0\n")
 		if _, err := os.Stat(filepath.Join(p.d.Work, "enrollment.sig")); err != nil {
 			t.Fatal(err)
 		}
@@ -293,9 +309,9 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 			t.Fatal(err)
 		}
 		if p.d.Role == "participant" {
-			dialogue(p, fmt.Sprintf("3\n4\n%s\nIMPORT\n4\n1\nPRECAUTIONS REVIEWED\nREVIEWED\n4\n2\nPRECAUTIONS REVIEWED\nREVIEWED\n0\n", storagePath))
+			dialogue(p, fmt.Sprintf("\n4\n%s\nIMPORT\n\n\nPRECAUTIONS REVIEWED\nREVIEWED\n\n\nPRECAUTIONS REVIEWED\nREVIEWED\n0\n", storagePath))
 		} else {
-			dialogue(p, fmt.Sprintf("3\n4\n%s\nIMPORT\n4\n1\n4\n2\n0\n", storagePath))
+			dialogue(p, fmt.Sprintf("\n4\n%s\nIMPORT\n\n\n\n\n0\n", storagePath))
 		}
 		role := p.d.Role
 		if role == "upload-station" {

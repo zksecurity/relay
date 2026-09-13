@@ -83,12 +83,7 @@ func (f *roleFlow) firstUnfinishedRequiredTask(stage flowStage, hidden bool) int
 		return -1
 	}
 	for n, task := range stage.Tasks {
-		r := f.readiness(task)
-		if r.Requirement == "Optional" || r.Requirement == "Not applicable" {
-			continue
-		}
-		a := f.last(task)
-		if a == nil || f.checkAttemptEvidence(a) != nil || (a.Status != "succeeded" && !(task.Handoff && a.Status == "reported")) {
+		if !f.requiredTaskComplete(task) {
 			return n
 		}
 	}
@@ -96,6 +91,9 @@ func (f *roleFlow) firstUnfinishedRequiredTask(stage flowStage, hidden bool) int
 }
 
 func (f *roleFlow) requiredTaskComplete(task flowTask) bool {
+	if grantDeliveryTask(task) {
+		return f.grantDeliveryComplete(task)
+	}
 	r := f.readiness(task)
 	if r.Requirement == "Optional" || r.Requirement == "Not applicable" {
 		return true

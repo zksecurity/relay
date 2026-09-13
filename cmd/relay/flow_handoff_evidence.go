@@ -46,11 +46,25 @@ func (f *roleFlow) handoffFields(task flowTask) []flowField {
 			paths = []string{"/work/ceremony/public/" + phase + "/closure/record.json", "/work/ceremony/public/" + phase + "/closure/record.sig"}
 		}
 	}
+	if task.ID == "deliver-decision" || task.ID == "receive-decision" || task.ID == "collect-decision-signatures" {
+		paths = []string{"/work/decision.json"}
+	}
+	if task.ID == "return-decision-signature" {
+		if a := f.last(flowTask{ID: "sign-decision"}); a != nil && a.Status == "succeeded" {
+			paths = []string{commandValue(a.Command, "decision"), commandValue(a.Command, "out")}
+		}
+	}
 	if f.state.Role == "release-signer" && task.ID == "handoff" {
 		paths = []string{"/work/release/manifest.json", "/work/release/manifest.sig"}
 	}
 	if (f.state.Role == "witness" || f.state.Role == "mirror") && task.ID == "reconnect" {
 		paths = []string{"/work/" + f.stages[f.state.Stage].ID + "-receipt/receipt.sig"}
+	}
+	if task.ID == "receive-audit-inputs" || task.ID == "receive-signing-inputs" {
+		paths = []string{"/work/candidate/candidate.json", "/work/candidate/candidate.sig.json"}
+	}
+	if task.ID == "receive-release" {
+		paths = []string{"/work/release/manifest.json", "/work/release/manifest.sig"}
 	}
 	fields := []flowField{}
 	for _, path := range paths {

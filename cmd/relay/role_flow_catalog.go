@@ -189,7 +189,7 @@ func coordinatorFlowStages() []flowStage {
 	return append(stages, decisionFlow("coordinator"), flowStage{ID: "archive", Label: "Archive and retention", Tasks: []flowTask{archive}})
 }
 
-func roleFlowStages(role string) []flowStage {
+func baseRoleFlowStages(role string) []flowStage {
 	if role == "coordinator" {
 		return coordinatorFlowStages()
 	}

@@ -11,8 +11,10 @@ Coordinators: after preparation verifies the definition, choose
 Other roles: follow [onboarding](role-onboarding.md), then choose
 **Open ceremony operations and progress**. Reopen the same installer-created
 `start.sh` to return. Each person uses their own folders and key.
-A participant's saved settings reference the first-phase Docker profile;
-the guide asks for the matching second-phase profile later.
+A participant's launcher settings reference the first-phase Docker profile;
+onboarding also prepares the second-phase profile for later use. Older setups
+missing it should exit operations, reopen `start.sh`, and choose setup **4**,
+then **Phase 2**. Do not change the ceremony's release pin to do this.
 
 Existing one-command actions still open with `ceremony open`. Keep them for
 recovery; choose a fresh alias for shared workflow settings.
@@ -29,6 +31,11 @@ recovery; choose a fresh alias for shared workflow settings.
   signatures or the whole ceremony have been verified. A waiting action can be
   opened to select the correct files; missing inputs still block execution.
 - Separate human handoffs, recorded as **reported**, not verified.
+- Private-grant delivery shows the exact recipient, path and expiry without
+  printing credentials. A newly issued grant needs its own delivery report.
+- Evidence access and download actions are available in later coordinator areas,
+  including audits, evidence assembly and release. Tessera connections supply
+  access automatically; standalone roles need their coordinator's private grant.
 - Coordinator enrollment collection lists the authenticated roster and verifies
   each imported public enrollment, signature and disclosure. Observer minimums
   are shown separately; a higher agreed witness quorum still needs review.

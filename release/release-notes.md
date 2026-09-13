@@ -1,5 +1,15 @@
 ## What changed
 
+- Role setup explicitly guides public identity/enrollment delivery, requests the
+  coordinator's public storage file before profile creation, and prepares both
+  phase profiles. Reports remain distinct from receipt and verification.
+- Coordinator guidance includes private grant delivery, later evidence access
+  and collection, and canonical production-decision/signature exchanges.
+- Audit uploads stage only the exact successful report/signature pair, including
+  custom output paths. Receiving roles get explicit public-package instructions.
+- Added a bounded onboarding model and real-menu regression for missing storage;
+  this is not a claim of whole-CLI formal verification.
+
 - Signing-container output distinguishes the enclosing ceremony role from its
   network-disabled execution environment; authorization and saved profiles are
   unchanged.
@@ -37,6 +47,8 @@
 ## Tessera compatibility
 
 Setup contracts, ceremony data, and Tessera request fields are unchanged.
+The compiled workflow recipe adds handoff tasks while preserving existing task
+IDs and command-field ordering. Existing selected releases stay pinned.
 The additive export menu key does not renumber existing actions. No proof-tool
 or website change is needed for local bug-report export. Existing role folders
 begin recording diagnostics when opened with a compatible updated launcher.
