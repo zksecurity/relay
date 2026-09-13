@@ -525,6 +525,34 @@ func (f *roleFlow) command(task flowTask) ([]string, error) {
 				if field.Kind == "path" {
 					displayed = flowHostPath(f.state.Profile, current)
 				}
+				if field.Flag == "ceremony" && field.Kind == "path" {
+					fmt.Fprintln(f.ui.output, "Ceremony definition file")
+					if displayed != "" {
+						fmt.Fprintln(f.ui.output, "Press Enter to use your saved ceremony file,\nor enter another path:")
+					} else {
+						fmt.Fprintln(f.ui.output, "Enter the path to your ceremony definition file:")
+					}
+					label = "File"
+				}
+				if field.Kind == "path" && (field.Flag == "ceremony-signature" || field.Flag == "coordinator-public-key-file" || field.Flag == "transcript-dir" || field.Flag == "transcript-root") {
+					heading, saved, prompt := "Ceremony signature file", "signature file", "File"
+					switch field.Flag {
+					case "coordinator-public-key-file":
+						heading, saved = "Coordinator public key file", "coordinator public key file"
+					case "transcript-dir", "transcript-root":
+						heading, saved, prompt = "Public ceremony transcript folder", "transcript folder", "Folder"
+					}
+					fmt.Fprintln(f.ui.output, heading)
+					if field.Flag == "coordinator-public-key-file" {
+						fmt.Fprintln(f.ui.output, "Use the coordinator key you have independently authenticated; a saved path alone does not establish trust.")
+					}
+					if displayed != "" {
+						fmt.Fprintf(f.ui.output, "Press Enter to use your saved %s,\nor enter another path:\n", saved)
+					} else {
+						fmt.Fprintf(f.ui.output, "Enter the path to your %s:\n", saved)
+					}
+					label = prompt
+				}
 				value, err = f.ui.ask(label, displayed)
 			}
 			if err != nil {
@@ -643,6 +671,7 @@ func (f *roleFlow) execute(task flowTask) (result error) {
 		}
 	}
 	fmt.Fprintln(f.ui.output, "\n"+task.Label+"\n"+task.Help)
+	f.showAssignmentFiles(task)
 	previous := f.last(task)
 	if previous != nil && previous.Status == "prepared" {
 		// The only transition out of prepared is a separately synced running
@@ -1345,7 +1374,7 @@ func runRoleFlow(args []string) (result error) {
 				}
 				command = append(append([]string(nil), command...), "--reviewed-sha256", digest)
 			}
-			open = []string{"ceremony", "open", alias, "--role", "decision-signer", "--settings-root", root}
+			open = []string{"ceremony", "open", alias, "--role", "decision-signer", "--settings-root", root, "--display-role", f.state.Role}
 		}
 		if p.Role == "participant" && !task.Offline {
 			configPath := ""

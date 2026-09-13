@@ -24,6 +24,7 @@ func promptProtectedSecret(out io.Writer, label string) (string, error) {
 		return "", errors.New("hidden entry needs a controlling terminal; use an existing protected credential file instead")
 	}
 	defer tty.Close()
+	disableTerminalFocusReporting(tty)
 	settings := exec.Command("/bin/stty", "-g")
 	settings.Stdin = tty
 	state, err := settings.Output()
@@ -66,8 +67,8 @@ func promptProtectedSecret(out io.Writer, label string) (string, error) {
 		if r.err != nil || len(r.text) > 16384 {
 			return "", errors.New("credential entry incomplete or too long")
 		}
-		value := strings.TrimSpace(r.text)
-		if value == "" || strings.ContainsAny(value, " \t\r\n\x00") {
+		value := strings.TrimSpace(withoutTerminalFocusEvents(r.text))
+		if value == "" || strings.ContainsAny(value, " \t\r\n\x00\x1b") {
 			return "", errors.New("enter a nonempty single-line credential without whitespace")
 		}
 		return value, nil

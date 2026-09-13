@@ -294,6 +294,7 @@ type coordinatorWizard struct {
 }
 
 func (w *coordinatorWizard) ask(label, current string) (string, error) {
+	disableTerminalFocusReporting(w.output)
 	if w.interrupted != nil {
 		select {
 		case <-w.interrupted:
@@ -327,7 +328,7 @@ func (w *coordinatorWizard) ask(label, current string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	value = strings.TrimSpace(value)
+	value = strings.TrimSpace(withoutTerminalFocusEvents(value))
 	if value == "" {
 		return current, nil
 	}
@@ -533,7 +534,13 @@ func (w *coordinatorWizard) identity() error {
 	return w.save()
 }
 func (w *coordinatorWizard) policy() error {
-	choices := []setupChoice{{"standard", "Use the standard beacon settings included with this Relay release"}, {"custom", "Advanced: load a custom policy file"}}
+	var standard setupPolicy
+	if err := json.Unmarshal(releaseassets.CeremonyPolicy(), &standard); err != nil {
+		return fmt.Errorf("invalid built-in policy: %w", err)
+	}
+	b := standard.Beacon
+	standardLabel := fmt.Sprintf("Use the standard beacon settings included with this Relay release\n   Source: %s / %s; a round every %d seconds\n   Future round required: %t; minimum challenge: %d bytes\n   Template witness lead time: %d seconds\n   Production requires at least 24 hours; this template alone is not sufficient.\n   Network identity and verification key are pinned in this release.", b.Provider, b.Network, b.Period, b.Future, b.Challenge, b.Lead)
+	choices := []setupChoice{{"standard", standardLabel}, {"custom", "Advanced: load a custom policy file"}}
 	defaultChoice := "standard"
 	if w.d.Policy.Beacon.Provider != "" {
 		choices = append([]setupChoice{{"current", "Keep the saved beacon settings"}}, choices...)
@@ -549,9 +556,7 @@ func (w *coordinatorWizard) policy() error {
 	case "current":
 		policy, path = w.d.Policy, w.d.PolicyTemplate
 	case "standard":
-		if err := json.Unmarshal(releaseassets.CeremonyPolicy(), &policy); err != nil {
-			return fmt.Errorf("invalid built-in policy: %w", err)
-		}
+		policy = standard
 	case "custom":
 		path, err = w.required("Path to your reviewed custom policy JSON", w.d.PolicyTemplate)
 		if err != nil {
@@ -595,7 +600,7 @@ func (w *coordinatorWizard) policy() error {
 			fmt.Fprintf(w.output, "Enter a number from 1 to %d.\n", len(order))
 		}
 	}
-	b := policy.Beacon
+	b = policy.Beacon
 	fmt.Fprintf(w.output, "Beacon: %s / %s. Witnesses must observe at least %d seconds before the beacon round. Future round required: %t.\nThe beacon provides public randomness after contributions close; Relay does not substitute another round.\nChain hash: %s\nPublic key: %s\n", b.Provider, b.Network, b.Lead, b.Future, b.ChainHash, b.PublicKey)
 	if err := w.confirm("Review these beacon settings and the participant orders/minimums you selected; proof-tool still validates the complete policy before signing", "REVIEWED"); err != nil {
 		return err
@@ -989,14 +994,14 @@ func (w *coordinatorWizard) storage() error {
 	if choice == "r2" {
 		return w.setupR2()
 	}
+	if choice == "aws" {
+		return w.setupAWS()
+	}
 	provider, err := w.choose("Storage provider", w.d.Storage["provider"], []setupChoice{{"aws", "Amazon S3 (AWS)"}, {"r2", "Cloudflare R2"}})
 	if err != nil {
 		return err
 	}
 	if provider != "aws" && provider != "r2" {
-	if choice == "aws" {
-		return w.setupAWS()
-	}
 		return errors.New("choose aws or r2")
 	}
 	fields := storageSettingFields(provider)

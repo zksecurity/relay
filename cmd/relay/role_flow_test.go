@@ -67,6 +67,51 @@ func flowFixture(t *testing.T) *roleFlow {
 	return &roleFlow{state: roleFlowState{Schema: roleFlowSchema, Name: "test", Role: "coordinator", Values: map[string]string{}}, stages: []flowStage{{ID: "test", Label: "Test", Tasks: []flowTask{task}}}, path: filepath.Join(root, "state.json"), ui: coordinatorWizard{input: bufio.NewReader(strings.NewReader("")), output: new(bytes.Buffer)}, run: func(flowTask, []string, string, bool) error { return nil }}
 }
 
+func TestCeremonyFilePromptExplainsEnterDefault(t *testing.T) {
+	f := flowFixture(t)
+	f.ui.input = bufio.NewReader(strings.NewReader("\n"))
+	task := flowTask{ID: "inspect", Command: []string{"mpc-ceremony", "inspect"}, Fields: []flowField{ff("ceremony", "Signed ceremony definition", "/work/ceremony/public/ceremony.json")}}
+	command, err := f.command(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commandValue(command, "ceremony") != "/work/ceremony/public/ceremony.json" {
+		t.Fatal("Enter did not preserve the default file")
+	}
+	out := f.ui.output.(*bytes.Buffer).String()
+	for _, want := range []string{"Ceremony definition file", "Press Enter to use your saved ceremony file,\nor enter another path:", "File [/work/ceremony/public/ceremony.json]:"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing guidance %q: %s", want, out)
+		}
+	}
+}
+
+func TestInspectionPathPromptsExplainSavedDefaults(t *testing.T) {
+	for _, tc := range []struct{ flag, path, noun, prompt string }{
+		{"ceremony-signature", "/work/ceremony/public/ceremony.sig", "signature file", "File"},
+		{"coordinator-public-key-file", "/trust/setup-coordinator.hex", "coordinator public key file", "File"},
+		{"transcript-dir", "/work/ceremony/public", "transcript folder", "Folder"},
+		{"transcript-root", "/work/ceremony/public", "transcript folder", "Folder"},
+	} {
+		t.Run(tc.flag, func(t *testing.T) {
+			f := flowFixture(t)
+			f.ui.input = bufio.NewReader(strings.NewReader("\n"))
+			task := flowTask{ID: "inspect", Command: []string{"mpc-ceremony", "inspect"}, Fields: []flowField{ff(tc.flag, "Original label", tc.path)}}
+			command, err := f.command(task)
+			if err != nil || commandValue(command, tc.flag) != tc.path {
+				t.Fatalf("default path changed: %v %v", command, err)
+			}
+			out := f.ui.output.(*bytes.Buffer).String()
+			if !strings.Contains(out, "Press Enter to use your saved "+tc.noun) || !strings.Contains(out, tc.prompt+" ["+tc.path+"]:") {
+				t.Fatalf("missing path guidance: %s", out)
+			}
+			if tc.flag == "coordinator-public-key-file" && !strings.Contains(out, "a saved path alone does not establish trust") {
+				t.Fatal("lost trust warning")
+			}
+		})
+	}
+}
+
 func TestFlowWorkspaceInitializationAndLossDetection(t *testing.T) {
 	root := t.TempDir()
 	work := filepath.Join(root, "work")

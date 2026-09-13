@@ -251,6 +251,15 @@ func TestCoordinatorPolicyBuiltInNeedsNoFile(t *testing.T) {
 		t.Fatal("wrong built-in policy")
 	}
 	output := w.output.(*bytes.Buffer).String()
+	menuEnd := strings.Index(output, "Choose a number")
+	if menuEnd < 0 {
+		t.Fatal("missing beacon choice prompt")
+	}
+	for _, want := range []string{"Source: drand / quicknet-mainnet; a round every 3 seconds", "Future round required: true; minimum challenge: 32 bytes", "Template witness lead time: 180 seconds", "Production requires at least 24 hours", "Network identity and verification key are pinned"} {
+		if !strings.Contains(output[:menuEnd], want) {
+			t.Fatalf("beacon menu missing %q before selection", want)
+		}
+	}
 	if strings.Contains(output, "Path to your reviewed") || !strings.Contains(output, "Enter a number from 1") {
 		t.Fatal("unexpected path prompt or missing minimum validation")
 	}

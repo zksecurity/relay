@@ -367,12 +367,13 @@ func tesseraDisplayAndConfirmIO(input io.Reader, output io.Writer, values []stri
 	if values[13] != "" {
 		fmt.Fprintf(output, "Previous account binding: %s\n", values[13])
 	}
+	disableTerminalFocusReporting(output)
 	fmt.Fprintf(output, "Type %s to sign: ", phrase)
 	typed, err := bufio.NewReader(input).ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}
-	if strings.TrimSuffix(typed, "\n") != phrase {
+	if strings.TrimSuffix(withoutTerminalFocusEvents(typed), "\n") != phrase {
 		return errors.New("confirmation declined")
 	}
 	return nil

@@ -172,6 +172,9 @@ func (p *rolePreparer) open(role, action string, command []string) error {
 	}
 	dir, _ := guidedDirectory(p.settingsRoot, p.alias(role), role)
 	args := []string{"ceremony", "open", p.alias(role), "--settings-root", p.settingsRoot, "--role", role, "--action", action}
+	if role == "decision-signer" {
+		args = append(args, "--display-role", p.d.Role)
+	}
 	if err := checkGuidedAttempts(filepath.Join(dir, "actions", action, "activity")); err != nil && !errors.Is(err, os.ErrNotExist) {
 		if err := p.ui.confirm("Review the interrupted action, retained outputs and container state; do not overwrite or replace signed files", "REVIEWED RETRY"); err != nil {
 			return err

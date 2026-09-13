@@ -114,8 +114,19 @@ func (w *coordinatorWizard) prepareStorageBeforeInitialization() error {
 	if w.localAction != nil {
 		return nil
 	}
-	fmt.Fprintln(w.output, "Storage checks before initialization are Relay's operating procedure, not a cryptographic requirement. Offline preparation is allowed, but does not make the ceremony ready for grants or publication.")
-	choice, err := w.choose("Prepare storage before signing the definition", "", []setupChoice{{"check", "Check configured storage, then review initialization"}, {"setup", "Set up storage first"}, {"offline", "Prepare offline without storage"}, {"cancel", "Return to preparation"}})
+	recommended := "setup"
+	checkLabel := "Check configured storage, then review initialization"
+	setupLabel := "Set up storage first [Recommended]"
+	if w.storageReadyForCheck() {
+		recommended = "check"
+		checkLabel += " [Recommended]"
+		setupLabel = "Change storage settings"
+		fmt.Fprintln(w.output, "NEXT STEP: Check storage. Your settings and protected credential files are present; cloud access has not been checked by this menu.\nChoose 1 or press Enter. Relay will ask permission before writing and removing test objects, then show initialization for review.")
+	} else {
+		fmt.Fprintln(w.output, "NEXT STEP: Set up storage. Some settings or protected credential files are missing or invalid.\nChoose 2 or press Enter to complete setup first.")
+	}
+	fmt.Fprintln(w.output, "Offline preparation is only for deliberately postponing storage. It does not enable grants or publication. Storage checks are Relay's operating procedure, not a cryptographic requirement.")
+	choice, err := w.choose("Prepare storage before signing the definition", recommended, []setupChoice{{"check", checkLabel}, {"setup", setupLabel}, {"offline", "Prepare offline without storage"}, {"cancel", "Return to preparation"}})
 	if err != nil {
 		return err
 	}
@@ -140,4 +151,23 @@ func (w *coordinatorWizard) prepareStorageBeforeInitialization() error {
 	default:
 		return errors.New("initialization not requested")
 	}
+}
+
+// Local prerequisites only: never probe the cloud or claim access is verified
+// merely to choose a menu default.
+func (w *coordinatorWizard) storageReadyForCheck() bool {
+	s := coordinatorStorageSettings{"relay-coordinator-storage-settings-v1", w.d.Storage}
+	if _, err := s.infrastructure(); err != nil {
+		return false
+	}
+	paths := []string{w.d.Credentials}
+	if w.d.Storage["provider"] == "r2" {
+		paths = append(paths, w.d.R2Parent, w.d.R2Control)
+	}
+	for _, path := range paths {
+		if path == "" || validateRoleMount(path, true) != nil {
+			return false
+		}
+	}
+	return true
 }

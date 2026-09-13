@@ -14,8 +14,11 @@ your authenticated source checkout and select your settings file.
 2. Have the storage administrator provision storage, then enter the settings
    in the helper and require its checks to pass before initialization. Deliberate
    offline preparation does not authorize publication or grant issuance.
-3. Initialize and verify the signed definition, then share it and your public
-   `identity.json` through your agreed coordination channel.
+3. Initialize and inspect the signed definition. Before collecting enrollments,
+   share the definition, its signature and the coordinator public key through
+   your agreed coordination channel. The sharing step lists the exact file paths.
+   Recipients must independently authenticate the key. Never share private keys
+   or credentials.
 4. Collect their reviewed, signed enrollments. Relay checks required keys differ;
    it cannot tell whether they belong to independent people or organizations.
 5. Choose **Open ceremony operations and progress** after initialization.
