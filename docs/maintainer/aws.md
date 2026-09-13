@@ -1,5 +1,39 @@
 # AWS storage setup
 
+## From the guided coordinator menu
+
+Choose **Set up storage and protected credentials → Set up Amazon S3 and
+credentials**. Use an existing AWS CLI v2 login; provisioning also requires
+local Bash and `jq`. No source checkout is required: the launcher includes the
+reviewed setup helper.
+
+1. Select your AWS profile and confirm the displayed account and identity.
+   Root credentials are rejected. Use a dedicated ceremony account/login.
+2. Choose **Use existing ceremony resources** to enter bucket names, public
+   HTTPS address and grant-role ARN without changing infrastructure. Or choose
+   **Create or repair dedicated ceremony resources** to review the exact resource
+   names, charges and policy changes before typing `CREATE RESOURCES`.
+3. Approve saving the settings and a protected snapshot of that login's current
+   credentials. Secret contents are never displayed. The snapshot has the same
+   permissions as the selected login; this does not create a restricted identity.
+4. Follow **Check storage** before initialization. Provisioning alone does not
+   prove access, public delivery, or inbox privacy. These checks ask before writing
+   and removing temporary probe objects.
+
+Temporary credentials do not renew automatically in this standalone flow.
+The helper shows their expiry and rejects snapshots with under 15 minutes left.
+Refresh your AWS login and repeat setup using **existing resources** when needed.
+Old credential files are left untouched. Tessera-managed renewal is a separate
+menu option. See AWS's [credential export documentation](https://docs.aws.amazon.com/cli/latest/reference/configure/export-credentials.html).
+
+Creation can incur charges and reapplies policies on matching named resources;
+never select a prefix used for unrelated infrastructure. Interrupted provisioning
+retains its non-secret setup files and may leave cloud resources. There is no
+automatic retry, rollback or resource deletion. Review the retained plan before
+approving another attempt.
+
+## Administrator/scripted setup
+
 This guide creates the AWS resources required by Relay and prints the exact
 non-secret values for the coordinator's `.env`. The default setup uses one AWS
 CLI profile for provisioning, coordinator storage access, and temporary grant

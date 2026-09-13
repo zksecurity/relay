@@ -290,6 +290,7 @@ type coordinatorWizard struct {
 	credentialRoot        string
 	sessionCredentialDirs []string
 	interrupted           <-chan struct{}
+	awsSetupRun           awsSetupRunner
 }
 
 func (w *coordinatorWizard) ask(label, current string) (string, error) {
@@ -975,7 +976,7 @@ func (w *coordinatorWizard) storage() error {
 	if err := w.requirePreviousSessionClosed(); err != nil {
 		return err
 	}
-	choice, err := w.choose("Storage settings", "", []setupChoice{{"tessera", "Connect to Tessera (automatic AWS renewal)"}, {"r2", "Set up Cloudflare R2 and credentials"}, {"import", "Import the administrator's settings file"}, {"advanced", "Advanced settings: enter infrastructure fields individually"}})
+	choice, err := w.choose("Storage settings", "", []setupChoice{{"tessera", "Connect to Tessera (automatic AWS renewal)"}, {"aws", "Set up Amazon S3 and credentials"}, {"r2", "Set up Cloudflare R2 and credentials"}, {"import", "Import existing storage settings"}, {"advanced", "Advanced: enter settings manually"}})
 	if err != nil {
 		return err
 	}
@@ -993,6 +994,9 @@ func (w *coordinatorWizard) storage() error {
 		return err
 	}
 	if provider != "aws" && provider != "r2" {
+	if choice == "aws" {
+		return w.setupAWS()
+	}
 		return errors.New("choose aws or r2")
 	}
 	fields := storageSettingFields(provider)
