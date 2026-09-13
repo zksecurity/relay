@@ -1,5 +1,7 @@
 ## What changed
 
+- The Bash launcher installer now disables terminal focus reporting and filters
+  queued focus events at every prompt, matching the CLI's input handling.
 - Role setup explicitly guides public identity/enrollment delivery, requests the
   coordinator's public storage file before profile creation, and prepares both
   phase profiles. Participant Phase 2 preparation is recommended only when the
