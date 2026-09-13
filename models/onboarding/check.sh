@@ -41,4 +41,4 @@ for config in current proposed reach-success reach-send-only; do
     echo "PASS: $config produced the expected $invariant counterexample"
   fi
 done
-echo 'Model checks only. The real CLI contract is a separate, currently failing test.'
+echo 'Model checks only. Run TestOnboardingModelContract separately to check the real CLI recommendation.'
