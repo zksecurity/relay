@@ -74,6 +74,27 @@ independence, signatures or approval.
 
 ## Recovery
 
+If a step fails, choose **E — Export bug report** from the menu. This also works
+during onboarding. Choose a fresh ZIP filename, unzip it, and review `README.txt`
+and `report.json` before sharing. Nothing uploads automatically.
+
+The ZIP contains the last 100 structured events, error categories, runtime
+versions and public-file presence. It excludes raw terminal output, commands,
+personal paths, keys, credentials, profiles and ceremony artifacts. Unknown error
+details are omitted; file presence does not mean signature verification passed.
+Each role work folder keeps its own private `.relay-diagnostics` log. Logging
+starts with this feature; failures before Relay knows the work folder and direct
+low-level commands are not captured. Export does not retry or complete any work.
+
+Without a working menu:
+
+```sh
+relay diagnostics export --work /absolute/role/work --out /absolute/bug-report.zip
+```
+
+Use the role's own work folder. If no events were recorded yet, the report still
+includes runtime versions and public-file presence.
+
 Public output files and evidence folders are tracked too. Changes, deletions,
 or extra files in an immutable bundle require review. Transcripts may grow with
 new signed heads, but previously retained files must not change or disappear.

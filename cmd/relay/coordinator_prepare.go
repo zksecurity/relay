@@ -1125,7 +1125,7 @@ func (w *coordinatorWizard) menu() (result error) {
 		if showOther || next.choice != "0" {
 			fmt.Fprintln(w.output, "0) Save and exit")
 		}
-		fmt.Fprintln(w.output, "------------------------------------------------------------")
+		fmt.Fprintln(w.output, "[E] Export bug report\n------------------------------------------------------------")
 		choice, err := w.ask("Choose", next.choice)
 		if err == io.EOF {
 			return nil
@@ -1135,6 +1135,10 @@ func (w *coordinatorWizard) menu() (result error) {
 		}
 		if choice == "0" {
 			return w.save()
+		}
+		if strings.EqualFold(choice, "e") {
+			w.exportDiagnosticReport(w.d.Work)
+			continue
 		}
 		if choice == "17" {
 			showOther = true
@@ -1153,6 +1157,8 @@ func (w *coordinatorWizard) menu() (result error) {
 			fmt.Fprintln(w.output, "Ceremony draft frozen after initialization attempt. Do not edit signed settings or delete output to force a retry.")
 			continue
 		}
+		c := diagnosticContext{Work: w.d.Work, Role: "coordinator", Release: w.d.Release, Stage: "setup", Action: choice}
+		recordDiagnostic(c, "started", nil, w.output)
 		switch choice {
 		case "15":
 			err = w.importTesseraRoster()
@@ -1203,6 +1209,11 @@ func (w *coordinatorWizard) menu() (result error) {
 		default:
 			err = errors.New("unknown option")
 		}
+		outcome := "succeeded"
+		if err != nil {
+			outcome = "failed"
+		}
+		recordDiagnostic(c, outcome, err, w.output)
 		if err != nil {
 			if errors.Is(err, errSecretPromptInterrupted) {
 				return err

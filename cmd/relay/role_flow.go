@@ -612,7 +612,16 @@ func (f *roleFlow) last(task flowTask) *flowAttempt {
 	return nil
 }
 
-func (f *roleFlow) execute(task flowTask) error {
+func (f *roleFlow) execute(task flowTask) (result error) {
+	c := diagnosticContext{Work: f.state.Profile.Work, Role: f.state.Role, Release: f.state.Profile.ReleaseCommit, Stage: f.stages[f.state.Stage].ID, Action: task.ID}
+	recordDiagnostic(c, "started", nil, f.ui.output)
+	defer func() {
+		outcome := "succeeded"
+		if result != nil {
+			outcome = "failed"
+		}
+		recordDiagnostic(c, outcome, result, f.ui.output)
+	}()
 	if err := f.requireTaskPredecessors(task); err != nil {
 		return err
 	}
@@ -1159,7 +1168,7 @@ func (f *roleFlow) stageMenu() error {
 		f.ui.message(toneSuccess, "\nWORKFLOW ACTION\n")
 		fmt.Fprintf(f.ui.output, "  %d) %s\n", len(stage.Tasks)+1, nextLabel)
 		f.ui.message(toneMuted, "\nNAVIGATION\n")
-		fmt.Fprintln(f.ui.output, "  [B] Back to overview\n  [M] Ceremony map\n  [Q] Save and exit")
+		fmt.Fprintln(f.ui.output, "  [E] Export bug report\n  [B] Back to overview\n  [M] Ceremony map\n  [Q] Save and exit")
 		choice, err := f.ui.ask("Choose", "0")
 		if err == io.EOF || strings.EqualFold(choice, "q") || choice == "0" {
 			return f.save()
@@ -1169,6 +1178,10 @@ func (f *roleFlow) stageMenu() error {
 		}
 		if strings.EqualFold(choice, "b") {
 			return nil
+		}
+		if strings.EqualFold(choice, "e") {
+			f.ui.exportDiagnosticReport(f.state.Profile.Work)
+			continue
 		}
 		if strings.EqualFold(choice, "m") {
 			if _, err := f.ceremonyMap(); err != nil {
@@ -1194,7 +1207,7 @@ func (f *roleFlow) stageMenu() error {
 	}
 }
 
-func runRoleFlow(args []string) error {
+func runRoleFlow(args []string) (result error) {
 	if len(args) == 0 {
 		return errors.New("usage: relay ceremony guide NAME --role ROLE [--settings-root DIR]")
 	}
@@ -1219,6 +1232,12 @@ func runRoleFlow(args []string) error {
 	if err != nil {
 		return fmt.Errorf("save your role settings with ceremony setup first: %w", err)
 	}
+	defer func() {
+		if result != nil {
+			recordDiagnostic(diagnosticContext{Work: p.Work, Role: p.Role, Release: p.ReleaseCommit, Stage: "launcher", Action: "open-guide"}, "failed", result, os.Stdout)
+			fmt.Fprintln(os.Stdout, "To export a bug report, use relay diagnostics export --work ROLE_WORK --out FRESH_ZIP with this role's work folder.")
+		}
+	}()
 	if len(p.Command) != 0 {
 		return errors.New("guide requires shared settings saved without a command; keep existing named actions for recovery")
 	}

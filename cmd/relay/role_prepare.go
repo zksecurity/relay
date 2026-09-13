@@ -512,7 +512,7 @@ func (p *rolePreparer) menu() error {
 		if p.d.Role != "upload-station" {
 			fmt.Fprintln(p.ui.output, "7) Prepare, review and sign MY enrollment (after receiving the signed definition)")
 		}
-		fmt.Fprintln(p.ui.output, "8) Show all setup steps (including those that do not apply)\n0) Save and exit")
+		fmt.Fprintln(p.ui.output, "8) Show all setup steps (including those that do not apply)\n[E] Export bug report\n0) Save and exit")
 		choice, err := p.ui.ask("Choose", next.choice)
 		if err != nil {
 			return err
@@ -520,6 +520,14 @@ func (p *rolePreparer) menu() error {
 		if reason := onboardingNotApplicable(p.d.Role, choice); reason != "" {
 			fmt.Fprintf(p.ui.output, "Not applicable: %s\n", reason)
 			continue
+		}
+		if strings.EqualFold(choice, "e") {
+			p.ui.exportDiagnosticReport(p.d.Work)
+			continue
+		}
+		c := diagnosticContext{Work: p.d.Work, Role: p.d.Role, Release: p.d.Release, Stage: "setup", Action: choice}
+		if choice != "0" {
+			recordDiagnostic(c, "started", nil, p.ui.output)
 		}
 		switch choice {
 		case "0":
@@ -549,8 +557,13 @@ func (p *rolePreparer) menu() error {
 		default:
 			err = errors.New("choose a listed number")
 		}
+		outcome := "succeeded"
 		if err != nil {
-			p.ui.message(toneError, "Stopped: %v\nSaved state and outputs retained. Resolve the cause; do not bypass verification.\n", err)
+			outcome = "failed"
+		}
+		recordDiagnostic(c, outcome, err, p.ui.output)
+		if err != nil {
+			p.ui.message(toneError, "Stopped: %v\nSaved state and outputs retained. Resolve the cause; do not bypass verification.\n[E] Export bug report from the menu.\n", err)
 		}
 	}
 }
