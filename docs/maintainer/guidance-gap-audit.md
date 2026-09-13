@@ -40,12 +40,12 @@ different facts. Fixing navigation must not collapse those distinctions.
 - Tessera setup export explicitly asks the coordinator to return to Tessera;
   it does not claim website acceptance.
 
-## Validation and limits
+## Historical validation before the guidance fixes
 
 - `go test ./cmd/relay -count=1`: passed on 2026-09-13.
 - Targeted authored setup-order, legacy participant-profile migration, and
   handoff-waiting tests passed. The setup-order test explicitly expects
-  enrollment -> profile without providing storage: it currently codifies part
+  enrollment -> profile without providing storage: it then codified part
   of the problematic guidance, rather than protecting against it.
 - Full Docker ceremony integration: passed in 95.01 seconds on 2026-09-13.
   Exercised three contributions per phase, container removal and signed cleanup,
@@ -58,8 +58,8 @@ different facts. Fixing navigation must not collapse those distinctions.
   user following only recommended menu actions can finish.
 - Interactive onboarding also explicitly supplies storage and creates both
   phase profiles in its scripted answers. That can conceal gaps 3 and 9.
-- A no-assistance, all-role recommended-path journey remains unverified;
-  known onboarding gaps already prevent calling that journey complete.
+- A no-assistance, all-role recommended-path journey was not verified by these
+  tests; the known onboarding gaps prevented calling that journey complete.
 - No live cloud authorization, independent operators, physical erasure or
   production decision is established by local tiny-ceremony tests.
 
@@ -89,7 +89,22 @@ integration, not evidence that the new guidance was tested.
   grant expiry/reissue and credential non-disclosure, and exact audit-pair staging.
 - Updated real-Docker onboarding dialogues to follow defaults for identity and
   enrollment delivery, storage import and both phase profiles.
-- Fresh-image onboarding and full rehearsal results: pending execution.
+- Fresh-image onboarding passed in 27.13 seconds, including default identity/
+  enrollment handoffs, storage import, both phase profiles, real signing and
+  witness/mirror PTY-to-Docker signing prompts. Observation fixtures copy and
+  authenticate public files locally; they do not test cloud synchronization.
+- Full tiny Docker rehearsal passed in 80.93 seconds: 3+3 contributions,
+  removal and signed cleanup, two real future beacons, replay/public proof,
+  one signed audit, operational evidence and final release signing/verification.
+  Wrong signer ID was rejected. Intervening public exchanges use local fixtures;
+  this remains distinct from a no-assistance, all-role complete journey.
+- The tested runtime was built from clean Relay `c2b02bc`; subsequent changes
+  corrected test fixtures and documentation, not executable code. Online image:
+  `sha256:073b9bd1e5485c1efd7e0f92308c28e7628f4515cb9e9f43002979a9e23f01af`.
+  Offline image:
+  `sha256:d69ef649bd246cbbfa4cc8bd5934f0f847b854e5b710abf5331609dbaf73d333`.
+  Both use the pinned proof-tool release identified above. Its checksum and
+  protected-main attestation were verified; the real binary-pairing test passed.
 - Production decision exchanges have catalog/order coverage; a tiny rehearsal
   does not exercise a production GO decision. Live cloud permissions are not
   changed or retested by these local-only guidance changes.

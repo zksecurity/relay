@@ -464,6 +464,6 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(p.d.Work, "phase1-receipt/receipt.sig")); err != nil {
 			t.Fatal(err)
 		}
-		testOfflineReceiptTerminal(t, p, online, offline, platform)
+		testOfflineReceiptTerminal(t, p, online, offline, platform, f.state.Attempts)
 	}
 }
