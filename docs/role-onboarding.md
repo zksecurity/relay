@@ -59,8 +59,10 @@ three-file import verifies the definition, not enrollment or storage readiness.
 Non-participant transport profiles also require your reviewed, signed enrollment.
 Its signature must come from the enrolled owner—not a coordinator claiming consent.
 Use option 7 before creating a non-participant transport profile. Witnesses and
-mirrors obtain their enrollment number from the coordinator; other role positions
-come from the signed definition. Distinct keys do not prove independent people.
+mirrors request their observer setup JSON from the coordinator, then import it
+with action 3, option 9. Relay reads the number automatically. This unsigned
+instruction is not an enrollment; you still review and sign your own record.
+Other role positions come from the signed definition. Distinct keys do not prove independent people.
 
 Participants follow the environment prompts rather than writing JSON. Relay
 checks Docker and the applicable swap requirements, explains the container

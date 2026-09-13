@@ -3,8 +3,44 @@ package transcript
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 )
+
+func TestDefinitionJourneyUsesAuthenticatedMinimums(t *testing.T) {
+	valid := func(minimum int) Definition {
+		j := &DefinitionJourney{Schema: "proof-tool-mpc-definition-journey-v1", MinimumPublicWitnesses: minimum, MinimumMirrorsPerAcceptedHead: minimum, ObserverRequirementSource: "verified operational requirements"}
+		for _, role := range []string{"coordinator", "release-signer", "auditor", "participant"} {
+			j.RequiredEnrollments = append(j.RequiredEnrollments, ExpectedEnrollment{Role: role, RoleIndex: 1, Identity: PublicIdentity{ID: role, KeyID: role, PublicKeyFingerprint: role}})
+		}
+		return Definition{Journey: j}
+	}
+	for _, minimum := range []int{1, 2, 3} {
+		d := valid(minimum)
+		j, err := d.RequireJourney()
+		if err != nil || j.MinimumPublicWitnesses != minimum || j.MinimumMirrorsPerAcceptedHead != minimum {
+			t.Fatal(minimum, j, err)
+		}
+	}
+	for name, mutate := range map[string]func(*Definition){
+		"zero witnesses":   func(d *Definition) { d.Journey.MinimumPublicWitnesses = 0 },
+		"negative mirrors": func(d *Definition) { d.Journey.MinimumMirrorsPerAcceptedHead = -1 },
+		"missing source":   func(d *Definition) { d.Journey.ObserverRequirementSource = "" },
+		"no auditor": func(d *Definition) {
+			d.Journey.RequiredEnrollments = append(d.Journey.RequiredEnrollments[:2], d.Journey.RequiredEnrollments[3:]...)
+		},
+		"duplicate": func(d *Definition) { d.Journey.RequiredEnrollments[3].Identity.ID = "auditor" },
+		"bad index": func(d *Definition) { d.Journey.RequiredEnrollments[2].RoleIndex = 2 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := valid(1)
+			mutate(&d)
+			if _, err := d.RequireJourney(); err == nil {
+				t.Fatal(fmt.Sprint("accepted ", name))
+			}
+		})
+	}
+}
 
 func TestJourneyRejectsIncompleteOrInconsistentMetadata(t *testing.T) {
 	valid := func() Journey {

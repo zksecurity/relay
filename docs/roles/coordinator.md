@@ -19,7 +19,10 @@ your authenticated source checkout and select your settings file.
    your agreed coordination channel. The sharing step lists the exact file paths.
    Recipients must independently authenticate the key. Never share private keys
    or credentials.
-4. Collect their reviewed, signed enrollments. Relay checks required keys differ;
+4. For each witness/mirror, obtain their public identity, then choose **Prepare
+   a witness/mirror setup file** in Enrollment collection. Send the displayed
+   file only to that observer; retain the reservation even if unused.
+   Collect their reviewed, signed enrollments. Relay checks required keys differ;
    it cannot tell whether they belong to independent people or organizations.
 5. Choose **Open ceremony operations and progress** after initialization.
    Reopening preparation does not initialize the ceremony again.

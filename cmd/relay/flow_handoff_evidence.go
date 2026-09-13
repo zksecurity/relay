@@ -90,6 +90,7 @@ func (f *roleFlow) showAssignmentFiles(task flowTask) {
 	}
 	fmt.Fprintln(f.ui.output, "Share these individual public files, not your entire role folder. Report sharing only after you have sent them; collect and verify the returned enrollments next.")
 	fmt.Fprintln(f.ui.output, "Send the three files together, named ceremony.json, ceremony.sig and coordinator-public-key.hex. Recipients can import them from one folder using setup action 3, then the recommended three-file import. Confirm your public-key fingerprint with them through the independent coordination channel.")
+	fmt.Fprintln(f.ui.output, "For witnesses and mirrors, also collect their public identity.json and prepare their numbered setup file using option 4 in Enrollment collection, before asking them to sign enrollment.")
 }
 
 func (f *roleFlow) handoffBindings(task flowTask) (map[string]string, error) {
