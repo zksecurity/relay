@@ -74,6 +74,9 @@ func (f *roleFlow) readiness(task flowTask) flowReadiness {
 			return r
 		case "succeeded":
 			r.Status = "Command completed; scoped verification only"
+			if f.state.Role == "coordinator" && f.stages[f.state.Stage].ID == "enrollments" && task.ID == "enrollment" {
+				r.Status = "Last collection check succeeded; revalidation required before advancing"
+			}
 			return r
 		case "reported":
 			if task.Handoff {

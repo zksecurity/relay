@@ -618,6 +618,18 @@ func flowHostPath(p guidedProfile, value string) string {
 }
 
 func (f *roleFlow) last(task flowTask) *flowAttempt {
+	// Enrollment collection checks describe the whole collection at a point in
+	// time. A newer check supersedes an older incomplete observation; it is not
+	// a retry of an uncertain state-changing operation.
+	if f.state.Role == "coordinator" && f.stages[f.state.Stage].ID == "enrollments" && task.ID == "enrollment" {
+		for n := len(f.state.Attempts) - 1; n >= 0; n-- {
+			a := &f.state.Attempts[n]
+			if a.Task == task.ID && a.Stage == "enrollments" {
+				return a
+			}
+		}
+		return nil
+	}
 	// An unresolved older turn must not disappear merely because local head
 	// discovery moved the menu to a newer scope.
 	seenOperations := map[string]bool{}
@@ -718,9 +730,18 @@ func (f *roleFlow) execute(task flowTask) (result error) {
 	} else {
 		var err error
 		if task.Handoff {
-			bindings, err := f.handoffBindings(task)
-			if err != nil {
-				return err
+			expectedBindings := map[string]string{}
+			fields, detailErr := f.showHandoffInstructions(task, expectedBindings)
+			args := []string{}
+			for _, field := range fields {
+				args = append(args, "--record", field.Default)
+			}
+			bindings, bindingErr := f.captureEvidence(flowTask{Fields: fields}, args)
+			if custodyDeliveryTask(task.ID) && detailErr == nil && bindingErr == nil && !reflect.DeepEqual(bindings, expectedBindings) {
+				bindingErr = errors.New("handoff files changed after preparing delivery instructions; inspect the exact signed packet")
+			}
+			if bindingErr != nil {
+				fmt.Fprintf(f.ui.output, "Files not ready: %v\nObtain or prepare the listed files before reporting completion.\n", bindingErr)
 			}
 			choice, err := f.ui.choose("Report this specific step: "+task.Label, "", []setupChoice{{"reported", "I completed the human action described above"}, {"waiting", "Not yet — leave this step waiting"}, {"issue", "There is a problem — record it and pause"}})
 			if err != nil {
@@ -728,6 +749,9 @@ func (f *roleFlow) execute(task flowTask) (result error) {
 			}
 			if choice == "waiting" {
 				return nil
+			}
+			if choice == "reported" && (detailErr != nil || bindingErr != nil) {
+				return errors.Join(detailErr, bindingErr)
 			}
 			note := "Operator reported: " + task.Label
 			status := "reported"
@@ -743,6 +767,9 @@ func (f *roleFlow) execute(task flowTask) (result error) {
 			id, err := randomID()
 			if err != nil {
 				return err
+			}
+			if choice == "issue" {
+				bindings = nil
 			}
 			if err := f.checkAttemptEvidence(&flowAttempt{InputBindings: bindings}); err != nil {
 				return err
@@ -1066,7 +1093,7 @@ func (f *roleFlow) advance() error {
 		return err
 	}
 	if f.state.Profile.Work != "" && f.state.Role == "coordinator" && f.stages[f.state.Stage].ID == "enrollments" {
-		complete, err := f.collectedEnrollments()
+		complete, err := f.recordEnrollmentCheck()
 		if err != nil {
 			return err
 		}

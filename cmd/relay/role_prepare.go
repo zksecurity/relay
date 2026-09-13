@@ -316,8 +316,27 @@ func readPreparationInput(path string) ([]byte, error) {
 	}
 	return raw, err
 }
+func (p *rolePreparer) defaultPublicImport() string {
+	for _, kind := range []string{"definition", "signature", "coordinator"} {
+		st, err := os.Lstat(preparationDestination(p.d, kind))
+		if err != nil || !st.Mode().IsRegular() {
+			return "ceremony-set"
+		}
+	}
+	if _, err := os.Lstat(preparationDestination(p.d, "storage")); p.d.Role != "release-signer" && errors.Is(err, os.ErrNotExist) {
+		return "storage"
+	}
+	return "" // No missing-file recommendation; existence is not authentication.
+}
+
 func (p *rolePreparer) importFile() error {
-	kind, err := p.ui.choose("Which PUBLIC files are you importing?", "ceremony-set", preparationImports())
+	choices := preparationImports()
+	for i := range choices {
+		if choices[i].value == "ceremony-set" {
+			choices[i].label = "Import all three ceremony files from a folder"
+		}
+	}
+	kind, err := p.ui.choose("Which PUBLIC files are you importing?", p.defaultPublicImport(), choices)
 	if err != nil {
 		return err
 	}

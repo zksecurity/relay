@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -133,6 +134,23 @@ func (w *coordinatorWizard) setupR2() (result error) {
 	if err := w.confirm("Use these settings and stage the credentials in protected files", "SAVE SETTINGS"); err != nil {
 		return err
 	}
+	return w.saveR2Credentials(v, access, secret, parentSecret, control, mode)
+}
+
+// Both fresh setup and settings import use the same owned credential lifecycle.
+// Inputs are copied, never adopted as session-owned files or modified in place.
+func (w *coordinatorWizard) saveR2Credentials(settings map[string]string, access, secret, parentSecret, control, mode string) (result error) {
+	v := maps.Clone(settings)
+	v["profile"] = "relay-coordinator"
+	if _, err := (coordinatorStorageSettings{"relay-coordinator-storage-settings-v1", v}).infrastructure(); err != nil {
+		return err
+	}
+	if !validR2Hex(access, 16) || !validR2Hex(secret, 32) || !validR2Hex(v["parent-access-key-id"], 16) || !validR2Hex(parentSecret, 32) || access == v["parent-access-key-id"] {
+		return errors.New("invalid or reused R2 key pair; use a distinct inbox-only credential")
+	}
+	if control == "" || strings.ContainsAny(control, "\r\n\x00\t ") || (mode != "saved" && mode != "session") {
+		return errors.New("invalid R2 credential or storage mode")
+	}
 	root := w.credentialRoot
 	if root == "" {
 		base, err := os.UserConfigDir()
@@ -182,7 +200,7 @@ func (w *coordinatorWizard) setupR2() (result error) {
 	if mode == "session" {
 		w.sessionCredentialDirs = append(w.sessionCredentialDirs, dir)
 	}
-	fmt.Fprintln(w.output, "Settings saved. Next: Check storage. Old credential files were left untouched; no cloud credentials were revoked.")
+	fmt.Fprintln(w.output, "Settings saved. Next: Check storage. Storage settings and all three credential files are saved; cloud access has not been checked. Old credential files were left untouched; no cloud credentials were revoked.")
 	return nil
 }
 

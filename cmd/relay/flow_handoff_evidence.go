@@ -58,7 +58,7 @@ func (f *roleFlow) handoffFields(task flowTask) []flowField {
 		paths = []string{"/work/release/manifest.json", "/work/release/manifest.sig"}
 	}
 	if (f.state.Role == "witness" || f.state.Role == "mirror") && task.ID == "reconnect" {
-		paths = []string{"/work/" + f.stages[f.state.Stage].ID + "-receipt/receipt.sig"}
+		paths = []string{"/work/" + f.stages[f.state.Stage].ID + "-receipt/canonical.json", "/work/" + f.stages[f.state.Stage].ID + "-receipt/receipt.sig"}
 	}
 	if task.ID == "receive-audit-inputs" || task.ID == "receive-signing-inputs" {
 		paths = []string{"/work/candidate/candidate.json", "/work/candidate/candidate.sig.json"}
@@ -69,7 +69,7 @@ func (f *roleFlow) handoffFields(task flowTask) []flowField {
 	fields := []flowField{}
 	for _, path := range paths {
 		if f.state.Role != "coordinator" || task.ID != "assignments" {
-			path = f.rememberedOutputPath(path, true)
+			path = f.savedPublicHandoffPath(path)
 		}
 		fields = append(fields, ff("record", "Public artifact to hand off", path))
 	}

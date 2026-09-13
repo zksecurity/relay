@@ -60,7 +60,7 @@ func TestImportCeremonySetRetryAndRoles(t *testing.T) {
 				return nil
 			}
 			for i := 0; i < 2; i++ {
-				p.ui.input = bufio.NewReader(strings.NewReader("\n" + source + "\nVERIFIED\n"))
+				p.ui.input = bufio.NewReader(strings.NewReader("8\n" + source + "\nVERIFIED\n"))
 				if err := p.importFile(); err != nil {
 					t.Fatal(err)
 				}
@@ -127,7 +127,8 @@ func TestImportCeremonySetRejectsBeforePublishing(t *testing.T) {
 
 func TestImportCeremonySetMatchingPartialRetry(t *testing.T) {
 	for prefix := 1; prefix <= 3; prefix++ {
-		p, _, inputs := importSetFixture(t, "participant")
+		p, source, inputs := importSetFixture(t, "participant")
+		p.ui.input = bufio.NewReader(strings.NewReader("8\n" + source + "\nVERIFIED\n"))
 		for n := 0; n < prefix; n++ {
 			if err := publishPublicInput(preparationDestination(p.d, ceremonyImportFiles[n].kind), inputs[n]); err != nil {
 				t.Fatal(err)
