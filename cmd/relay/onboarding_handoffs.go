@@ -6,7 +6,54 @@ import (
 	"path/filepath"
 
 	"github.com/zksecurity/relay/internal/access"
+	"github.com/zksecurity/relay/internal/transcript"
 )
+
+func (p *rolePreparer) needsPhase2Profile() (bool, error) {
+	if p.d.Role != "participant" {
+		return true, nil
+	}
+	var identity setupIdentity
+	if err := setupReadJSON(filepath.Join(p.d.Keys, "identity.json"), &identity); err != nil {
+		return false, err
+	}
+	if err := identity.check(); err != nil {
+		return false, err
+	}
+	var definition transcript.Definition
+	var err error
+	if p.inspectDefinition != nil {
+		definition, err = p.inspectDefinition()
+	} else {
+		profile, profileErr := p.profile("decision-signer")
+		if profileErr != nil {
+			return false, profileErr
+		}
+		client := osDockerCommandClient{binary: "docker"}
+		_, endpoint, endpointErr := resolveDockerEndpoint(client)
+		if endpointErr != nil {
+			return false, endpointErr
+		}
+		if err := validateLocalDockerEndpoint(endpoint); err != nil {
+			return false, err
+		}
+		if err := prepareGuidedImage(profile.Image, profile.Platform, "docker", false); err != nil {
+			return false, err
+		}
+		root := filepath.Join(p.d.Work, "ceremony/public")
+		driver := dockerDriver{image: profile.Image, platform: profile.Platform, ceremonyBinary: "/usr/local/bin/mpc-ceremony", root: root, definition: filepath.Join(root, "ceremony.json"), definitionSig: filepath.Join(root, "ceremony.sig"), coordinatorKey: filepath.Join(p.d.Trust, "coordinator-public-key.hex"), client: client.BindHost(endpoint)}
+		definition, err = driver.inspector().Definition()
+	}
+	if err != nil {
+		return false, err
+	}
+	for _, id := range definition.Phase2Participants {
+		if id == identity.ID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
 
 func (p *rolePreparer) transportRole() string {
 	if p.d.Role == "upload-station" {

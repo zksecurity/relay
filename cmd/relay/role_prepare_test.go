@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/zksecurity/relay/internal/access"
+	"github.com/zksecurity/relay/internal/transcript"
 )
 
 func preparationFixture(t *testing.T, role string) *rolePreparer {
@@ -313,8 +314,25 @@ func TestRolePreparationUsesAuthoredSetupOrder(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(p.d.Work, "ceremony/config/participant-phase1.json"), []byte("fixture"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	var identity setupIdentity
+	if err := setupReadJSON(filepath.Join(p.d.Keys, "identity.json"), &identity); err != nil {
+		t.Fatal(err)
+	}
+	p.inspectDefinition = func() (transcript.Definition, error) {
+		return transcript.Definition{Phase2Participants: []string{identity.ID}}, nil
+	}
 	if got := p.nextPreparationAction(); got.choice != "4" || !strings.Contains(got.label, "Phase 2") {
 		t.Fatalf("after phase1: %+v", got)
+	}
+	p.inspectDefinition = func() (transcript.Definition, error) { return transcript.Definition{}, fmt.Errorf("invalid signature") }
+	if got := p.nextPreparationAction(); got.choice != "4" || !strings.Contains(got.reason, "could not be authenticated") {
+		t.Fatalf("unknown assignment silently skipped: %+v", got)
+	}
+	p.inspectDefinition = func() (transcript.Definition, error) {
+		return transcript.Definition{Phase1Participants: []string{identity.ID}}, nil
+	}
+	if got := p.nextPreparationAction(); got.choice != "5" {
+		t.Fatalf("Phase 1-only participant was asked for Phase 2: %+v", got)
 	}
 	if err := writePublicTextOnce(filepath.Join(p.d.Work, "ceremony/config/participant-phase2.json"), "fixture"); err != nil {
 		t.Fatal(err)

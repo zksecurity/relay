@@ -20,7 +20,8 @@ Other roles see this menu:
    Existing different files are not overwritten.
 4. **Authenticate and create a phase profile:** verifies the supplied tools,
    signed ceremony, and role assignment. Online roles prepare both phase
-   profiles; after Phase 1, Phase 2 becomes the default. This does not start a turn.
+   profiles; participants are prompted for Phase 2 only if the authenticated
+   schedule includes them. This does not start a turn.
 5. **Continue the ceremony workflow:** opens the numbered role-specific steps.
 6. **Show folders and remaining input requirements:** lists what to obtain next.
 7. **Prepare, review and sign MY enrollment:** after importing the signed

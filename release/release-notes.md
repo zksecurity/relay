@@ -2,7 +2,9 @@
 
 - Role setup explicitly guides public identity/enrollment delivery, requests the
   coordinator's public storage file before profile creation, and prepares both
-  phase profiles. Reports remain distinct from receipt and verification.
+  phase profiles. Participant Phase 2 preparation is recommended only when the
+  authenticated schedule includes them. Reports remain distinct from receipt
+  and verification.
 - Coordinator guidance includes private grant delivery, later evidence access
   and collection, and canonical production-decision/signature exchanges.
 - Audit uploads stage only the exact successful report/signature pair, including

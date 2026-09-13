@@ -14,6 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/zksecurity/relay/internal/transcript"
 )
 
 type rolePreparation struct {
@@ -25,7 +27,8 @@ type rolePreparer struct {
 	path, settingsRoot   string
 	ui                   coordinatorWizard
 	run                  func([]string) error
-	environmentPreflight func() error // test seam; nil uses the actual Docker preflight
+	environmentPreflight func() error                          // test seam; nil uses the actual Docker preflight
+	inspectDefinition    func() (transcript.Definition, error) // test seam; nil authenticates with the approved signer image
 }
 
 func (p *rolePreparer) save() error { return saveJSONAtomic(p.path, p.d) }
@@ -390,7 +393,16 @@ func (p *rolePreparer) initProfile() error {
 	}
 	defaultPhase := "phase1"
 	if p.phaseProfilePresent("phase1") && !p.phaseProfilePresent("phase2") {
-		defaultPhase = "phase2"
+		needed, err := p.needsPhase2Profile()
+		if err != nil {
+			return fmt.Errorf("authenticate your Phase 2 assignment before choosing a profile: %w", err)
+		}
+		if needed {
+			defaultPhase = "phase2"
+		} else {
+			fmt.Fprintln(p.ui.output, "Your authenticated assignment has no Phase 2 contribution. Your Phase 1 profile is already prepared; open ceremony operations with option 5.")
+			return nil
+		}
 	}
 	phase, err := p.ui.choose("Phase for this profile", defaultPhase, []setupChoice{{"phase1", "Phase 1"}, {"phase2", "Phase 2"}})
 	if err != nil {
@@ -509,7 +521,13 @@ func (p *rolePreparer) nextPreparationAction() rolePreparationNext {
 			return rolePreparationNext{"4", "Authenticate the ceremony and create the Phase 1 profile", "This saves the exact signed inputs and approved runtime used by your Phase 1 commands."}
 		}
 		if !p.phaseProfilePresent("phase2") {
-			return rolePreparationNext{"4", "Create the Phase 2 profile for later ceremony steps", "Phase 1 is configured. Choose Phase 2 (the default) now; this prepares settings only and does not start Phase 2 or a contribution."}
+			needed, err := p.needsPhase2Profile()
+			if err != nil {
+				return rolePreparationNext{"4", "Authenticate the remaining phase-profile requirements", "The Phase 2 assignment could not be authenticated. Check the signed definition, trusted coordinator key and prepared Docker image before continuing: " + err.Error()}
+			}
+			if needed {
+				return rolePreparationNext{"4", "Create the Phase 2 profile for later ceremony steps", "Phase 1 is configured. Choose Phase 2 (the default) now; this prepares settings only and does not start Phase 2 or a contribution."}
+			}
 		}
 	}
 	return rolePreparationNext{"5", "Open ceremony operations and progress", "Onboarding is ready. The role workflow will show the next required ceremony action in its authored order."}
