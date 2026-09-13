@@ -539,7 +539,7 @@ func (w *coordinatorWizard) policy() error {
 		return fmt.Errorf("invalid built-in policy: %w", err)
 	}
 	b := standard.Beacon
-	standardLabel := fmt.Sprintf("Use the standard beacon settings included with this Relay release\n   Source: %s / %s; a round every %d seconds\n   Future round required: %t; minimum challenge: %d bytes\n   Template witness lead time: %d seconds\n   Production requires at least 24 hours; this template alone is not sufficient.\n   Network identity and verification key are pinned in this release.", b.Provider, b.Network, b.Period, b.Future, b.Challenge, b.Lead)
+	standardLabel := fmt.Sprintf("Use the standard beacon settings included with this Relay release\n   Source: %s / %s; a round every %d seconds\n   Future round required: %t; minimum challenge: %d bytes\n   Template witness lead time: %d seconds (for rehearsal).\n   This is the minimum time from a witness's observation of the closed phase to the beacon round.\n   Production requires at least 24 hours of witness lead time, not this short rehearsal setting.\n   Network identity and verification key are pinned in this release.", b.Provider, b.Network, b.Period, b.Future, b.Challenge, b.Lead)
 	choices := []setupChoice{{"standard", standardLabel}, {"custom", "Advanced: load a custom policy file"}}
 	defaultChoice := "standard"
 	if w.d.Policy.Beacon.Provider != "" {
@@ -1076,6 +1076,7 @@ func (w *coordinatorWizard) menu() (result error) {
 	showOther := false
 	for {
 		next := w.nextPreparationAction()
+		optionalIdentity := w.showOptionalIdentityImport(next)
 		w.preparationHeading(next)
 		if showOther {
 			fmt.Fprintln(w.output, "\nOTHER ACTIONS AND REQUIREMENTS\nNavigation does not complete a step or waive its prerequisites.\nRequired steps may wait for inputs; review/edit and repeat checks are optional unless correcting a problem.")
@@ -1112,6 +1113,9 @@ func (w *coordinatorWizard) menu() (result error) {
 			}
 		} else {
 			fmt.Fprintf(w.output, "\n%s) %s\n", next.choice, next.label)
+			if optionalIdentity {
+				fmt.Fprintln(w.output, "3) Add or replace a public identity [Optional]\n   Adding an identity does not add it to saved phase orders.\n   Review orders with action 4, available under other actions.")
+			}
 		}
 		if w.d.Status == "draft" {
 			fmt.Fprintln(w.output, "15) Open setup downloaded from Tessera [Optional]")
@@ -1153,7 +1157,7 @@ func (w *coordinatorWizard) menu() (result error) {
 			showOther = true
 			continue
 		}
-		if !showOther && choice != next.choice && !(choice == "12" && w.d.Status == "definition-verified" && w.tesseraExportPresent()) && !(choice == "15" && w.d.Status == "draft") && !(choice == "16" && w.d.Status == "definition-verified" && (w.d.Tessera != nil || w.d.TesseraSetup != nil) && w.localAction == nil) {
+		if !showOther && choice != next.choice && !(choice == "3" && optionalIdentity) && !(choice == "12" && w.d.Status == "definition-verified" && w.tesseraExportPresent()) && !(choice == "15" && w.d.Status == "draft") && !(choice == "16" && w.d.Status == "definition-verified" && (w.d.Tessera != nil || w.d.TesseraSetup != nil) && w.localAction == nil) {
 			fmt.Fprintln(w.output, "Choose a displayed action, or 17 to review other actions and requirements.")
 			continue
 		}

@@ -269,7 +269,7 @@ func (p *rolePreparer) identity() error {
 // Fixed destinations prevent a received filename from selecting a key or saved
 // settings path. Importing public bytes is not authenticating their signatures.
 func preparationImports() []setupChoice {
-	return []setupChoice{{"definition", "Signed ceremony definition"}, {"signature", "Definition signature"}, {"coordinator", "Independently obtained coordinator public key"}, {"storage", "Public storage configuration (not credentials)"}, {"enrollment", "Your reviewed public enrollment"}, {"enrollment-signature", "Your enrollment signature"}, {"receipt", "Advanced: existing tool record for this exact installation"}}
+	return []setupChoice{{"definition", "Signed ceremony definition"}, {"signature", "Definition signature"}, {"coordinator", "Independently obtained coordinator public key"}, {"storage", "Public storage configuration (not credentials)"}, {"enrollment", "Your reviewed public enrollment"}, {"enrollment-signature", "Your enrollment signature"}, {"receipt", "Advanced: existing tool record for this exact installation"}, {"ceremony-set", "Import all three ceremony files from a folder (recommended)"}}
 }
 func preparationDestination(d rolePreparation, kind string) string {
 	switch kind {
@@ -317,9 +317,12 @@ func readPreparationInput(path string) ([]byte, error) {
 	return raw, err
 }
 func (p *rolePreparer) importFile() error {
-	kind, err := p.ui.choose("Which PUBLIC file are you importing?", "", preparationImports())
+	kind, err := p.ui.choose("Which PUBLIC files are you importing?", "ceremony-set", preparationImports())
 	if err != nil {
 		return err
+	}
+	if kind == "ceremony-set" {
+		return p.importCeremonySet()
 	}
 	source, err := p.ui.required("Absolute path to the public file (never a signing key or grant)", "")
 	if err != nil {
@@ -495,7 +498,7 @@ func (p *rolePreparer) nextPreparationAction() rolePreparationNext {
 		filepath.Join(p.d.Trust, "coordinator-public-key.hex"),
 	} {
 		if !regularPreparationFile(path) {
-			return rolePreparationNext{"3", "Import the next required public ceremony file", "Import the signed definition, its signature, and the independently authenticated coordinator public key one at a time."}
+			return rolePreparationNext{"3", "Import the required public ceremony files", "Ask the coordinator for ceremony.json, ceremony.sig and coordinator-public-key.hex together. Choose 3, then press Enter to import all three from their folder. Confirm the coordinator key fingerprint through your independent channel."}
 		}
 	}
 	for _, name := range []string{"enrollment.json", "enrollment.sig"} {
