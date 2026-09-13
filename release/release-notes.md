@@ -1,35 +1,31 @@
 ## What changed
 
-- Relay releases now include a short, reviewed summary of the user-visible and operational changes.
-- Pull requests must update this summary, so release pages do not fall back to a raw commit list or a generic build message.
-- Final release signing now works with the documented one-auditor minimum. The pinned proof tool previously rejected fewer than two audit reports at its command-line boundary.
-- Pull requests retain a real two-phase future-beacon ceremony with a 12-second non-production witness window. Protected-main and scheduled runs use Tessera's full 180-second rehearsal window.
-- Guided custody now keeps the coordinator's online workflow and offline signer under one ceremony name. Older local profiles are migrated with a retained backup, or Relay stops if two possible profiles would make the choice ambiguous.
-- Participant custody setup now retains its public work, trust, and key-folder references so handoff receipts can use the already-prepared offline signer.
-- Participant launcher profiles now also retain the verified image digest and platform used by their authenticated phase profile, allowing shared transcript inspection to run before and after contribution. Older profiles are migrated with a private backup; mismatched runtimes are rejected.
-- Guided menus now explain why each action is needed in plain language. Production decision actions are shown as required only after Relay authenticates that the ceremony is production; rehearsal actions remain hidden.
-- Guided role menus now separate numbered ceremony actions from letter-keyed navigation: view an area's details, open the ceremony map, review results, go back, or save and exit. These navigation controls never complete or skip work.
-- Guided recommendations follow the authored workflow order, not a local readiness heuristic. Readiness explains why the prescribed next action is waiting; it cannot let a later handoff leapfrog a contribution awaiting a fresh grant or profile.
-- The detailed action list now enforces that same order for state-changing work within each ceremony area. It cannot issue a participant grant before the outbound custody receipt or contribute before the participant's required receipt steps. Read-only inspection remains available, and an already-started uncertain action remains reachable for safe recovery.
-- First-use custody exports now create missing parent folders while still requiring the final signed-output folder to be fresh; existing exports are never overwritten.
-- When preparing a participant's outbound custody packet or issuing their grant, Relay now displays the ordered participant IDs from the authenticated phase schedule, marks the expected next participant, and fills that value without allowing an out-of-order substitution.
-- Guided workflows create a required offline signing profile when it is missing, before offline custody work begins. Recipe-fixed custody direction is displayed for review and cannot be mistyped as a menu number.
-- Guided-operation failures now render their `Paused:` diagnostic in red on an interactive terminal, while retained-state recovery guidance remains plain text and redirected logs remain unstyled.
-- Guided role recovery no longer asks operators to choose a generic retry, write an investigation narrative, or mark an uncertain action complete. Relay may recheck an exact read-only action; unresolved state-changing actions stop without being repeated.
-- Guided workflow state now has a durable workspace identity and a matching work-folder marker, so deleted or mismatched recovery state does not look like first use. State-changing attempts record their resolved command, runtime, mounts, inputs and expected outputs before execution; all authored tasks have an enforced recovery classification.
-- Saved progress now binds to stable stage IDs rather than only a hash of the complete menu catalog. Compatible menu updates preserve the current stage and retain a private pre-migration backup; unresolved commands are still revalidated against the new release.
-- Resolved actions are durably recorded as prepared before they are marked running. If Relay stops in that safe pre-launch window, restart explains that no command ran and returns to the normal action review.
-- Interrupted coordinator initialization now offers “Resume and verify the exact frozen initialization.” It reuses the saved creation time and nonce, verifies every retained setup file byte-for-byte, relies on proof-tool atomic publication, and never overwrites a conflict.
-- Contributor containers now have a persisted unique name and operation/workspace/mount labels before Docker creates them. Relay can recover a container after a lost create response, verifies its exact identity before cleanup, and does not overwrite a concurrently changed lifecycle record.
-- Docker participant recovery now persists the exact erasure timestamp before signing and can finish cleanup attestation and upload metadata for a retained candidate without recomputing the contribution. Ambiguous legacy partial erasure output remains blocked for review.
-- New guided contributions allocate one attempt ID before launch and use it for the guided operation, contributor-container lifecycle, candidate directory, immutable upload prefix, manifest, and Tessera notification. Older single-candidate folders remain resumable without guessing between multiple candidates.
-- Guided witness, mirror, auditor, and release uploads now keep one attempt ID and manifest time across interruption. Existing immutable objects are downloaded and checked byte-for-byte, and the manifest remains the last object written before Tessera is notified.
-- If temporary-grant issuance wrote a protected grant but Relay stopped before recording success, restart authenticates that exact file and adopts it without issuing a second credential. A missing grant file remains blocked with a conservative possible-validity bound.
-- Documentation now includes a split Mermaid ceremony-flow map: setup/enrollment, each participant turn, phase closure, and final release.
-- Role onboarding now names and defaults to the first incomplete step in its fixed setup order instead of defaulting to exit. Network-disabled signing is distinguished from disconnecting the host; only the final signer is instructed to disconnect unless the ceremony adopts a stricter procedure.
-- Maintainer documentation specifies scoped V1 crash recovery for one active workspace per role identity and audits the implemented foundation separately from the remaining state-changing, Docker, storage, proof-tool and Tessera work. One machine may host several separate role workspaces; distributed role failover and cross-machine fencing are explicitly deferred.
-- The remaining recovery plan now separates production-critical reconciliation and Docker work from later workspace-maintenance work, documents provider limitations, and defines deterministic fault-injection plus LLM role-journey validation.
+This release combines the guided ceremony and recovery improvements previously
+published in `d74604e` and `b461326`. Ceremony behavior is unchanged from `b461326`.
+
+- Role onboarding recommends the next setup step. Ceremony operations follow the
+  defined order, and manually selected actions cannot skip required predecessors.
+- Coordinator and participant custody profiles retain the correct folders,
+  approved Docker image, and platform. Compatible older profiles migrate with
+  backups; ambiguous or conflicting profiles stop for review.
+- Custody prompts fill the authenticated next participant and handoff direction.
+  First-use exports create missing parent folders without overwriting an export.
+- Menus explain prerequisites, separate actions from navigation, and show errors
+  in red on supported terminals. Only final release signing requires disconnecting
+  the host under the standard procedure.
+- Recovery preserves operation identity, inputs, runtime, and outputs across
+  interruptions. It can recover supported initialization, cleanup, grant, and
+  upload cases without repeating a contribution or guessing uncertain completion.
+- Uploads retain stable attempt IDs, verify existing immutable objects, and write
+  the manifest last before notifying Tessera.
+- Final release signing supports the documented one-auditor minimum. The pinned
+  proof-tool release is `mpc-ci-7ba406f0a6066f10b668ae8c553ab45e897f9fe4`.
+- Documentation includes ceremony-flow diagrams and the implemented recovery scope.
 
 ## Tessera compatibility
 
-Ceremony data and Tessera request fields are unchanged. Guided execution now enforces already-authored same-area prerequisites before starting a new state-changing action; read-only checks and recovery of a possibly started action remain available. The proof-tool pin is updated to protected-main release `mpc-ci-7ba406f0a6066f10b668ae8c553ab45e897f9fe4`, which retains the prior atomic recovery behavior and adds safe first-use parent creation for operational signing exports.
+Setup contracts, ceremony data, and Tessera request fields are unchanged. Tessera
+must provision this exact release before offering it for new ceremonies. Existing
+ceremony pins are not automatically rewritten. This replacement has a new source
+commit and newly attested release assets, so its release identity differs from
+the two earlier publications.
