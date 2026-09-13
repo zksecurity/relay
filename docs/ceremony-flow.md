@@ -1,125 +1,205 @@
 # Ceremony flow
 
-This is the shared map for a two-phase Relay ceremony. It is an orientation
-tool, not ceremony authority: Relay and proof-tool authenticate inputs before
-each consequential action. A box marked **handoff** is a human delivery or
-observation; reporting it is not proof that the recipient verified it.
+This is the shared orientation map for a two-phase Relay ceremony. It shows
+who acts, what is exchanged, and what must be verified. The guided workflow
+supplies the exact current paths and commands.
 
-Use the role's guided workflow for the exact current task, inputs, and
-recovery path. The guide follows its authored task order; it does not choose a
-later step simply because that step has fewer local inputs.
+## Reading the diagrams
 
-## 1. Set up, initialize, and enroll
+- **PUBLIC HANDOFF** transfers only the named public files. Reporting delivery
+  does not prove that the recipient received or verified them.
+- **PRIVATE HANDOFF** transfers a scoped grant or connection only to its named
+  owner. Never put it in public storage or evidence.
+- **VERIFY** means Relay or proof-tool authenticates the indicated inputs. A
+  local file, upload, website status, or checked menu item is not verification.
+- Signing proves control of the enrolled key and binds exact bytes. It does not
+  prove that different keys belong to independent people or organizations.
+
+## 1. Collect identities and initialize
+
+Before initialization, the coordinator collects `identity.json` from the
+coordinator, participants, auditors, and final-parameter signer. Each owner
+generates and keeps their own private `signing.hex`.
 
 ```mermaid
 flowchart LR
-  C["Coordinator: choose policy, identities, storage, and approved runtimes"]
-  I["Coordinator: initialize and authenticate signed definition"]
-  R["Coordinator: share signed definition and public identity"]
-  O["Each assigned role: prepare local Docker profiles and identity"]
-  E["Each assigned role: review and sign its enrollment"]
-  V["Coordinator: verify and collect required enrollments"]
-  C --> I --> R --> O --> E --> V
+  K["Coordinator, participants, and auditors: generate their own keys"]
+  F["Final-parameter signer: prepare approved image; disconnect host; generate own key"]
+  C["Coordinator: verify identities; choose schedules, minimums, circuit, beacon policy and approved runtimes"]
+  S["Coordinator: configure and check storage"]
+  I["Coordinator: initialize, then VERIFY the signed definition"]
+  K -->|"PUBLIC HANDOFF: identity.json"| C
+  F -->|"PUBLIC OFFLINE HANDOFF: identity.json"| C
+  C --> S --> I
 ```
 
-The coordinator records a roster of distinct signing keys. It cannot prove
-that the keys belong to independent people or organizations.
+Witness and mirror public identities may be created earlier, but their numbered
+setup and enrollment bind the initialized ceremony and therefore happen next.
+The upload station has no signing identity or enrollment of its own.
 
-## 2. One participant turn (repeat in Phase 1 and Phase 2)
-
-The signed participant schedule decides whose turn is next. Repeat this lane
-for every scheduled participant; do not overlap grants or accept a candidate
-without its matching custody records.
+## 2. Distribute the ceremony, enroll roles, and publish Phase 1
 
 ```mermaid
 flowchart LR
-  subgraph C["Coordinator"]
-    C1["1. Inspect authenticated head and next scheduled participant"]
-    C2["2. Prepare outbound custody handoff"]
-    C3["3. Sign outbound handoff in offline signer"]
-    C4["4. Deliver packet; collect participant's signed receipt"]
-    C5["5. Verify participant receipt"]
-    C6["6. Issue private grant to the scheduled participant"]
-    C7["7. Receive participant's return packet; prepare/sign receipt"]
-    C8["8. Verify and accept candidate; publish advanced head"]
-    C1 --> C2 --> C3 --> C4 --> C5 --> C6 --> C7 --> C8
-  end
+  C["Coordinator"]
+  R["Every key-owning ceremony role: independently authenticate coordinator key; VERIFY definition; review and sign enrollment"]
+  V["Coordinator: VERIFY every required enrollment and observer minimum"]
+  O["Participants, witnesses, mirrors, auditors, and upload station: import public storage settings and prepare profiles"]
+  G["Coordinator: publish and VERIFY the initial Phase 1 state"]
+  C -->|"PUBLIC HANDOFF: ceremony.json + ceremony.sig + coordinator-public-key.hex"| R
+  R -->|"PUBLIC HANDOFF: complete my-enrollment folder"| V
+  V -->|"PUBLIC HANDOFF: relay-storage.json"| O
+  O --> G
+```
 
-  subgraph P["Scheduled participant"]
-    P1["1. Authenticate assignment, phase, and current turn"]
-    P2["2. Prepare/sign receipt for coordinator's outbound packet"]
-    P3["3. Return signed receipt to coordinator"]
-    P4["4. Run isolated Docker contribution; cleanup and upload"]
-    P5["5. Prepare/sign return custody handoff"]
-    P6["6. Deliver public candidate and signed return packet"]
-    P7["7. Confirm independently verified coordinator acceptance"]
-    P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7
-  end
+The coordinator first gives each witness and mirror a numbered observer setup
+file; the observer reviews and signs their own enrollment. Receiving the
+coordinator key beside the definition does not authenticate that key—confirm
+its fingerprint through the agreed independent channel.
 
-  C4 --> P1
-  P3 --> C5
+Online roles also need private upload access when they act: either a scoped
+standalone grant from the coordinator or their private Tessera connection.
+`relay-storage.json` contains public locations, not credentials.
+
+## 3. Run one participant turn
+
+Repeat this lane for every participant in the signed Phase 1 schedule, then for
+every participant in the signed Phase 2 schedule. The signed minimum does not
+silently remove remaining scheduled turns.
+
+```mermaid
+flowchart LR
+  C1["Coordinator: VERIFY current head and next participant"]
+  C2["Coordinator: prepare and sign outbound custody packet in network-disabled signer"]
+  P1["Participant: VERIFY packet and payload; sign receipt in network-disabled signer"]
+  C3["Coordinator: VERIFY participant receipt"]
+  C4["Coordinator: issue access for this exact turn"]
+  P2["Participant: contribute in disposable Docker container; verify cleanup; confirm limitations; upload public candidate"]
+  P3["Participant: prepare and sign return handoff"]
+  C5["Coordinator: VERIFY returned files; prepare and sign return receipt"]
+  C6["Coordinator: VERIFY and accept candidate; publish advanced head"]
+  P4["Participant: independently confirm acceptance"]
+  M["Mirror: retain this accepted head; prepare, sign and upload its matching receipt"]
+  C1 --> C2
+  C2 -->|"PUBLIC HANDOFF: packet + named payload"| P1
+  P1 -->|"PUBLIC HANDOFF: signed receipt"| C3
+  C3 --> C4
+  C4 -->|"PRIVATE HANDOFF: grant, or Tessera-authorized access"| P2
+  P2 --> P3
+  P3 -->|"PUBLIC HANDOFF: candidate + return packet + manifest location"| C5
+  C5 --> C6
   C6 --> P4
-  P6 --> C7
-  C8 --> P7
+  C6 --> M
 ```
 
-The participant contribution is the only step that creates contribution
-randomness. Relay runs it in the disposable contributor environment, verifies
-container removal, obtains the participant's cleanup confirmation, and uploads
-only the public candidate. This is an authenticated operational claim, not
-physical proof that no secret copy survived.
+Uploading is not acceptance. The contribution is the only step that creates
+toxic randomness. Relay verifies removal of the disposable container and
+obtains the participant's signed cleanup confirmation, but this cannot prove
+that no host, VM, backup, snapshot, or maliciously retained copy exists.
 
-## 3. Close each phase and prepare the next one
+Mirrors produce evidence for every accepted contribution head. Their work runs
+alongside the turn loop; the diagram does not claim that every mirror upload
+must finish before the coordinator starts the next scheduled turn.
+
+## 4. Close a phase and record the beacon
 
 ```mermaid
 flowchart LR
-  H["All scheduled candidates accepted at one authenticated head"]
-  W["Witnesses: begin real observations before closure"]
-  C1["Coordinator: replay and close phase; commit future beacon round"]
-  W1["Witnesses: prepare, sign, and submit timed observation receipts"]
-  M["Mirrors: retain authenticated public state; sign and submit receipts"]
-  B["Coordinator: authenticate committed beacon response"]
-  P["Coordinator: publish closure and beacon records"]
-  N["Phase 1 only: seal and initialize Phase 2"]
-  H --> W --> C1
-  C1 --> W1
-  C1 --> M
-  C1 --> B --> P --> N
+  H["Coordinator: VERIFY all scheduled turns are accepted"]
+  W0["Required witnesses: begin watching the public location"]
+  C1["Coordinator: replay and close phase; commit an exact future beacon round"]
+  P1["Coordinator: publish signed closure immediately"]
+  W1["Witnesses: observe exact closure before the signed deadline; preserve bytes; sign and submit genuine receipts"]
+  R["Coordinator: collect witness receipts and responses from the required distinct beacon-relay operators"]
+  B["Coordinator: VERIFY the committed beacon response"]
+  P2["Coordinator: publish signed beacon record"]
+  H --> W0 --> C1 --> P1
+  P1 --> W1 --> R
+  P1 --> B
+  R --> B --> P2
 ```
 
-Phase 2 repeats the participant-turn diagram above. Its closure proceeds to
-finalization instead of another phase initialization.
+The deadline applies to the witness's real observation: it must occur after
+closure and with the signed minimum lead time before the committed beacon
+round. Signing and delivery may finish later, but late signing cannot repair a
+missed observation or justify backdating one.
 
-## 4. Finalize, audit, decide, sign, and archive
+## 5. Move between phases
 
 ```mermaid
 flowchart LR
-  F["Coordinator: replay both phases and prepare preliminary keys"]
-  E["Public-evidence process: return public finalization evidence"]
-  C["Coordinator: verify evidence and create candidate"]
-  A["Auditors: independently replay and sign audit reports"]
-  O["Coordinator: collect and sign verified operational evidence bundle"]
-  D["Production only: accountable roles complete GO/NO-GO decision"]
-  S["Final signer: independently verify candidate and sign release output"]
-  V["Coordinator/upload station: verify signed release and public archive"]
-  F --> E --> C --> A --> O --> D --> S --> V
+  B["Phase 1 beacon verified"]
+  S["Coordinator: replay and seal Phase 1"]
+  P["Coordinator: publish beacon, seal, and shared Phase 1 data"]
+  I["Coordinator: initialize and publish the initial Phase 2 state"]
+  T["Repeat participant turns and closure for Phase 2"]
+  F["Continue to finalization"]
+  B --> S --> P --> I --> T --> F
 ```
 
-In a rehearsal, the production decision is hidden only after Relay
-authenticates that the signed definition selects rehearsal mode. A final
-signature, upload, or website status is not by itself a production approval.
+After the Phase 2 beacon is verified and published, continue directly to
+finalization; there is no third phase.
 
-## Where each role fits
+## 6. Finalize, audit, and assemble evidence
 
-| Role | Main place in the flow |
+```mermaid
+flowchart LR
+  P["Coordinator: replay both phases and prepare preliminary keys"]
+  E["Public-evidence process: produce circuit-specific public proof evidence"]
+  C["Coordinator: VERIFY evidence and create candidate"]
+  A["Auditors: independently acquire, replay, and sign audit reports"]
+  R["Coordinator: collect signed audit reports"]
+  O["Coordinator: collect custody, cleanup, witness, beacon-relay, per-head mirror, and incident evidence"]
+  B["Coordinator: prepare, review, sign, and VERIFY operational evidence bundle"]
+  Q["Coordinator: assemble candidate, signed audits, and verified signed operational bundle"]
+  P --> E --> C
+  C -->|"PUBLIC HANDOFF: candidate + complete transcript"| A
+  A -->|"PUBLIC HANDOFF or scoped upload: signed audits"| R
+  C --> O --> B
+  R --> Q
+  B --> Q
+```
+
+The tiny rehearsal uses Relay's built-in real proof-evidence generator.
+Production uses the circuit's reviewed public-evidence process. Auditors and
+observers are expected to be independently operated, but software verifies
+their enrolled keys and signed records—not human or organizational independence.
+
+## 7. Sign, authorize production use, upload, and archive
+
+```mermaid
+flowchart LR
+  C["Coordinator: hand off candidate, signed audits, and verified signed operational bundle"]
+  S["Final-parameter signer: on disconnected host, independently VERIFY and cryptographically sign public release"]
+  D["Production only: accountable roles VERIFY complete evidence, sign one GO/NO-GO decision, and VERIFY its threshold"]
+  U["Keyless upload station: independently VERIFY signed public release, then upload"]
+  V["Coordinator and archive custodians: VERIFY publication; retain public archive; retire temporary access"]
+  C -->|"PUBLIC OFFLINE HANDOFF: candidate + evidence"| S
+  S -->|"PUBLIC HANDOFF: signed release"| D
+  D -->|"GO authorizes production distribution/use"| U
+  U --> V
+```
+
+The signed release must exist before a production decision can bind and verify
+it. Cryptographic signing alone is not authorization: a verified production GO
+decision authorizes distribution and use. A rehearsal authenticates that this
+decision is not applicable, but it is never a production approval.
+
+The upload station imports the final signer's public enrollment, never their
+private key. Upload or Tessera notification still does not prove coordinator
+acceptance, archive verification, or authorization to use the parameters.
+
+## Role index
+
+| Role | Main responsibility |
 | --- | --- |
-| Coordinator | Initialization, each participant turn, closures, finalization, evidence, release verification |
-| Participant | Their scheduled Phase 1 and Phase 2 turn |
-| Witness | Observe each closure and submit a signed timed receipt |
-| Mirror | Retain each accepted public state and submit matching signed receipts |
+| Coordinator | Initialization, authenticated ordering, acceptance, closure, finalization, evidence, authorization, and archive verification |
+| Participant | Their scheduled Phase 1 and Phase 2 contributions and custody records |
+| Witness | Observe each published closure in time and sign an exact observation receipt |
+| Mirror | Retain every accepted contribution head and sign matching receipts |
 | Auditor | Independently replay both phases and sign an audit report |
-| Final signer | Independently verify the candidate and sign final public output |
-| Upload station | Move only approved public evidence or release files under its scoped access |
+| Final-parameter signer (`release-signer`) | On a disconnected host, independently verify and sign the public release |
+| Upload station | Without a signing key, verify and upload approved signed public output |
 
-For the operational instructions and recovery rules, see
-[role workflow](role-workflow.md), then the guide for your assigned role.
+For exact operational instructions and recovery rules, continue with the
+[guided role workflow](role-workflow.md) and the guide for your assigned role.
