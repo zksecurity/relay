@@ -1,5 +1,12 @@
 ## What changed
 
+- Reworked the ceremony flow map into seven explicit lanes covering identity
+  collection, enrollment and storage distribution, participant custody turns,
+  per-head mirror evidence, closure and beacon timing, phase transition,
+  finalization, signed-release authorization, upload, and archival. The map now
+  distinguishes public handoffs, private access, cryptographic verification,
+  signing, and production authorization. This is documentation-only.
+
 - Public-file import defaults to storage settings when the ceremony set is
   already present and storage is missing, instead of recommending it again.
   Handoff actions show counterparts, public file locations and expected replies.
@@ -83,6 +90,7 @@
 ## Tessera compatibility
 
 Setup contracts, ceremony data, and Tessera request fields are unchanged.
+The ceremony-flow documentation does not change Tessera integration behavior.
 The compiled workflow recipe adds handoff tasks while preserving existing task
 IDs and command-field ordering. Existing selected releases stay pinned.
 The additive export menu key does not renumber existing actions. No proof-tool
