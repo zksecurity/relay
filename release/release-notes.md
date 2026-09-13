@@ -1,5 +1,23 @@
 ## What changed
 
+- Public-file import defaults to storage settings when the ceremony set is
+  already present and storage is missing, instead of recommending it again.
+  Handoff actions show counterparts, public file locations and expected replies.
+  Custody delivery uses saved phase/turn packets and checks named payload hashes;
+  missing files cannot be reported as delivered. Human reports still do not
+  prove receipt or acceptance. No Tessera contract or proof-tool change.
+
+- Coordinator enrollment guidance uses the latest collection check instead of
+  getting stuck on earlier incomplete checks. Rechecks after imports, archives
+  and before advancing retain validation; uncertain signing/upload recovery is
+  unchanged. Existing history is preserved. No proof-tool or Tessera contract
+  change is required.
+
+- Importing R2 storage settings now collects all three credential files and
+  saves protected copies together, avoiding the repeated-setup loop. Account
+  and bucket selections are retained; source files are never session-owned.
+  Cloud checks still require separate approval. No Tessera contract or proof-tool
+  change is required.
 - Fix guided enrollment collection rejecting valid one-witness, one-mirror and
   one-auditor requirements from the authenticated proof-tool projection. Higher
   reported requirements still apply; signatures and roster checks remain required.

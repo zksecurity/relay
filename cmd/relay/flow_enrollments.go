@@ -191,9 +191,47 @@ func (f *roleFlow) collectedEnrollments() (bool, error) {
 	return complete, nil
 }
 
+// Record observations, not retries. Preserve history and invalidate old success
+// on incomplete or failed verification. Save failure leaves a blocking in-memory
+// observation, never restoring an older success while the menu remains open.
+func (f *roleFlow) saveEnrollmentCheck(complete bool, checkErr error) error {
+	id, err := randomID()
+	if err != nil {
+		return err
+	}
+	status := "reviewed-incomplete"
+	if checkErr != nil {
+		status = "failed"
+	} else if complete {
+		status = "succeeded"
+	}
+	count := len(f.state.Attempts)
+	f.state.Attempts = append(f.state.Attempts, flowAttempt{ID: id, Task: "enrollment", Stage: "enrollments", Status: status, FinishedAt: time.Now().UTC().Format(time.RFC3339Nano), Note: "Public enrollment collection checked; revalidation is required before leaving this stage."})
+	if err := f.save(); err != nil {
+		f.state.Attempts[count].Status = "failed"
+		f.state.Attempts[count].Note = "Enrollment check could not be saved; recheck before advancing."
+		return err
+	}
+	return nil
+}
+
+func (f *roleFlow) recordEnrollmentCheck() (bool, error) {
+	complete, checkErr := f.collectedEnrollments()
+	if err := f.saveEnrollmentCheck(complete, checkErr); err != nil {
+		return false, errors.Join(checkErr, fmt.Errorf("save enrollment check: %w", err))
+	}
+	return complete, checkErr
+}
+
 func (f *roleFlow) collectEnrollment(task flowTask) error {
-	if _, err := f.collectedEnrollments(); err != nil {
-		fmt.Fprintf(f.ui.output, "Collection not verified: %v\nInspect or archive incorrect imports; no completion is recorded.\n", err)
+	complete, checkErr := f.collectedEnrollments()
+	if err := f.saveEnrollmentCheck(complete, checkErr); err != nil {
+		return errors.Join(checkErr, err)
+	}
+	if checkErr != nil {
+		fmt.Fprintf(f.ui.output, "Collection not verified: %v\nInspect or archive incorrect imports; the latest check does not count as complete.\n", checkErr)
+	} else if complete {
+		fmt.Fprintln(f.ui.output, "Required enrollments verified. Choose 0 to return, then follow the next required action. Any higher agreed quorum still applies.")
 	}
 	choice, err := f.ui.choose("Enrollment collection", "", []setupChoice{{"import", "Import and verify one public enrollment folder"}, {"request", "Show what to request from each role"}, {"archive", "Inspect and archive an incorrect or duplicate import"}, {"observer-setup", "Prepare a witness/mirror setup file (assigns their number)"}, {"cancel", "Return to ceremony actions"}})
 	if err != nil {
@@ -211,7 +249,9 @@ func (f *roleFlow) collectEnrollment(task flowTask) error {
 		return nil
 	}
 	if choice == "archive" {
-		return f.archiveEnrollmentImport()
+		actionErr := f.archiveEnrollmentImport()
+		_, checkErr := f.recordEnrollmentCheck()
+		return errors.Join(actionErr, checkErr)
 	}
 	source, err := f.ui.required("Absolute path to the received PUBLIC enrollment folder", "")
 	if err != nil {
@@ -228,19 +268,9 @@ func (f *roleFlow) collectEnrollment(task flowTask) error {
 	if err != nil {
 		return err
 	}
-	if err := importPublicEnrollment(source, filepath.Join(root, id)); err != nil {
-		return err
-	}
-	complete, err := f.collectedEnrollments()
-	if err != nil {
-		return err
-	}
-	status := "reviewed-incomplete"
-	if complete {
-		status = "succeeded"
-	}
-	f.state.Attempts = append(f.state.Attempts, flowAttempt{ID: id, Task: task.ID, Stage: f.stages[f.state.Stage].ID, Status: status, FinishedAt: time.Now().UTC().Format(time.RFC3339Nano), Note: "Public enrollment collection checked; revalidation is required before leaving this stage."})
-	return f.save()
+	actionErr := importPublicEnrollment(source, filepath.Join(root, id))
+	_, checkErr = f.recordEnrollmentCheck()
+	return errors.Join(actionErr, checkErr)
 }
 
 func (f *roleFlow) archiveEnrollmentImport() error {

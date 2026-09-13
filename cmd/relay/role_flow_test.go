@@ -448,7 +448,7 @@ func TestRoleFlowRejectsTamperedRetry(t *testing.T) {
 
 func TestRoleFlowHandoffsAreReportedNotVerified(t *testing.T) {
 	f := flowFixture(t)
-	task := handoff("people", "Confirm human handoff", "Not verification")
+	task := handoff("witnesses-ready", "Confirm human handoff", "Not verification")
 	f.stages[0].Tasks = []flowTask{task}
 	f.ui.input = bufio.NewReader(strings.NewReader("\n1\n"))
 	f.run = func(flowTask, []string, string, bool) error { t.Fatal("handoff ran a command"); return nil }

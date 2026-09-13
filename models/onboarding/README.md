@@ -4,6 +4,10 @@ This models one coordinator and one participant, from enrollment to a Phase 1
 profile. It does not modify the CLI or your ceremony. Start by reviewing this
 table, then examine the checker traces and the actual CLI transcript.
 
+See [the planned history-aware extension](history-design.md) for coordinator
+enrollment checks, stale results, and model-to-CLI sequence testing. That scope
+is not yet implemented in this pilot or covered by its recorded results.
+
 ## Intended transitions
 
 | Current state | Action/instruction | New state |

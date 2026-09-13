@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,137 @@ import (
 
 	"github.com/zksecurity/relay/internal/transcript"
 )
+
+func TestEnrollmentCollectionLatestObservationSurvivesReload(t *testing.T) {
+	f := flowFixture(t)
+	task := flowTask{ID: "enrollment"}
+	f.stages = []flowStage{{ID: "enrollments", Tasks: []flowTask{task}}}
+	for _, result := range []bool{false, false, true} {
+		if err := f.saveEnrollmentCheck(result, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !f.requiredTaskComplete(task) {
+		t.Fatal("historical incomplete checks blocked latest complete collection")
+	}
+	var reloaded roleFlowState
+	if err := setupReadJSON(f.path, &reloaded); err != nil {
+		t.Fatal(err)
+	}
+	f.state = reloaded
+	if !f.requiredTaskComplete(task) || len(f.state.Attempts) != 3 {
+		t.Fatal("reload lost completion or history")
+	}
+	for _, checkErr := range []error{nil, errors.New("verification failed")} {
+		if err := f.saveEnrollmentCheck(false, checkErr); err != nil {
+			t.Fatal(err)
+		}
+		if f.requiredTaskComplete(task) {
+			t.Fatal("later incomplete/failed check retained old success")
+		}
+	}
+	count := len(f.state.Attempts)
+	f.path = filepath.Join(f.path, "invalid-child")
+	if err := f.saveEnrollmentCheck(true, nil); err == nil {
+		t.Fatal("save failure ignored")
+	}
+	if len(f.state.Attempts) != count+1 || f.requiredTaskComplete(task) {
+		t.Fatal("failed save exposed unpersisted success")
+	}
+	// Inverse case: failing to save a new failure must not resurrect old success.
+	f.state.Attempts = f.state.Attempts[:3]
+	if err := f.saveEnrollmentCheck(false, errors.New("changed signature")); err == nil {
+		t.Fatal("save failure ignored")
+	}
+	if f.requiredTaskComplete(task) {
+		t.Fatal("save failure resurrected previous success")
+	}
+}
+
+func TestEnrollmentExceptionDoesNotHideUncertainOperations(t *testing.T) {
+	for _, tc := range []struct{ role, stage, task string }{
+		{"coordinator", "phase1-turns", "sign"},
+		{"participant", "phase1", "contribute"},
+		{"participant", "phase1", "upload"},
+		{"participant", "enrollments", "enrollment"},
+		{"coordinator", "other", "enrollment"},
+	} {
+		t.Run(tc.role+"/"+tc.stage+"/"+tc.task, func(t *testing.T) {
+			f := flowFixture(t)
+			f.state.Role = tc.role
+			f.stages[0].ID = tc.stage
+			f.state.Attempts = []flowAttempt{
+				{ID: "old", Task: tc.task, Stage: tc.stage, Status: "running"},
+				{ID: "new", Task: tc.task, Stage: tc.stage, Status: "succeeded"},
+			}
+			if f.last(flowTask{ID: tc.task}).ID != "old" {
+				t.Fatal("uncertain operation suppressed")
+			}
+		})
+	}
+}
+
+// Uses real signed public inputs, copied into a disposable workspace. Never
+// modifies the supplied ceremony or invokes signing/cloud commands.
+func TestDockerEnrollmentHistoryRecovery(t *testing.T) {
+	source := os.Getenv("RELAY_COLLECTION_TEST_WORK")
+	if source == "" {
+		t.Skip("requires explicit public enrollment collection fixture and Docker")
+	}
+	f := flowFixture(t)
+	work := privateRoleTestDir(t)
+	root := filepath.Join(work, "ceremony/public")
+	if err := os.MkdirAll(filepath.Join(root, "collected-enrollments"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"ceremony.json", "ceremony.sig", "coordinator-public-key.hex"} {
+		raw, err := readPreparationInput(filepath.Join(source, "ceremony/public", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, name), raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.state.Profile = guidedProfile{Work: work, Trust: root, Image: os.Getenv("RELAY_ROLE_ONLINE_IMAGE"), Platform: "linux/arm64"}
+	task := flowTask{ID: "enrollment"}
+	f.stages = []flowStage{{ID: "enrollments", Tasks: []flowTask{task}}}
+	if complete, err := f.recordEnrollmentCheck(); err != nil || complete {
+		t.Fatalf("empty collection: %v %v", complete, err)
+	}
+	dirs, err := os.ReadDir(filepath.Join(source, "ceremony/public/collected-enrollments"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range dirs {
+		if dir.IsDir() {
+			if err := importPublicEnrollment(filepath.Join(source, "ceremony/public/collected-enrollments", dir.Name()), filepath.Join(root, "collected-enrollments", dir.Name())); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	f.ui.input = bufio.NewReader(strings.NewReader("0\n"))
+	if err := f.collectEnrollment(task); err != nil {
+		t.Fatal(err)
+	}
+	if !f.requiredTaskComplete(task) {
+		t.Fatal("return after authenticated complete check did not unblock guide")
+	}
+	if err := setupReadJSON(f.path, &f.state); err != nil || !f.requiredTaskComplete(task) {
+		t.Fatal("completion lost on reload", err)
+	}
+	// Archive through the real submenu, then check the recommendation is blocked.
+	f.ui.input = bufio.NewReader(strings.NewReader("3\n1\nARCHIVE IMPORT\n"))
+	if err := f.collectEnrollment(task); err != nil {
+		t.Fatal(err)
+	}
+	if f.requiredTaskComplete(task) {
+		t.Fatal("archive left stale success")
+	}
+	if err := f.advance(); err == nil || f.requiredTaskComplete(task) {
+		t.Fatal("incomplete collection advanced")
+	}
+}
 
 func enrollmentImportFixture(t *testing.T) (string, string) {
 	t.Helper()
