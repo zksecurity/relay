@@ -15,9 +15,11 @@ Other roles see this menu:
 2. **Generate/review MY identity:** assigns an ID automatically and asks for
    your public display name. Send only the displayed `identity.json` to the
    coordinator; keep `signing.hex` private. Existing keys are not overwritten.
-3. **Import a received public file:** choose the file type and local file.
-   The helper shows its destination and hash, then copies it after approval.
-   Existing different files are not overwritten.
+3. **Import a received public file:** press Enter in the import menu for the
+   three-file option, then select the folder containing `ceremony.json`,
+   `ceremony.sig` and `coordinator-public-key.hex`. Independently confirm the key
+   fingerprint; Relay verifies the definition before importing the set.
+   Individual imports remain available. Different existing files are never replaced.
 4. **Authenticate and create a phase profile:** verifies the supplied tools,
    signed ceremony, and role assignment. Online roles prepare both phase
    profiles; participants are prompted for Phase 2 only if the authenticated
@@ -51,7 +53,8 @@ file is not a private upload grant or credentials. Profile creation waits for it
 Tool records are prepared locally; do not
 copy another operator's record. Compare the
 coordinator's public-key fingerprint through an independent channel before
-confirming it. Merely importing a file does not authenticate its contents.
+confirming it. Individual-file imports do not authenticate signatures; the
+three-file import verifies the definition, not enrollment or storage readiness.
 
 Non-participant transport profiles also require your reviewed, signed enrollment.
 Its signature must come from the enrolled owner—not a coordinator claiming consent.

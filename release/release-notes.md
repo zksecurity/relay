@@ -1,5 +1,9 @@
 ## What changed
 
+- Role onboarding can import the definition, signature and coordinator public
+  key together from one folder. It retains independent fingerprint confirmation,
+  authenticates the staged set with proof-tool and never replaces different files.
+  Individual imports remain available with their existing menu numbers.
 - Standalone coordinator drafts keep optional identity import visible once the
   required roster is present, without changing the recommended next step.
   Beacon help explains rehearsal versus production witness lead times.
