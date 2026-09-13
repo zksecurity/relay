@@ -89,18 +89,20 @@ integration, not evidence that the new guidance was tested.
   grant expiry/reissue and credential non-disclosure, and exact audit-pair staging.
 - Updated real-Docker onboarding dialogues to follow defaults for identity and
   enrollment delivery, storage import and both phase profiles.
-- Fresh-image onboarding passed in 27.13 seconds, including default identity/
+- Fresh-image onboarding passed in 28.32 seconds, including default identity/
   enrollment handoffs, storage import, both phase profiles, real signing and
   witness/mirror PTY-to-Docker signing prompts. Observation fixtures copy and
   authenticate public files locally; they do not test cloud synchronization.
-- Full tiny Docker rehearsal passed in 80.93 seconds: 3+3 contributions,
+- Full tiny Docker rehearsal passed in 81.27 seconds: 3+3 contributions,
   removal and signed cleanup, two real future beacons, replay/public proof,
   one signed audit, operational evidence and final release signing/verification.
   Wrong signer ID was rejected. Intervening public exchanges use local fixtures;
   this remains distinct from a no-assistance, all-role complete journey.
-- The tested runtime was built from clean Relay `c2b02bc`; subsequent changes
+- Participant Phase 2 recommendation now authenticates the schedule; regression
+  cases cover Phase 1-only assignment and failed authentication.
+- The tested runtime was built from clean Relay `155276b`; subsequent changes
   corrected test fixtures and documentation, not executable code. Online image:
-  `sha256:073b9bd1e5485c1efd7e0f92308c28e7628f4515cb9e9f43002979a9e23f01af`.
+  `sha256:f2572f41e4398369c9516d75b32d645a7b9564a9d1a6a8789cfa65b5615d2e94`.
   Offline image:
   `sha256:d69ef649bd246cbbfa4cc8bd5934f0f847b854e5b710abf5331609dbaf73d333`.
   Both use the pinned proof-tool release identified above. Its checksum and

@@ -68,6 +68,25 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 	roles := []string{"participant", "witness", "mirror", "auditor", "auditor", "release-signer", "upload-station"}
 	preparers := []*rolePreparer{}
 	identities := []setupIdentity{}
+	prepareRuntimeProfile := func(p *rolePreparer, role string) {
+		t.Helper()
+		prepareTestProfile(t, p, role)
+		profile, err := p.profile(role)
+		if err != nil {
+			t.Fatal(err)
+		}
+		profile.Image, profile.Platform = online, platform
+		if role == "keygen" || role == "decision-signer" || role == "release-signer" {
+			profile.Image = offline
+		}
+		dir, err := guidedDirectory(p.settingsRoot, p.alias(role), role)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := saveJSONAtomic(filepath.Join(dir, "profile.json"), profile); err != nil {
+			t.Fatal(err)
+		}
+	}
 	dialogue := func(p *rolePreparer, input string) {
 		t.Helper()
 		p.ui.input = bufio.NewReader(strings.NewReader(input))
@@ -92,11 +111,11 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 			p.d.Values["image"], p.d.Values["binary"] = offline, "/usr/local/bin/mpc-ceremony"
 		}
 		if role != "upload-station" {
-			prepareTestProfile(t, p, "keygen")
-			prepareTestProfile(t, p, "decision-signer")
+			prepareRuntimeProfile(p, "keygen")
+			prepareRuntimeProfile(p, "decision-signer")
 		}
 		if role != "participant" {
-			prepareTestProfile(t, p, role)
+			prepareRuntimeProfile(p, role)
 		}
 		p.run = func(args []string) error {
 			if len(args) > 1 && args[0] == "ceremony" && args[1] == "init-config" {
