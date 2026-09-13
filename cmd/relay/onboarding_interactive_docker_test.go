@@ -16,9 +16,10 @@ import (
 )
 
 // These dialogues run the real menus and real Docker cryptographic commands.
-// Only software delivery is injected: locally built immutable images are NOT
-// represented as published releases. No cloud permissions or independent
-// operators are asserted by this same-machine test.
+// Software delivery is injected: locally built immutable images are NOT
+// represented as published releases. The later observation fixture copies and
+// authenticates public files locally instead of exercising cloud synchronization.
+// No cloud permissions or independent operators are asserted by this test.
 func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 	if os.Getenv("RELAY_FLOW_DOCKER") != "1" {
 		t.Skip("opt-in real Docker dialogue test")
@@ -412,6 +413,13 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 			t.Fatal(err)
 		}
 		f := roleFlow{state: roleFlowState{Schema: roleFlowSchema, Name: p.d.Name, Role: p.d.Role, Stage: 1, Values: map[string]string{}, Profile: guidedProfile{Work: p.d.Work, Trust: p.d.Trust, Image: online, Platform: platform}}, stages: roleFlowStages(p.d.Role), path: filepath.Join(p.d.Work, "observation-flow.json"), ui: coordinatorWizard{output: new(bytes.Buffer)}}
+		// This observation fixture received the transcript via the local copy
+		// above, not the cloud sync command. Authenticate that copy before
+		// recording this explicit test boundary; do not relax the workflow gate.
+		if err := run(p.d.Role, p.d.Work, p.d.Trust, "", []string{"mpc-ceremony", "inspect", "--ceremony", "/work/ceremony/public/ceremony.json", "--ceremony-signature", "/work/ceremony/public/ceremony.sig", "--coordinator-public-key-file", "/trust/coordinator-public-key.hex", "--transcript-dir", "/work/ceremony/public"}); err != nil {
+			t.Fatal(err)
+		}
+		f.state.Attempts = append(f.state.Attempts, flowAttempt{ID: "fixture-local-observation", Task: "observe", Stage: "phase1", Status: "succeeded", Note: "test fixture copied and authenticated the local transcript; cloud synchronization not exercised"})
 		f.run = func(task flowTask, command []string, id string, retry bool) error {
 			role, keys := p.d.Role, ""
 			if task.Offline {
