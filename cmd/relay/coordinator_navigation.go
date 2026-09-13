@@ -33,6 +33,9 @@ func (w *coordinatorWizard) nextPreparationAction() preparationNext {
 			}
 			return preparationNext{"16", "Export setup for Tessera", "Export the completed setup, then upload it to Tessera for review and locking. Enrollment files are present; operations reverify their evidence."}
 		}
+		if !regularPreparationFile(filepath.Join(d.Work, "ceremony/config/relay-storage.json")) && !d.OfflinePreparation {
+			return preparationNext{"10", "Create the public storage configuration for ceremony roles", "Configure storage to create relay-storage.json. Online roles need this public file before profile creation; infrastructure settings and credentials are not its replacement."}
+		}
 		return preparationNext{"12", "Open ceremony operations and progress", "Continue with the coordinator workflow. Enrollment files are present but this menu has not verified them; operations recheck the relevant evidence."}
 	}
 	if (d.Mode != "rehearsal" && d.Mode != "production") || (d.Circuit != "ownership-destination-v2" && !(d.Mode == "rehearsal" && d.Circuit == "rehearsal-tiny-v1")) {

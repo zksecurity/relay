@@ -25,7 +25,7 @@ func TestHiddenCredentialPromptProcess(t *testing.T) {
 	}
 	before := state()
 	value, err := promptProtectedSecret(os.Stdout, "TEST credential")
-	if mode == "normal" {
+	if mode == "normal" || mode == "focus" {
 		if err != nil || value != "FAKE_SECRET_MUST_NOT_ECHO" {
 			t.Fatal("hidden entry failed")
 		}
@@ -43,12 +43,14 @@ func TestHiddenCredentialPromptPTY(t *testing.T) {
 	if err != nil {
 		t.Skip("expect is required for real-terminal tests")
 	}
-	for _, mode := range []string{"normal", "interrupt"} {
+	for _, mode := range []string{"normal", "focus", "interrupt"} {
 		t.Run(mode, func(t *testing.T) {
 			script := `set timeout 10
 spawn -noecho $env(RELAY_PROMPT_TEST_BINARY) -test.run=^TestHiddenCredentialPromptProcess$ -test.v
 expect "TEST credential (hidden): "
-if {$env(RELAY_SECRET_PROMPT_TEST) eq "normal"} {
+if {$env(RELAY_SECRET_PROMPT_TEST) eq "focus"} {
+ send -- "\033\133OFAKE_SECRET_\033\133IMUST_NOT_ECHO\033\133O\r"
+} elseif {$env(RELAY_SECRET_PROMPT_TEST) eq "normal"} {
  send -- "FAKE_SECRET_MUST_NOT_ECHO\r"
 } else {
  send -- "\003"

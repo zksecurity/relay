@@ -13,6 +13,7 @@ func (w *coordinatorWizard) secret(label string) (string, error) {
 	if w.readSecret != nil {
 		return w.readSecret(label)
 	}
+	discardBufferedFocusEvents(w.input)
 	if w.input.Buffered() != 0 {
 		return "", errors.New("do not paste multiple answers at once; enter credentials only at the hidden prompt")
 	}
@@ -37,7 +38,7 @@ func (w *coordinatorWizard) credential(label string) (string, error) {
 		}
 		return readProtectedCredential(path)
 	case "instructions":
-		fmt.Fprintln(w.output, "Cloudflare dashboard → R2 object storage → Manage R2 API Tokens. Coordinator object credentials need Object Read & Write on the published and inbox buckets. The inbox parent must be a separate Object Read & Write credential restricted to the inbox bucket. Privacy checking needs a separate control-plane token with permission to read the selected bucket's domain configuration, or your authorized Wrangler login. Never paste a Cloudflare password or ceremony signing key.")
+		fmt.Fprintln(w.output, "Cloudflare dashboard → R2 object storage → Manage R2 API Tokens. Coordinator object credentials need Object Read & Write on the published and inbox buckets. The inbox-only credential must be a separate Object Read & Write credential restricted to the inbox bucket. Privacy checking needs a separate control-plane token with permission to read the selected bucket's domain configuration, or your authorized Wrangler login. Never paste a Cloudflare password or ceremony signing key.")
 		fmt.Fprintln(w.output, "Guide: https://developers.cloudflare.com/r2/api/tokens/")
 		return "", errors.New("return after obtaining the requested credential; nothing saved")
 	default:
@@ -99,11 +100,12 @@ func (w *coordinatorWizard) setupR2() (result error) {
 	if err != nil {
 		return err
 	}
-	parentID, err := w.credential("Inbox-only parent Access Key ID")
+	fmt.Fprintf(w.output, "\nWhy a second credential?\n\nYour coordinator credential can access both buckets.\nThis separate credential will let Relay issue temporary\nupload access to other roles.\n\nRestrict it to the inbox bucket so that, if it leaks,\nit cannot access the published ceremony files.\n\nThis separation is a Relay safety requirement.\n\nCreate a separate R2 credential with:\n  Permission: Object Read & Write\n  Bucket: %s only\n\nDo not reuse the coordinator credential.\n\n", v["inbox-bucket"])
+	parentID, err := w.credential("Inbox-only credential — Access Key ID")
 	if err != nil {
 		return err
 	}
-	parentSecret, err := w.credential("Inbox-only parent Secret Access Key")
+	parentSecret, err := w.credential("Inbox-only credential — Secret Access Key")
 	if err != nil {
 		return err
 	}
@@ -111,7 +113,7 @@ func (w *coordinatorWizard) setupR2() (result error) {
 		return errors.New("R2 access key IDs must have 32 hexadecimal characters and secret access keys 64; no credentials saved")
 	}
 	if access == parentID {
-		return errors.New("use a separate inbox-only parent credential, not the coordinator credential")
+		return errors.New("use a separate inbox-only credential, not the coordinator credential")
 	}
 	v["parent-access-key-id"] = parentID
 	if control == "" {

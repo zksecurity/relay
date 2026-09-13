@@ -19,7 +19,9 @@ Other roles see this menu:
    The helper shows its destination and hash, then copies it after approval.
    Existing different files are not overwritten.
 4. **Authenticate and create a phase profile:** verifies the supplied tools,
-   signed ceremony, and role assignment. Repeat for each assigned phase.
+   signed ceremony, and role assignment. Online roles prepare both phase
+   profiles; participants are prompted for Phase 2 only if the authenticated
+   schedule includes them. This does not start a turn.
 5. **Continue the ceremony workflow:** opens the numbered role-specific steps.
 6. **Show folders and remaining input requirements:** lists what to obtain next.
 7. **Prepare, review and sign MY enrollment:** after importing the signed
@@ -33,6 +35,9 @@ Other roles see this menu:
 
 Choose **0 — Save and exit** to retain setup choices and files.
 Choose **8 — Show all setup steps** to see why an omitted task does not apply.
+Choose **9 — Send my public identity** and **10 — Send my public enrollment**
+when recommended. These show the exact public file/folder and recipient.
+Reporting sending does not establish receipt or coordinator acceptance.
 Tasks with missing prerequisites still apply; they are not hidden for that reason.
 
 Required answers cannot be blank. A displayed default can be accepted with Enter.
@@ -40,7 +45,10 @@ Required answers cannot be blank. A displayed default can be accepted with Enter
 ## What to obtain
 
 Through your agreed channel, obtain the signed ceremony definition, its signature,
-and public storage configuration. Tool records are prepared locally; do not
+and `relay-storage.json` from your coordinator. Import storage with **3 — Import
+a received public file**, then **4 — Public storage configuration**. This public
+file is not a private upload grant or credentials. Profile creation waits for it.
+Tool records are prepared locally; do not
 copy another operator's record. Compare the
 coordinator's public-key fingerprint through an independent channel before
 confirming it. Merely importing a file does not authenticate its contents.

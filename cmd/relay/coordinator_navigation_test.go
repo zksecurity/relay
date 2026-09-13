@@ -102,7 +102,7 @@ func TestCoordinatorPreparationFilesAreNotVerifiedCompletion(t *testing.T) {
 		}
 	}
 	next := w.nextPreparationAction()
-	if next.choice != "12" || !strings.Contains(next.reason, "menu has not verified") {
+	if next.choice != "10" || !strings.Contains(next.reason, "public file") {
 		t.Fatal(next)
 	}
 	w.d.Status = "initialization-attempted"

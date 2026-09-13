@@ -5,6 +5,29 @@ is a separate repository, `zksecurity/tessera`; keep website changes there.
 Inspect Git status and preserve unrelated changes and local ceremony state.
 New explicit user instructions supersede this guidance.
 
+## Adversarial design review
+
+For new or materially revised CLI, workflow, recovery, security, or architecture
+designs, present a reviewed proposal rather than an unreviewed first draft:
+
+1. Draft the simplest design that meets the user's request.
+2. Delegate one independent review to an adversarial tester sub-agent. Give it
+   the draft, relevant code and constraints. Ask for concrete counterexamples,
+   confusing user journeys, failure/interruption cases, compatibility risks,
+   security boundaries, and unnecessary complexity—not implementation or live
+   cloud actions. Have it suggest minimal fixes and test scenarios.
+3. Evaluate the findings and revise the design before presenting the final
+   proposal or beginning implementation. Keep the solution simple; explain any
+   material finding left unresolved or rejected instead of silently ignoring it.
+4. Briefly state what the review changed and any remaining decision for the user.
+   Do not describe a design review as executed tests or a security certification.
+
+One review pass is the default; do not start an open-ended review loop unless
+the user requests it. Clarifying questions may precede review. Routine factual
+answers and mechanical wording edits do not require this process. If a separate
+reviewer is unavailable, disclose that limitation and label any self-review as
+such; do not claim independent review occurred.
+
 ## Tessera integration
 
 Read `docs/tessera-setup-v2.md` and `contracts/setupv2/README.md` before changing

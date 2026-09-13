@@ -16,9 +16,10 @@ import (
 )
 
 // These dialogues run the real menus and real Docker cryptographic commands.
-// Only software delivery is injected: locally built immutable images are NOT
-// represented as published releases. No cloud permissions or independent
-// operators are asserted by this same-machine test.
+// Software delivery is injected: locally built immutable images are NOT
+// represented as published releases. The later observation fixture copies and
+// authenticates public files locally instead of exercising cloud synchronization.
+// No cloud permissions or independent operators are asserted by this test.
 func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 	if os.Getenv("RELAY_FLOW_DOCKER") != "1" {
 		t.Skip("opt-in real Docker dialogue test")
@@ -67,6 +68,25 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 	roles := []string{"participant", "witness", "mirror", "auditor", "auditor", "release-signer", "upload-station"}
 	preparers := []*rolePreparer{}
 	identities := []setupIdentity{}
+	prepareRuntimeProfile := func(p *rolePreparer, role string) {
+		t.Helper()
+		prepareTestProfile(t, p, role)
+		profile, err := p.profile(role)
+		if err != nil {
+			t.Fatal(err)
+		}
+		profile.Image, profile.Platform = online, platform
+		if role == "keygen" || role == "decision-signer" || role == "release-signer" {
+			profile.Image = offline
+		}
+		dir, err := guidedDirectory(p.settingsRoot, p.alias(role), role)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := saveJSONAtomic(filepath.Join(dir, "profile.json"), profile); err != nil {
+			t.Fatal(err)
+		}
+	}
 	dialogue := func(p *rolePreparer, input string) {
 		t.Helper()
 		p.ui.input = bufio.NewReader(strings.NewReader(input))
@@ -87,12 +107,15 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 	for n, role := range roles {
 		p := preparationFixture(t, role)
 		p.d.Name = fmt.Sprintf("local-role-%d", n)
+		if role == "participant" {
+			p.d.Values["image"], p.d.Values["binary"] = offline, "/usr/local/bin/mpc-ceremony"
+		}
 		if role != "upload-station" {
-			prepareTestProfile(t, p, "keygen")
-			prepareTestProfile(t, p, "decision-signer")
+			prepareRuntimeProfile(p, "keygen")
+			prepareRuntimeProfile(p, "decision-signer")
 		}
 		if role != "participant" {
-			prepareTestProfile(t, p, role)
+			prepareRuntimeProfile(p, role)
 		}
 		p.run = func(args []string) error {
 			if len(args) > 1 && args[0] == "ceremony" && args[1] == "init-config" {
@@ -138,6 +161,12 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 			input += "GENERATE\n0\n"
 		}
 		dialogue(p, input)
+		if role != "upload-station" {
+			if next := p.nextPreparationAction(); next.choice != "9" {
+				t.Fatalf("identity must recommend public handoff: %+v", next)
+			}
+			dialogue(p, "\n1\n0\n")
+		}
 		var id setupIdentity
 		if role != "upload-station" {
 			if err := setupReadJSON(filepath.Join(p.d.Keys, "identity.json"), &id); err != nil {
@@ -209,7 +238,10 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 		if p.d.Role == "upload-station" {
 			continue
 		}
-		input := "7\n"
+		if next := p.nextPreparationAction(); next.choice != "7" {
+			t.Fatalf("definition import must recommend enrollment: %+v", next)
+		}
+		input := "\n"
 		if p.d.Role == "witness" || p.d.Role == "mirror" {
 			input += "1\n"
 		}
@@ -219,6 +251,10 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 		}
 		input += "4\nSame-machine local test; all roles operated by this test process.\nPUBLIC DISCLOSURE\n" + review + "\n0\n"
 		dialogue(p, input)
+		if next := p.nextPreparationAction(); next.choice != "10" {
+			t.Fatalf("enrollment must recommend sending public folder: %+v", next)
+		}
+		dialogue(p, "\n1\n0\n")
 		if _, err := os.Stat(filepath.Join(p.d.Work, "enrollment.sig")); err != nil {
 			t.Fatal(err)
 		}
@@ -293,9 +329,9 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 			t.Fatal(err)
 		}
 		if p.d.Role == "participant" {
-			dialogue(p, fmt.Sprintf("3\n4\n%s\nIMPORT\n4\n1\nPRECAUTIONS REVIEWED\nREVIEWED\n4\n2\nPRECAUTIONS REVIEWED\nREVIEWED\n0\n", storagePath))
+			dialogue(p, fmt.Sprintf("\n4\n%s\nIMPORT\n\n\nPRECAUTIONS REVIEWED\nREVIEWED\n\n\nPRECAUTIONS REVIEWED\nREVIEWED\n0\n", storagePath))
 		} else {
-			dialogue(p, fmt.Sprintf("3\n4\n%s\nIMPORT\n4\n1\n4\n2\n0\n", storagePath))
+			dialogue(p, fmt.Sprintf("\n4\n%s\nIMPORT\n\n\n\n\n0\n", storagePath))
 		}
 		role := p.d.Role
 		if role == "upload-station" {
@@ -396,6 +432,13 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 			t.Fatal(err)
 		}
 		f := roleFlow{state: roleFlowState{Schema: roleFlowSchema, Name: p.d.Name, Role: p.d.Role, Stage: 1, Values: map[string]string{}, Profile: guidedProfile{Work: p.d.Work, Trust: p.d.Trust, Image: online, Platform: platform}}, stages: roleFlowStages(p.d.Role), path: filepath.Join(p.d.Work, "observation-flow.json"), ui: coordinatorWizard{output: new(bytes.Buffer)}}
+		// This observation fixture received the transcript via the local copy
+		// above, not the cloud sync command. Authenticate that copy before
+		// recording this explicit test boundary; do not relax the workflow gate.
+		if err := run(p.d.Role, p.d.Work, p.d.Trust, "", []string{"mpc-ceremony", "inspect", "--ceremony", "/work/ceremony/public/ceremony.json", "--ceremony-signature", "/work/ceremony/public/ceremony.sig", "--coordinator-public-key-file", "/trust/coordinator-public-key.hex", "--transcript-dir", "/work/ceremony/public"}); err != nil {
+			t.Fatal(err)
+		}
+		f.state.Attempts = append(f.state.Attempts, flowAttempt{ID: "fixture-local-observation", Task: "observe", Stage: "phase1", Status: "succeeded", Note: "test fixture copied and authenticated the local transcript; cloud synchronization not exercised"})
 		f.run = func(task flowTask, command []string, id string, retry bool) error {
 			role, keys := p.d.Role, ""
 			if task.Offline {
@@ -440,6 +483,6 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(p.d.Work, "phase1-receipt/receipt.sig")); err != nil {
 			t.Fatal(err)
 		}
-		testOfflineReceiptTerminal(t, p, online, offline, platform)
+		testOfflineReceiptTerminal(t, p, online, offline, platform, f.state.Attempts)
 	}
 }

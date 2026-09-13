@@ -26,14 +26,14 @@ prepare_guided_settings() {
   else printf 'Ceremony label: %s\n' "$name"; fi
   [[ "$name" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]] || { echo 'Invalid ceremony name.' >&2; return 1; }
   if [[ -z "$role" ]]; then
-  printf 'Role:\n1) Coordinator\n2) Participant\n3) Witness\n4) Mirror\n5) Auditor\n6) Release-signer\n7) Upload-station\n'
+  printf 'Choose your task or role:\n1) Coordinator\n2) Participant\n3) Witness\n4) Mirror\n5) Auditor\n6) Release-signer\n7) Upload-station\n'
   while :; do
-    printf 'Choose a role number: '; IFS= read -r role || return 1
+    printf 'Choose a number: '; IFS= read -r role || return 1
     case "$role" in
       1|coordinator) role=coordinator;; 2|participant) role=participant;;
       3|witness) role=witness;; 4|mirror) role=mirror;; 5|auditor) role=auditor;;
       6|release-signer) role=release-signer;; 7|upload-station) role=upload-station;;
-      *) printf 'Choose one of the listed roles.\n'; continue;;
+      *) printf 'Choose one of the listed tasks or roles.\n'; continue;;
     esac
     break
   done

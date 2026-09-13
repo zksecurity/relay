@@ -83,12 +83,7 @@ func (f *roleFlow) firstUnfinishedRequiredTask(stage flowStage, hidden bool) int
 		return -1
 	}
 	for n, task := range stage.Tasks {
-		r := f.readiness(task)
-		if r.Requirement == "Optional" || r.Requirement == "Not applicable" {
-			continue
-		}
-		a := f.last(task)
-		if a == nil || f.checkAttemptEvidence(a) != nil || (a.Status != "succeeded" && !(task.Handoff && a.Status == "reported")) {
+		if !f.requiredTaskComplete(task) {
 			return n
 		}
 	}
@@ -96,6 +91,9 @@ func (f *roleFlow) firstUnfinishedRequiredTask(stage flowStage, hidden bool) int
 }
 
 func (f *roleFlow) requiredTaskComplete(task flowTask) bool {
+	if grantDeliveryTask(task) {
+		return f.grantDeliveryComplete(task)
+	}
 	r := f.readiness(task)
 	if r.Requirement == "Optional" || r.Requirement == "Not applicable" {
 		return true
@@ -205,7 +203,7 @@ func (f *roleFlow) menu() error {
 		f.ui.message(toneSuccess, "\nACTION\n")
 		fmt.Fprintf(f.ui.output, "  1) %s\n", label)
 		f.ui.message(toneMuted, "\nNAVIGATION\n")
-		fmt.Fprintln(f.ui.output, "  [V] View this area's actions and requirements\n  [M] Ceremony map\n  [R] Review recorded results\n  [B] Back to previous view\n  [Q] Save and exit\n------------------------------------------------------------")
+		fmt.Fprintln(f.ui.output, "  [V] View this area's actions and requirements\n  [M] Ceremony map\n  [R] Review recorded results\n  [E] Export bug report\n  [B] Back to previous view\n  [Q] Save and exit\n------------------------------------------------------------")
 		value, err := f.ui.ask("Choose", "1")
 		if err == io.EOF || strings.EqualFold(value, "q") || value == "0" {
 			return f.save()
@@ -214,6 +212,8 @@ func (f *roleFlow) menu() error {
 			return err
 		}
 		switch strings.ToLower(value) {
+		case "e":
+			f.ui.exportDiagnosticReport(f.state.Profile.Work)
 		case "1":
 			if selected >= 0 {
 				err = f.execute(stage.Tasks[selected])

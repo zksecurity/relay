@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/zksecurity/relay/internal/access"
+	"github.com/zksecurity/relay/internal/transcript"
 )
 
 func preparationFixture(t *testing.T, role string) *rolePreparer {
@@ -144,6 +145,7 @@ func TestRolePreparationTransportProfilesBindOwnIdentity(t *testing.T) {
 		t.Run(role, func(t *testing.T) {
 			p := preparationFixture(t, role)
 			prepareTestProfile(t, p, role)
+			prepareTestPublicStorage(t, p)
 			if role != "upload-station" {
 				prepareTestIdentity(t, p)
 			}
@@ -273,6 +275,10 @@ func TestRolePreparationUsesAuthoredSetupOrder(t *testing.T) {
 		t.Fatalf("after images = %s, want identity", got)
 	}
 	prepareTestIdentity(t, p)
+	if got := p.nextPreparationAction().choice; got != "9" {
+		t.Fatalf("after identity = %s, want public handoff", got)
+	}
+	reportTestPublicHandoff(t, p, "identity")
 	if got := p.nextPreparationAction().choice; got != "3" {
 		t.Fatalf("after identity = %s, want public inputs", got)
 	}
@@ -293,10 +299,42 @@ func TestRolePreparationUsesAuthoredSetupOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if got := p.nextPreparationAction().choice; got != "10" {
+		t.Fatalf("after enrollment = %s, want enrollment handoff", got)
+	}
+	prepareTestEnrollmentHandoff(t, p)
+	reportTestPublicHandoff(t, p, "enrollment")
+	if got := p.nextPreparationAction().choice; got != "3" {
+		t.Fatalf("before storage = %s, want import", got)
+	}
+	prepareTestPublicStorage(t, p)
 	if got := p.nextPreparationAction().choice; got != "4" {
-		t.Fatalf("after enrollment = %s, want phase profile", got)
+		t.Fatalf("after storage = %s, want phase profile", got)
 	}
 	if err := os.WriteFile(filepath.Join(p.d.Work, "ceremony/config/participant-phase1.json"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var identity setupIdentity
+	if err := setupReadJSON(filepath.Join(p.d.Keys, "identity.json"), &identity); err != nil {
+		t.Fatal(err)
+	}
+	p.inspectDefinition = func() (transcript.Definition, error) {
+		return transcript.Definition{Phase2Participants: []string{identity.ID}}, nil
+	}
+	if got := p.nextPreparationAction(); got.choice != "4" || !strings.Contains(got.label, "Phase 2") {
+		t.Fatalf("after phase1: %+v", got)
+	}
+	p.inspectDefinition = func() (transcript.Definition, error) { return transcript.Definition{}, fmt.Errorf("invalid signature") }
+	if got := p.nextPreparationAction(); got.choice != "4" || !strings.Contains(got.reason, "could not be authenticated") {
+		t.Fatalf("unknown assignment silently skipped: %+v", got)
+	}
+	p.inspectDefinition = func() (transcript.Definition, error) {
+		return transcript.Definition{Phase1Participants: []string{identity.ID}}, nil
+	}
+	if got := p.nextPreparationAction(); got.choice != "5" {
+		t.Fatalf("Phase 1-only participant was asked for Phase 2: %+v", got)
+	}
+	if err := writePublicTextOnce(filepath.Join(p.d.Work, "ceremony/config/participant-phase2.json"), "fixture"); err != nil {
 		t.Fatal(err)
 	}
 	if got := p.nextPreparationAction().choice; got != "5" {

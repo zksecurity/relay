@@ -47,6 +47,18 @@ func TestR2SetupStagesPrivateDedicatedCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := w.output.(*bytes.Buffer).String() + string(raw)
+	prompt := strings.Index(output, "Inbox-only credential — Access Key ID")
+	if prompt < 0 {
+		t.Fatal("missing inbox credential prompt")
+	}
+	for _, explanation := range []string{"Why a second credential?", "This separation is a Relay safety requirement.", "Permission: Object Read & Write", "Bucket: inbox-bucket only", "Do not reuse the coordinator credential."} {
+		if !strings.Contains(output[:prompt], explanation) {
+			t.Fatalf("missing explanation before credential prompt: %s", explanation)
+		}
+	}
+	if strings.Contains(output, "Inbox-only parent") {
+		t.Fatal("internal terminology remains in credential prompts")
+	}
 	for _, secret := range []string{strings.Repeat("c", 64), strings.Repeat("e", 64), "test-only-control-token"} {
 		if strings.Contains(output, secret) {
 			t.Fatal("secret leaked into public prompts or draft")

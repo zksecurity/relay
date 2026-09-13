@@ -316,6 +316,7 @@ func readGuidedProfile(path, name, role string) (guidedProfile, error) {
 // Read one byte at a time so confirmation does not consume input intended for
 // the participant's later, separate erasure confirmation.
 func confirmGuided(in io.Reader, out io.Writer) error {
+	disableTerminalFocusReporting(out)
 	fmt.Fprint(out, "Continue? [y/N] ")
 	var line []byte
 	for len(line) < 16 {
@@ -334,6 +335,7 @@ func confirmGuided(in io.Reader, out io.Writer) error {
 			return errors.New("cancelled; no task was started")
 		}
 		line = append(line, b[0])
+		line = []byte(withoutTerminalFocusEvents(string(line)))
 	}
 	return errors.New("confirmation too long; no task was started")
 }
@@ -397,11 +399,12 @@ func runGuidedOpen(args []string) error {
 	if err != nil {
 		return err
 	}
-	var role, grant, resume, action string
+	var role, grant, resume, action, displayRole string
 	var status, retry, showCommand bool
 	set := flag.NewFlagSet("ceremony open", flag.ContinueOnError)
 	set.StringVar(&root, "settings-root", root, "saved-settings root")
 	set.StringVar(&role, "role", "", "assigned role")
+	set.StringVar(&displayRole, "display-role", "", "ceremony role label for the internal signing container (display only)")
 	set.StringVar(&action, "action", "", "named action using shared settings; supply its command after --")
 	set.StringVar(&grant, "grant", "", "fresh participant grant file")
 	set.StringVar(&resume, "resume-candidate", "", "public candidate to verify and resume, never recompute")
@@ -409,6 +412,9 @@ func runGuidedOpen(args []string) error {
 	set.BoolVar(&retry, "reviewed-retry", false, "ordinary roles only: acknowledge manual review of outputs/state before retrying an interrupted task")
 	set.BoolVar(&showCommand, "show-command", false, "also display the exact saved command for technical review")
 	if err := set.Parse(args[1:]); err != nil {
+		return err
+	}
+	if _, err := guidedRoleDisplay(role, displayRole, set.Args()); err != nil {
 		return err
 	}
 	if action == "" && len(set.Args()) != 0 {
@@ -440,6 +446,9 @@ func runGuidedOpen(args []string) error {
 		return err
 	}
 	activity := filepath.Join(dir, "activity")
+	if _, err := guidedRoleDisplay(p.Role, displayRole, p.Command); err != nil {
+		return err
+	}
 	if action != "" {
 		if role == "participant" || len(p.Command) != 0 {
 			return errors.New("--action requires shared non-participant settings saved without a command")
@@ -459,7 +468,11 @@ func runGuidedOpen(args []string) error {
 	} else if role != "participant" && len(p.Command) == 0 {
 		return errors.New("shared settings require --action NAME -- TOOL ARGS...; reuse the action name without a command to reopen it")
 	}
-	fmt.Printf("Ceremony alias: %s\nRole: %s\n", p.Name, p.Role)
+	display, err := guidedRoleDisplay(p.Role, displayRole, p.Command)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Ceremony alias: %s\n%s", p.Name, display)
 	var launch []string
 	if role == "participant" {
 		if retry {

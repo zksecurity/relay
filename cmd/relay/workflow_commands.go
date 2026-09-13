@@ -577,12 +577,13 @@ func confirmErasure(o roleOpts) error {
 	// both after the fact.
 	fmt.Println("Contribution complete. Destroy the contribution environment now.")
 	fmt.Println("This is logical cleanup, not proof of physical erasure. Host/VM remnants are not excluded. Confirm that the contributor process has terminated, its ephemeral environment was removed, and you did not deliberately retain snapshots, memory dumps, secret copies, or configure environment backups.")
+	disableTerminalFocusReporting(os.Stdout)
 	fmt.Print("After it is destroyed, type DESTROYED and press Enter: ")
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil && len(line) == 0 {
 		return err
 	}
-	if strings.TrimSpace(line) != "DESTROYED" {
+	if strings.TrimSpace(withoutTerminalFocusEvents(line)) != "DESTROYED" {
 		return errors.New("erasure was not confirmed; candidate remains local and was not uploaded")
 	}
 	return nil
@@ -623,11 +624,12 @@ Confirm that you:
   • did not configure the disposable environment for backup.
 
 Type CLEANUP PRECAUTIONS CONFIRMED to acknowledge these limitations and continue: `, receipt.Daemon.ID, receipt.Daemon.Endpoint, shortID, shortID)
+	disableTerminalFocusReporting(os.Stdout)
 	line, readErr := bufio.NewReader(os.Stdin).ReadString('\n')
 	if readErr != nil && len(line) == 0 {
 		return readErr
 	}
-	if strings.TrimSpace(line) != "CLEANUP PRECAUTIONS CONFIRMED" {
+	if strings.TrimSpace(withoutTerminalFocusEvents(line)) != "CLEANUP PRECAUTIONS CONFIRMED" {
 		return errors.New("no-copy confirmation was not given; candidate remains local and was not uploaded")
 	}
 	receipt.ParticipantConfirmation = "CLEANUP PRECAUTIONS CONFIRMED"

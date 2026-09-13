@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -13,7 +15,7 @@ import (
 
 // A real PTY checks the launcher -> child Docker confirmation boundary. Feeding
 // all answers through a pipe would not model a user waiting for each prompt.
-func testOfflineReceiptTerminal(t *testing.T, p *rolePreparer, online, offline, platform string) {
+func testOfflineReceiptTerminal(t *testing.T, p *rolePreparer, online, offline, platform string, prepared []flowAttempt) {
 	t.Helper()
 	binary := os.Getenv("RELAY_NATIVE_TEST_BINARY")
 	if binary == "" {
@@ -41,6 +43,29 @@ func testOfflineReceiptTerminal(t *testing.T, p *rolePreparer, online, offline, 
 		profile := guidedProfile{Schema: guidedSchema, Name: alias, Role: role, Image: image, Platform: platform, Work: p.d.Work, Trust: p.d.Trust, Keys: keys}
 		if err := writeJSONNoReplace(filepath.Join(dir, "profile.json"), profile, 0600); err != nil {
 			t.Fatal(err)
+		}
+		if role == p.d.Role {
+			// The caller already authenticated the copied transcript and prepared
+			// the unsigned receipt with real Docker commands. Carry those exact
+			// test results into this fresh PTY session; this lane tests signing,
+			// not another cloud observation or receipt preparation.
+			catalog, err := json.Marshal(roleFlowStages(role))
+			if err != nil {
+				t.Fatal(err)
+			}
+			state := roleFlowState{Schema: roleFlowSchema, Name: name, Role: role, Profile: profile, StageID: "assignment", CatalogDigest: fmt.Sprintf("sha256:%x", sha256.Sum256(catalog)), Values: map[string]string{}}
+			for _, attempt := range prepared {
+				if attempt.Task == "observe" || attempt.Task == "draft-receipt" || attempt.Task == "receipt" {
+					state.Attempts = append(state.Attempts, attempt)
+				}
+			}
+			statePath := filepath.Join(dir, "workflow", "state.json")
+			if err := ensurePrivateDirectory(filepath.Dir(statePath)); err != nil {
+				t.Fatal(err)
+			}
+			if err := ensureFlowWorkspace(statePath, profile, &state, false); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	signNumber := "3"

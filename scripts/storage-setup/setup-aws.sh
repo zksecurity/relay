@@ -152,6 +152,8 @@ fi
 setup_account=$(jq -r .Account <<<"$caller_identity")
 caller_arn=$(jq -r .Arn <<<"$caller_identity")
 [[ "$setup_account" =~ ^[0-9]{12}$ ]] || die "could not determine the AWS account"
+[[ -z "${EXPECTED_ACCOUNT:-}" || "$setup_account" == "$EXPECTED_ACCOUNT" ]] || die 'AWS account changed after review; no resources changed'
+[[ -z "${EXPECTED_CALLER_ARN:-}" || "$caller_arn" == "$EXPECTED_CALLER_ARN" ]] || die 'AWS identity changed after review; no resources changed'
 
 if [[ "$caller_arn" =~ ^arn:aws:iam::${setup_account}:(role|user)/ ]]; then
   aws_principal_arn=$caller_arn

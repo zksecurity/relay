@@ -525,6 +525,34 @@ func (f *roleFlow) command(task flowTask) ([]string, error) {
 				if field.Kind == "path" {
 					displayed = flowHostPath(f.state.Profile, current)
 				}
+				if field.Flag == "ceremony" && field.Kind == "path" {
+					fmt.Fprintln(f.ui.output, "Ceremony definition file")
+					if displayed != "" {
+						fmt.Fprintln(f.ui.output, "Press Enter to use your saved ceremony file,\nor enter another path:")
+					} else {
+						fmt.Fprintln(f.ui.output, "Enter the path to your ceremony definition file:")
+					}
+					label = "File"
+				}
+				if field.Kind == "path" && (field.Flag == "ceremony-signature" || field.Flag == "coordinator-public-key-file" || field.Flag == "transcript-dir" || field.Flag == "transcript-root") {
+					heading, saved, prompt := "Ceremony signature file", "signature file", "File"
+					switch field.Flag {
+					case "coordinator-public-key-file":
+						heading, saved = "Coordinator public key file", "coordinator public key file"
+					case "transcript-dir", "transcript-root":
+						heading, saved, prompt = "Public ceremony transcript folder", "transcript folder", "Folder"
+					}
+					fmt.Fprintln(f.ui.output, heading)
+					if field.Flag == "coordinator-public-key-file" {
+						fmt.Fprintln(f.ui.output, "Use the coordinator key you have independently authenticated; a saved path alone does not establish trust.")
+					}
+					if displayed != "" {
+						fmt.Fprintf(f.ui.output, "Press Enter to use your saved %s,\nor enter another path:\n", saved)
+					} else {
+						fmt.Fprintf(f.ui.output, "Enter the path to your %s:\n", saved)
+					}
+					label = prompt
+				}
 				value, err = f.ui.ask(label, displayed)
 			}
 			if err != nil {
@@ -612,9 +640,26 @@ func (f *roleFlow) last(task flowTask) *flowAttempt {
 	return nil
 }
 
-func (f *roleFlow) execute(task flowTask) error {
+func (f *roleFlow) execute(task flowTask) (result error) {
+	c := diagnosticContext{Work: f.state.Profile.Work, Role: f.state.Role, Release: f.state.Profile.ReleaseCommit, Stage: f.stages[f.state.Stage].ID, Action: task.ID}
+	recordDiagnostic(c, "started", nil, f.ui.output)
+	defer func() {
+		outcome := "succeeded"
+		if result != nil {
+			outcome = "failed"
+		}
+		recordDiagnostic(c, outcome, result, f.ui.output)
+	}()
 	if err := f.requireTaskPredecessors(task); err != nil {
 		return err
+	}
+	if grantDeliveryTask(task) {
+		return f.deliverPrivateGrant(task)
+	}
+	var preparationErr error
+	task, preparationErr = f.prepareAuditUpload(task)
+	if preparationErr != nil {
+		return preparationErr
 	}
 	if f.state.Role == "coordinator" && task.ID == "enrollment" && f.state.Profile.Work != "" {
 		return f.collectEnrollment(task)
@@ -634,6 +679,7 @@ func (f *roleFlow) execute(task flowTask) error {
 		}
 	}
 	fmt.Fprintln(f.ui.output, "\n"+task.Label+"\n"+task.Help)
+	f.showAssignmentFiles(task)
 	previous := f.last(task)
 	if previous != nil && previous.Status == "prepared" {
 		// The only transition out of prepared is a separately synced running
@@ -1054,7 +1100,7 @@ func (f *roleFlow) advance() error {
 		if last != nil && (last.Status == "running" || last.Status == "failed") {
 			return errors.New("resolve the interrupted/failed action before moving on")
 		}
-		if (decisionRequired || !task.Optional) && (last == nil || (last.Status != "succeeded" && !(task.Handoff && last.Status == "reported"))) {
+		if (decisionRequired || !task.Optional) && !f.requiredTaskComplete(task) {
 			return fmt.Errorf("complete %q first", task.Label)
 		}
 	}
@@ -1159,7 +1205,7 @@ func (f *roleFlow) stageMenu() error {
 		f.ui.message(toneSuccess, "\nWORKFLOW ACTION\n")
 		fmt.Fprintf(f.ui.output, "  %d) %s\n", len(stage.Tasks)+1, nextLabel)
 		f.ui.message(toneMuted, "\nNAVIGATION\n")
-		fmt.Fprintln(f.ui.output, "  [B] Back to overview\n  [M] Ceremony map\n  [Q] Save and exit")
+		fmt.Fprintln(f.ui.output, "  [E] Export bug report\n  [B] Back to overview\n  [M] Ceremony map\n  [Q] Save and exit")
 		choice, err := f.ui.ask("Choose", "0")
 		if err == io.EOF || strings.EqualFold(choice, "q") || choice == "0" {
 			return f.save()
@@ -1169,6 +1215,10 @@ func (f *roleFlow) stageMenu() error {
 		}
 		if strings.EqualFold(choice, "b") {
 			return nil
+		}
+		if strings.EqualFold(choice, "e") {
+			f.ui.exportDiagnosticReport(f.state.Profile.Work)
+			continue
 		}
 		if strings.EqualFold(choice, "m") {
 			if _, err := f.ceremonyMap(); err != nil {
@@ -1194,7 +1244,7 @@ func (f *roleFlow) stageMenu() error {
 	}
 }
 
-func runRoleFlow(args []string) error {
+func runRoleFlow(args []string) (result error) {
 	if len(args) == 0 {
 		return errors.New("usage: relay ceremony guide NAME --role ROLE [--settings-root DIR]")
 	}
@@ -1219,6 +1269,12 @@ func runRoleFlow(args []string) error {
 	if err != nil {
 		return fmt.Errorf("save your role settings with ceremony setup first: %w", err)
 	}
+	defer func() {
+		if result != nil {
+			recordDiagnostic(diagnosticContext{Work: p.Work, Role: p.Role, Release: p.ReleaseCommit, Stage: "launcher", Action: "open-guide"}, "failed", result, os.Stdout)
+			fmt.Fprintln(os.Stdout, "To export a bug report, use relay diagnostics export --work ROLE_WORK --out FRESH_ZIP with this role's work folder.")
+		}
+	}()
 	if len(p.Command) != 0 {
 		return errors.New("guide requires shared settings saved without a command; keep existing named actions for recovery")
 	}
@@ -1326,7 +1382,7 @@ func runRoleFlow(args []string) error {
 				}
 				command = append(append([]string(nil), command...), "--reviewed-sha256", digest)
 			}
-			open = []string{"ceremony", "open", alias, "--role", "decision-signer", "--settings-root", root}
+			open = []string{"ceremony", "open", alias, "--role", "decision-signer", "--settings-root", root, "--display-role", f.state.Role}
 		}
 		if p.Role == "participant" && !task.Offline {
 			configPath := ""
