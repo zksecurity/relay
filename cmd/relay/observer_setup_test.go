@@ -19,6 +19,15 @@ func observerFixture(t *testing.T, role string) observerSetup {
 	return observerSetup{"relay-observer-setup-v1", "ceremony", strings.Repeat("a", 64), role, 1, w.d.Identities.Coordinator}
 }
 
+func observerTestJourney() *transcript.DefinitionJourney {
+	j := &transcript.DefinitionJourney{Schema: "proof-tool-mpc-definition-journey-v1", MinimumPublicWitnesses: 1, MinimumMirrorsPerAcceptedHead: 1, ObserverRequirementSource: "test verified requirements"}
+	for n, role := range []string{"coordinator", "release-signer", "auditor", "participant"} {
+		id := transcript.PublicIdentity{ID: role, KeyID: "key-" + role, PublicKeyFingerprint: "sha256:" + strings.Repeat(string(rune('a'+n)), 64)}
+		j.RequiredEnrollments = append(j.RequiredEnrollments, transcript.ExpectedEnrollment{Role: role, RoleIndex: 1, Identity: id})
+	}
+	return j
+}
+
 func TestObserverReservationsStableAndDistinct(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "reservations")
 	a := observerFixture(t, "witness")
@@ -105,7 +114,9 @@ func TestObserverSetupImportAndAutomaticNumber(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.DefinitionSHA256, _ = setupFileHash(def)
-	p.inspectDefinition = func() (transcript.Definition, error) { return transcript.Definition{CeremonyID: s.CeremonyID}, nil }
+	p.inspectDefinition = func() (transcript.Definition, error) {
+		return transcript.Definition{CeremonyID: s.CeremonyID, Journey: observerTestJourney()}, nil
+	}
 	source := filepath.Join(p.d.Work, "received-setup.json")
 	if err := writeJSONNoReplace(source, s, 0600); err != nil {
 		t.Fatal(err)
@@ -198,7 +209,10 @@ func TestCoordinatorToObserverSetupHandoff(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(root, "ceremony.json"), definitionBytes, 0600); err != nil {
 				t.Fatal(err)
 			}
-			d := transcript.Definition{CeremonyID: "ceremony", Journey: &transcript.DefinitionJourney{Schema: "proof-tool-mpc-definition-journey-v1", MinimumPublicWitnesses: 1, MinimumMirrorsPerAcceptedHead: 1, ObserverRequirementSource: "test verified requirements"}}
+			d := transcript.Definition{CeremonyID: "ceremony", Journey: observerTestJourney()}
+			// Use the real fixed roster identities so observer-key conflicts remain
+			// covered while the signed policy keeps observers post-initialization.
+			d.Journey.RequiredEnrollments = nil
 			for _, fixed := range []struct {
 				role     string
 				identity setupIdentity

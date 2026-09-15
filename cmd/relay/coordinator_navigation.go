@@ -13,7 +13,7 @@ type preparationNext struct{ choice, label, reason string }
 // An allowed alternative is not the recommended next action. These choices
 // follow a sufficient roster; imported website assignments remain website-owned.
 func (w *coordinatorWizard) showOptionalIdentityImport(next preparationNext) bool {
-	if w.d.Status != "draft" || w.d.Tessera != nil || w.d.TesseraSetup != nil {
+	if w.d.Status != "draft" || w.d.Tessera != nil || w.d.TesseraSetup != nil || w.d.TesseraSetupV3 != nil {
 		return false
 	}
 	switch next.choice {
@@ -41,7 +41,7 @@ func (w *coordinatorWizard) nextPreparationAction() preparationNext {
 				return preparationNext{"13", "Prepare, review and sign MY coordinator enrollment", "Bind your key to the signed coordinator assignment. This proves key control, not independent people. Existing output is reviewed before reuse."}
 			}
 		}
-		if w.d.Tessera != nil || w.d.TesseraSetup != nil {
+		if w.d.Tessera != nil || w.d.TesseraSetup != nil || w.d.TesseraSetupV3 != nil {
 			if w.tesseraExportPresent() {
 				return preparationNext{"0", "Save and exit — return to Tessera", "Setup exported. Upload it to Tessera, review and lock the setup. Export is not proof of website acceptance. Export again or explicitly continue to operations below."}
 			}
@@ -69,7 +69,7 @@ func (w *coordinatorWizard) nextPreparationAction() preparationNext {
 		ids = append(ids, p.Identity)
 	}
 	seenID, seenKey, seenPub := map[string]bool{}, map[string]bool{}, map[string]bool{}
-	rosterReady := len(d.Identities.Auditors) >= 1 && len(d.Identities.Roster) > 0
+	rosterReady := len(d.Identities.Roster) > 0
 	for _, id := range ids {
 		if id.check() != nil || seenID[id.ID] || seenKey[id.KeyID] || seenPub[id.Fingerprint] {
 			rosterReady = false
@@ -77,7 +77,7 @@ func (w *coordinatorWizard) nextPreparationAction() preparationNext {
 		seenID[id.ID], seenKey[id.KeyID], seenPub[id.Fingerprint] = true, true, true
 	}
 	if !rosterReady {
-		return preparationNext{"3", "Import or correct the required public identities", "The definition needs a coordinator, final signer, at least one auditor, and at least one participant with distinct keys. Witness and mirror enrollments come after initialization."}
+		return preparationNext{"3", "Import or correct the required public identities", "The definition needs a coordinator, final signer and at least one participant with distinct keys. Add auditors only when the assurance policy will require ceremony audits; witnesses and mirrors enroll after initialization."}
 	}
 	if d.ArchitecturePolicy != "" && d.ArchitecturePolicy != "both" && d.ArchitecturePolicy != "single" && d.ArchitecturePolicy != "custom" {
 		return preparationNext{"5", "Review supported computers", "Correct the saved architecture selection. Both supported Linux architectures are selected by default."}

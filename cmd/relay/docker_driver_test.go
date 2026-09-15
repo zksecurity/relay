@@ -572,27 +572,38 @@ func TestDockerContributionDoesNotReplaceConcurrentLifecycleState(t *testing.T) 
 func TestSignedCeremonyBinarySHA256SelectsConfiguredPlatform(t *testing.T) {
 	amdDigest := "sha256:" + strings.Repeat("a", 64)
 	armDigest := "sha256:" + strings.Repeat("b", 64)
-	definition := `{"schema":"proof-tool-mpc-ceremony-definition-v2","software":{"binaries":[` +
-		`{"goos":"linux","goarch":"amd64","goamd64":"v1","tool_binary":{"sha256":"` + amdDigest + `"}},` +
-		`{"goos":"linux","goarch":"arm64","goarm64":"v8.0","tool_binary":{"sha256":"` + armDigest + `"}}]}}`
-	path := filepath.Join(t.TempDir(), "ceremony.json")
-	if err := os.WriteFile(path, []byte(definition), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for platform, want := range map[string]string{
-		"linux/amd64": amdDigest,
-		"linux/arm64": armDigest,
-	} {
-		got, err := signedCeremonyBinarySHA256(path, platform)
-		if err != nil {
-			t.Fatalf("select %s: %v", platform, err)
-		}
-		if got != want {
-			t.Fatalf("select %s = %q, want %q", platform, got, want)
-		}
-	}
-	if _, err := signedCeremonyBinarySHA256(path, "linux/riscv64"); err == nil {
-		t.Fatal("unlisted platform was accepted")
+	for _, schema := range []string{"proof-tool-mpc-ceremony-definition-v2", "proof-tool-mpc-ceremony-definition-v3"} {
+		t.Run(schema, func(t *testing.T) {
+			definition := `{"schema":"` + schema + `","software":{"binaries":[` +
+				`{"goos":"linux","goarch":"amd64","goamd64":"v1","tool_binary":{"sha256":"` + amdDigest + `"}},` +
+				`{"goos":"linux","goarch":"arm64","goarm64":"v8.0","tool_binary":{"sha256":"` + armDigest + `"}}]}}`
+			path := filepath.Join(t.TempDir(), "ceremony.json")
+			if err := os.WriteFile(path, []byte(definition), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			for platform, want := range map[string]string{
+				"linux/amd64": amdDigest,
+				"linux/arm64": armDigest,
+			} {
+				got, err := signedCeremonyBinarySHA256(path, platform)
+				if err != nil {
+					t.Fatalf("select %s: %v", platform, err)
+				}
+				if got != want {
+					t.Fatalf("select %s = %q, want %q", platform, got, want)
+				}
+			}
+			if _, err := signedCeremonyBinarySHA256(path, "linux/riscv64"); err == nil {
+				t.Fatal("unlisted platform was accepted")
+			}
+			duplicate := strings.Replace(definition, `]}}`, `,{"goos":"linux","goarch":"arm64","tool_binary":{"sha256":"`+armDigest+`"}}]}}`, 1)
+			if err := os.WriteFile(path, []byte(duplicate), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := signedCeremonyBinarySHA256(path, "linux/arm64"); err == nil {
+				t.Fatal("duplicate platform was accepted")
+			}
+		})
 	}
 }
 

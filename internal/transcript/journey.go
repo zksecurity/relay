@@ -15,6 +15,9 @@ type DefinitionJourney struct {
 	RequiredEnrollments           []ExpectedEnrollment `json:"required_enrollments"`
 	MinimumPublicWitnesses        int                  `json:"minimum_public_witnesses"`
 	MinimumMirrorsPerAcceptedHead int                  `json:"minimum_mirrors_per_accepted_head"`
+	MinimumPassingCeremonyAudits  int                  `json:"minimum_passing_ceremony_audits"`
+	MinimumExternalAuditSignoffs  int                  `json:"minimum_external_audit_signoffs"`
+	BeaconRoundLeadSeconds        uint32               `json:"beacon_round_lead_seconds"`
 	ObserverRequirementSource     string               `json:"observer_requirement_source"`
 }
 type PhaseJourney struct {
@@ -41,12 +44,21 @@ type Journey struct {
 }
 
 func (d Definition) RequireJourney() (DefinitionJourney, error) {
-	if d.Journey == nil || d.Journey.Schema != "proof-tool-mpc-definition-journey-v1" {
+	if d.Journey == nil || (d.Journey.Schema != "proof-tool-mpc-definition-journey-v1" && d.Journey.Schema != "proof-tool-mpc-definition-journey-v2") {
 		return DefinitionJourney{}, errors.New("approved proof-tool does not provide authenticated journey requirements; use a matching new release")
 	}
 	j := *d.Journey
-	if j.MinimumPublicWitnesses < 1 || j.MinimumMirrorsPerAcceptedHead < 1 || j.ObserverRequirementSource == "" {
+	legacy := j.Schema == "proof-tool-mpc-definition-journey-v1"
+	if j.ObserverRequirementSource == "" {
 		return j, errors.New("incomplete observer requirements from proof-tool")
+	}
+	if legacy && (j.MinimumPublicWitnesses < 1 || j.MinimumMirrorsPerAcceptedHead < 1) {
+		return j, errors.New("incomplete observer requirements from legacy proof-tool")
+	}
+	for _, value := range []int{j.MinimumPublicWitnesses, j.MinimumMirrorsPerAcceptedHead, j.MinimumPassingCeremonyAudits, j.MinimumExternalAuditSignoffs} {
+		if value < 0 || value > 20 {
+			return j, errors.New("authenticated assurance requirement is outside supported bounds")
+		}
 	}
 	roles := map[string]int{}
 	ids := map[string]bool{}
@@ -57,7 +69,11 @@ func (d Definition) RequireJourney() (DefinitionJourney, error) {
 		}
 		ids[e.Identity.ID] = true
 	}
-	if roles["coordinator"] != 1 || roles["release-signer"] != 1 || roles["auditor"] < 1 || roles["participant"] < 1 || len(roles) != 4 {
+	if roles["coordinator"] != 1 || roles["release-signer"] != 1 || roles["participant"] < 1 ||
+		(legacy && roles["auditor"] < 1) ||
+		roles["auditor"] < j.MinimumPassingCeremonyAudits ||
+		(!legacy && j.MinimumPassingCeremonyAudits == 0 && roles["auditor"] != 0) ||
+		(len(roles) != 3 && len(roles) != 4) {
 		return j, errors.New("required ceremony roster is incomplete")
 	}
 	return j, nil

@@ -20,6 +20,20 @@ type flowReadiness struct {
 
 func (f *roleFlow) readiness(task flowTask) flowReadiness {
 	r := flowReadiness{Requirement: "Required", Source: "Relay role procedure", Status: "Ready to review inputs"}
+	_, applicable, policyErr := f.resolvePolicyTask(task)
+	if policyErr != nil {
+		if task.Assurance != "" {
+			r.Status, r.Missing = "Waiting", []string{"Authenticate the signed definition to determine whether this action applies"}
+			return r
+		}
+		// Dynamic defaults are resolved again before execution. Their absence
+		// must not make a non-optional task look disabled in a read-only menu.
+		applicable = true
+	}
+	if !applicable {
+		r.Requirement, r.Source, r.Status = "Not applicable", "signed assurance policy", "Disabled by the signed ceremony policy"
+		return r
+	}
 	if grantDeliveryTask(task) {
 		if f.grantDeliveryComplete(task) {
 			if f.grantForDelivery(task) == nil {

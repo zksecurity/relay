@@ -288,12 +288,16 @@ type tesseraToolDigest struct {
 }
 
 func checkTesseraDefinition(c tesseraContext, raw []byte, inspected transcript.Definition) (tesseraDefinition, error) {
+	return checkTesseraDefinitionSchema(c, raw, inspected, "proof-tool-mpc-ceremony-definition-v2")
+}
+
+func checkTesseraDefinitionSchema(c tesseraContext, raw []byte, inspected transcript.Definition, expectedSchema string) (tesseraDefinition, error) {
 	var d tesseraDefinition
 	// Unknown signed protocol fields are retained in the original artifact.
 	if err := json.Unmarshal(raw, &d); err != nil {
 		return d, err
 	}
-	if d.Schema != "proof-tool-mpc-ceremony-definition-v2" || d.ProtocolID != inspected.CeremonyID || !tesseraHash.MatchString(d.ProtocolID) || d.Mode != c.Mode || d.Mode != inspected.Mode || !slices.Equal(d.Phase1.Participants, inspected.Phase1Participants) || !slices.Equal(d.Phase2.Participants, inspected.Phase2Participants) {
+	if d.Schema != expectedSchema || d.ProtocolID != inspected.CeremonyID || !tesseraHash.MatchString(d.ProtocolID) || d.Mode != c.Mode || d.Mode != inspected.Mode || !slices.Equal(d.Phase1.Participants, inspected.Phase1Participants) || !slices.Equal(d.Phase2.Participants, inspected.Phase2Participants) {
 		return d, errors.New("signed definition and authenticated inspection disagree with the website roster")
 	}
 	roster, p1, p2 := c.setupInputs()

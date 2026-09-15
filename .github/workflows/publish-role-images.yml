@@ -271,11 +271,12 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x launchers/relay-linux-amd64
-          launchers/relay-linux-amd64 tessera release-manifest --role-images relay-role-images.release.json --out ceremony-software-manifest-v2.json
+          launchers/relay-linux-amd64 tessera release-manifest-v3 --role-images relay-role-images.release.json --out ceremony-software-manifest-v3.json
       - name: Attest setup software manifest
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
-          subject-path: ceremony-software-manifest-v2.json
+          subject-path: |
+            ceremony-software-manifest-v3.json
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
@@ -284,5 +285,5 @@ jobs:
           body_path: release/release-notes.md
           files: |
             relay-role-images.release.json
-            ceremony-software-manifest-v2.json
+            ceremony-software-manifest-v3.json
             launchers/*
