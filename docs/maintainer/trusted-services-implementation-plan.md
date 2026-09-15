@@ -456,6 +456,64 @@ requires new review, even if an older bundle still has a valid signature.
 Packaging layout and closed publication inventory remain a separate reviewed
 implementation step; this read-only API does not activate V4 releases.
 
+### Reviewed release packaging (implementation in progress)
+
+Keep the application key-bundle layout and manifest format unchanged: one copy
+of each native key at the release root. FinalTranscript V3 binds the exact V4
+review result, including its review and final-candidate checkpoints, operational
+bundle, audit pairs, coordinator replay claim and proposed release time.
+Inline the review in the transcript; no separate review file is necessary.
+The release signature authenticates that transcript through the existing
+manifest hash. Older transcript formats must reject these new fields.
+
+Preserve original logical paths for checkpoint history and operational/audit
+records. Do not copy every historical contribution payload into the key bundle:
+this package verifies the coordinator's replay claim and required records, not
+an independent contribution replay. A full replay archive is a separate product.
+Derive a sorted, unique `RequiredArtifacts` set from verified history and
+evidence: all checkpoint ancestry pairs, the definition pair, candidate files,
+bundle pair and verified referenced artifacts, audit pairs, and lifecycle
+chain/close/beacon/seal pairs with their raw beacon responses. Include governance
+statements through the verified bundle. Conflicting digests at one name fail.
+These are source-review dependencies, not the subsequently generated manifest,
+signature, transcript or checksum file. Never publish by recursively copying
+the input workspace. Test review against a copy of only this set.
+
+The candidate is committed under `final/candidate/`, whereas application keys
+remain at the release root. Use a fixed, V4-only mapping of the closed
+candidate filename set to root files; do not use symlinks, arbitrary aliases or
+caller-controlled path rewrites. Reject conflicting physical destinations and
+extra files. Every V4 package read, including audit candidate reads and candidate
+prehashes, uses the same rule. The ordinary staging-root mode remains unchanged.
+Make an independent checked copy into private staging; no hardlinks, destructive
+moves, or copy-on-write dependency. One key copy within the release does not mean
+removing the source copy. Recheck copied bytes in staging before
+signing, then self-verify the exact signed package before atomically publishing
+the local directory. Local package creation is not cloud/public publication.
+
+The final-release checkpoint must use the exact reviewed predecessor; a changed
+backend head requires another review. Keep production approval/NO-GO and public
+publication separate, including NO-GO when finalization fails. This layout is
+independently reviewed; it does not yet enable V4 release signing. In V4 the
+retained manifest-v1 `published_at` value means package-finalization time, not
+proof of upload or public availability.
+
+The first dependency-only snapshot test found an implementation mismatch:
+the shared operational verifier hashed and returned every historical
+genesis/contribution payload as a dependency. The reviewed V4-only correction
+omits those historical bytes while preserving the exact signed chain, cleanup,
+verification, custody, observer and beacon records. This is schema-dispatched,
+not a caller-selectable skip flag. Final review separately requires the exact
+coordinator replay claim; a standalone bundle check does not prove that replay.
+Released V1–V3 payload checks remain unchanged. The dependency-only test uses
+the copied definition/signature too, retaining only the independent public-key
+trust anchor externally; missing signed records and raw beacon evidence fail.
+The Linux ceremony/CLI suites and vet pass this correction, including explicit
+V3 missing-payload rejection and all three V4 real tiny fixture configurations.
+Before inlining the dependency inventory into FinalTranscript V3, test its
+maximum canonical size against the bounded transcript reader; do not silently
+raise all JSON limits or permit a late-signing size failure.
+
 Tests: changed final files, omitted/extra candidate refs, wrong replay binary,
 missing/bad bundle signature, old bundle after a new committed incident or
 enrollment, partial audit quorum, invalid release time, terminated state, and
