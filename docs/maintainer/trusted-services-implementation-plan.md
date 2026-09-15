@@ -92,6 +92,26 @@ reused/older rounds or invalid cross-phase timing. Both Linux ceremony/CLI
 suites and vet pass; the final helper extension passes separately. This is not
 final release-signing or menu coverage.
 
+Audit collection now has a typed edge after the frozen candidate. A shared
+byte-based verifier authenticates every audit while postponing only the minimum
+count check during collection. Final release enforces that count; disabled
+audits stay forbidden. Records are read through the confined checkpoint reader
+and require committed auditor enrollments. The Linux helper performs two real
+auditor replays and rejects a missing enrollment; shared tests reject a partial
+release quorum, duplicate auditor, wrong candidate and bad signature. Both
+Linux ceremony/CLI suites and vet pass for this slice.
+The implementation review found no blocker. Release assembly must sort audit
+pairs deterministically rather than use reverse ancestry order, and must verify
+the complete required enrollment collection through the existing bundle gate.
+
+Governance review found that abort/restart cannot be ordinary evidence edges:
+the unchanged bundle verifier authenticates them but does not stop progression.
+Implement informational incidents separately. Dedicated abort/restart handling
+must terminate the old ceremony; restart must additionally bind and authenticate
+the exact new definition. Do not route generic rejection records around the
+existing exact contribution-result rejection mechanism. These terminal paths
+remain required work, not an implemented claim.
+
 The independent structural review found and closed a retry-limit deadlock and
 an ambiguous predecessor-signature boundary. The final review reported no
 remaining material finding in this slice. Proof-tool's Linux ceremony/CLI
