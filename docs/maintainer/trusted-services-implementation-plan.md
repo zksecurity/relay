@@ -610,6 +610,46 @@ pinned Docker image. Do not execute a Linux binary directly on macOS.
 
 ## 5. Verify and publish the compatible pairing
 
+### Reviewed production-decision integration (next)
+
+Use a separate Decision V3 and draft V3 for Definition V4. Preserve released
+decision structs, hash domains, limits and V1–V3 definition dispatch. Review
+confirmed the old enumerated release list, 16 MiB transcript reader and old
+checksum layout cannot represent every valid new package.
+
+- Bind the exact final-release checkpoint pair and ceremony under a new release
+  ID domain. Include the candidate ID for readable review and verify it against
+  the package. Do not enumerate package files again or accept another manifest.
+- V4 preparation and evidence verification call
+  `VerifyFinalReleaseCheckpointV4` against authenticated trust and the exact
+  artifact root. This checks the complete private package, coordinator replay
+  claim, mandatory release signature and enabled assurance evidence without
+  repeating contribution mathematics.
+- Derive the ceremony-auditor signer list from the package; if the decision
+  includes that list for readability, require exact equality. Do not duplicate
+  the operational bundle or audit files as a second evidence source.
+- GO needs the coordinator, release signer and every package-bound ceremony
+  auditor. With audits disabled, only the first two sign; reject extra signers.
+  Witnesses and mirrors do not sign this decision.
+- Preserve the existing external production gates and their explicit evidence:
+  source release, exact K=21 rehearsal, deployment plan, formal checklist,
+  external security reviews and operational claims. Package verification
+  supplies package-derived gates without redundant hand-entered URL arrays.
+  Disabled assurance gates remain exactly `NOT_REQUIRED`.
+- Never include private access URLs or credentials. The compact package binding
+  uses logical names and digests; trusted delivery maps those to storage.
+  Require the decision time to be no earlier than package finalization.
+- Before a final package exists, NO-GO uses the authenticated abort path; do not
+  manufacture empty release evidence. A post-package NO-GO binds the same exact
+  checkpoint but cannot authorize publication. Public publication is separate
+  and requires verified GO.
+
+Tests must reject cross-version dispatch, wrong checkpoint/candidate, corrupt
+package, missing/extra auditor or other signatures, altered assurance policy,
+credential-bearing evidence URLs and a decision predating the release. Preserve
+all existing decision tests. New APIs must not accept a contribution-replay
+callback or circuit input; independent replay remains a separate optional task.
+
 - Model ordinary delay, missing files, duplicate actions, crashes and two local
   writers; distinguish retired delivery from rejected candidate.
 - Test wrong signatures, changed payloads, wrong turn/head/identity, rejected
