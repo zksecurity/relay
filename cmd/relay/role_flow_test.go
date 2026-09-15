@@ -850,6 +850,17 @@ func TestReleaseFlowRequiresOneAuditAndAllowsAdditionalPairs(t *testing.T) {
 			if counts["audit-report"] != 1 || counts["audit-signature"] != 1 {
 				t.Fatalf("mandatory audit pairs: %v", counts)
 			}
+			for _, flag := range []string{
+				"transcript-root", "phase1-chain", "phase1-chain-signature",
+				"phase1-close", "phase1-close-signature", "phase1-beacon",
+				"phase1-beacon-signature", "phase1-seal", "phase1-seal-signature",
+				"phase2-chain", "phase2-chain-signature", "phase2-close",
+				"phase2-close-signature", "phase2-beacon", "phase2-beacon-signature",
+			} {
+				if counts[flag] != 1 {
+					t.Fatalf("release signing replay field %q count = %d", flag, counts[flag])
+				}
+			}
 			if len(task.ExtraFields) != 2 || task.ExtraFields[0].Flag != "audit-report" || task.ExtraFields[1].Flag != "audit-signature" {
 				t.Fatal("additional audit pairs unavailable")
 			}

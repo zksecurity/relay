@@ -240,6 +240,10 @@ func baseRoleFlowStages(role string) []flowStage {
 	case "release-signer":
 		stages[0].Tasks = append(stages[0].Tasks, handoff("offline", "Confirm the signing machine is disconnected", "Preload the approved image. Disconnect the machine before review/signing; --network=none alone does not disconnect the host. Do not bring storage credentials onto it."))
 		sign := withFields(flowProof("sign", "Verify required evidence and sign the final parameters", "Uses the exact audit count selected by the signed ceremony policy and the signed operational bundle for both phases. This never mutates the candidate.", "release", "sign"), ff("candidate-bundle", "Exact reviewed candidate", "/work/candidate"))
+		// Release signing independently replays the exact retained ceremony.  The
+		// proof-tool deliberately requires these explicit inputs even when the
+		// signed policy sets the ceremony-audit minimum to zero.
+		sign.Fields = append(sign.Fields, replayFields()...)
 		sign.Fields = append(sign.Fields, ff("audit-report", "Signed audit report", ""), ff("audit-signature", "Matching audit signature", ""))
 		sign.Fields = append(sign.Fields, ff("operational-evidence-root", "Complete operational evidence root", "/work/ceremony/public"), ff("operational-bundle", "Signed operational bundle", "/work/ceremony/public/operational/evidence-bundle.json"), ff("operational-bundle-signature", "Operational bundle signature", "/work/ceremony/public/operational/evidence-bundle.sig"), ff("release-signing-key", "Your own final-parameter signing key", "/keys/signing.hex"), ft("signature-key-id", "Your enrolled signing key ID", ""), nowField("released-at"), ff("release-dir", "Fresh signed release output", "/work/release"))
 		sign.ExtraLabel = "Number of additional audit pairs"
