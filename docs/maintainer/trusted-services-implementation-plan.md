@@ -529,7 +529,7 @@ Before inlining the dependency inventory into FinalTranscript V3, test its
 maximum canonical size against the bounded transcript reader; do not silently
 raise all JSON limits or permit a late-signing size failure.
 
-### Record the signed private package (next integration step)
+### Record the signed private package
 
 Commit five small references under the fixed `final/release/` location: manifest
 and signature as the transition pair, plus transcript, exact release checksums,
@@ -565,8 +565,30 @@ transport validates the separately constructed prefix-plus-name object key.
 The dedicated checksum bound is implemented in proof-tool `e8a1c95`. The exact
 maximum-size parser/reader test and over-limit negative pass; existing readers
 retain their original limit. Full Linux ceremony and CLI suites plus vet pass
-(106.159 s and 46.561 s for the suites). This verifies the checksum change, not
-the still-pending final-release checkpoint or backend role journey.
+(106.159 s and 46.561 s for the suites). Those results verify the checksum
+change; the later final-release edge is tracked separately below.
+
+The final-release library edge is now implemented. Its full verifier returns
+all package files through read-only inventory accessors; the fixed prefix is
+separate. Review caught that exported mutable inventory fields could let a
+caller replace the verifier's membership, so those fields are private and slice
+accessors return copies. Structural stored-state inspection deliberately does
+not imply full package verification. The real tiny fixture exercises both
+boundaries: a changed final key leaves signed-state inspection valid but makes
+the full package check fail. Normal CLI/backend wiring remains pending.
+
+The sequence bound has headroom: every non-delivery edge needs at least a fresh
+signed pair (governance also rejects already-committed records), while a delivery
+slot can be allocated once and become terminal once. Even counting these
+separately and adding the final edge remains below the sequence limit. A unit
+test ties that inequality to the protocol constants; it is not a full journey
+model-checking result.
+
+Validation: the Linux ceremony/CLI suites and vet passed this edge (109.342 s
+and 46.008 s). After the read-only inventory fix, all three real tiny V4 fixture
+configurations, boundary units and vet passed again (85.349 s). These use known
+test keys and historical beacon responses, not independent operators or live
+storage. The package and checkpoint remain private local test outputs.
 
 Tests: changed final files, omitted/extra candidate refs, wrong replay binary,
 missing/bad bundle signature, old bundle after a new committed incident or
