@@ -58,6 +58,16 @@ the new signer verification path, normal role-menu integration, full role
 rehearsals, live-provider testing and release/deployment. No existing ceremony
 is switched to the new transport by these foundations.
 
+Enrollment and mirror evidence now have typed V4 checkpoint edges. Historical
+enrollments are re-authenticated with their disclosures; outbound delivery
+requires the participant's committed enrollment. Mirror evidence is counted per
+exact accepted head using enrolled keys, and phase closure checks every head.
+The real tiny subprocess passes with mirrors disabled and with one mirror
+required; missing enrollment and missing mirror evidence are rejected. The
+review closed a disclosure-size mismatch by sharing the existing 1 MiB bundle
+limit and bounded new observer indices. Witness/beacon-evidence/audit gates and
+the release path remain incomplete; this is not readiness to publish V4.
+
 The independent structural review found and closed a retry-limit deadlock and
 an ambiguous predecessor-signature boundary. The final review reported no
 remaining material finding in this slice. Proof-tool's Linux ceremony/CLI
