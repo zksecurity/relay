@@ -11,6 +11,8 @@ These references support release engineering, profile preparation, and recovery.
 | Review/test the guided role workflows | [Workflow review](role-workflow-review.md) |
 | Implement the agreed guided-journey redesign | [Journey design](guided-journey-design.md) |
 | Design storage-first ceremony synchronization | [Storage-first workflow](storage-first-ceremony-design.md) |
+| Review final verification and release-signer trust | [Release verification](release-verification-trust-model.md) |
+| Implement the trusted coordinator and storage model | [Next implementation](trusted-services-implementation-plan.md) |
 | Design and audit crash-safe recovery | [Design](crash-recovery-design.md) · [Audit](crash-recovery-audit.md) |
 | Plan remaining recovery work and review its risks | [Remaining plan](crash-recovery-remaining-plan.md) |
 | Review/test role onboarding | [Onboarding review](onboarding-review.md) |

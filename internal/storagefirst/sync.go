@@ -5,8 +5,6 @@
 package storagefirst
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -290,8 +288,8 @@ func fetchNamed(objects ObjectStore, root string, ref state.ContentRef, names fe
 }
 
 func fetchExact(objects ObjectStore, ref state.ContentRef, localPath string) error {
-	if ref.Size <= 0 {
-		return errors.New("immutable reference has no positive size")
+	if ref.Size <= 0 || !validDigest(ref.SHA256) {
+		return errors.New("immutable reference requires a positive size and valid SHA-256")
 	}
 	version, err := objects.GetVersionedAtMost(store.Key(ref.SHA256), localPath, ref.Size)
 	if err != nil {
@@ -300,14 +298,9 @@ func fetchExact(objects ObjectStore, ref state.ContentRef, localPath string) err
 	if version.Size != ref.Size {
 		return fmt.Errorf("downloaded size %d, want %d", version.Size, ref.Size)
 	}
-	raw, err := os.ReadFile(localPath)
-	if err != nil {
-		return err
-	}
-	sum := sha256.Sum256(raw)
-	if "sha256:"+hex.EncodeToString(sum[:]) != ref.SHA256 {
+	if err := verifyLocalRef(ref, localPath); err != nil {
 		_ = os.Remove(localPath)
-		return errors.New("downloaded object digest does not match its immutable reference")
+		return fmt.Errorf("downloaded object does not match its immutable reference: %w", err)
 	}
 	return nil
 }

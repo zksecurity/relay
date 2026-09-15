@@ -1,5 +1,10 @@
 ## What changed
 
+- Added a transport-only delivery foundation with bounded inventories,
+  manifest-last uploads and exact-byte retries. It is not yet connected to role
+  menus and does not replace the released signed-envelope workflow.
+- Stream large-artifact hash checks and stage verified private upload copies
+  so replacing the original file cannot change the uploaded bytes.
 - Added the authenticated storage-first protocol foundation: immutable signed
   checkpoints, rollback/fork detection, exact submission attempts, conditional
   root updates, crash-safe coordinator journals, and deterministic Phase 1
@@ -26,3 +31,5 @@ be selected for a production ceremony.
 Tessera needs its matching setup-v3 contract and policy-driven role/evidence
 handling before this workflow can be enabled. Existing Tessera ceremonies stay
 pinned to their prior setup contract and Relay release.
+The revised trusted-coordinator workflow will require a separately versioned
+contract; this transport foundation does not change existing setup contracts.

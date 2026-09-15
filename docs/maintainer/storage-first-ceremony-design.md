@@ -1,8 +1,14 @@
 # Storage-first ceremony workflow
 
-Status: proposed design for a clean implementation from current `main`. The
-experimental ZIP-first branch remains a reference; it is not the base for this
-implementation.
+Status: revised proposal, September 16, 2026. The current implementation still
+contains earlier envelope, acknowledgement and mandatory signer-replay behavior.
+Existing released ceremonies retain their rules. This document and the linked
+rollout plan specify the next version.
+
+Final verification and release-signing trust are specified separately in
+[`release-verification-trust-model.md`](release-verification-trust-model.md).
+That proposal replaces this document's earlier requirement that every
+storage-first release signer independently replay both phases.
 
 This document defines the normal way Relay roles discover ceremony progress and
 exchange public artifacts. S3 or R2 is the shared transport. ZIP packages remain
@@ -49,29 +55,40 @@ copy, a witness first observed something at a particular time, or a private
 grant was received. Relay tracks those facts locally or in explicit signed
 records instead of guessing them.
 
-## Security boundary
+## Trust and security boundary
 
-Storage is a courier, not an authority.
+We trust the coordinator to run the required verification, follow the signed
+ceremony rules and record outcomes honestly. We trust the configured storage
+service to return the committed current state and stored bytes through its
+documented API. Deliberate coordinator deception, storage rollback, hidden
+newer states and manufactured split views are outside this version's model.
 
-An object existing in S3 or R2 does not prove that it is valid, current,
-accepted, or complete. Relay trusts only artifacts whose exact bytes are bound
-by the ceremony's signatures and hashes. A mutable storage index may tell Relay
-where to look, but it cannot authorize a contribution, close a phase, approve a
-release, or complete a role's task.
+Trust does not mean every operation succeeds. Network timeouts, stale CDN
+caches, interrupted uploads, accidental overwrites, wrong local files and
+concurrent processes still occur. Participant input remains subject to
+signature, assignment and mathematical verification.
 
-Relay therefore distinguishes:
-
-| Observation | Meaning |
+| Area | Intended behavior |
 | --- | --- |
-| Object listed | Something is available to inspect |
-| Hash matched | The downloaded bytes are the named bytes |
-| Signature verified | The stated signer approved those exact bytes |
-| Protocol checks passed | The artifact is valid for this ceremony and position |
-| Accepted record published | The ceremony advanced to include that exact artifact |
+| Mathematical verification | Coordinator fully replays; policy-required auditors also replay |
+| Participant submission | Existing signed receipt, contribution and cleanup records |
+| Acceptance | Signed checkpoint commits the exact verified result |
+| Current step | Read the trusted storage root and validate its checkpoint |
+| Upload retries | Resume identical files; delivery attempts do not express new participant consent |
+| Release signer | Verify exact files, signatures and required evidence; optional independent replay |
+| Failure handling | Detect incomplete uploads, wrong files, interrupted operations and concurrent writes |
 
-Private signing keys, long-lived storage credentials and contribution
-randomness never enter shared storage. Temporary upload grants remain private
-and narrowly scoped.
+We retain signatures and hashes to identify authors and catch mismatched
+artifacts. A listed object or completed upload does not establish acceptance;
+only the committed checkpoint does. We retain scoped credentials to prevent
+one role's ordinary access from modifying another role's files.
+
+Private signing keys and contribution randomness remain local. Long-lived
+credentials are not ceremony artifacts. Bootstrap still checks the intended
+coordinator, ceremony and storage address so users do not join the wrong setup.
+
+The follow-up implementation plan is
+[Trusted coordinator and storage rollout](trusted-services-implementation-plan.md).
 
 ## Signed assurance policy
 
@@ -173,35 +190,20 @@ its identity may instead authenticate its capsule through the signed
 setup-complete bridge described below. After that check, the large public files
 can travel through storage because Relay verifies them.
 
-A new machine that has never seen the ceremony cannot prove from one storage
-server alone that it is seeing the newest signed state. A genuine old state
-still has valid signatures. **Trusted ancestry** and **confirmed freshness** are
-separate ideas:
+Relay treats a successful read of the configured storage root as its source of
+current committed ceremony state. It validates the ceremony ID, signature and
+referenced files, then derives the next action.
 
-- ancestry means the fetched checkpoint equals or descends from the capsule's
-  trusted lower bound; and
-- freshness means another trusted source confirms that this is the current
-  checkpoint, rather than merely a valid old one.
+Relay rereads that root on startup and before a consequential operation.
+Mutable root responses bypass caches or are read through the provider API;
+ordinary temporary inconsistencies get bounded rereads. Persistent disagreement
+with a saved operation pauses that operation with a concrete error.
 
-V1 handles this honestly:
-
-- returning machines retain a local high-water mark and reject rollback;
-- Relay always rereads and verifies storage when the CLI starts and immediately
-  before contribution, signing, grant issuance, acceptance or publication;
-- with Tessera, Relay requests the current checkpoint through its authenticated
-  HTTPS connection and compares it with storage;
-- without Tessera, Relay uses the verified storage checkpoint and local
-  high-water history. It clearly says that freshness depends on the configured
-  storage provider, but does not require a manual challenge or block normal
-  operation; and
-- ceremonies wanting stronger protection can optionally require a live signed
-  confirmation from the coordinator or an independent mirror. That optional
-  confirmation binds the exact checkpoint to a new random challenge generated
-  by the CLI, so a saved response cannot be replayed.
-
-There is no user-visible notification expiration or challenge in the normal
-workflow. If Relay remains open for a long time, it simply rereads storage—and
-Tessera status when configured—before the next important operation.
+There is no second freshness authority, random challenge, mirror confirmation,
+or first-use proof of freshness. Tessera can supply access and notifications,
+but its cached progress cannot veto or override the storage root. Local saved
+checkpoints support cache reuse and recovery from interruptions, rather than
+serving as a defense against a dishonest provider.
 
 ## Storage layout
 
@@ -217,7 +219,7 @@ published bucket (publicly readable)
 
 private inbox bucket
   submissions/<ceremony-id>/<role>/<identity>/<kind>/<attempt>/
-    files/<logical path>                       immutable payloads
+    files/<transport name>                     immutable payloads
     manifest.json                              written last
 
 protected review/release staging
@@ -250,6 +252,83 @@ semantic, not spelling:
 3. Mutable state files are hints to immutable content, never proof.
 4. Every referenced object is downloaded with a size limit and re-hashed.
 5. Existing bytes are never silently replaced.
+
+### Submission transport is not a new ceremony record
+
+Participant receipts, contribution attestations, cleanup records and optional
+return handoffs are already signed by the participant and already bind the
+ceremony, phase, turn, participant and relevant predecessor head or payload.
+They are the participant-authored ceremony records.
+
+An inbox `manifest.json` is an **unsigned transport-completion marker**. Relay
+writes immutable payload files first and this marker last so the coordinator
+knows an attempt is ready to inspect. It has a versioned, closed schema:
+
+```json
+{
+  "schema": "relay-submission-transport-v1",
+  "ceremony_id": "sha256:…",
+  "attempt_id": "…",
+  "kind": "receipt|candidate",
+  "files": [
+    {"name": "…", "sha256": "sha256:…", "size": 123}
+  ]
+}
+```
+
+`files` is sorted, has no duplicates, and contains exactly the fixed transport
+inventory for that submission kind. Relay rejects unknown names, path-like
+names, missing entries, duplicate entries, invalid hashes or sizes, and any
+value that disagrees with the checkpoint-selected ceremony, attempt or kind.
+This validates the transport claim before downloading payloads; it does not
+make the manifest ceremony evidence.
+
+The manifest is never an accepted-artifact inventory or a source of ceremony
+authority. The coordinator obtains the preallocated attempt prefix from the
+authenticated checkpoint, downloads only the named bounded files, then
+proof-tool verifies their existing signatures and contents directly.
+Proof-tool derives the canonical ceremony-logical names for every accepted
+artifact; Relay only maps its private transport names to local input files.
+Relay records proof-tool's verified references in the next checkpoint, not the
+manifest digest.
+
+The manifest cannot choose the expected inventory. Proof-tool derives it from
+the receipt, contribution and cleanup protocols; a missing required record,
+extra or conflicting record, duplicate canonical name or hash mismatch rejects
+the attempt. Relay may use the marker only to decide that it is worth fetching
+the fixed attempt prefix. It never publishes an inbox-only file merely because
+the marker listed it.
+
+Upload attempts are delivery tracking only. The participant signs the ceremony
+artifact once; it does not separately approve each delivery attempt. An exact,
+valid signed artifact may be redelivered through a replacement upload attempt.
+Its existing signatures must still match the ceremony, phase, turn, participant
+and predecessor.
+
+Two outcomes must remain distinct:
+
+- Cancel or reject a delivery attempt: retire that upload prefix; the same
+  valid artifact may be delivered through another allocated prefix.
+- Reject a candidate: the signed checkpoint records its exact candidate digest
+  and prevents that candidate from later being accepted through any attempt.
+
+Candidate identity must be defined by proof-tool over the complete, closed
+candidate: ceremony, phase, index, participant, predecessor, contribution,
+attestation/signature, cleanup record/signature and required return-handoff
+evidence. Reuse an existing authenticated record ID only if it binds that whole
+set; otherwise introduce a domain-separated canonical digest. It is not merely
+the hash of contribution.bin. A changed candidate requires fresh verification
+and an explicit new disposition, not automatic acceptance as a retry.
+
+The rejection set is ceremony-scoped and append-only. A transport error does not
+automatically reject a candidate. The coordinator records candidate rejection
+only after authenticating the candidate identity/digest; malformed bytes can
+retire a delivery without falsely attributing a candidate to a participant.
+This version has no silent reversal of candidate rejection.
+
+The accepted checkpoint means that the coordinator accepted these exact
+participant-authored bytes. It does not claim that a participant signed an
+upload-attempt ID or personally performed a particular upload.
 
 ## Authenticated state graph
 
@@ -287,30 +366,39 @@ summary from this graph, then derives a role-specific next action.
 ### Signed checkpoints and the discovery root
 
 There is one mutable discovery object: `root.json`. It contains only a reference
-to an immutable, coordinator-signed checkpoint. The pointer is untrusted; the
-checkpoint is authenticated.
+to an immutable, coordinator-signed checkpoint. The root locates the committed checkpoint; the
+checkpoint contains the signed ceremony decision.
 
 Each checkpoint commits to:
 
 - schema and workflow version;
-- ceremony ID and approved Relay release;
+- ceremony ID and protocol/workflow version;
 - all four signed assurance-policy minima;
 - a monotonic sequence number;
 - the previous checkpoint digest;
 - both phase heads and current closure/beacon/seal state;
 - the exact accepted public-artifact inventory;
-- typed pending submission slots containing kind, assignment/scope, attempt ID,
-  expected manifest key, parent checkpoint/head and status;
-- accepted or rejected submission acknowledgements; and
+- typed pending submission slots containing kind, assignment/scope, opaque
+  attempt ID, parent checkpoint/head and status; and
 - any final decision and release state.
+
+Transport boundary: Relay maintains the corresponding delivery map: approved
+Relay release, provider locations and exact prefixes for each opaque slot.
+Proof-tool neither interprets object keys nor generates Relay manifests.
+References below to a "checkpoint-allocated prefix" mean the Relay mapping
+for that checkpoint's allocated slot, not a prefix in proof-tool's schema.
+The new version must specify how this map is authenticated and bound to the
+ceremony/checkpoint before implementation; do not remove existing authenticated
+fields without replacing that binding. This is an explicit API-design item in
+the [implementation plan](trusted-services-implementation-plan.md).
 
 Checkpoint validity includes a deterministic
 `ValidateCheckpointTransition(previous, next)` rule. A valid coordinator
 signature and previous digest are necessary but not sufficient. The verifier
 also requires:
 
-- immutable ceremony, definition, workflow and release identities;
-- accepted artifacts and acknowledgements to remain append-only;
+- immutable ceremony, definition and workflow identities;
+- accepted artifacts to remain append-only;
 - a phase head to extend its authenticated predecessor chain;
 - closure only from an allowed head, and the next phase only after a valid seal;
 - observer/evidence collections to be recomputed against the signed minima
@@ -326,19 +414,21 @@ also requires:
   accepted head;
 - pending submission slots to move only through `allocated`, `accepted`,
   `rejected` or `cancelled`, with replacement attempts explicitly bounded and
-  allocated. Temporary credential expiry does not expire an attempt; and
+  allocated. At most one active slot may exist for one kind, phase, index,
+  identity and parent head. Temporary credential expiry does not expire an
+  attempt; and
 - a terminal GO or NO-GO to be absorbing, except for the narrow post-GO
   publication-confirmation transition.
 
 This versioned transition verifier is shared by state derivation and proof-tool
-verification before local high-water state advances.
+verification before the cached ceremony position advances.
 
 A checkpoint can name:
 
 - the signed definition and its signature;
 - current Phase 1 and Phase 2 head records;
 - closure, beacon and seal records;
-- published enrollment acknowledgements;
+- accepted enrollment records;
 - accepted custody and candidate records;
 - witness, mirror and audit evidence accepted for review when enabled;
 - the final parameter manifest;
@@ -367,29 +457,26 @@ conditional root update detects an unexpected competing writer but cannot undo
 two children that were already signed, which is why Relay must not sign from a
 second coordinator workspace.
 
-Only the child selected by the committed checkpoint ancestry is accepted. A
-signed child that loses the root conditional-write race is a permanent orphan
-and is never adopted automatically. Tessera or an optional live confirmation
-can detect a backend showing that orphan. A first-time standalone client may
-accept a stale or orphaned but valid checkpoint; that is the explicitly
-disclosed provider-freshness risk. A returning client rejects it when it
-conflicts with its saved high-water history.
+Only the child selected by the committed root is accepted. A signed child
+whose conditional update did not commit remains unused. Relay reconciles a
+timeout by reading the root: identical committed bytes complete the operation;
+an unchanged parent permits resuming the saved operation; another committed
+child requires refreshing state and resolving the conflict.
 
 The existing per-phase head pointers remain useful for large transcript sync
 and compatibility. They are cache hints only: authorization and guide state use
 the phase heads committed by one checkpoint. A disagreement is ignored or
 repaired; Relay never combines mutable pointers from different snapshots.
 
-Each machine atomically retains `{checkpoint sequence, checkpoint digest}` plus
-the phase head and terminal-state digests it has seen. It rejects a lower
-sequence, the same sequence with another digest, or a checkpoint that does not
-descend from its recorded checkpoint. Numeric contribution counts alone are not
-enough to detect forks or a return from Phase 2 to Phase 1.
+Each machine retains the last verified checkpoint and any unfinished operation.
+When startup or an action discovers inconsistent cached data, it rereads the
+trusted root and checks the associated files. It does not merge contradictory
+states or replay a mutation merely because its local checklist says incomplete.
 
-Only a checkpoint reached through the committed root normally advances this
-high-water state. An uploaded-but-orphaned checkpoint, mutable phase hint or
-inbox record does not. A trusted external freshness confirmation may explicitly
-pin the named checkpoint.
+Safe reconstruction of read-only cache is permitted. Records of unfinished
+signing, contribution or upload operations are preserved and reconciled before
+continuing. A different root is an ordinary stale-operation or concurrency
+condition, not a claim that the storage service is malicious.
 
 Checkpoint objects, signatures and ancestry are permanent ceremony artifacts in
 V1 and are never garbage-collected. The policy bounds checkpoint count and byte
@@ -407,7 +494,7 @@ Opening a connected role performs bounded metadata synchronization:
 
 1. Fetch the one root from the bootstrapped origin.
 2. Fetch its named immutable checkpoint by digest.
-3. Walk every checkpoint missing between the local/bootstrap high-water record
+3. Walk every checkpoint missing between the cached/bootstrap checkpoint
    and the root checkpoint. For each step, verify the checkpoint envelope,
    digest and signature, then fetch and authenticate every small referenced
    artifact required to validate that transition. Missing ancestry, invalid
@@ -443,8 +530,8 @@ checkpoint.
 | Checkpoint | Coordinator | Accepts one coherent graph of already verified artifacts |
 | Outbound custody record | Coordinator | Offers exact public input for one participant and parent head |
 | Input receipt | Assigned participant | Confirms receipt of those exact input bytes |
-| Candidate envelope and optional return handoff | Assigned participant | Submits exact public output and cleanup claim |
-| Accepted chain and submission acknowledgement | Coordinator | Accepts that exact output or records a typed rejection |
+| Candidate attestation, cleanup record and optional return handoff | Assigned participant | States the exact public output, cleanup claim and custody return when applicable |
+| Accepted chain and checkpoint | Coordinator | Accepts that exact verified output or records a typed rejection |
 | Witness or mirror receipt | That assigned observer | When enabled, reports its own observation or retained copy for one exact checkpoint |
 | Audit result | Assigned auditor | When enabled, reports verification of the named complete input set |
 | Release manifest | Release signer | Signs the exact final file inventory reviewed offline |
@@ -461,7 +548,7 @@ For every role, Relay computes four values:
 
 | Value | Contents |
 | --- | --- |
-| Current state | Verified checkpoint and artifacts, local identity, authenticated assignments, local high-water marks and unresolved local operations |
+| Current state | Verified checkpoint and artifacts, local identity, authenticated assignments, cached position and unresolved local operations |
 | Ready actions | Authored actions whose cryptographic and operational prerequisites are satisfied |
 | Waiting actions | Authored actions with an exact missing input or another role that must act first |
 | Next action | The highest-priority ready required action; if none is ready, the first blocking wait |
@@ -538,33 +625,37 @@ The participant CLI synchronizes the signed checkpoint and head, confirms that i
 identity is next, downloads the exact outbound record and named inputs, and
 verifies all hashes and signatures. No manual directory placement is needed.
 
-The participant signs a typed receipt envelope for those exact bytes in the
-network-disabled signing container and uploads it to its private inbox prefix.
-The signed envelope binds ceremony, definition, role, identity, artifact kind,
-phase, turn, parent checkpoint, attempt ID and exact file inventory. The outer
-manifest is transport framing, not authentication. The participant retains the
-attempt ID locally.
+The participant creates the existing signed input receipt in the
+network-disabled signing container and uploads its record and detached signature
+to the private inbox prefix. That receipt already binds ceremony, phase, turn,
+parent head, participant identity, coordinator handoff and exact received files.
+The outer manifest is an unsigned transport-completion marker, not
+authentication. The participant retains the attempt ID locally.
 
-The outbound checkpoint preallocates that receipt attempt and exact expected
-manifest key. Tessera or the protected control channel supplies a
+The outbound checkpoint preallocates that receipt attempt and exact inbox
+prefix. Tessera or the protected control channel supplies a
 receipt-submission grant restricted to it. This is distinct from the later
-candidate grant.
+candidate grant. The authenticated checkpoint—not the participant's local
+copy—remains the authority for the attempt ID; the local copy only assists
+journaling and recovery.
 
 ### 3. Coordinator verifies the receipt and issues a grant
 
-The coordinator fetches the exact receipt manifest key preallocated in the
-outbound checkpoint, downloads it with strict limits, and verifies signer,
-ceremony, phase, turn, parent head and file hashes. It publishes a signed
-receipt-accepted acknowledgement in the next checkpoint. Only then may Relay
-issue the participant's temporary candidate-upload grant through Tessera or the
-protected coordination channel.
+The coordinator fetches the unsigned manifest from the exact preallocated
+inbox prefix, downloads the fixed receipt files with strict limits, and verifies
+their existing participant signature, ceremony, phase, turn, parent head and
+file hashes. The next signed checkpoint is the acceptance record. Only then may
+Relay issue the participant's temporary candidate-upload grant through Tessera
+or the protected coordination channel.
 
 Before signing the receipt-accepted checkpoint, the coordinator allocates the
-candidate attempt ID and commits its exact expected manifest key in that
-checkpoint. It then issues the grant for that already committed key.
-The grant is never put in the published bucket. It is bound to the exact signed
-head, outbound record, receipt-accepted acknowledgement, participant and
-candidate attempt ID. Participant credentials
+candidate attempt ID and commits its exact inbox prefix in that checkpoint. It
+then issues the grant for that already committed prefix.
+The grant is never put in the published bucket. The storage credential is
+restricted to one checkpoint-allocated prefix. Relay and Tessera verify its
+association with the signed head, outbound record, receipt-accepted checkpoint,
+participant and candidate attempt ID before issuing it; the credential itself
+does not cryptographically contain those facts. Participant credentials
 may `HEAD`/`GET`/create objects only within their exact attempt prefix so Relay
 can safely resume without giving them bucket-wide `LIST`, overwrite or delete.
 
@@ -572,27 +663,32 @@ can safely resume without giving them bucket-wide `LIST`, overwrite or delete.
 
 The participant rechecks the published head immediately before computation.
 Relay runs the contribution in its disposable, network-disabled container,
-checks container cleanup, creates the signed cleanup acknowledgement and
-candidate manifest, and uploads immutable files followed by `manifest.json`.
+checks container cleanup, creates the existing signed contribution attestation
+and cleanup record, and uploads immutable files followed by `manifest.json`.
 
 Upload completion means only **submitted for verification**.
 
 ### 5. Coordinator accepts the exact candidate
 
-The coordinator fetches the preallocated candidate manifest, verifies its
-identity, assignment, parent head, contribution proof, cleanup acknowledgement
-and exact file hashes. The participant's signed candidate envelope is the
-return packet. If proof-tool requires a separate return handoff, the participant
-creates and signs it and includes it in the same submission; the coordinator
-never authors a participant-side custody event.
+The coordinator fetches the unsigned manifest from the preallocated candidate
+prefix, then verifies the existing signed contribution attestation, cleanup
+record and optional return handoff. Proof-tool checks identity, assignment,
+parent head, contribution proof, cleanup claim and exact file hashes. If a
+return handoff is required, the participant creates and signs it and includes
+it in the same submission; the coordinator never authors a participant-side
+custody event.
 
-The coordinator advances the signed chain only for that exact candidate and
-publishes a typed signed acceptance acknowledgement. Every acknowledgement
-binds the submission kind, identity, assignment/scope, attempt ID and manifest
-digest. A rejection uses a non-sensitive reason code and permits a new attempt.
+The coordinator advances the signed chain only for that exact candidate. The
+new signed checkpoint is the sole globally committed acceptance transition: it
+binds the accepted participant records, identity, scope, attempt and exact
+artifact hashes. The accepted chain remains the underlying cryptographic
+contribution record. A rejection checkpoint binds the allocated attempt, kind,
+identity, basis checkpoint, parent head and a non-sensitive reason code; it may
+carry observed digests for diagnosis, but never treats invalid payloads or the
+unsigned manifest as accepted ceremony evidence. It permits a new attempt.
 
-The new accepted chain, acknowledgement and referenced public bytes are uploaded
-first; a new signed checkpoint is created and `root.json` moves last.
+The new accepted chain and referenced public bytes are uploaded first; a new
+signed checkpoint is created and `root.json` moves last.
 
 ### 6. Participant confirms acceptance
 
@@ -634,12 +730,12 @@ completion records from that launcher.
 
 | Role | Reads and authenticates | Writes | Derived next action examples |
 | --- | --- | --- | --- |
-| Coordinator | Signed public checkpoint graph plus bounded complete private-inbox submissions | Signed operational records, acceptance acknowledgements, accepted transcript state and checkpoints | Publish outbound turn; verify receipt; issue grant; verify candidate; close phase |
+| Coordinator | Signed public checkpoint graph plus bounded complete private-inbox submissions | Signed operational records, accepted transcript state and checkpoints | Publish outbound turn; verify receipt; issue grant; verify candidate; close phase |
 | Participant | Definition, assignment, current head, outbound record and later accepted head | Signed receipt, candidate and cleanup record to its private prefix | Wait for turn; acknowledge input; contribute; submit; confirm exact acceptance |
 | Witness, if enabled | Definition, signed observer assignment, announced closure and future beacon data | Signed observation to its private prefix | Start watcher; preserve first observation time; observe required interval; submit receipt; wait for acceptance |
 | Mirror, if enabled | Definition, signed observer assignment and each authenticated published checkpoint | Signed receipt for its independent destination | Synchronize missing immutable objects; verify exact checkpoint; submit receipt; wait for acceptance |
 | Auditor, if enabled | Complete authenticated transcript, expected evidence inventory and protected final files | Signed audit result to its private prefix | Wait for the complete required set; run full verification; submit result; wait for acceptance |
-| Release signer | Frozen review checkpoint, exact final files and all policy-required evidence | Signed release ZIP; a separate decision-signature ZIP only if assigned that duty | Independently replay and verify the final files even when audit minima are zero; sign final release; later sign the production decision if assigned |
+| Release signer | Frozen review checkpoint, coordinator-signed final-candidate checkpoint, exact final files and all policy-required evidence | Signed release ZIP; a separate decision-signature ZIP only if assigned that duty | Fully verify non-mathematical records and exact files while trusting the coordinator's replay claim; sign final release; later sign the production decision if assigned |
 | Upload station | Offline return ZIP, then terminal GO checkpoint and matching protected release | Preallocated private release-result submission, then approved closed-world public release | Return signer result for coordinator verification; publish only when GO names the exact release bytes |
 
 When enabled, witness and mirror numbers, identities, phases and scopes live in
@@ -653,13 +749,13 @@ the witness kept watching.
 Enabled witnesses, mirrors and auditors infer what work exists from
 authenticated public checkpoints. The coordinator does not scan or trust a
 role-written submission index. It allocates each attempt in the predecessor
-checkpoint before issuing an exact-prefix grant and records the expected
-manifest key there. Tessera's submission notification is only a hint to fetch
-that already known key.
+checkpoint before issuing an exact-prefix grant and records the expected inbox
+prefix there. Tessera's submission notification is only a hint to fetch that
+already known location.
 
 Replacement attempts are explicitly allocated and bounded; two valid attempts
 are never resolved by a timestamp or “latest” heuristic. The coordinator
-verifies and selects one exact attempt; a signed acknowledgement records the
+verifies and selects one exact attempt; the next signed checkpoint records the
 outcome. Other roles see their acceptance or rejection in a later checkpoint.
 An upload alone never completes their duty. The same pattern applies to
 enrollment, witness, mirror, audit, release and decision submissions.
@@ -678,10 +774,9 @@ Every typed grant names the exact checkpoint and attempt it authorizes, so an
 already required grant also confirms the operation it belongs to. Standalone V1
 does not add a separate manual status exchange before every action.
 
-Mirror destination credentials remain local to an enabled mirror. An enabled
-auditor also configures an independent checkpoint source when policy requires
-freshness independent of the coordinator backend. These are one-time local
-readiness steps, not facts inferred from ceremony storage.
+Mirror destination credentials remain local to an enabled mirror. The shared
+storage root supplies ceremony progress for all connected roles. No independent
+checkpoint service is required.
 
 ### Future beacon without witnesses
 
@@ -783,9 +878,10 @@ minimum forbids `NOT_REQUIRED`, and GO requires `PASS` backed by the exact
 policy-required evidence. Every other GO gate must also be `PASS`; a
 coordinator cannot weaken this mapping in a later decision.
 
-When `passing_ceremony_audits` is zero, release signing still performs the full
-proof-tool replay and exact final-file verification itself. The frozen review
-checkpoint binds the candidate, operational bundle and the complete ceremony-
+When `passing_ceremony_audits` is zero, a coordinator-signed final-candidate
+checkpoint stating that full replay passed is still required, but no
+independent full replay is claimed. The frozen review checkpoint binds that
+checkpoint, candidate, operational bundle and the complete ceremony-
 audit and external-audit inventories. Those arrays are explicitly empty when
 their minima are zero. When an external minimum is positive, the checkpoint,
 release approval and decision all bind the exact closed report/signoff
@@ -862,7 +958,7 @@ ZIP does not become the default for connected roles.
 During a storage outage, ZIP may carry already authenticated public inputs for
 inspection or preparation, using the same strict manifests. Participant turns,
 closure, witness observation, acceptance and publication pause until storage
-and any policy-required freshness source return. Only the deliberately offline
+returns. Only the deliberately offline
 final-signer workflow may complete signing while disconnected. There is no
 loose-folder mode that asks users to reconstruct Relay paths.
 
@@ -895,7 +991,12 @@ work. The coordinator workspace is not a replaceable cache.
 - Uploads allocate a stable attempt ID before starting. Immutable payloads are
   uploaded first and the manifest last.
 - A missing manifest means the submission is incomplete and ignored.
-- A retry with the same signed attempt ID verifies any existing remote bytes and
+- On restart, no manifest resumes only identical missing payload uploads before
+  creating the manifest. A valid manifest with matching payloads is adopted.
+  A manifest with temporarily unavailable payloads triggers bounded rereads;
+  conflicting manifest or payload bytes are never overwritten and require a
+  signed rejection or cancellation before a replacement attempt is allocated.
+- A retry with the same checkpoint-allocated attempt ID verifies any existing remote bytes and
   sends only missing identical objects. Acceptance deduplicates by signed record
   ID, never object path or timestamp.
 - A conflicting object is an error; Relay never overwrites it.
@@ -972,41 +1073,26 @@ Before promoting inbox contents, it runs the type-specific privacy and protocol
 checks. Provider administrators can still see private inbox contents and
 metadata; V1 does not claim otherwise.
 
-## Concurrency and freshness
+## Concurrency and ordinary storage failures
 
-The design must handle two processes and a misleading backend safely:
+- One coordinator workspace performs mutations; a local lock prevents two
+  processes from writing simultaneously.
+- Conditional root updates prevent an older operation from replacing a newer
+  committed state.
+- Each acceptance still matches the exact participant, turn and predecessor.
+- A cached-root disagreement causes a bounded fresh read and reconciliation.
+- Tessera's display may lag storage and is refreshed from it.
+- Mutable root caching is disabled; immutable artifact caching is permitted.
+- Timeouts do not imply failure or success: read the exact destination before
+  deciding whether an operation committed.
 
-- coordinator root updates use provider-tested conditional replacement;
-- acceptance is tied to the exact parent head and scheduled participant;
-- only one accepted child can advance a given head;
-- stale submissions remain inspectable but cannot advance the ceremony;
-- returning roles reject a checkpoint below their local high-water mark;
-- an inconsistent checkpoint or root is retried from a fresh read, not merged by
-  guessing;
-- when Tessera or another policy-required freshness source names a different
-  checkpoint than storage, Relay never chooses by sequence or timestamp. It
-  shows both digests, retries a bounded number of times and blocks
-  state-changing work until they agree or the ceremony follows its explicit
-  investigation procedure;
-- CDN caching is disabled for mutable `state/*` objects; and
-- immutable blobs may be cached indefinitely.
+Witnesses, when enabled, still use their actual first observation time and the
+signed beacon target. Missed observation windows cannot be recreated by a
+retry. Ordinary download failures may retry within the real observation window.
 
-One backend can still hide a newer state from a brand-new client. Signatures
-prove authenticity, not freshness. The CLI must expose that limit rather than
-claiming otherwise.
-
-When witnesses are enabled, witness timing never comes from an object timestamp.
-A witness binds its signed receipt to the signed closure and beacon target, its
-locally recorded first observation time and the required observation window.
-Late first observation, backend read failure, rollback/fork detection,
-inconsistent checkpoint, or failure of a freshness source required by policy is
-an incident requiring coordinator attention—not an automatic success or retry.
-Where configured, a witness compares the checkpoint through an independent
-mirror or Tessera. When witnesses are disabled, these witness-only predicates
-are absent; the separate future-beacon timing remains enforced.
-
-Public downloads use deadlines, response and stream size limits, safe relative
-paths, same-origin redirect rules and atomic cleanup of partial files.
+Public downloads retain deadlines, file-size bounds, safe paths and staged
+writes. No challenge-response freshness system, alternative trusted root or
+malicious-provider simulation is required by this model.
 
 ## Symbolic model
 
@@ -1027,7 +1113,8 @@ GrantPlanned(requestID, attempt, checkpoint, exactPrefix, lifetime)
 GrantIssued(requestID, attempt, checkpoint, exactPrefix, credentialGeneration)
 CandidateSubmitted(phase, n+1, identity, candidateDigest, parentDigest, attempt)
 CandidateAccepted(phase, n+1, identity, candidateDigest, parentDigest, attempt)
-SubmissionAcknowledged(kind, identity, scope, attempt, manifestDigest, result)
+DeliveryRetired(attempt, reason)
+CandidateRejected(ceremony, candidateDigest, reason)
 PhaseClosed(phase, headDigest)
 ReviewFrozen(reviewCheckpoint, manifestDigest, evidenceDigest)
 ReviewCancelled(reviewCheckpoint, reasonCode)
@@ -1047,10 +1134,11 @@ AcceptCandidate requires
   Assigned(i, participant, n+1)
   ReceiptVerified(p, n+1, i, outbound, receiptAttempt)
   CandidateSubmitted(p, n+1, i, c, h, candidateAttempt)
+  CandidateNotRejected(ceremony, c)
+  ParticipantRecordsVerified(ceremony, p, n+1, i, c, h)
 
 AcceptCandidate produces
   CandidateAccepted(p, n+1, i, c, h, candidateAttempt)
-  SubmissionAcknowledged(candidate, i, p/n+1, candidateAttempt, manifest, accepted)
   AcceptancePrepared(s+1, cp2, cp, h2)
 ```
 
@@ -1067,12 +1155,12 @@ RootCASAttempted
 RootCASCommitted
 RootRead
 CheckpointVerified
-HighWaterRecorded
+CachedPositionRecorded
 ActionStarted
 ```
 
-Only a checkpoint reached through the committed root, or explicitly pinned by a
-trusted freshness source, produces the normal `CheckpointVerified` fact.
+Only a validated checkpoint selected by the configured storage root produces
+the normal `CheckpointVerified` fact.
 Reconciliation may finish the same recorded conditional write or adopt its exact
 committed result; it never creates a new signature automatically.
 
@@ -1087,7 +1175,8 @@ The model must check at least these invariants:
 6. No private grant or signing key reaches public storage.
 7. No approval authorizes a different final manifest.
 8. A rejection never produces an approved public release.
-9. No role silently moves behind its recorded high-water state.
+9. A cached-position conflict is reconciled against a fresh provider root read
+   before any dependent mutation.
 10. For identical authenticated facts, identity and software version, the
     guide chooses the same next required action.
 11. Concurrent ready work is visible without allowing required prerequisites to
@@ -1098,9 +1187,9 @@ The model must check at least these invariants:
 14. A root commit requires the exact signed checkpoint to exist immutably first,
     its previous digest to equal the checkpoint in the root being replaced, and
     the conditional token to come from that exact durable root read.
-15. High-water advances only for a committed, fully verified checkpoint.
-16. No state-changing action starts until the corresponding verified high-water
-    record is durable.
+15. Cached position advances only for a validated, committed checkpoint.
+16. Every mutation durably records its expected parent and exact inputs before
+    starting.
 17. Grant issuance requires the matching durable request, attempt, checkpoint
     and exact prefix.
 18. Grant renewal preserves the same attempt and prefix; credential expiry does
@@ -1117,6 +1206,8 @@ The model must check at least these invariants:
     beacon, committed round or multi-relay verification.
 23. GO accepts `NOT_REQUIRED` only for a gate whose matching authenticated
     minimum is zero.
+24. Delivery retirement does not reject an artifact; candidate rejection blocks
+    that exact candidate across all subsequent delivery attempts.
 
 Facts for enabled enrollment, witness, mirror and audit duties are indexed by
 identity, assignment, checkpoint, attempt and artifact digest. Collection
@@ -1139,8 +1230,9 @@ result is not a proof for unbounded ceremonies or the Go implementation.
 - Explore reordered, duplicated, missing and conflicting checkpoint updates.
 - Pair a valid checkpoint with another root version's ETag and confirm the
   conditional update is rejected before publication and during recovery.
-- Explore stale heads, backend rollback, split views and concurrent coordinator
-  updates.
+- Explore stale local heads, cache lag, delayed responses and concurrent
+  coordinator updates under documented provider consistency. Deliberate
+  provider rollback and split views are outside this model.
 - Explore crash points before each payload, manifest, accepted chain, checkpoint
   and root update.
 - Mutate identity, phase, turn, parent digest, candidate digest and release
@@ -1171,19 +1263,32 @@ result is not a proof for unbounded ceremonies or the Go implementation.
 - Feed the real state-derivation engine synthetic S3/R2 object graphs.
 - Assert the exact role summary, waiting reason and next action for every state.
 - Require proof-tool verification results, not fixture file presence.
-- Cover scoped role credentials, coordinator exact-key inbox retrieval,
-  signed submission envelopes, acknowledgement records, bounded downloads,
-  manifest-last uploads and conditional root writes.
+- Cover scoped role credentials, coordinator exact-prefix inbox retrieval,
+  existing participant record verification, bounded downloads, manifest-last
+  uploads and conditional root writes.
+- Reject a manifest written before payload completion, missing/unknown/duplicate
+  transport names, bad hash/size, wrong ceremony/attempt/kind, confusing path
+  names and a manifest corrupted after otherwise valid signed payloads. Assert
+  that no unsigned manifest enters accepted evidence.
+- Allow identical valid records to be redelivered in a newly allocated attempt
+  after delivery retirement. Reject wrong phase, index, participant, ceremony
+  or parent-head scope, mismatched transport manifests, and candidates whose
+  digest was rejected. Renewal retains one attempt/prefix; a retired attempt
+  is never revived or overwritten.
+- Exercise crashes before and after every payload, manifest creation,
+  coordinator verification and root advancement, on both S3 and R2.
 - Run existing-session compatibility tests against the old pointer layout.
 - Test definition, two-phase operational evidence, final transcript, release
   and decision verification for every witness/mirror/ceremony-auditor
   combination. Include zero and positive external-audit minima in production
   fixtures.
-- Assert that legacy definition/evidence/decision schemas retain their
-  minimum-one rules, while every new assurance field is mandatory.
+- Assert each released schema retains its actual shipped requirements from
+  the compatibility inventory, including optional-role and replay behavior;
+  require every new assurance field where the new schema specifies it.
 - Assert that a no-witness ceremony still verifies the exact future beacon and
-  independent relay responses, and that a no-audit release still fully replays
-  and binds the final candidate and operational bundle.
+  independent relay responses, and that a no-audit release still requires and
+  binds the coordinator's full replay of the final candidate and operational
+  bundle without claiming independent replay.
 - Reject valid-looking witness, mirror, ceremony-audit or external-audit
   evidence injected when its minimum is zero; reject disabled-role assignments,
   grants and enrollments.
@@ -1239,16 +1344,18 @@ as storage-first.
   created them.
 - The new release creates a versioned storage-first workflow record.
 - Existing definition, operational-bundle, final-transcript and production-
-  decision schemas retain their current implicit minimum-one policy. They are
-  never reinterpreted using the new rules.
-- Optional roles use new versioned signed schemas and a new ruleset. All four
+  decision schemas retain their actual shipped policy and replay requirements,
+  documented in the required compatibility inventory. They are never
+  reinterpreted using the new rules.
+- Optional roles use explicitly versioned signed schemas and rulesets. All four
   assurance minima are mandatory in the definition and are projected by
   proof-tool into Relay's authenticated journey state.
-- The implementation introduces definition v3, journey projection v2,
-  operational bundle v3, final transcript v2 and production decision v2 under
-  a new `two-phase-v3` ruleset. If implementation review shows that a release
-  manifest's canonical inventory also changes, it receives its own new schema
-  rather than conditional parsing of the old one.
+- Determine which identifiers have already shipped before selecting the new
+  schema/ruleset versions. The earlier proposed v3 identifiers may already be
+  released; do not reuse them for changed verification semantics.
+- Update each signed boundary whose shape or meaning changes, and preserve
+  existing readers and frozen ceremony behavior.
+
 - Tessera's existing setup contracts remain unchanged and cannot create an
   optional-role ceremony. A new versioned setup contract and compatibility
   release are required before Tessera may enable this workflow.
@@ -1265,32 +1372,25 @@ as storage-first.
 
 ## Implementation sequence
 
-1. Preserve the experimental branch and create a clean branch from current
-   `main`.
-2. Add the versioned signed assurance policy and make definition, operational
-   evidence, final transcript, release and decision verification derive their
-   exact requirements from it.
-3. Implement the dependency graph and deterministic per-role next-action
-   function before changing menus.
-4. Add signed immutable checkpoints, one discovery root, digest high-water
-   state and provider-tested conditional update support.
-5. Implement and test one complete storage-backed Phase 1 turn.
-6. Extend the same submission and acceptance mechanism to enrollments and each
-   enabled witness, mirror and audit requirement.
-7. Add exact final-file approval, rejection archive and release publication.
-8. Add the final-signer ZIP fallback.
-9. Add the new versioned Tessera contract without changing old contracts.
-10. Run model, unit, all-policy-combination, guided-role, live-provider and
-    released-version tests.
-11. Update concise role documentation only after the CLI journey is stable.
+The clean integration branches already exist. Do not restart them or treat
+their existing implementation as completion of this revised design.
+Follow the [current implementation plan](trusted-services-implementation-plan.md):
+
+1. Settle and version the simplified proof-tool API and signed schemas.
+2. Complete one normal-menu, storage-backed Phase 1 turn in Relay.
+3. Separate ordinary synchronization from mathematical replay.
+4. Extend through both phases, optional evidence and exact final approval.
+5. Test real role journeys, failures, compatibility and both storage providers.
+6. Release proof-tool, pin and retest Relay, then update Tessera and release
+   the compatible pairing. Update role documentation alongside the actual CLI.
 
 ### Component ownership
 
-- **proof-tool** owns canonical signed checkpoint, transition, submission,
-  acknowledgement and decision schemas plus their cryptographic and protocol
-  verification. It remains network-free.
+- **proof-tool** owns canonical signed checkpoint, transition and decision
+  schemas plus verification of existing participant records. It remains
+  network-free.
 - **Relay** owns storage synchronization, bounded transport, conditional writes,
-  local high-water/cache state, Docker execution, recovery and deterministic
+  local cached state, Docker execution, recovery and deterministic
   role guidance. It never substitutes its own parser for proof-tool at a signed
   boundary.
 - **Tessera** optionally delivers typed temporary grants, exact expected attempt
@@ -1310,7 +1410,7 @@ The redesign is complete only when:
   or choose an internal destination path;
 - every claimed completion is backed by the exact authenticated artifact that
   defines it;
-- rollback, concurrency, partial upload and interruption tests pass;
+- stale-cache, concurrency, partial upload and interruption tests pass;
 - the offline fallback binds both directions to one exact checkpoint;
 - the final approval authorizes only the exact files reviewed; and
 - a clean released-version ceremony succeeds without hidden fixture handoffs;
@@ -1321,7 +1421,8 @@ The redesign is complete only when:
 
 ## Explicit limits
 
-- Storage availability and first-use freshness are not solved by signatures.
+- Correctness of the coordinator and configured storage service is assumed;
+  signatures do not independently establish their honesty.
 - Relay verifies distinct keys, not independent people or organizations.
 - Docker cleanup and participant confirmation do not prove physical erasure.
 - A compromised role machine can misuse that role's key or active temporary
@@ -1330,20 +1431,25 @@ The redesign is complete only when:
   automatic coordinator failover, safe concurrent mutation from cloned
   workspaces, or protection from a malicious host administrator.
 
-## Adversarial review record
+## Historical review record
+
+These notes describe earlier iterations and tests of their implementation.
+References below to hostile storage, envelopes, acknowledgements and independent
+freshness services are historical; the trust boundary and current rollout plan
+above supersede them. They are not claims that the simplified code is complete.
 
 The first independent review found that a loose unsigned catalog could combine
 valid artifacts from incompatible snapshots. This revision therefore uses one
 mutable hint pointing to an immutable signed checkpoint chain. The review also
 added digest-aware rollback protection, a single-writer coordinator rule,
-provider-tested conditional writes, typed submission envelopes and
-acknowledgements, bounded exact-key inbox retrieval, a pre-initialization draft lane,
-protected release staging, explicit observer assignments, witness timing rules,
+provider-tested conditional writes, bounded exact-prefix inbox retrieval, a
+pre-initialization draft lane, protected release staging, explicit observer
+assignments, witness timing rules,
 dependency-graph guidance and a narrower statement of what storage can infer.
 
 The second independent pass separated ancestry from freshness, strengthened the
 bootstrap digest, split receipt and candidate grants, replaced inbox discovery
-with coordinator-preallocated exact manifest keys, defined legal checkpoint
+with coordinator-preallocated exact inbox prefixes, defined legal checkpoint
 transitions and permanent ancestry, added a setup-complete bridge, witness
 readiness, typed protected-read/promotion grants, a frozen review checkpoint,
 closed-world publication and a coordinator-verified publication checkpoint. It
@@ -1356,6 +1462,14 @@ rereads verified storage and preserves digest-aware rollback history. The design
 now explicitly discloses the first-use stale-view risk. A nonce-bound live
 confirmation remains an optional stricter policy, not part of the normal CLI
 journey.
+
+The submission-transport review then removed duplicate participant submission
+envelopes and coordinator acknowledgement records under the explicit
+honest-coordinator assumption. It retained checkpoint-allocated attempts and
+scoped grants, made the unsigned manifest a strict transport-only completion
+marker, required proof-tool to derive accepted canonical artifact names, and
+added rejection, restart, substitution and manifest-corruption cases to the
+test plan.
 
 A fresh three-round restart review then added sequential verification of every
 missing checkpoint, durable high-water state before mutation, staged coordinator
@@ -1382,9 +1496,10 @@ candidate submission across sibling allocation checkpoints, duplicate attempt
 or manifest names, grants not bound to an authenticated slot, excessive grant
 lifetimes, shallow projections driving guidance, and cross-platform filename
 collisions. Storage-first artifact names are consequently portable lowercase
-ASCII, submission envelopes name their exact allocating checkpoint, temporary
-grants last at most one hour and must match a fully verified slot, and only a
-checkpoint returned by full sync can drive role guidance.
+ASCII. The revised design uses the existing participant-signed records rather
+than a duplicate submission envelope; temporary grants last at most one hour
+and must match a fully verified slot, and only a checkpoint returned by full
+sync can drive role guidance.
 
 The review also confirmed that the current code is a protocol foundation, not
 the completed journey described above. Production remains unavailable until a
@@ -1406,8 +1521,8 @@ reread returns the exact intended bytes and version; restart reconciliation
 distinguishes the intended root, the unchanged prior root, an unexpected root,
 and an unreadable ambiguous result. The proof-tool command regression now
 drives cp0 through cp3, requires full stored-evidence verification, and rejects
-independent corruption of the candidate, manifest, acknowledgement signature,
-and accepted chain.
+independent corruption of the candidate, transport manifest, participant
+signature and accepted chain.
 
 ### Optional-role design review
 
