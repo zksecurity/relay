@@ -14,7 +14,16 @@ Ordinary failures, incorrect local files and concurrent processes remain in scop
 
 ## Implementation progress — September 16
 
-The first compatibility/transport slice is local, not released:
+Current boundary: proof-tool's V4 library and explicit CLI now cover checkpoint
+authoring, checkpoint-bound bundle preparation/signing, final review, package
+signing/verification and Decision V3. These changes are pushed, not released.
+The latest CLI slice is `5c143c5`; full Linux ceremony/CLI suites and vet pass.
+Its real tiny artifact test invokes the approved CLI and rejects a modified
+executable before output/key access. This is not a normal-role storage journey
+or a production K21 approval test. Those, provider tests and releases remain.
+
+The entries below record implementation stages, not independent release claims.
+The initial compatibility/transport slice established:
 
 - Proof-tool's released schema inventory is in
   `docs/ceremony-schema-compatibility.md` in that repository. Existing V3
@@ -202,11 +211,11 @@ role remains required; making the role optional is not part of this plan.
 | Area | Target | Current implementation gap |
 | --- | --- | --- |
 | Coordinator replay | Preserve existing mandatory verification | Preserve replay and its exact-file binding in the revised review/release path |
-| Release signer | Check files, signatures, policy and coordinator claim; replay optional | Proof-tool still requires full signer replay |
-| Participant upload | Existing signed receipt, contribution and cleanup records | Proof-tool and Relay still require envelopes |
-| Acceptance | Checkpoint commits outcome and exact artifact references | Separate acknowledgement still required |
+| Release signer | Check files, signatures, policy and coordinator claim; replay optional | Explicit V4 signing/verifying exists; normal Relay flow pending. Released V3 still requires signer replay |
+| Participant upload | Existing signed receipt, contribution and cleanup records | V4 protocol exists; Relay's normal journey still uses the old envelope flow |
+| Acceptance | Checkpoint commits outcome and exact artifact references | V4 authoring verifies this; normal Relay integration pending |
 | Storage progress | Current provider root drives normal CLI | Advanced sync exists; normal role journeys incomplete |
-| Retry | Redeliver identical valid files; candidate rejection persists by digest | Attempt/candidate rejection semantics need implementation |
+| Retry | Redeliver identical valid files; candidate rejection persists by digest | V4 library semantics tested; normal role delivery/recovery integration pending |
 | Recovery | Preserve unfinished mutations; reconcile provider result | Reusable foundations exist; normal flow integration incomplete |
 | Component boundary | Proof-tool verifies logical artifacts; Relay maps storage | Backend-object-key experiment removed; new normal workflows still need integration |
 
@@ -228,8 +237,9 @@ That inventory is now recorded in proof-tool's
 Checkpoint V4 and `storage-first-v2`, with final transcript V3 carrying the
 explicit changed release claim. Keep application key manifest V1: its signed
 transcript hash binds that claim. No additional release signature is needed.
-Decision V2 may keep its structure with explicit Definition V4/transcript V3
-verification. Normal CLI initialization does not yet emit the new identifiers.
+Decision V3 is required for Definition V4/transcript V3; released Decision V2
+keeps its original behavior. Explicit proof-tool initialization can opt into V4,
+but Relay's normal initialization does not yet select it.
 Do not release the partial V4 library support before the complete path is tested.
 
 Downstream setup baseline: setup-v2/two-phase-v1 (two auditors),
