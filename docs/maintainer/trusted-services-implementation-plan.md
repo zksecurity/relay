@@ -439,6 +439,18 @@ grant expiry, rejected results and exact-result completion. A pending operation
 must be surfaced from the durable journal before selecting ordinary turn work;
 never manufacture empty local facts by ignoring a reconstruction failure.
 
+The participant's computed inventory contains five files. The final upload
+inventory contains those same five plus the signed return handoff, so the two
+IDs differ. Reconstruct both in one proof-tool inspection; verify that the
+return handoff names the exact computed files. Five files mean prepare/recover
+the return packet, never compute again. A partial pair or final ID without
+verified computation facts means inspect retained work. Upload, rejection and
+acceptance comparisons use only the final seven-file ID. Coordinator downloads
+may have a final ID without a separately retained computation-stage marker.
+Inspection must match the expected turn, preserve signature/software/chronology
+checks, and make no mathematics, freshness or physical-erasure claim. Rehash
+the returned closed inventory at upload; inspection does not freeze file paths.
+
 ### Incident and termination records
 
 Use separate V4 transitions for an informational incident, abort and restart.

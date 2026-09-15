@@ -1,0 +1,61 @@
+package transcript
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func TestContributionInventoryV4ProjectionBoundary(t *testing.T) {
+	scope := ContributionScopeV4{CeremonyID: "sha256:" + hex64, Phase: "phase1", Index: 1, ParticipantID: "participant", ParentHeadID: "sha256:" + hex64}
+	pair := SignedArtifactRefs{Record: inspectionTestRef("phase1/chain-0000.json"), Signature: inspectionTestRef("phase1/chain-0000.sig")}
+	computed := CandidateInventoryV4{Schema: "proof-tool-mpc-candidate-inventory-v1", Scope: scope, Files: []ArtifactRef{}}
+	for _, name := range []string{"attestation.json", "attestation.sig", "contribution.bin", "erasure.json", "erasure.sig"} {
+		computed.Files = append(computed.Files, inspectionTestRef(name))
+	}
+	complete := computed
+	complete.Files = append(append([]ArtifactRef{}, computed.Files...), inspectionTestRef("return-handoff.json"), inspectionTestRef("return-handoff.sig"))
+	p := ContributionInventoryInspectionV4{Schema: "proof-tool-mpc-contribution-inventory-inspection-v4", Depth: "candidate-signatures-and-digests", SignaturesVerified: true, PayloadDigestVerified: true, Inventory: ContributionInventoryFactsV4{Scope: scope, Predecessor: pair, Computed: computed, ComputedCandidateID: "sha256:" + hex64, Complete: &complete, CandidateResultID: "sha256:" + strings.Repeat("b", 64)}}
+	check := func(p ContributionInventoryInspectionV4) error {
+		i := testInspector()
+		i.run = inspectionTestRunner(t, inspectionResult{Schema: commandResultSchema, OK: true, Command: "inspect contribution-inventory-v4", ContributionInventoryV4: &p}, "inspect contribution-inventory-v4")
+		_, err := i.ContributionInventoryV4("/work/chain.json", "/work/chain.sig", "/work/scope.json", "/work/candidate", scope, pair)
+		return err
+	}
+	if err := check(p); err != nil {
+		t.Fatal(err)
+	}
+	for name, change := range map[string]func(*ContributionInventoryInspectionV4){
+		"scope":       func(p *ContributionInventoryInspectionV4) { p.Inventory.Scope.Index = 2 },
+		"predecessor": func(p *ContributionInventoryInspectionV4) { p.Inventory.Predecessor.Record.Name = "other.json" },
+		"math":        func(p *ContributionInventoryInspectionV4) { p.MathematicsReplayed = true },
+		"freshness":   func(p *ContributionInventoryInspectionV4) { p.GlobalFreshnessVerified = true },
+		"erasure":     func(p *ContributionInventoryInspectionV4) { p.PhysicalErasureVerified = true },
+		"unchecked":   func(p *ContributionInventoryInspectionV4) { p.SignaturesVerified = false },
+		"partial": func(p *ContributionInventoryInspectionV4) {
+			p.Inventory.Complete.Files = p.Inventory.Complete.Files[:6]
+		},
+		"changed-five": func(p *ContributionInventoryInspectionV4) { p.Inventory.Complete.Files[0].Digest.Size++ },
+		"same-id": func(p *ContributionInventoryInspectionV4) {
+			p.Inventory.CandidateResultID = p.Inventory.ComputedCandidateID
+		},
+		"oversize":         func(p *ContributionInventoryInspectionV4) { p.Inventory.Computed.Files[2].Digest.Size = 16<<30 + 1 },
+		"name":             func(p *ContributionInventoryInspectionV4) { p.Inventory.Computed.Files[0].Name = "private.key" },
+		"missing-complete": func(p *ContributionInventoryInspectionV4) { p.Inventory.Complete = nil },
+	} {
+		b, _ := json.Marshal(p)
+		var bad ContributionInventoryInspectionV4
+		if err := json.Unmarshal(b, &bad); err != nil {
+			t.Fatal(err)
+		}
+		change(&bad)
+		if err := check(bad); err == nil {
+			t.Errorf("accepted %s", name)
+		}
+	}
+	p.Inventory.Complete = nil
+	p.Inventory.CandidateResultID = ""
+	if err := check(p); err != nil {
+		t.Fatal("computed-only inventory rejected", err)
+	}
+}
