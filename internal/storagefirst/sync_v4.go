@@ -16,17 +16,20 @@ import (
 // downloaded checkpoint JSON in Relay. Discovery must not authorize actions.
 type VerifierV4 interface {
 	DiscoverCheckpointV4(root, record, signature string) (transcript.CheckpointDiscoveryV4, error)
-	StoredCheckpointV4(root, record, signature string) (transcript.CheckpointInspectionV4, error)
+	CheckpointGuidanceV4(root, record, signature string) (transcript.CheckpointInspectionV4, transcript.EnrollmentMetadataInspectionV4, error)
 }
 
-// SnapshotV4 exists only after complete signed structural ancestry verification. It proves
-// neither payload availability, contribution replay nor production approval.
+// SnapshotV4 exists only after complete signed structural ancestry and committed
+// enrollment verification. It proves neither payload availability, contribution
+// replay, complete enrollment collection nor production approval.
 // Its immutable state cannot be edited through returned slice/pointer aliases.
 type SnapshotV4 struct {
-	root       state.Root
-	version    store.ObjectVersion
-	inspection []byte
-	checked    int
+	root        state.Root
+	version     store.ObjectVersion
+	inspection  []byte
+	commitments []byte
+	enrollments []byte
+	checked     int
 }
 
 func (s SnapshotV4) Root() (state.Root, store.ObjectVersion) { return s.root, s.version }
@@ -42,8 +45,28 @@ func (s SnapshotV4) State() (transcript.CheckpointStateV4, error) {
 	return c, nil
 }
 
-// SyncV4 follows signed discovery references, stages only the metadata needed
-// by stored verification, and calls the full ancestry verifier once. Callers
+func (s SnapshotV4) Commitments() (transcript.CheckpointCommitmentsV4, error) {
+	var c transcript.CheckpointCommitmentsV4
+	if len(s.commitments) == 0 {
+		return c, errors.New("no verified V4 commitments")
+	}
+	err := json.Unmarshal(s.commitments, &c)
+	return c, err
+}
+
+// Enrollment signatures and exact head binding were checked, not disclosure
+// contents, roster completeness, independent people or contribution mathematics.
+func (s SnapshotV4) Enrollments() (transcript.EnrollmentMetadataV4, error) {
+	var e transcript.EnrollmentMetadataV4
+	if len(s.enrollments) == 0 {
+		return e, errors.New("no verified V4 enrollment metadata")
+	}
+	err := json.Unmarshal(s.enrollments, &e)
+	return e, err
+}
+
+// SyncV4 follows signed discovery references, stages the metadata needed for
+// structure and enrollment guidance, and verifies the full ancestry once. Callers
 // hold their workspace lock across sync and any subsequent mutation intent.
 // Existing V1–V3 ceremonies continue using Sync and their original semantics.
 func SyncV4(objects ObjectStore, verifier VerifierV4, highWater HighWater, ceremonyID, tempParent string) (SnapshotV4, error) {
@@ -82,6 +105,7 @@ func SyncV4(objects ObjectStore, verifier VerifierV4, highWater HighWater, cerem
 	refs := SignedRef{Checkpoint: root.Checkpoint, Signature: root.CheckpointSignature}
 	names := fetchedNames{}
 	visited := map[string]bool{}
+	enrollmentRefs := map[transcript.SignedArtifactRefs]bool{}
 	var backwards []state.CheckpointPosition
 	seenIndex := -1
 	var headPath, headSig string
@@ -141,6 +165,17 @@ func SyncV4(objects ObjectStore, verifier VerifierV4, highWater HighWater, cerem
 				return SnapshotV4{}, fmt.Errorf("fetch history verification record: %w", err)
 			}
 		}
+		if pair := d.Enrollment; pair != nil {
+			if len(enrollmentRefs) >= 128 || enrollmentRefs[*pair] || pair.Record.Digest.Size > 16<<20 || pair.Signature.Digest.Size > 4096 {
+				return SnapshotV4{}, errors.New("invalid enrollment discovery set")
+			}
+			enrollmentRefs[*pair] = true
+			for _, ref := range []transcript.ArtifactRef{pair.Record, pair.Signature} {
+				if _, err := fetchNamed(objects, stage, contentRef(ref), names); err != nil {
+					return SnapshotV4{}, fmt.Errorf("fetch enrollment guidance record: %w", err)
+				}
+			}
+		}
 		if d.Sequence == 0 {
 			if d.PreviousCheckpoint != nil {
 				return SnapshotV4{}, errors.New("initial checkpoint names an ancestor")
@@ -155,7 +190,7 @@ func SyncV4(objects ObjectStore, verifier VerifierV4, highWater HighWater, cerem
 	if haveSeen && seenIndex < 0 {
 		return SnapshotV4{}, errors.New("progress does not descend from this workspace's verified history")
 	}
-	verified, err := verifier.StoredCheckpointV4(stage, headPath, headSig)
+	verified, metadata, err := verifier.CheckpointGuidanceV4(stage, headPath, headSig)
 	if err != nil {
 		return SnapshotV4{}, fmt.Errorf("verify complete ceremony history: %w", err)
 	}
@@ -177,12 +212,40 @@ func SyncV4(objects ObjectStore, verifier VerifierV4, highWater HighWater, cerem
 	if haveSeen {
 		start = seenIndex - 1
 	}
-	// All entries have now passed the one full ancestry check. A persistence
-	// failure returns no snapshot; retained earlier positions are safe to resume.
+	if verified.Commitments.Enrollments == nil || len(verified.Commitments.Enrollments) > 128 || verified.Commitments.Turns == nil || len(verified.Commitments.Turns) > 40 {
+		return SnapshotV4{}, errors.New("missing or oversized checkpoint commitments")
+	}
+	if len(verified.Commitments.Enrollments) != len(enrollmentRefs) {
+		return SnapshotV4{}, errors.New("enrollment discovery differs from verified set")
+	}
+	for _, pair := range verified.Commitments.Enrollments {
+		if !enrollmentRefs[pair] {
+			return SnapshotV4{}, errors.New("verified enrollment was not discovered")
+		}
+	}
+	e := metadata.Metadata
+	if metadata.Schema != "proof-tool-mpc-enrollment-metadata-v4" || metadata.Depth != "committed-enrollment-signatures" || !metadata.EnrollmentSignaturesVerified || metadata.DisclosureContentsVerified || metadata.CompleteRosterVerified || metadata.GlobalFreshnessVerified || e.CeremonyID != ceremonyID || e.Checkpoint != verified.CheckpointRefs || e.Enrollments == nil || len(e.Enrollments) != len(verified.Commitments.Enrollments) {
+		return SnapshotV4{}, errors.New("enrollment metadata differs from verified head or boundary")
+	}
+	for n, enrollment := range e.Enrollments {
+		if enrollment.Refs != verified.Commitments.Enrollments[n] {
+			return SnapshotV4{}, errors.New("enrollment metadata is not the exact committed set")
+		}
+	}
+	commitments, err := json.Marshal(verified.Commitments)
+	if err != nil {
+		return SnapshotV4{}, err
+	}
+	enrollments, err := json.Marshal(e)
+	if err != nil {
+		return SnapshotV4{}, err
+	}
+	// One complete verification passed. A partial persistence failure is safe
+	// to resume; incomplete metadata never advances this workspace's position.
 	for n := start; n >= 0; n-- {
 		if err := highWater.Record(backwards[n]); err != nil {
 			return SnapshotV4{}, fmt.Errorf("save verified progress: %w", err)
 		}
 	}
-	return SnapshotV4{root: root, version: version, inspection: encoded, checked: len(backwards)}, nil
+	return SnapshotV4{root: root, version: version, inspection: encoded, commitments: commitments, enrollments: enrollments, checked: len(backwards)}, nil
 }

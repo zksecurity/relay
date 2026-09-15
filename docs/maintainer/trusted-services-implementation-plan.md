@@ -331,10 +331,13 @@ inspection failure as permission to fall back. Existing pinned tools keep
 their old command path; ordinary `inspect definition` output stays unchanged.
 
 For V4, `checkpoint inspect-signed-v4` authenticates one pair and reveals only
-its predecessor and the bounded governance dependencies needed by stored
-verification. This discovery result is not usable ceremony progress. Stage
-the complete ancestry, then call `verify-stored-v4` once before recording local
-high-water state or returning a usable snapshot. Do not fetch cumulative
+its predecessor, bounded governance dependencies needed by stored verification,
+and a separately labelled enrollment pair for guidance. This discovery result
+is not usable ceremony progress. Stage the complete ancestry and enrollment
+pairs, then call `inspect-enrollments-v4` once for both structural verification
+and enrollment metadata before recording local high-water state or returning
+a usable snapshot. Structural-only callers can still use `verify-stored-v4`.
+Do not fetch cumulative
 contribution payloads during sync. The sequence limit is 16,384 (16,385 records
 including genesis), not the legacy sync cap. Fresh-copy contract tests verify
 that the discovered dependencies suffice and each required missing file fails.
@@ -350,6 +353,26 @@ evidence may arrive during an active participant turn. Derive evidence facts
 from verified ancestry and label coordinator commitments separately from
 independently reverified record contents. Keep the existing mutation journal,
 exact-byte uploads and conditional root commit; no automatic reparenting.
+
+The reviewed record-index slice keeps all outbound packets for each exact turn,
+newest first, plus its accepted input receipt and accepted chain/result. An
+accepted receipt may name an older packet; its signed hash selects that packet,
+not the newest publication or current upload attempt. An unrelated enrollment
+edge and delivery reallocation do not erase prior commitments.
+The batch enrollment inspection verifies exactly the checkpoint's
+committed enrollment set and signed disclosure references. Disclosure contents
+and roster completeness are not part of this check. One ancestry walk returns
+separately labelled structural and enrollment results. If download or metadata
+verification fails, high-water is not advanced and no guidance-capable snapshot
+is returned. Interrupted persistence after successful verification can resume.
+Returned facts are immutable copies.
+Normal role actions and a full storage-backed journey still remain to implement.
+The index/metadata slice passes the full Relay Go tests and vet, plus focused
+race tests. Proof-tool's Linux core and actual CLI suites and vet pass, including
+nonempty enrollment inspection and missing/changed signature failures. Tests
+cover retained older outbounds, reallocation, exact-set/head comparisons,
+metadata failure/retry and single-command combined verification. These are
+component/CLI checks, not a completed storage-backed role rehearsal.
 
 Remove requirements for challenge responses, independent freshness services
 and hostile-provider history reconciliation from the new flow.
