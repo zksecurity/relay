@@ -185,9 +185,22 @@ meaning changes:
 - storage-first definition/workflow identifier;
 - final-candidate checkpoint transition;
 - frozen review checkpoint;
-- final release manifest and inspection result;
-- production GO/NO-GO decision; and
+- final ceremony transcript and inspection result; and
 - Tessera setup contract and compatibility fixtures.
+
+Keep the application-facing `proof-tool-key-manifest-v1` unchanged. Its existing
+signed `setup_transcript_hash` binds the exact ceremony transcript. Add final
+transcript V3 with the explicit release-verification policy and exact signed
+coordinator final-candidate checkpoint references. Include that checkpoint pair
+in the closed release inventory. No second release-authorization signature is
+needed. Ordinary application key-bundle verification remains unchanged; the
+coordinator replay claim requires complete ceremony verification.
+
+Production decision V2 may retain its wire structure because it binds the exact
+definition and release inventory. Its verifier must explicitly recognize
+Definition V4 and require final transcript V3; it must never fall through to
+legacy behavior. A new decision schema is needed only if its signed fields or
+their meaning change independently of the already-bound ceremony version.
 
 New-version GO verification fails closed without the exact signed
 `FinalCandidateRecorded` replay statement. Old verifiers must reject the new
