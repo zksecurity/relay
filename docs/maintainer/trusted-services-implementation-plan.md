@@ -529,6 +529,45 @@ Before inlining the dependency inventory into FinalTranscript V3, test its
 maximum canonical size against the bounded transcript reader; do not silently
 raise all JSON limits or permit a late-signing size failure.
 
+### Record the signed private package (next integration step)
+
+Commit five small references under the fixed `final/release/` location: manifest
+and signature as the transition pair, plus transcript, exact release checksums,
+and bundled public key as evidence. The transcript itself can be large; only its
+reference is small. Do not copy the full packaged checkpoint history into the
+outer checkpoint's accepted-artifact inventory again.
+
+Before authoring this edge, verify the complete closed package and require its
+embedded review checkpoint to equal the exact predecessor pair, including the
+signature. Its final-candidate checkpoint must equal authenticated history.
+The release signer binds manifest → transcript → reviewed dependencies, while
+the coordinator checkpoint additionally binds the exact checksum file. Those
+checks cover the full package, not merely its five bootstrap files.
+
+Keep names in two explicit scopes: package-relative artifact names and the fixed
+ceremony-relative package prefix. Return a typed inventory with that prefix and
+the complete package-relative references; one locator constructs download paths.
+Do not double-prefix names or describe the five initial files as the whole
+download. GO/NO-GO and public publication remain separate, later actions.
+
+Review identified two maximum-size constraints. The V4 checksum list also needs
+a dedicated derived bound: `(maximum review dependencies + 5) × (64 hash bytes
++ 2 spaces + 512 filename bytes + newline)`, without widening legacy readers.
+Test its exact maximum and rejection above the bound. The outer V4 checkpoint
+must also reserve capacity for the five final references; do not let a legal
+pre-release inventory become impossible to finish. Keep legacy limits unchanged.
+Allow the original accepted-artifact limit plus five only for the V4
+`final-release-recorded` transition, not merely because a progress field is set.
+Test an exactly-full predecessor, pre-release overflow, and an extra sixth
+final reference. Package-relative names retain their 512-byte bound; the
+transport validates the separately constructed prefix-plus-name object key.
+
+The dedicated checksum bound is implemented in proof-tool `e8a1c95`. The exact
+maximum-size parser/reader test and over-limit negative pass; existing readers
+retain their original limit. Full Linux ceremony and CLI suites plus vet pass
+(106.159 s and 46.561 s for the suites). This verifies the checksum change, not
+the still-pending final-release checkpoint or backend role journey.
+
 Tests: changed final files, omitted/extra candidate refs, wrong replay binary,
 missing/bad bundle signature, old bundle after a new committed incident or
 enrollment, partial audit quorum, invalid release time, terminated state, and
