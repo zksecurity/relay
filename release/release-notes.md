@@ -19,6 +19,13 @@
   do not change any storage value. Then run the hotfix launcher's
   `relay ceremony recover-publication CEREMONY_NAME`; on success, resume with
   the original release's start script.
+- Added the first storage-first ceremony protocol layer: bounded and version-
+  pinned backend reads, conditional root updates, immutable signed-checkpoint
+  discovery, workspace rollback/fork protection, a crash-safe coordinator
+  commit journal, and deterministic Phase 1 next-action rules. Existing
+  ceremonies continue using their current workflow; storage-first execution is
+  not selected until a compatible proof-tool release and the complete role
+  path are pinned.
 
 - Reworked the ceremony flow map into seven explicit lanes covering identity
   collection, enrollment and storage distribution, participant custody turns,
@@ -113,6 +120,10 @@ The recovery command does not change setup contracts, signed definitions,
 ceremony data, proof-tool pins, Tessera fields or selected releases. It is an
 explicit compatibility bridge for one frozen Relay release and does not make
 the hotfix release the ceremony runtime. No Tessera change is required.
+Tessera's current grant API does not bind credentials to storage-first
+checkpoint attempts. Relay must reject Tessera-backed storage-first ceremonies
+until a versioned compatible grant/status contract is deployed. Existing
+Tessera ceremonies and setup-v2/setup-v2r2 contracts are unchanged.
 
 Setup contracts, ceremony data, and Tessera request fields are unchanged.
 The ceremony-flow documentation does not change Tessera integration behavior.

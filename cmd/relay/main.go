@@ -123,6 +123,10 @@ func usage() {
 
 recovery and debugging:
   relay diagnostics export --work ROLE_WORK --out FRESH_ZIP
+  relay advanced storage-first-sync --ceremony FILE --ceremony-signature FILE \
+             --coordinator-key FILE --ceremony-id SHA256 --workspace DIR \
+             --proof-tool FILE --role coordinator|participant [--identity ID] \
+             (--public-url HTTPS_ORIGIN | --endpoint URL --bucket NAME --profile PROFILE)
   relay advanced push --chain FILE --chain-signature FILE --root DIR --ceremony FILE \
              --ceremony-signature FILE --coordinator-key FILE \
              --bucket NAME --endpoint URL [--profile P] [--verify]
@@ -282,9 +286,11 @@ func runRelease(args []string) error {
 
 func runAdvanced(args []string) error {
 	if len(args) == 0 {
-		return errors.New("advanced requires push or pull")
+		return errors.New("advanced requires storage-first-sync, push, pull, or verify-ceremony-pair")
 	}
 	switch args[0] {
+	case "storage-first-sync":
+		return runStorageFirstSync(args[1:])
 	case "push":
 		return runPush(args[1:])
 	case "pull":
