@@ -90,7 +90,7 @@ func (f *roleFlow) captureDirectories(task flowTask, command []string) (map[stri
 				return nil, err
 			}
 			if !st.IsDir() || st.Mode()&os.ModeSymlink != 0 {
-				return nil, errors.New("public evidence input must be a real directory")
+				return nil, fmt.Errorf("public evidence input %s (%s) must be a real directory", field.Flag, value)
 			}
 			digest, err := flowTreeHash(local)
 			if err != nil {
