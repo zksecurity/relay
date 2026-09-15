@@ -44,6 +44,9 @@ type inspectionResult struct {
 	OK                             bool                            `json:"ok"`
 	Command                        string                          `json:"command"`
 	DefinitionInspection           *Definition                     `json:"definition_inspection"`
+	DefinitionProtocolInspection   *DefinitionProtocol             `json:"definition_protocol_inspection"`
+	CheckpointDiscoveryV4          *CheckpointDiscoveryV4          `json:"checkpoint_discovery_v4"`
+	CheckpointInspectionV4         *CheckpointInspectionV4         `json:"checkpoint_inspection_v4"`
 	ChainInspection                *chainInspection                `json:"chain_inspection"`
 	ParticipantInspection          *ParticipantInspection          `json:"participant_inspection"`
 	EnrollmentInspection           *EnrollmentInspection           `json:"enrollment_inspection"`
