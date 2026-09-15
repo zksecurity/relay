@@ -40,23 +40,24 @@ type Inspector struct {
 }
 
 type inspectionResult struct {
-	Schema                         string                          `json:"schema"`
-	OK                             bool                            `json:"ok"`
-	Command                        string                          `json:"command"`
-	DefinitionInspection           *Definition                     `json:"definition_inspection"`
-	DefinitionProtocolInspection   *DefinitionProtocol             `json:"definition_protocol_inspection"`
-	CheckpointDiscoveryV4          *CheckpointDiscoveryV4          `json:"checkpoint_discovery_v4"`
-	CheckpointInspectionV4         *CheckpointInspectionV4         `json:"checkpoint_inspection_v4"`
-	EnrollmentMetadataV4           *EnrollmentMetadataInspectionV4 `json:"enrollment_metadata_v4"`
-	ChainInspection                *chainInspection                `json:"chain_inspection"`
-	ParticipantInspection          *ParticipantInspection          `json:"participant_inspection"`
-	EnrollmentInspection           *EnrollmentInspection           `json:"enrollment_inspection"`
-	JourneyInspection              *Journey                        `json:"journey_inspection"`
-	CheckpointInspection           *CheckpointInspection           `json:"checkpoint_inspection"`
-	CheckpointTransitionInspection *CheckpointTransitionInspection `json:"checkpoint_transition_inspection"`
-	CheckpointEvidenceInspection   *CheckpointEvidenceInspection   `json:"checkpoint_evidence_inspection"`
-	SubmissionInspection           *SubmissionInspection           `json:"submission_inspection"`
-	Error                          inspectionCommandError          `json:"error"`
+	Schema                         string                             `json:"schema"`
+	OK                             bool                               `json:"ok"`
+	Command                        string                             `json:"command"`
+	DefinitionInspection           *Definition                        `json:"definition_inspection"`
+	DefinitionProtocolInspection   *DefinitionProtocol                `json:"definition_protocol_inspection"`
+	CheckpointDiscoveryV4          *CheckpointDiscoveryV4             `json:"checkpoint_discovery_v4"`
+	CheckpointInspectionV4         *CheckpointInspectionV4            `json:"checkpoint_inspection_v4"`
+	EnrollmentMetadataV4           *EnrollmentMetadataInspectionV4    `json:"enrollment_metadata_v4"`
+	ContributionInventoryV4        *ContributionInventoryInspectionV4 `json:"contribution_inventory_v4"`
+	ChainInspection                *chainInspection                   `json:"chain_inspection"`
+	ParticipantInspection          *ParticipantInspection             `json:"participant_inspection"`
+	EnrollmentInspection           *EnrollmentInspection              `json:"enrollment_inspection"`
+	JourneyInspection              *Journey                           `json:"journey_inspection"`
+	CheckpointInspection           *CheckpointInspection              `json:"checkpoint_inspection"`
+	CheckpointTransitionInspection *CheckpointTransitionInspection    `json:"checkpoint_transition_inspection"`
+	CheckpointEvidenceInspection   *CheckpointEvidenceInspection      `json:"checkpoint_evidence_inspection"`
+	SubmissionInspection           *SubmissionInspection              `json:"submission_inspection"`
+	Error                          inspectionCommandError             `json:"error"`
 }
 
 // SignedArtifactRefs is the transport projection of a canonical record and

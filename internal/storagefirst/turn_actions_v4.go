@@ -16,15 +16,18 @@ type TurnGrantV4 struct {
 // operation journal. It is not a signature verifier or a publication authority.
 // Artifacts bind Scope; grants and uploaded manifests additionally bind attempts.
 // Callers inspect an interrupted operation instead of presenting empty facts.
+// Participant inventory identities must be reconstructed together by proof-tool:
+// the final seven-file inventory must contain the exact five computed files.
+// These strings alone do not establish that relationship.
 type LocalTurnV4 struct {
 	Scope                      transcript.ContributionScopeV4
 	PendingOperation           bool
 	OutboundSHA256             string
 	ReceiptSHA256              string
 	ReceiptHandoffSHA256       string
+	ComputedCandidateID        string
 	CandidateResultID          string
 	CandidateReceivedAttemptID string
-	ReturnHandoffResultID      string
 	ReturnReceiptResultID      string
 	Grant                      *TurnGrantV4
 	UploadedAttemptID          string
@@ -79,12 +82,12 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 	if local.Scope != (transcript.ContributionScopeV4{}) && local.Scope != view.Scope {
 		return TurnRecommendationV4{}, errors.New("retained work belongs to another turn; select its exact scope before proceeding")
 	}
-	for _, digest := range []string{local.OutboundSHA256, local.ReceiptSHA256, local.ReceiptHandoffSHA256, local.CandidateResultID, local.ReturnHandoffResultID, local.ReturnReceiptResultID, local.UploadedArtifactID} {
+	for _, digest := range []string{local.OutboundSHA256, local.ReceiptSHA256, local.ReceiptHandoffSHA256, local.ComputedCandidateID, local.CandidateResultID, local.ReturnReceiptResultID, local.UploadedArtifactID} {
 		if digest != "" && !validDigest(digest) {
 			return TurnRecommendationV4{}, errors.New("invalid retained artifact identity")
 		}
 	}
-	if local.Scope == (transcript.ContributionScopeV4{}) && (local.OutboundSHA256 != "" || local.ReceiptSHA256 != "" || local.CandidateResultID != "" || local.Grant != nil || local.UploadedAttemptID != "") {
+	if local.Scope == (transcript.ContributionScopeV4{}) && (local.OutboundSHA256 != "" || local.ReceiptSHA256 != "" || local.ComputedCandidateID != "" || local.CandidateResultID != "" || local.Grant != nil || local.UploadedAttemptID != "") {
 		return TurnRecommendationV4{}, errors.New("retained work has no exact turn scope")
 	}
 	if local.UploadedAttemptID != "" && !validAttempt(local.UploadedAttemptID) {
@@ -99,8 +102,11 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 	if observedAttempt != "" && !validAttempt(observedAttempt) {
 		return TurnRecommendationV4{}, errors.New("invalid observed submission attempt")
 	}
-	if (local.ReceiptSHA256 == "") != (local.ReceiptHandoffSHA256 == "") || (local.UploadedAttemptID == "") != (local.UploadedArtifactID == "") || (local.ReturnHandoffResultID != "" && local.ReturnHandoffResultID != local.CandidateResultID) || (local.ReturnReceiptResultID != "" && local.ReturnReceiptResultID != local.CandidateResultID) {
+	if (local.ReceiptSHA256 == "") != (local.ReceiptHandoffSHA256 == "") || (local.UploadedAttemptID == "") != (local.UploadedArtifactID == "") || (local.ReturnReceiptResultID != "" && local.ReturnReceiptResultID != local.CandidateResultID) {
 		return TurnRecommendationV4{}, errors.New("inconsistent retained artifact bindings")
+	}
+	if role == Participant && local.CandidateResultID != "" && local.ComputedCandidateID == "" {
+		return answer("inspect-retained-operation", true, "The completed upload package has no verified computation inventory. Inspect its exact files before continuing.")
 	}
 	c, err := s.State()
 	if err != nil {
@@ -118,7 +124,7 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 			return answer("inspect-retained-operation", true, "A recorded upload has no matching retained artifact and exact delivery attempt. Inspect existing work before signing or computing again.")
 		}
 	}
-	if local.CandidateResultID != "" && (view.Commitment == nil || view.Commitment.InputReceipt == nil) {
+	if (local.ComputedCandidateID != "" || local.CandidateResultID != "") && (view.Commitment == nil || view.Commitment.InputReceipt == nil) {
 		return answer("inspect-retained-operation", true, "A retained candidate has no accepted input receipt in this state. Inspect it; do not recompute or upload.")
 	}
 	if local.CandidateResultID != "" && view.Stage != TurnAcceptedV4 {
@@ -211,7 +217,7 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 		}
 		return answer("upload-receipt", true, "Upload the exact signed receipt to the active attempt.")
 	}
-	if local.CandidateResultID == "" {
+	if local.ComputedCandidateID == "" {
 		if !grantReady {
 			return answer("get-candidate-grant", false, "Receipt acceptance is verified; obtain upload access for the active candidate attempt.")
 		}
@@ -220,7 +226,7 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 	if local.UploadedAttemptID == slot.AttemptID && local.UploadedArtifactID == local.CandidateResultID {
 		return answer("wait-for-candidate-acceptance", false, "Candidate uploaded; wait for the coordinator's exact signed result.")
 	}
-	if local.ReturnHandoffResultID != local.CandidateResultID {
+	if local.CandidateResultID == "" {
 		return answer("prepare-and-sign-return-handoff", true, "Prepare the return packet for this exact completed candidate; do not recompute.")
 	}
 	if !grantReady {

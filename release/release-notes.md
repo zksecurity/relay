@@ -10,6 +10,8 @@
 - Added the V4 coordinator/participant turn model for both phases. It retains
   work across upload retries, distinguishes rejected results, and explicitly
   requires the coordinator's return receipt before candidate acceptance.
+  Retained computation and complete signed upload packages have distinct IDs;
+  the approved-tool inspection checks both together without repeating computation.
   Normal menu/executor integration remains pending.
 
 - Added a transport-only delivery foundation with bounded inventories,

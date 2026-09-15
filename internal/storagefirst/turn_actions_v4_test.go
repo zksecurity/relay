@@ -71,10 +71,29 @@ func TestV4ParticipantTurnRecommendationsAndRetries(t *testing.T) {
 			local.PendingOperation = true
 			check("inspect-retained-operation", true)
 			local.PendingOperation = false
-			local.CandidateResultID = sum([]byte("result"))
+			local.ComputedCandidateID = sum([]byte("computed-five-files"))
 			check("prepare-and-sign-return-handoff", true)
-			local.ReturnHandoffResultID = local.CandidateResultID
+			// Restart after computation must never suggest another contribution.
+			local.PendingOperation = true // A partially written return pair is uncertain.
+			check("inspect-retained-operation", true)
+			local.PendingOperation = false
+			receipt := index.Turns[0].InputReceipt
+			deliveries := c.Deliveries
+			index.Turns[0].InputReceipt = nil
+			c.Deliveries = c.Deliveries[:2]
+			check("inspect-retained-operation", true)
+			index.Turns[0].InputReceipt = receipt
+			c.Deliveries = deliveries
+			local.CandidateResultID = sum([]byte("result-seven-files"))
 			check("upload-candidate", true)
+			validLocal = local
+			local.ComputedCandidateID = ""
+			check("inspect-retained-operation", true)
+			local = validLocal
+			local.UploadedAttemptID = candidate
+			local.UploadedArtifactID = local.ComputedCandidateID
+			check("inspect-retained-operation", true)
+			local = validLocal
 			local.UploadedAttemptID = candidate
 			local.UploadedArtifactID = local.CandidateResultID
 			check("wait-for-candidate-acceptance", false)
@@ -82,7 +101,7 @@ func TestV4ParticipantTurnRecommendationsAndRetries(t *testing.T) {
 			check("wait-for-replacement-attempt", false)
 			validLocal = local
 			local.CandidateResultID = ""
-			local.ReturnHandoffResultID = ""
+			local.ComputedCandidateID = ""
 			check("inspect-retained-operation", true)
 			local = validLocal
 			replacement := strings.Repeat("ef", 16)
