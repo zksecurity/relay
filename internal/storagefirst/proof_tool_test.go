@@ -58,3 +58,40 @@ func TestProofToolEvidenceUsesFetchedDefinitionInsideArtifactRoot(t *testing.T) 
 		t.Fatalf("got=%+v err=%v", got, err)
 	}
 }
+
+func TestProofToolCheckpointProjectsBothPhasesAndFinalState(t *testing.T) {
+	digest := transcript.Digest{SHA256: "sha256:" + strings.Repeat("a", 64), Size: 10}
+	ref := func(name string) transcript.ArtifactRef { return transcript.ArtifactRef{Name: name, Digest: digest} }
+	signed := func(name string) *transcript.SignedArtifactRefs {
+		return &transcript.SignedArtifactRefs{Record: ref(name + ".json"), Signature: ref(name + ".sig")}
+	}
+	definition := transcript.Definition{Schema: "proof-tool-mpc-definition-inspection-v1", CeremonyID: "sha256:" + strings.Repeat("c", 64), Mode: "rehearsal", Phase1Participants: []string{"participant-1"}, Phase2Participants: []string{"participant-1"}, R1CSRef: ref("circuit.ccs")}
+	inspection := transcript.CheckpointInspection{
+		Schema: "proof-tool-mpc-checkpoint-inspection-v1", CeremonyID: definition.CeremonyID,
+		Workflow: "storage-first-v1", RelayReleaseID: "release", Sequence: 14, Digest: digest,
+		Definition: *signed("ceremony"), Transition: transcript.CheckpointTransition{Kind: "final-release-recorded"},
+		Phase1:        transcript.CheckpointPhaseState{Phase: "phase1", AcceptedCount: 1, HeadRecordID: "sha256:" + strings.Repeat("1", 64), HeadPayload: ref("phase1/head.bin"), Chain: *signed("phase1/chain")},
+		Phase1Closure: signed("phase1/close"), Phase1Beacon: signed("phase1/beacon"), Phase1Seal: signed("phase1/seal"),
+		Phase2:        &transcript.CheckpointPhaseState{Phase: "phase2", AcceptedCount: 1, HeadRecordID: "sha256:" + strings.Repeat("2", 64), HeadPayload: ref("phase2/head.bin"), Chain: *signed("phase2/chain")},
+		Phase2Closure: signed("phase2/close"), Phase2Beacon: signed("phase2/beacon"),
+		FinalCandidate: signed("final/candidate"), FinalRelease: signed("final/release"),
+	}
+	inspector := transcript.Inspector{CeremonyPath: "ceremony.json", CeremonySignaturePath: "ceremony.sig", CoordinatorPublicKeyPath: "coordinator.hex"}
+	inspector.Runner = func(_ string, args ...string) ([]byte, []byte, error) {
+		var result any
+		if strings.Contains(strings.Join(args, " "), "inspect definition") {
+			result = map[string]any{"schema": "proof-tool-mpc-command-result-v1", "ok": true, "command": "inspect definition", "definition_inspection": definition}
+		} else {
+			result = map[string]any{"schema": "proof-tool-mpc-command-result-v1", "ok": true, "command": "inspect checkpoint", "checkpoint_inspection": inspection}
+		}
+		raw, _ := json.Marshal(result)
+		return raw, nil, nil
+	}
+	got, err := (ProofToolVerifier{Inspector: inspector}).VerifyCheckpoint("checkpoint.json", "checkpoint.sig")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Phase1Closed || !got.Phase2Closed || got.Phase2Accepted != 1 || !got.FinalCandidateRecorded || !got.FinalReleaseRecorded || !got.Position.PhaseHeads["phase2"].Closed {
+		t.Fatalf("incomplete lifecycle projection: %+v", got)
+	}
+}

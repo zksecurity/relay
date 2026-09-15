@@ -4,6 +4,9 @@
   checkpoints, rollback/fork detection, exact submission attempts, conditional
   root updates, crash-safe coordinator journals, and deterministic Phase 1
   next-action evaluation.
+- Relay now consumes the proof-tool's authenticated Phase 2 and final-state
+  checkpoint projection as well as Phase 1; it does not parse signed checkpoint
+  JSON to infer those lifecycle facts itself.
 - Added setup v3 and signed assurance policy. Coordinators may explicitly set
   witness, mirror, ceremony-audit, and external-audit minima to zero. Disabled
   roles disappear from guidance and cannot submit evidence. Future drand beacon
