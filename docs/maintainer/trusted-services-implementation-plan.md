@@ -17,7 +17,7 @@ Ordinary failures, incorrect local files and concurrent processes remain in scop
 Current boundary: proof-tool's V4 library and explicit CLI now cover checkpoint
 authoring, checkpoint-bound bundle preparation/signing, final review, package
 signing/verification and Decision V3. These changes are pushed, not released.
-The latest CLI slice is `5c143c5`; full Linux ceremony/CLI suites and vet pass.
+The evidence CLI slice is `5c143c5`; full Linux ceremony/CLI suites and vet pass.
 Its real tiny artifact test invokes the approved CLI and rejects a modified
 executable before output/key access. This is not a normal-role storage journey
 or a production K21 approval test. Those, provider tests and releases remain.
@@ -323,6 +323,33 @@ names from proof-tool results. Transport manifest validation never establishes
 acceptance or authorizes extra public files.
 
 ## 3. Simplify sync without breaking recovery
+
+Reviewed sync bridge (implementation in progress): authenticate a separate
+`inspect definition-protocol` projection before selecting the exact V4 /
+`storage-first-v2` / `coordinator-full-replay-v1` tuple. Never interpret an
+inspection failure as permission to fall back. Existing pinned tools keep
+their old command path; ordinary `inspect definition` output stays unchanged.
+
+For V4, `checkpoint inspect-signed-v4` authenticates one pair and reveals only
+its predecessor and the bounded governance dependencies needed by stored
+verification. This discovery result is not usable ceremony progress. Stage
+the complete ancestry, then call `verify-stored-v4` once before recording local
+high-water state or returning a usable snapshot. Do not fetch cumulative
+contribution payloads during sync. The sequence limit is 16,384 (16,385 records
+including genesis), not the legacy sync cap. Fresh-copy contract tests verify
+that the discovered dependencies suffice and each required missing file fails.
+
+The proof-tool discovery slice is pushed in `9841387` with command coverage in
+`47ba50e`. Full Linux ceremony/CLI suites and vet pass; the strengthened
+dependency-only, format-dispatch and CLI tests also pass in Linux.
+The Relay adapter and separate V4 synchronizer pass targeted tests, including
+partial high-water persistence and restart; normal menus are not connected yet.
+The next role recommender must use progress, delivery
+history and committed evidence—not the last transition name, because unrelated
+evidence may arrive during an active participant turn. Derive evidence facts
+from verified ancestry and label coordinator commitments separately from
+independently reverified record contents. Keep the existing mutation journal,
+exact-byte uploads and conditional root commit; no automatic reparenting.
 
 Remove requirements for challenge responses, independent freshness services
 and hostile-provider history reconciliation from the new flow.

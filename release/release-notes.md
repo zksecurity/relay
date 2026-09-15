@@ -1,5 +1,9 @@
 ## What changed
 
+- Added a separate V4 metadata-sync bridge that discovers signed history,
+  verifies its complete ancestry before recording progress, and avoids fetching
+  old contribution payloads. Normal role-menu integration is still pending.
+
 - Added a transport-only delivery foundation with bounded inventories,
   manifest-last uploads and exact-byte retries. It is not yet connected to role
   menus and does not replace the released signed-envelope workflow.
