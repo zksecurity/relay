@@ -7,6 +7,11 @@
   committed enrollment signatures are checked in one batch before guidance
   facts are returned. This does not imply full replay or a complete roster.
 
+- Added the V4 coordinator/participant turn model for both phases. It retains
+  work across upload retries, distinguishes rejected results, and explicitly
+  requires the coordinator's return receipt before candidate acceptance.
+  Normal menu/executor integration remains pending.
+
 - Added a transport-only delivery foundation with bounded inventories,
   manifest-last uploads and exact-byte retries. It is not yet connected to role
   menus and does not replace the released signed-envelope workflow.

@@ -427,6 +427,18 @@ changed root between recommendation and execution. The independent review
 removed an unnecessary all-roster gate and separated artifact, upload-attempt
 and checkpoint-write bindings before implementation.
 
+The turn model and pure recommender are implemented for both phases. They are
+not yet connected to the normal menu/executor or durable V4 fact reconstruction.
+The code review added two recovery checks: every recorded upload must match
+the exact retained delivery kind/artifact, and coordinator acceptance explicitly
+follows download/check → sign return receipt → verify/accept. A replacement
+candidate attempt requires comparing the newly received submission before
+reusing an existing result/receipt. Tests cover missing local result facts,
+unknown/mislabelled uploads, historical receipt uploads, replacement deliveries,
+grant expiry, rejected results and exact-result completion. A pending operation
+must be surfaced from the durable journal before selecting ordinary turn work;
+never manufacture empty local facts by ignoring a reconstruction failure.
+
 ### Incident and termination records
 
 Use separate V4 transitions for an informational incident, abort and restart.
