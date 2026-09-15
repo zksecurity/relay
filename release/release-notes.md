@@ -89,8 +89,10 @@
   and save a protected credential snapshot. Temporary snapshots do not renew
   automatically. Existing storage checks still run with separate approval.
 - Installation now says "Choose your task or role" to include upload-only work.
-- The beacon selection menu previews the bundled settings before selection and
-  distinguishes the 180-second template from production's 24-hour minimum.
+- The existing setup-v2 menu previews its bundled settings and distinguishes
+  the 180-second rehearsal template from that legacy contract's 24-hour
+  production minimum. The new storage-first contract will instead use the
+  configurable signed policy described above.
 - Guided onboarding and ceremony operations now retain up to 100 structured
   diagnostic events per role work folder, including fixed error categories.
 - Choose **E — Export bug report** in the menus, or run
