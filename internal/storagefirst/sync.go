@@ -70,6 +70,12 @@ type Checkpoint struct {
 	Phase1ScheduledTotal    int
 	Phase1Closed            bool
 	Phase1NextParticipantID string
+	Phase2Accepted          int
+	Phase2ScheduledTotal    int
+	Phase2Closed            bool
+	Phase2NextParticipantID string
+	FinalCandidateRecorded  bool
+	FinalReleaseRecorded    bool
 	AcceptedCandidate       *AcceptedCandidate
 	Slots                   []Slot
 	Artifacts               []state.ContentRef

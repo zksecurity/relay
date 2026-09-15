@@ -24,6 +24,15 @@ func checkpointInspectionFixture() CheckpointInspection {
 
 func TestCheckpointUsesProofToolProjection(t *testing.T) {
 	want := checkpointInspectionFixture()
+	digest := want.Digest
+	want.Phase1Closure = &SignedArtifactRefs{Record: ArtifactRef{Name: "phase1/close.json", Digest: digest}, Signature: ArtifactRef{Name: "phase1/close.sig", Digest: digest}}
+	want.Phase1Beacon = &SignedArtifactRefs{Record: ArtifactRef{Name: "phase1/beacon.json", Digest: digest}, Signature: ArtifactRef{Name: "phase1/beacon.sig", Digest: digest}}
+	want.Phase1Seal = &SignedArtifactRefs{Record: ArtifactRef{Name: "phase1/seal.json", Digest: digest}, Signature: ArtifactRef{Name: "phase1/seal.sig", Digest: digest}}
+	want.Phase2 = &CheckpointPhaseState{Phase: "phase2", HeadRecordID: "sha256:" + strings.Repeat("e", 64), HeadPayload: ArtifactRef{Name: "phase2/genesis.bin", Digest: digest}, Chain: SignedArtifactRefs{Record: ArtifactRef{Name: "phase2/chain-0000.json", Digest: digest}, Signature: ArtifactRef{Name: "phase2/chain-0000.sig", Digest: digest}}}
+	want.Phase2Closure = &SignedArtifactRefs{Record: ArtifactRef{Name: "phase2/close.json", Digest: digest}, Signature: ArtifactRef{Name: "phase2/close.sig", Digest: digest}}
+	want.Phase2Beacon = &SignedArtifactRefs{Record: ArtifactRef{Name: "phase2/beacon.json", Digest: digest}, Signature: ArtifactRef{Name: "phase2/beacon.sig", Digest: digest}}
+	want.FinalCandidate = &SignedArtifactRefs{Record: ArtifactRef{Name: "final/candidate.json", Digest: digest}, Signature: ArtifactRef{Name: "final/candidate.sig", Digest: digest}}
+	want.FinalRelease = &SignedArtifactRefs{Record: ArtifactRef{Name: "final/release.json", Digest: digest}, Signature: ArtifactRef{Name: "final/release.sig", Digest: digest}}
 	inspector := Inspector{CeremonyPath: "ceremony.json", CeremonySignaturePath: "ceremony.sig", CoordinatorPublicKeyPath: "coordinator.hex"}
 	inspector.Runner = func(_ string, args ...string) ([]byte, []byte, error) {
 		if strings.Join(args, " ") != "--format json inspect checkpoint --ceremony ceremony.json --ceremony-signature ceremony.sig --coordinator-public-key-file coordinator.hex --checkpoint checkpoint.json --checkpoint-signature checkpoint.sig" {
@@ -34,7 +43,7 @@ func TestCheckpointUsesProofToolProjection(t *testing.T) {
 		return raw, nil, nil
 	}
 	got, err := inspector.Checkpoint("checkpoint.json", "checkpoint.sig")
-	if err != nil || got.Sequence != 0 || got.Workflow != "storage-first-v1" {
+	if err != nil || got.Sequence != 0 || got.Workflow != "storage-first-v1" || got.Phase2 == nil || got.FinalRelease == nil {
 		t.Fatalf("got=%+v err=%v", got, err)
 	}
 }

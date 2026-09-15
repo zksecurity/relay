@@ -26,21 +26,34 @@ func (v ProofToolVerifier) VerifyCheckpoint(checkpointPath, signaturePath string
 			Sequence: inspection.Sequence,
 			Digest:   inspection.Digest.SHA256,
 			PhaseHeads: map[string]state.PhaseHeadPosition{
-				"phase1": {Index: uint64(inspection.Phase1.AcceptedCount), Digest: inspection.Phase1.HeadRecordID},
+				"phase1": {Index: uint64(inspection.Phase1.AcceptedCount), Digest: inspection.Phase1.HeadRecordID, Closed: inspection.Phase1Closure != nil},
 			},
 		},
-		Transition:           inspection.Transition.Kind,
-		ParticipantID:        inspection.Transition.ParticipantID,
-		Phase1Accepted:       int(inspection.Phase1.AcceptedCount),
-		Phase1ScheduledTotal: len(definition.Phase1Participants),
+		Transition:             inspection.Transition.Kind,
+		ParticipantID:          inspection.Transition.ParticipantID,
+		Phase1Accepted:         int(inspection.Phase1.AcceptedCount),
+		Phase1ScheduledTotal:   len(definition.Phase1Participants),
+		Phase2ScheduledTotal:   len(definition.Phase2Participants),
+		FinalCandidateRecorded: inspection.FinalCandidate != nil,
+		FinalReleaseRecorded:   inspection.FinalRelease != nil,
 	}
 	checkpoint.Definition = SignedRef{Checkpoint: contentRef(inspection.Definition.Record), Signature: contentRef(inspection.Definition.Signature)}
 	for _, artifact := range inspection.AcceptedArtifacts {
 		checkpoint.Artifacts = append(checkpoint.Artifacts, contentRef(artifact))
 	}
-	checkpoint.Phase1Closed = checkpoint.Position.PhaseHeads["phase1"].Closed
+	checkpoint.Phase1Closed = inspection.Phase1Closure != nil
 	if !checkpoint.Phase1Closed && checkpoint.Phase1Accepted < checkpoint.Phase1ScheduledTotal {
 		checkpoint.Phase1NextParticipantID = definition.Phase1Participants[checkpoint.Phase1Accepted]
+	}
+	if inspection.Phase2 != nil {
+		checkpoint.Phase2Accepted = int(inspection.Phase2.AcceptedCount)
+		checkpoint.Phase2Closed = inspection.Phase2Closure != nil
+		checkpoint.Position.PhaseHeads["phase2"] = state.PhaseHeadPosition{
+			Index: uint64(inspection.Phase2.AcceptedCount), Digest: inspection.Phase2.HeadRecordID, Closed: checkpoint.Phase2Closed,
+		}
+		if !checkpoint.Phase2Closed && checkpoint.Phase2Accepted < checkpoint.Phase2ScheduledTotal {
+			checkpoint.Phase2NextParticipantID = definition.Phase2Participants[checkpoint.Phase2Accepted]
+		}
 	}
 	if inspection.PreviousCheckpoint != nil {
 		previous := SignedRef{

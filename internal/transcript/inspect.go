@@ -103,6 +103,14 @@ type CheckpointInspection struct {
 	PreviousCheckpoint *SignedArtifactRefs        `json:"previous_checkpoint"`
 	Transition         CheckpointTransition       `json:"transition"`
 	Phase1             CheckpointPhaseState       `json:"phase1"`
+	Phase1Closure      *SignedArtifactRefs        `json:"phase1_closure,omitempty"`
+	Phase1Beacon       *SignedArtifactRefs        `json:"phase1_beacon,omitempty"`
+	Phase1Seal         *SignedArtifactRefs        `json:"phase1_seal,omitempty"`
+	Phase2             *CheckpointPhaseState      `json:"phase2,omitempty"`
+	Phase2Closure      *SignedArtifactRefs        `json:"phase2_closure,omitempty"`
+	Phase2Beacon       *SignedArtifactRefs        `json:"phase2_beacon,omitempty"`
+	FinalCandidate     *SignedArtifactRefs        `json:"final_candidate,omitempty"`
+	FinalRelease       *SignedArtifactRefs        `json:"final_release,omitempty"`
 	Submissions        []CheckpointSubmissionSlot `json:"submissions"`
 	AcceptedArtifacts  []ArtifactRef              `json:"accepted_artifacts"`
 }
@@ -430,6 +438,29 @@ func validateCheckpointInspection(value CheckpointInspection) error {
 	for _, ref := range append([]ArtifactRef{value.Phase1.HeadPayload, value.Phase1.Chain.Record, value.Phase1.Chain.Signature}, value.AcceptedArtifacts...) {
 		if err := validateRef(ref); err != nil {
 			return fmt.Errorf("checkpoint inspection artifact: %w", err)
+		}
+	}
+	if value.Phase2 != nil {
+		for _, ref := range []ArtifactRef{value.Phase2.HeadPayload, value.Phase2.Chain.Record, value.Phase2.Chain.Signature} {
+			if err := validateRef(ref); err != nil {
+				return fmt.Errorf("checkpoint Phase 2 artifact: %w", err)
+			}
+		}
+	}
+	for label, refs := range map[string]*SignedArtifactRefs{
+		"Phase 1 closure": value.Phase1Closure, "Phase 1 beacon": value.Phase1Beacon,
+		"Phase 1 seal": value.Phase1Seal, "Phase 2 closure": value.Phase2Closure,
+		"Phase 2 beacon": value.Phase2Beacon, "final candidate": value.FinalCandidate,
+		"final release": value.FinalRelease,
+	} {
+		if refs == nil {
+			continue
+		}
+		if err := validateRef(refs.Record); err != nil {
+			return fmt.Errorf("checkpoint %s: %w", label, err)
+		}
+		if err := validateRef(refs.Signature); err != nil {
+			return fmt.Errorf("checkpoint %s signature: %w", label, err)
 		}
 	}
 	if err := validateRef(value.Definition.Record); err != nil {
