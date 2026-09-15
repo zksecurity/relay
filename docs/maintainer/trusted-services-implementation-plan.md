@@ -53,7 +53,7 @@ ordinary-helper regression. This is single-process evidence with fixture
 environment/cleanup statements, not separate role journeys, cloud transport or
 proof of erasure. Unsupported release authoring deliberately fails closed.
 
-Still required: audit/governance evidence and final-release authoring,
+Still required: final-release and production-decision authoring,
 the new signer verification path, normal role-menu integration, full role
 rehearsals, live-provider testing and release/deployment. No existing ceremony
 is switched to the new transport by these foundations.
@@ -104,13 +104,33 @@ The implementation review found no blocker. Release assembly must sort audit
 pairs deterministically rather than use reverse ancestry order, and must verify
 the complete required enrollment collection through the existing bundle gate.
 
+Operational-bundle preparation now derives the unchanged v3 bundle exclusively
+from the authenticated checkpoint history and runs its existing verifier. The
+Linux tiny tests cover both observer settings and enabled audits, require every
+roster enrollment (including a participant who did not contribute), ignore valid
+but uncommitted files, produce deterministic output, and reject corrupted
+custody, chain-prefix and raw beacon bytes. Both ceremony/CLI suites and vet pass.
+Independent review found no blocker; final-release verification must still
+rederive against its exact predecessor, because source-checkpoint metadata is
+not embedded in the legacy signed bundle. This does not verify the final proof,
+sign the bundle, or complete the release path.
+
 Governance review found that abort/restart cannot be ordinary evidence edges:
 the unchanged bundle verifier authenticates them but does not stop progression.
 Implement informational incidents separately. Dedicated abort/restart handling
 must terminate the old ceremony; restart must additionally bind and authenticate
 the exact new definition. Do not route generic rejection records around the
-existing exact contribution-result rejection mechanism. These terminal paths
-remain required work, not an implemented claim.
+existing exact contribution-result rejection mechanism.
+
+Those V4 governance library gates are now implemented: incidents preserve state,
+abort/restart produce an immutable terminal marker, and active delivery history
+is retained without waiting for credential expiry. Only the coordinator may
+authorize them; restart verifies an exact new V4 definition. Existing record
+schemas remain unchanged. Independent review caught a historical scope recheck
+gap: ancestry inspection now verifies each governance edge against its exact
+predecessor, including a manually signed wrong-head regression. Full Linux
+ceremony/CLI suites and vet pass. Production GO/NO-GO and normal CLI guidance
+remain separate required work; these gates alone are not a completed release.
 
 The independent structural review found and closed a retry-limit deadlock and
 an ambiguous predecessor-signature boundary. The final review reported no
@@ -297,6 +317,133 @@ contribution. Coordinator acceptance/finalization and enabled auditor replay
 perform the mathematics. Cache verified records for efficient restart.
 
 ## 4. Complete the roles and final release
+
+### Incident and termination records
+
+Use separate V4 transitions for an informational incident, abort and restart.
+All three reuse governance records but additionally require the coordinator's
+identity and signature (the generic legacy governance verifier also allows
+other roles). The record names the exact current phase and head. Its legacy
+one-based event index is the accepted count, or 1 at genesis; it is not an
+assertion that a genesis contribution was accepted. The checkpoint signature
+binds the exact predecessor and record as the current authorization; record time
+is the time of the statement, not proof of current backend freshness. A record
+already committed cannot be added again.
+
+The transition includes exactly the record's reviewed evidence and hashes those
+bytes. Incident/abort evidence is one UTF-8 public statement (at most 1 MiB),
+whose hash equals the statement digest. Restart evidence is exactly that
+statement plus the new definition and signature. Every selected file becomes
+permanent public evidence: never select logs, keys, credentials, environment
+dumps or private submission data. All reads are confined to public staging;
+no files are discovered automatically.
+Informational incidents do not advance the phase or change delivery history;
+the automatic operational bundle includes every committed incident.
+
+Abort and restart set a typed terminal progress marker naming the kind, signed
+record and (for restart) exact new definition pair. The enclosing checkpoint
+binds its exact predecessor. Every later
+transition is forbidden. Existing delivery history remains intact, including
+unfinished attempts: protocol termination must not wait for a grant to expire.
+Relay must separately explain that a previously issued cloud credential may
+remain usable until revocation or expiry, but can no longer authorize ceremony
+acceptance. Do not silently convert an abort into a restart.
+
+Restart additionally names the exact new signed definition and verifies its
+signature, distinct ceremony ID and V4 schema (no silent downgrade). The old coordinator's signed checkpoint
+approves that exact pair; the new definition's own coordinator signs it. Creating
+the new ceremony is a separate action, not an automatic mutation of old files.
+This is an authenticated old-side pointer: the bare new definition does not
+prove restart lineage. Roles must retain and verify the old terminal checkpoint
+to recognize the new ceremony as its authorized restart.
+All three record types are unavailable after final release has been recorded. They
+are not substitutes for the separately authenticated production GO/NO-GO path.
+Terminal progress cannot prepare an operational release bundle or final release.
+Existing formats keep their unchanged governance meaning.
+
+Stop authoring verifies its own bounded evidence, not unrelated contribution
+payloads or the full enrollment collection: missing data must not prevent a
+coordinator from stopping. Statement time cannot predate the old definition;
+the restart definition must already exist at that time. These are consistency
+checks, not a trusted clock. Historical inspection rechecks every governance
+edge against its exact predecessor while walking the signed history, avoiding
+copied growing inventories. A manually signed wrong-head edge is rejected too.
+
+Tests must cover wrong signer/head/phase, mismatched statement/evidence, missing
+or changed restart definition/signature, reused ceremony ID, abort with an
+active delivery, every attempted transition after termination, and automatic
+inclusion of committed incidents. Production NO-GO-before-finalization remains
+a separate required release/decision slice; this change does not claim it works.
+
+### Automatic operational-bundle assembly
+
+Derive the existing bundle-v3 record from an exact authenticated V4 checkpoint,
+not user-maintained file lists. Require a frozen final candidate and no final
+release. Sort every signed-record collection by logical record name. For each
+accepted turn, use its exact committed chain prefix, input receipt and original
+handoff, accepted return handoff/receipt, and matching mirror records. Use the
+committed closures, witness records and multi-relay raw evidence for each phase.
+Include the complete committed enrollment collection, including roster members
+who did not contribute in a threshold rehearsal. Run the existing unsigned
+bundle verifier before returning anything for review/signing. This operation
+does not sign, upload, or repeat contribution mathematics.
+
+Audit collection remains separate from this unchanged bundle format; the final
+signing gate enforces its full minimum. Missing custody or enrollment records
+must produce a specific missing-evidence error, never a generated replacement.
+Committed incidents are included; a terminated checkpoint cannot prepare a
+release bundle. V4 remains unreleased until the complete release path works.
+
+### Exact final review, without duplicate contribution replay
+
+First add a read-only V4 review verifier, before enabling release signing. Its
+inputs are the independently trusted definition, public staging root, exact
+review checkpoint pair, exact coordinator-signed operational bundle pair, and
+proposed release time. No caller-supplied audit list or alternate phase paths.
+
+It authenticates the complete checkpoint ancestry, rejects terminated/released
+state, finds the committed final-candidate checkpoint and its approved-binary
+coordinator replay claim, and checks the exact candidate files with the existing
+non-replay candidate verifier. Its closed file inventory must equal the one
+committed by final-candidate authoring; extra files and substitutions fail.
+Share the existing closed-tree verifier (including its second verification after
+the walk), rather than duplicate its filename list. Authenticate and validate the
+exact checkpoint-referenced phase chains, closes, beacons and Phase 1 seal; apply
+the existing cross-phase round/timing rules and derive both phase summaries for
+comparison with the candidate. This is signature/record verification, not
+contribution algebra. Preserve the running proof-tool executable-identity gate
+separately from the coordinator's claimed executable identity.
+
+Require the bundle pair's canonical `operational/evidence-bundle.json` and `.sig`
+names and confined reads. Verify its signature, read its signed assembly time,
+then rederive the unchanged bundle from this
+exact review checkpoint using that same time, and require byte equality plus
+the coordinator signature and original bundle verification. Authenticate all
+checkpointed audits in deterministic order and enforce the full signed minimum,
+then require a nonzero UTC release time strictly after candidate finalization,
+bundle assembly and the latest audit (when audits are enabled). Return a
+deterministic unsigned local result containing the exact review checkpoint pair,
+final-candidate checkpoint pair, candidate inventory, bundle pair, sorted audit
+pairs, replay method/executable digest and release time. It is not authorization
+by itself: do not sign, publish or claim freshness from this operation.
+
+This trusts the coordinator's signed claim that full contribution replay was
+performed. It verifies every final candidate and required operational evidence
+file it uses, but does not independently repeat contribution mathematics or
+claim to rehash every unrelated historical payload. Optional independent replay
+remains a separate action. Existing V3 signing continues to require that replay.
+
+The later release packager must bind this review checkpoint and the exact
+final-candidate checkpoint in FinalTranscript V3. Recheck the same inputs before
+signing and conditionally append against that predecessor: a newer checkpoint
+requires new review, even if an older bundle still has a valid signature.
+Packaging layout and closed publication inventory remain a separate reviewed
+implementation step; this read-only API does not activate V4 releases.
+
+Tests: changed final files, omitted/extra candidate refs, wrong replay binary,
+missing/bad bundle signature, old bundle after a new committed incident or
+enrollment, partial audit quorum, invalid release time, terminated state, and
+successful review with no replay/circuit input. Preserve V1–V3 regression tests.
 
 Apply the same mechanism to Phase 2, enrollments and enabled observer/auditor
 evidence. Preserve the signed optional-role minima and configurable future
