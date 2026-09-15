@@ -650,6 +650,35 @@ credential-bearing evidence URLs and a decision predating the release. Preserve
 all existing decision tests. New APIs must not accept a contribution-replay
 callback or circuit input; independent replay remains a separate optional task.
 
+Further review: released source evidence hard-requires an OpenPGP tag, which
+does not fit the already agreed protected-main CI release model. Decision V3
+instead uses `source_commit` and a plain `verification_report` artifact, with a
+separate V3-only `source-release` gate bound to that same report. The existing
+`signed-release` gate means the ceremony package, not its source provenance.
+All new external evidence references are logical names/digests, not URLs.
+Proof-tool bounds and hashes the report and checks the source commit; it does
+not contact GitHub or interpret a delivery-tool-specific report schema. Relay
+must validate and display the report's exact commit, repository, workflow and
+result before approval, never auto-pass it merely because the file exists.
+Keep the reviewed source report at `decision/evidence/source-release.json`;
+other decision evidence lives under `decision/evidence/` with collision checks,
+separate from `final/release/`. Preserve the old source-evidence format unchanged.
+
+Decision V3 core APIs are implemented. Review tightened production-mode
+dispatch, fixed package-derived gates to PASS, bound structured gate entries to
+their exact report fields, and rejected mixing a package verified after a
+trust-file replacement with the initially authenticated definition. GO requires
+the exact coordinator/release-signer/package-auditor signature set. Early NO-GO
+still uses abort; post-package NO-GO must identify an external/review failure.
+Tests cover canonical/version boundaries, source/policy/candidate/time binding,
+real known-key Ed25519 thresholds and external signoffs, and fail-closed missing
+packages. A real K21 package through the full public approval APIs, CLI wiring
+and public publication are still pending; do not claim production readiness.
+The Linux ceremony/CLI regression suites and vet passed (111.090 s and
+48.328 s). After the final mixed-definition fix, the focused new/legacy decision
+tests and vet passed in Linux (1.638 s); native decision units also pass. These
+are record/signature/evidence tests, not a production GO claim.
+
 - Model ordinary delay, missing files, duplicate actions, crashes and two local
   writers; distinguish retired delivery from rejected candidate.
 - Test wrong signatures, changed payloads, wrong turn/head/identity, rejected
