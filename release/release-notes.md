@@ -3,6 +3,9 @@
 - Added a separate V4 metadata-sync bridge that discovers signed history,
   verifies its complete ancestry before recording progress, and avoids fetching
   old contribution payloads. Normal role-menu integration is still pending.
+  Its head-bound record index retains earlier custody packets across retries;
+  committed enrollment signatures are checked in one batch before guidance
+  facts are returned. This does not imply full replay or a complete roster.
 
 - Added a transport-only delivery foundation with bounded inventories,
   manifest-last uploads and exact-byte retries. It is not yet connected to role

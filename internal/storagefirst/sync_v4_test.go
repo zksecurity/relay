@@ -18,6 +18,36 @@ type verifierV4Fake struct {
 	reject             bool
 	fullCalls          int
 	requiredDependency string
+	metadata           *transcript.EnrollmentMetadataInspectionV4
+	metadataErr        error
+	metadataCalls      int
+}
+
+func (v *verifierV4Fake) CheckpointGuidanceV4(root, record, signature string) (transcript.CheckpointInspectionV4, transcript.EnrollmentMetadataInspectionV4, error) {
+	c, err := v.StoredCheckpointV4(root, record, signature)
+	if err != nil {
+		return transcript.CheckpointInspectionV4{}, transcript.EnrollmentMetadataInspectionV4{}, err
+	}
+	e, err := v.CheckpointEnrollmentsV4(root, record, signature)
+	return c, e, err
+}
+
+func (v *verifierV4Fake) CheckpointEnrollmentsV4(root, _, _ string) (transcript.EnrollmentMetadataInspectionV4, error) {
+	v.metadataCalls++
+	if v.metadataErr != nil {
+		return transcript.EnrollmentMetadataInspectionV4{}, v.metadataErr
+	}
+	for _, pair := range v.full.Commitments.Enrollments {
+		for _, ref := range []transcript.ArtifactRef{pair.Record, pair.Signature} {
+			if _, err := os.Stat(filepath.Join(root, ref.Name)); err != nil {
+				return transcript.EnrollmentMetadataInspectionV4{}, err
+			}
+		}
+	}
+	if v.metadata != nil {
+		return *v.metadata, nil
+	}
+	return transcript.EnrollmentMetadataInspectionV4{Schema: "proof-tool-mpc-enrollment-metadata-v4", Depth: "committed-enrollment-signatures", EnrollmentSignaturesVerified: true, Metadata: transcript.EnrollmentMetadataV4{CeremonyID: v.full.Checkpoint.CeremonyID, Checkpoint: v.full.CheckpointRefs, Enrollments: []transcript.CommittedEnrollmentMetadataV4{}}}, nil
 }
 
 func (v *verifierV4Fake) DiscoverCheckpointV4(_, record, _ string) (transcript.CheckpointDiscoveryV4, error) {
@@ -104,6 +134,7 @@ func syncFixtureV4(t *testing.T, last int) (memoryObjects, *verifierV4Fake, stri
 		d.Discovery.CeremonyID, d.Discovery.Sequence, d.Discovery.PreviousCheckpoint, d.Discovery.VerificationDependencies = id, uint64(n), previous, []transcript.ArtifactRef{}
 		v.discoveries[pair.Record.Digest.SHA256] = d
 		v.full = transcript.CheckpointInspectionV4{Schema: "proof-tool-mpc-checkpoint-inspection-v4", Depth: "checkpoint-structure", CheckpointRefs: pair, Checkpoint: transcript.CheckpointStateV4{Schema: "proof-tool-mpc-checkpoint-v4", Workflow: "storage-first-v2", ReleaseVerification: "coordinator-full-replay-v1", CeremonyID: id, Sequence: uint64(n), PreviousCheckpoint: previous, Deliveries: []transcript.DeliverySlotV4{}}}
+		v.full.Commitments = transcript.CheckpointCommitmentsV4{Enrollments: []transcript.SignedArtifactRefs{}, Turns: []transcript.TurnCommitmentV4{}}
 		copy := pair
 		previous = &copy
 	}

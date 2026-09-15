@@ -69,6 +69,7 @@ type CheckpointDiscoveryV4 struct {
 		Sequence                 uint64              `json:"sequence"`
 		PreviousCheckpoint       *SignedArtifactRefs `json:"previous_checkpoint,omitempty"`
 		VerificationDependencies []ArtifactRef       `json:"verification_dependencies"`
+		Enrollment               *SignedArtifactRefs `json:"enrollment,omitempty"`
 	} `json:"discovery"`
 	CheckpointRefs          SignedArtifactRefs `json:"checkpoint_refs"`
 	AncestryVerified        bool               `json:"ancestry_verified"`
@@ -125,13 +126,14 @@ type CheckpointStateV4 struct {
 }
 
 type CheckpointInspectionV4 struct {
-	Schema                  string             `json:"schema"`
-	Depth                   string             `json:"depth"`
-	Checkpoint              CheckpointStateV4  `json:"checkpoint"`
-	CheckpointRefs          SignedArtifactRefs `json:"checkpoint_refs"`
-	ArtifactsVerified       bool               `json:"artifacts_verified"`
-	MathematicsReplayed     bool               `json:"mathematics_replayed"`
-	GlobalFreshnessVerified bool               `json:"global_freshness_verified"`
+	Schema                  string                  `json:"schema"`
+	Depth                   string                  `json:"depth"`
+	Checkpoint              CheckpointStateV4       `json:"checkpoint"`
+	CheckpointRefs          SignedArtifactRefs      `json:"checkpoint_refs"`
+	Commitments             CheckpointCommitmentsV4 `json:"commitments"`
+	ArtifactsVerified       bool                    `json:"artifacts_verified"`
+	MathematicsReplayed     bool                    `json:"mathematics_replayed"`
+	GlobalFreshnessVerified bool                    `json:"global_freshness_verified"`
 }
 
 func (i Inspector) checkpointV4(action, root, record, signature string) (inspectionResult, error) {
@@ -162,6 +164,11 @@ func (i Inspector) DiscoverCheckpointV4(root, record, signature string) (Checkpo
 			return CheckpointDiscoveryV4{}, err
 		}
 	}
+	if p.Discovery.Enrollment != nil {
+		if err := validatePairV4(*p.Discovery.Enrollment); err != nil {
+			return CheckpointDiscoveryV4{}, err
+		}
+	}
 	return p, nil
 }
 
@@ -173,7 +180,10 @@ func (i Inspector) StoredCheckpointV4(root, record, signature string) (Checkpoin
 	if r.Command != "checkpoint verify-stored-v4" || r.CheckpointInspectionV4 == nil {
 		return CheckpointInspectionV4{}, errors.New("missing verified checkpoint ancestry")
 	}
-	p := *r.CheckpointInspectionV4
+	return validateStoredInspectionV4(*r.CheckpointInspectionV4)
+}
+
+func validateStoredInspectionV4(p CheckpointInspectionV4) (CheckpointInspectionV4, error) {
 	c := p.Checkpoint
 	if p.Schema != "proof-tool-mpc-checkpoint-inspection-v4" || p.Depth != "checkpoint-structure" || p.ArtifactsVerified || p.MathematicsReplayed || p.GlobalFreshnessVerified || c.Schema != "proof-tool-mpc-checkpoint-v4" || c.Workflow != "storage-first-v2" || c.ReleaseVerification != "coordinator-full-replay-v1" {
 		return CheckpointInspectionV4{}, errors.New("invalid checkpoint verification boundary")
@@ -188,6 +198,9 @@ func (i Inspector) StoredCheckpointV4(root, record, signature string) (Checkpoin
 		return CheckpointInspectionV4{}, errors.New("invalid delivery projection")
 	}
 	if err := validateProgressV4(c); err != nil {
+		return CheckpointInspectionV4{}, err
+	}
+	if err := validateCommitmentsV4(c, p.Commitments); err != nil {
 		return CheckpointInspectionV4{}, err
 	}
 	return p, nil
