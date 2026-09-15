@@ -132,7 +132,7 @@ predecessor, including a manually signed wrong-head regression. Full Linux
 ceremony/CLI suites and vet pass. Production GO/NO-GO and normal CLI guidance
 remain separate required work; these gates alone are not a completed release.
 
-The read-only final-review API is implemented, but release signing remains off.
+The read-only final-review API is implemented; normal V4 release guidance remains off.
 It binds the exact review checkpoint and approved coordinator replay claim,
 authenticates/derives both phase summaries, verifies a closed candidate tree,
 rederives the signed bundle and enforces checkpoint-derived audits/chronology.
@@ -141,7 +141,7 @@ The signer checks native/Cardano export coherence and verifies the public proof
 without regenerating setup keys or replaying contributions. Legacy V1–V3 gates
 remain unchanged. Full Linux ceremony/CLI suites and vet pass; the added negative
 test coherently re-signs metadata/checksums around an invalid public proof and
-confirms the V4 proof check rejects it. The new API still does not sign a release,
+confirms the V4 proof check rejects it. This read-only API does not sign a release,
 establish backend freshness, or replace the remaining role-menu/cloud tests.
 
 The independent structural review found and closed a retry-limit deadlock and
@@ -497,6 +497,21 @@ publication separate, including NO-GO when finalization fails. This layout is
 independently reviewed; it does not yet enable V4 release signing. In V4 the
 retained manifest-v1 `published_at` value means package-finalization time, not
 proof of upload or public availability.
+
+The local signing/verifying library is implemented with this fixed layout and
+inline transcript binding. Its output directory must be disjoint from the
+source tree, including after resolving parent-directory symlinks. Review found
+that exact retries could otherwise accept byte-identical destinations containing
+external hardlinks: reverify the actual destination after local publication,
+including its copied definition pair. A failure then is explicitly committed;
+retain the destination rather than deleting it or reporting success. Exact
+signing retries currently require retained source-review dependencies; standalone
+verification can use the package itself. This does not implement backend
+checkpoint append, production approval, or public publication.
+Linux ceremony/CLI suites and vet passed the package implementation. A final
+focused Linux run and vet passed after the output-separation guard, including
+the real tiny signing/retry path and maximum-size transcript tests. These are
+single-process historical-beacon fixtures, not live storage or independent roles.
 
 The first dependency-only snapshot test found an implementation mismatch:
 the shared operational verifier hashed and returned every historical
