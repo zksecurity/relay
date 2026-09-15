@@ -204,6 +204,15 @@ func printStorageFirstSnapshot(output io.Writer, snapshot storagefirst.Snapshot,
 	fmt.Fprintf(output, "stage: %s\n", stage)
 	fmt.Fprintf(output, "phase1 accepted: %d\n", snapshot.Checkpoint.Phase1Accepted)
 	fmt.Fprintf(output, "phase1 head: %s\n", head.Digest)
+	if phase2, ok := snapshot.Checkpoint.Position.PhaseHeads["phase2"]; ok {
+		fmt.Fprintf(output, "phase2 accepted: %d\n", snapshot.Checkpoint.Phase2Accepted)
+		fmt.Fprintf(output, "phase2 head: %s\n", phase2.Digest)
+	}
+	if snapshot.Checkpoint.FinalReleaseRecorded {
+		fmt.Fprintln(output, "final release: recorded and authenticated")
+	} else if snapshot.Checkpoint.FinalCandidateRecorded {
+		fmt.Fprintln(output, "final candidate: recorded and authenticated")
+	}
 
 	slots := append([]storagefirst.Slot(nil), snapshot.Checkpoint.Slots...)
 	sort.Slice(slots, func(i, j int) bool {
