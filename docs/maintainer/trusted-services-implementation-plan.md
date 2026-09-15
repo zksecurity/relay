@@ -65,8 +65,17 @@ exact accepted head using enrolled keys, and phase closure checks every head.
 The real tiny subprocess passes with mirrors disabled and with one mirror
 required; missing enrollment and missing mirror evidence are rejected. The
 review closed a disclosure-size mismatch by sharing the existing 1 MiB bundle
-limit and bounded new observer indices. Witness/beacon-evidence/audit gates and
+limit and bounded new observer indices. Audit gates and
 the release path remain incomplete; this is not readiness to publish V4.
+
+Witness and multi-relay beacon evidence also have typed edges. Witnesses bind
+the exact committed closure and enrolled key; partial collection is allowed,
+with the full signed minimum checked at sealing/final-candidate preparation.
+Multi-relay evidence verifies every raw drand response and is still required
+when witnesses are disabled. Independent review found no material mismatch with
+the unchanged bundle. The subprocess tests cover observer-disabled/enabled runs
+and refuse sealing when witness or multi-relay evidence is omitted. Historical
+responses and fixture relay-operator statements do not establish live retrieval.
 
 The independent structural review found and closed a retry-limit deadlock and
 an ambiguous predecessor-signature boundary. The final review reported no
