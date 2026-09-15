@@ -33,7 +33,21 @@ The first compatibility/transport slice is local, not released:
   rejected contribution bytes from a retired upload. Attempt IDs and paths are
   not part of that identifier. Terminal dispositions remain in bounded history.
 
-Still required: real-artifact authoring for the new checkpoint model,
+The next library slice authenticates stored checkpoint ancestry and prepares
+initial/turn/retry checkpoints against actual files. Acceptance replays the
+chain and requires the normalized inventory and verification record to match
+the exact replayed chain artifacts. Large payload hashing remains streamed.
+Stored-state inspection verifies signatures and structural ancestry; it does
+not claim to rehash every historical payload or establish global freshness.
+
+The semantic review caught a mismatch between a candidate inventory and the
+artifacts covered by chain replay. Exact-reference checks and per-file negative
+tests close it; the follow-up review found no remaining material issue in the
+implemented edges. The Linux ceremony/CLI suites and vet pass for this slice.
+These tests do not yet exercise a complete real contribution through the new
+authoring API. Remaining lifecycle authoring deliberately fails closed.
+
+Still required: a real-contribution checkpoint round trip, remaining lifecycle authoring,
 the new signer verification path, normal role-menu integration, full role
 rehearsals, live-provider testing and release/deployment. No existing ceremony
 is switched to the new transport by these foundations.
