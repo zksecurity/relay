@@ -93,6 +93,29 @@ func TestAdvancedStorageFirstSyncPrintsOnlyRoleRelevantAuthenticatedSlots(t *tes
 	}
 }
 
+func TestAdvancedStorageFirstSyncPrintsAuthenticatedPhase2AndFinalState(t *testing.T) {
+	args := storageFirstSyncBaseArgs(t)
+	args[13] = "coordinator"
+	args = append(args[:14], args[16:]...)
+	var output bytes.Buffer
+	syncFn := func(storagefirst.ObjectStore, storagefirst.Verifier, storagefirst.HighWater, string, string) (storagefirst.Snapshot, error) {
+		return storagefirst.Snapshot{Checkpoint: storagefirst.Checkpoint{
+			Position: state.CheckpointPosition{Sequence: 14, Digest: "sha256:" + strings.Repeat("2", 64), PhaseHeads: map[string]state.PhaseHeadPosition{
+				"phase1": {Index: 1, Digest: "sha256:" + strings.Repeat("a", 64), Closed: true},
+				"phase2": {Index: 1, Digest: "sha256:" + strings.Repeat("b", 64), Closed: true},
+			}}, Transition: "final-release-recorded", Phase1Accepted: 1, Phase2Accepted: 1, FinalCandidateRecorded: true, FinalReleaseRecorded: true,
+		}}, nil
+	}
+	if err := runStorageFirstSyncWith(args, &output, syncFn, acceptStorageFirstDefinition); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"phase2 accepted: 1", "phase2 head: sha256:" + strings.Repeat("b", 64), "final release: recorded and authenticated"} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("output missing %q:\n%s", want, output.String())
+		}
+	}
+}
+
 func TestAdvancedStorageFirstSyncBuildsAuthenticatedStorageClient(t *testing.T) {
 	args := storageFirstSyncBaseArgs(t)
 	args = args[:len(args)-2]
