@@ -1,7 +1,7 @@
 # Trusted coordinator and storage: next implementation
 
-Status: planning only, September 16, 2026. No implementation is authorized by
-this document itself. It follows the
+Status: implementation in progress, September 16, 2026. This document is not
+release evidence or authorization by itself. It follows the
 [storage-first design](storage-first-ceremony-design.md) and
 [release verification model](release-verification-trust-model.md).
 
@@ -24,11 +24,26 @@ The first compatibility/transport slice is local, not released:
   upload, exact-byte retry and all-or-nothing fetched staging. This does not
   authenticate participant records or record acceptance.
 - Large-artifact hashes are streamed rather than loaded entirely into memory.
+- Proof-tool's opt-in Definition V4 now makes the coordinator-replay claim
+  explicit. Default construction stays V3 until the complete new path is ready.
+- Checkpoint V4 has a separate transport-neutral state model and structural
+  transition tests through both phases and release. It removes delivery
+  envelopes/acknowledgements without relaxing any released checkpoint schema.
+- A complete, normalized per-turn `contribution_result_id` distinguishes
+  rejected contribution bytes from a retired upload. Attempt IDs and paths are
+  not part of that identifier. Terminal dispositions remain in bounded history.
 
-Still required: new protocol formats, transport-neutral acceptance and rejection,
+Still required: real-artifact authoring for the new checkpoint model,
 the new signer verification path, normal role-menu integration, full role
 rehearsals, live-provider testing and release/deployment. No existing ceremony
 is switched to the new transport by these foundations.
+
+The independent structural review found and closed a retry-limit deadlock and
+an ambiguous predecessor-signature boundary. The final review reported no
+remaining material finding in this slice. Proof-tool's Linux ceremony/CLI
+suites and vet pass; focused structural tests also pass with the race detector.
+The bounded retry model reproduces the old deadlock and passes after the fix.
+These results do not establish the still-unimplemented normal CLI journey.
 
 ## Existing verification versus planned changes
 
@@ -52,7 +67,7 @@ role remains required; making the role optional is not part of this plan.
 | Storage progress | Current provider root drives normal CLI | Advanced sync exists; normal role journeys incomplete |
 | Retry | Redeliver identical valid files; candidate rejection persists by digest | Attempt/candidate rejection semantics need implementation |
 | Recovery | Preserve unfinished mutations; reconcile provider result | Reusable foundations exist; normal flow integration incomplete |
-| Component boundary | Proof-tool verifies logical artifacts; Relay maps storage | Local proof-tool experiment still exposes backend object keys |
+| Component boundary | Proof-tool verifies logical artifacts; Relay maps storage | Backend-object-key experiment removed; new normal workflows still need integration |
 
 ## 1. Resolve the schema and API together
 
@@ -69,8 +84,12 @@ schemas require minimum-one roles; some optional-role behavior already shipped.
 
 That inventory is now recorded in proof-tool's
 `docs/ceremony-schema-compatibility.md`. The next version set is Definition V4,
-Checkpoint V4 and `storage-first-v2`, with explicitly versioned changed release
-claims. These identifiers are not emitted by the first implementation slice.
+Checkpoint V4 and `storage-first-v2`, with final transcript V3 carrying the
+explicit changed release claim. Keep application key manifest V1: its signed
+transcript hash binds that claim. No additional release signature is needed.
+Decision V2 may keep its structure with explicit Definition V4/transcript V3
+verification. Normal CLI initialization does not yet emit the new identifiers.
+Do not release the partial V4 library support before the complete path is tested.
 
 Downstream setup baseline: setup-v2/two-phase-v1 (two auditors),
 setup-v2/two-phase-v2 (one auditor), and setup-v3/two-phase-v3 (explicit optional
@@ -129,6 +148,24 @@ Define that candidate ID over the complete scoped artifact set, including
 signed attestation, cleanup and required return evidence—not only the large
 contribution file. Reuse an existing canonical ID only after checking its
 coverage. Changed candidate contents need fresh verification and disposition.
+
+The new inventory uses fixed basenames and exact digests, never an
+attempt-dependent path. The public field is `contribution_result_id`, avoiding
+confusion with the final ceremony's existing `candidate_id`. Signature, scope,
+custody and mathematical validity are still checked separately before acceptance.
+Retirement/rejection can finish without a replacement, or allocate one without
+advancing the turn. A later replacement names the most recent retired/rejected
+attempt. An exhausted retry budget must not prevent terminal retirement.
+History permits at most 16 attempts per logical submission and 4,096 total
+delivery slots across the ceremony; these are separate per-submission and global
+budgets. Exceeding a bound fails explicitly, never discards a rejection.
+Only the current active allocation can change, one allocation can be active per
+submission, and acceptance is terminal. These are protocol bounds, not a reason
+to retry automatically.
+After terminal retirement, closure is permitted only when the signed minimum
+has already been met. Otherwise work remains incomplete; no success is inferred
+from giving up on an upload. The signed-edge verifier compares both predecessor
+record and signature digests, beyond the structs-only transition checks.
 
 Use fixed transport inventories for each artifact kind and derive public logical
 names from proof-tool results. Transport manifest validation never establishes
