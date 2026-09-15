@@ -1,5 +1,12 @@
 ## What changed
 
+- The storage-first design makes the signed beacon lead configurable before
+  initialization in both rehearsal and production. Relay will default to 180
+  seconds for rehearsals and 24 hours for production, warn explicitly before a
+  shorter production choice is signed, and display the additional fixed
+  observation window when witnesses are enabled. Existing setup contracts and
+  ceremonies keep their original policy.
+
 - Added the first storage-first ceremony protocol layer: bounded and version-
   pinned backend reads, conditional root updates, immutable signed-checkpoint
   discovery, workspace rollback/fork protection, a crash-safe coordinator
