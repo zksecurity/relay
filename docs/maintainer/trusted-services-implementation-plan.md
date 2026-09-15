@@ -67,6 +67,41 @@ These results do not establish the still-unimplemented normal CLI journey.
 
 ## Existing verification versus planned changes
 
+### Completion review: remaining protocol gates
+
+The independent lifecycle review identified requirements that must be completed
+before V4 can ship:
+
+- Acceptance must retain the existing return handoff and coordinator return
+  receipt, delivered through storage automatically. Accept only the seven-file
+  candidate form; five-file inventories remain useful for rejected candidates.
+  Bind the return receipt into checkpoint evidence and check custody chronology.
+  A coordinator-receipt error is not rejection of the participant's candidate:
+  preserve its result ID, correct the receipt and retire/reallocate delivery if
+  needed. Never permanently reject otherwise-valid candidate bytes because a
+  coordinator-created receipt was missing or malformed.
+- Add typed evidence-recorded edges for enrollments, mirror/witness receipts,
+  multi-relay beacon evidence, audits and applicable governance. They preserve
+  protocol progress and deliveries. Derive readiness from authenticated ancestry
+  rather than storing duplicate mutable counters. Do not count disabled controls.
+- Preserve cross-phase beacon separation at checkpoint preparation, not merely
+  at final release. Exact-read the preceding Phase 1 records; reject reused
+  rounds/challenges and inconsistent chronology. Test with a signed bad closure.
+- The review's enrollment-ceiling concern was withdrawn after checking the
+  actual constants: 20 participants and 20 per auditor/observer category yield
+  at most 82 required enrollments, below the existing 128 limit. A regression
+  assertion guards that bound; no bundle-schema change is needed for capacity.
+
+Gate outbound delivery on participant enrollment, closure on each head's mirror
+minimum, sealing/final-candidate preparation on the applicable witness and beacon
+evidence, and release signing on enrollment, bundle and exact-candidate audits.
+External security audits remain part of the later production decision. Reuse
+operational bundle v3 and existing signed records where their meaning is unchanged;
+do not add another participant envelope or manual transfer step.
+
+The local lifecycle test reaches Phase 2 genesis with a genuine historical drand
+response. It is not proof of these remaining evidence gates or live beacon timing.
+
 Coordinator mathematical replay is not a new requirement. Both
 `PrepareFinalization` and `Finalize` already required `replayAll` in proof-tool
 commit [`c1f177e`](https://github.com/zksecurity/proof-tool/commit/c1f177ee486fd555fac0dc4d9812b86737fccdfd),
