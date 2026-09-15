@@ -390,6 +390,43 @@ perform the mathematics. Cache verified records for efficient restart.
 
 ## 4. Complete the roles and final release
 
+### Reviewed next slice: normal V4 turn guidance
+
+Use authenticated definition requirements and the verified V4 snapshot, not
+the latest transition name. Start with coordinator/participant turns in both
+phases; unsupported closure, beacon, final and terminal actions must remain
+explicitly unavailable rather than falling back to legacy guidance.
+
+- Opening an outbound turn requires that scheduled participant's committed
+  enrollment, matching proof-tool. Other missing enrollments remain visible as
+  parallel work; do not invent an all-roster gate before every contribution.
+- Protocol artifacts bind the exact ceremony/phase/index/participant/parent
+  and their own content hashes. They survive unrelated checkpoint updates and
+  transport retirement. Grants and uploads also bind the exact attempt.
+- Pending checkpoint writes retain their exact predecessor and root version.
+  An unrelated update can preserve the turn while invalidating that proposal;
+  never silently reparent a signed write.
+- Before a receipt exists, suggest the newest outbound packet. After signing
+  or accepting a receipt, follow its signed handoff hash, including an older
+  valid packet. Only signed checkpoint receipt acceptance permits computation.
+- Retired uploads can reuse exact retained protocol artifacts on a new attempt.
+  A rejected candidate result cannot be reused; show its rejected state and
+  require explicit investigation/new work. Never recompute automatically.
+- Completion compares the accepted chain's contribution-result ID with the
+  exact local result. A different result or missing local result is not local
+  completion. Earlier participants see their own accepted/rejected turn, not
+  the current participant's task.
+- Re-sync before mutation and check scope, attempt, closure and terminal state.
+  Recommendation is not authorization; command verification and conditional
+  root updates still enforce the operation's exact inputs.
+
+Tests must branch through unrelated enrollments, old-packet receipts, receipt
+and candidate reallocation, rejection, same/different-result acceptance, grant
+expiry, abort/restart, previous participants reopening, missing metadata and a
+changed root between recommendation and execution. The independent review
+removed an unnecessary all-roster gate and separated artifact, upload-attempt
+and checkpoint-write bindings before implementation.
+
 ### Incident and termination records
 
 Use separate V4 transitions for an informational incident, abort and restart.
