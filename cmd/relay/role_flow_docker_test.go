@@ -237,6 +237,13 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 		t.Helper()
 		f.stages, f.state.Role = roleFlowStages(role), role
 		task := find(role, stage, id)
+		resolved, applicable, err := f.resolvePolicyTask(task)
+		if err != nil {
+			t.Fatalf("%s/%s/%s policy: %v", role, stage, id, err)
+		}
+		if !applicable {
+			t.Fatalf("%s/%s/%s is disabled by the fixture policy", role, stage, id)
+		}
 		// This integration invokes selected cryptographic recipes directly; its
 		// same-host fixture performs the intervening synchronization, publication,
 		// and human handoffs outside roleFlow.execute. Record those fixture steps
@@ -263,10 +270,10 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 		}
 		used := map[string]int{}
 		var input strings.Builder
-		if len(task.ExtraFields) > 0 {
+		if len(resolved.ExtraFields) > 0 {
 			input.WriteString("0\n")
 		}
-		for _, field := range task.Fields {
+		for _, field := range resolved.Fields {
 			value := field.Default
 			if options := values[field.Flag]; len(options) > 0 {
 				n := used[field.Flag]
