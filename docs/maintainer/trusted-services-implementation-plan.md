@@ -132,6 +132,18 @@ predecessor, including a manually signed wrong-head regression. Full Linux
 ceremony/CLI suites and vet pass. Production GO/NO-GO and normal CLI guidance
 remain separate required work; these gates alone are not a completed release.
 
+The read-only final-review API is implemented, but release signing remains off.
+It binds the exact review checkpoint and approved coordinator replay claim,
+authenticates/derives both phase summaries, verifies a closed candidate tree,
+rederives the signed bundle and enforces checkpoint-derived audits/chronology.
+Review caught and fixed dependence on the local trusted-definition filename.
+The signer checks native/Cardano export coherence and verifies the public proof
+without regenerating setup keys or replaying contributions. Legacy V1–V3 gates
+remain unchanged. Full Linux ceremony/CLI suites and vet pass; the added negative
+test coherently re-signs metadata/checksums around an invalid public proof and
+confirms the V4 proof check rejects it. The new API still does not sign a release,
+establish backend freshness, or replace the remaining role-menu/cloud tests.
+
 The independent structural review found and closed a retry-limit deadlock and
 an ambiguous predecessor-signature boundary. The final review reported no
 remaining material finding in this slice. Proof-tool's Linux ceremony/CLI
@@ -413,6 +425,10 @@ the existing cross-phase round/timing rules and derive both phase summaries for
 comparison with the candidate. This is signature/record verification, not
 contribution algebra. Preserve the running proof-tool executable-identity gate
 separately from the coordinator's claimed executable identity.
+Retain frozen R1CS parsing and native/Cardano verifying-key export coherence.
+V4 also verifies the published example proof and report claims with that key;
+this is not contribution replay. Do not silently add that stronger proof gate
+to older released formats or require proving-key regeneration.
 
 Require the bundle pair's canonical `operational/evidence-bundle.json` and `.sig`
 names and confined reads. Verify its signature, read its signed assembly time,
