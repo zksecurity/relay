@@ -45,7 +45,7 @@ Do not add a second coordinator verification record. The storage-first
 - is signed by the coordinator only after proof-tool re-derives those facts.
 
 In the new version, that checkpoint is the coordinator's replay statement. Its
-transition explicitly records `verification_method: coordinator-full-replay`
+transition explicitly records `replay_verification.method: coordinator-full-replay-v1`
 and the actual approved proof-tool executable digest. The inventory is derived
 from authenticated ancestry; the coordinator cannot supply a second ad hoc
 input list.

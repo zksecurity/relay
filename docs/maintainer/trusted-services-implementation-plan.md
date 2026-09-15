@@ -51,9 +51,9 @@ mathematical replay and exact acceptance. Same-size payload corruption is
 rejected. Independent review found no material false-positive coverage or
 ordinary-helper regression. This is single-process evidence with fixture
 environment/cleanup statements, not separate role journeys, cloud transport or
-proof of erasure. Remaining lifecycle authoring deliberately fails closed.
+proof of erasure. Unsupported release authoring deliberately fails closed.
 
-Still required: remaining lifecycle authoring,
+Still required: audit/governance evidence and final-release authoring,
 the new signer verification path, normal role-menu integration, full role
 rehearsals, live-provider testing and release/deployment. No existing ceremony
 is switched to the new transport by these foundations.
@@ -76,6 +76,21 @@ when witnesses are disabled. Independent review found no material mismatch with
 the unchanged bundle. The subprocess tests cover observer-disabled/enabled runs
 and refuse sealing when witness or multi-relay evidence is omitted. Historical
 responses and fixture relay-operator statements do not establish live retrieval.
+
+Final-candidate preparation now derives replay inputs from the authenticated
+predecessor checkpoint, replays both phases through the existing full verifier,
+and binds its complete closed file inventory. Its versioned replay claim names
+the actual approved executable. The tiny subprocess now reaches Phase 2
+contribution, custody, optional observers, the second genuine historical drand
+round and finalization with both observer settings. The first run caught a test
+witness mismatch between the older helper circuit and the released tiny circuit;
+the helper now constructs the correct witness for the selected circuit.
+Independent review found no blocker and requested one shared versioned replay
+method constant, now used. Tests reject missing/wrong replay claims, an omitted
+candidate reference, an extra candidate file and signed Phase 2 closures with
+reused/older rounds or invalid cross-phase timing. Both Linux ceremony/CLI
+suites and vet pass; the final helper extension passes separately. This is not
+final release-signing or menu coverage.
 
 The independent structural review found and closed a retry-limit deadlock and
 an ambiguous predecessor-signature boundary. The final review reported no
