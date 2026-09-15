@@ -1,0 +1,24 @@
+[
+  {
+    "name": "valid-zero-assurance-short-rehearsal",
+    "json": "{\"schema\":\"ceremony-setup-v3\",\"id\":\"10000000-0000-4000-8000-000000000001\",\"plan_revision\":1,\"plan\":{\"mode\":\"rehearsal\",\"ruleset\":{\"id\":\"two-phase-v3\",\"version\":3,\"sha256\":\"sha256:cc54516ad13d9fe58cb1dcfb4da516f8f79dedf0808efc549a0a556b0bc5b2a1\"},\"circuit\":\"rehearsal-tiny-v1\",\"beacon_policy\":{\"chain_hash_hex\":\"52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971\",\"extraction\":\"sha256-domain-separated-length-prefixed-v1\",\"future_round_required\":true,\"genesis_time_unix\":1692803367,\"minimum_challenge_bytes\":32,\"minimum_witness_lead_seconds\":12,\"network\":\"quicknet-mainnet\",\"period_seconds\":3,\"provider\":\"drand\",\"public_key_hex\":\"83cf0f2896adee7eb8b5f01fcad3912212c437e0073e911fb90022d3e760183c8c4b450b6a0a6c3ac6a5776a2d1064510d1fec758c921cc22b0e17e63aaf4bcb5ed66304de9cf809bd274ca73bab4af5a6e9c76a4bc09e76eae8991ef5ece45a\",\"scheme\":\"bls-unchained-g1-rfc9380\"},\"software_release\":{\"release_tag\":\"role-images-cccccccccccccccccccccccccccccccccccccccc\",\"cli_commit\":\"cccccccccccccccccccccccccccccccccccccccc\",\"proof_tool_commit\":\"dddddddddddddddddddddddddddddddddddddddd\",\"manifest_sha256\":\"sha256:118607f7a26232e1458c6cc2419275f4a6cd6a628f2f17e637c36fd7bd9e38a4\",\"workflow_recipe_sha256\":\"sha256:1bf3adcf5c1cdce0385842c8b1ae57860610a4241d419dba145c2349aa563378\"},\"storage\":{\"provider\":\"aws\",\"region\":\"us-east-1\",\"public_base_url\":\"https://ceremony.example.test\",\"published_bucket\":\"ceremony-published-test\",\"inbox_bucket\":\"ceremony-inbox-test\"},\"assurance_policy\":{\"public_witnesses_per_phase\":0,\"mirrors_per_accepted_head\":0,\"passing_ceremony_audits\":0,\"external_security_audit_signoffs\":0},\"identities\":[{\"id\":\"coordinator-1\",\"display_name\":\"Coordinator\",\"key_id\":\"key-1\",\"ed25519_public_key_hex\":\"0101010101010101010101010101010101010101010101010101010101010101\",\"public_key_fingerprint\":\"sha256:72cd6e8422c407fb6d098690f1130b7ded7ec2f7f5e1d30bd9d521f015363793\"},{\"id\":\"signer-1\",\"display_name\":\"Signer\",\"key_id\":\"key-2\",\"ed25519_public_key_hex\":\"0202020202020202020202020202020202020202020202020202020202020202\",\"public_key_fingerprint\":\"sha256:75877bb41d393b5fb8455ce60ecd8dda001d06316496b14dfa7f895656eeca4a\"},{\"id\":\"participant-1\",\"display_name\":\"Participant\",\"key_id\":\"key-3\",\"ed25519_public_key_hex\":\"0303030303030303030303030303030303030303030303030303030303030303\",\"public_key_fingerprint\":\"sha256:648aa5c579fb30f38af744d97d6ec840c7a91277a499a0d780f3e7314eca090b\"}],\"roles\":[{\"id\":\"00000000-0000-4000-8000-000000000001\",\"role\":\"coordinator\",\"identity_id\":\"coordinator-1\"},{\"id\":\"00000000-0000-4000-8000-000000000002\",\"role\":\"release-signer\",\"identity_id\":\"signer-1\"},{\"id\":\"00000000-0000-4000-8000-000000000003\",\"role\":\"participant\",\"identity_id\":\"participant-1\"}],\"phases\":[{\"id\":\"phase1\",\"identity_ids\":[\"participant-1\"],\"minimum\":1},{\"id\":\"phase2\",\"identity_ids\":[\"participant-1\"],\"minimum\":1}]},\"result\":null}",
+    "valid": true,
+    "input_sha256": "sha256:cbc6e5f302f876b9e3c7a5cabc294c6639f117f418899b4558b2fb6142a37ce1",
+    "sha256": "sha256:3b49085076c7007ed2fc6e8c3feceaff0ebca8ca0d94a36a64a1662b8ecf8581"
+  },
+  {
+    "name": "reject-incomplete-v3-object",
+    "json": "{\"schema\":\"ceremony-setup-v3\"}",
+    "valid": false
+  },
+  {
+    "name": "reject-unknown-top-level-field",
+    "json": "{\"schema\":\"ceremony-setup-v3\",\"unexpected\":true}",
+    "valid": false
+  },
+  {
+    "name": "reject-observer-as-authoritative-role",
+    "json": "{\"schema\":\"ceremony-setup-v3\",\"id\":\"10000000-0000-4000-8000-000000000001\",\"plan_revision\":1,\"plan\":{\"roles\":[{\"id\":\"00000000-0000-4000-8000-000000000001\",\"role\":\"witness\",\"identity_id\":\"witness-1\"}]},\"result\":null}",
+    "valid": false
+  }
+]

@@ -80,3 +80,83 @@ func TestHandoffWaitingDoesNotBecomeCompletion(t *testing.T) {
 		t.Fatal("advanced waiting handoff")
 	}
 }
+
+func policyDefinition(witnesses, mirrors, audits int, lead uint32) transcript.Definition {
+	j := observerTestJourney()
+	j.Schema = "proof-tool-mpc-definition-journey-v2"
+	j.MinimumPublicWitnesses = witnesses
+	j.MinimumMirrorsPerAcceptedHead = mirrors
+	j.MinimumPassingCeremonyAudits = audits
+	j.MinimumExternalAuditSignoffs = 0
+	j.BeaconRoundLeadSeconds = lead
+	if audits == 0 {
+		filtered := j.RequiredEnrollments[:0]
+		for _, enrollment := range j.RequiredEnrollments {
+			if enrollment.Role != "auditor" {
+				filtered = append(filtered, enrollment)
+			}
+		}
+		j.RequiredEnrollments = filtered
+	}
+	return transcript.Definition{Mode: "production", Journey: j}
+}
+
+func TestSignedAssuranceControlsGuidedTasks(t *testing.T) {
+	f := flowFixture(t)
+	f.definition = func() (transcript.Definition, error) { return policyDefinition(0, 0, 0, 17), nil }
+	witness := assurance(handoff("witnesses-ready", "Witnesses", "Only when enabled"), "witness")
+	f.stages[0].Tasks = []flowTask{witness}
+	if got := f.readiness(witness); got.Requirement != "Not applicable" {
+		t.Fatalf("disabled witness task = %#v", got)
+	}
+	if err := f.execute(witness); err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Fatal("disabled witness task executed", err)
+	}
+
+	close := withFields(flowProof("close", "Close", "Close", "phase1", "close"), flowField{Flag: "beacon-round-lead", Default: "300", Kind: "number"})
+	resolved, applicable, err := f.resolvePolicyTask(close)
+	if err != nil || !applicable || resolved.Fields[3].Default != "17" {
+		t.Fatalf("signed beacon lead not selected: %#v %v", resolved.Fields, err)
+	}
+
+	ops := withFields(flowProof("ops-prepare", "Evidence", "Evidence", "ops", "prepare-bundle"), flowField{Flag: "witness-quorum", Default: "1", Kind: "number"})
+	resolved, _, err = f.resolvePolicyTask(ops)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range resolved.Fields {
+		if field.Flag == "witness-quorum" {
+			t.Fatal("operator-controlled witness quorum remained")
+		}
+	}
+}
+
+func TestZeroAuditPolicyRemovesReleaseInputsAndDisablesAuditor(t *testing.T) {
+	f := flowFixture(t)
+	f.state.Role = "release-signer"
+	f.definition = func() (transcript.Definition, error) { return policyDefinition(0, 0, 0, 17), nil }
+	var sign flowTask
+	for _, stage := range roleFlowStages("release-signer") {
+		for _, task := range stage.Tasks {
+			if task.ID == "sign" {
+				sign = task
+			}
+		}
+	}
+	resolved, applicable, err := f.resolvePolicyTask(sign)
+	if err != nil || !applicable {
+		t.Fatal(err)
+	}
+	for _, field := range resolved.Fields {
+		if field.Flag == "audit-report" || field.Flag == "audit-signature" {
+			t.Fatal("disabled audit input remained")
+		}
+	}
+	if len(resolved.ExtraFields) != 0 {
+		t.Fatal("disabled additional audit inputs remained")
+	}
+	f.state.Role = "auditor"
+	if err := f.requireEnabledRole(); err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Fatal("disabled auditor role opened", err)
+	}
+}

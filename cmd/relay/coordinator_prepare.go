@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	setupv3 "github.com/zksecurity/relay/contracts/setupv3"
 	releaseassets "github.com/zksecurity/relay/release"
 )
 
@@ -58,16 +59,24 @@ type setupBeacon struct {
 	Lead       uint32 `json:"minimum_witness_lead_seconds"`
 	Future     bool   `json:"future_round_required"`
 }
+type setupAssurance struct {
+	PublicWitnessesPerPhase       uint8 `json:"public_witnesses_per_phase"`
+	MirrorsPerAcceptedHead        uint8 `json:"mirrors_per_accepted_head"`
+	PassingCeremonyAudits         uint8 `json:"passing_ceremony_audits"`
+	ExternalSecurityAuditSignoffs uint8 `json:"external_security_audit_signoffs"`
+}
 type setupPolicy struct {
-	Phase1 setupPhase  `json:"phase1_policy"`
-	Phase2 setupPhase  `json:"phase2_policy"`
-	Beacon setupBeacon `json:"beacon_policy"`
+	Phase1    setupPhase      `json:"phase1_policy"`
+	Phase2    setupPhase      `json:"phase2_policy"`
+	Beacon    setupBeacon     `json:"beacon_policy"`
+	Assurance *setupAssurance `json:"assurance_policy,omitempty"`
 }
 type setupBinary struct{ Path, SHA256 string }
 type coordinatorDraft struct {
 	TesseraExportPath                        string          `json:"tessera_export_path,omitempty"`
 	TesseraExportSHA256                      string          `json:"tessera_export_sha256,omitempty"`
 	TesseraSetup                             *setupv2.Setup  `json:"tessera_setup,omitempty"`
+	TesseraSetupV3                           *setupv3.Setup  `json:"tessera_setup_v3,omitempty"`
 	Tessera                                  *tesseraContext `json:"tessera_context,omitempty"`
 	ArchitecturePolicy                       string          `json:"architecture_policy,omitempty"`
 	Schema, Name, Release, Work, Trust, Keys string
@@ -163,8 +172,11 @@ func (d coordinatorDraft) validate() error {
 	if d.ArchitecturePolicy != "" && d.ArchitecturePolicy != "both" && d.ArchitecturePolicy != "single" && d.ArchitecturePolicy != "custom" {
 		return errors.New("invalid architecture policy")
 	}
-	if len(d.Identities.Auditors) < 1 || len(d.Identities.Roster) == 0 {
-		return errors.New("assign at least one auditor, a final-parameter signer and one participant")
+	if len(d.Identities.Roster) == 0 {
+		return errors.New("assign a final-parameter signer and at least one participant")
+	}
+	if d.Policy.Assurance == nil && len(d.Identities.Auditors) < 1 {
+		return errors.New("legacy policy requires at least one auditor")
 	}
 	roster := map[string]bool{}
 	for _, p := range d.Identities.Roster {
@@ -184,6 +196,21 @@ func (d coordinatorDraft) validate() error {
 	}
 	if d.Policy.Beacon.Provider == "" || !d.Policy.Beacon.Future || d.Policy.Beacon.Lead == 0 {
 		return errors.New("import a reviewed beacon policy requiring a future round and witness lead time")
+	}
+	if d.Policy.Assurance != nil {
+		if d.Policy.Assurance.PublicWitnessesPerPhase > 20 || d.Policy.Assurance.MirrorsPerAcceptedHead > 20 ||
+			d.Policy.Assurance.PassingCeremonyAudits > 20 || d.Policy.Assurance.ExternalSecurityAuditSignoffs > 20 {
+			return errors.New("assurance requirements must be between 0 and 20")
+		}
+		if int(d.Policy.Assurance.PassingCeremonyAudits) > len(d.Identities.Auditors) {
+			return errors.New("required ceremony audits exceed the assigned auditor count")
+		}
+		if d.Policy.Assurance.PassingCeremonyAudits == 0 && len(d.Identities.Auditors) != 0 {
+			return errors.New("remove auditor assignments or require at least one ceremony audit")
+		}
+		if d.Mode == "rehearsal" && d.Policy.Assurance.ExternalSecurityAuditSignoffs != 0 {
+			return errors.New("rehearsals cannot require external security-audit signoffs")
+		}
 	}
 	return nil
 }
@@ -453,8 +480,11 @@ func (w *coordinatorWizard) summary() {
 		fmt.Fprintf(w.output, "Phase %d order: %s; at least %d contributions required.\n", n+1, strings.Join(p.Participants, " -> "), p.Minimum)
 	}
 	b := w.d.Policy.Beacon
-	fmt.Fprintf(w.output, "Beacon: %s / %s; witnesses get at least %d seconds of lead time; future round required: %t.\nBeacon chain hash: %s\n", b.Provider, b.Network, b.Lead, b.Future, b.ChainHash)
+	fmt.Fprintf(w.output, "Beacon: %s / %s; the selected future round is at least %d seconds after closure; future round required: %t.\nBeacon chain hash: %s\n", b.Provider, b.Network, b.Lead, b.Future, b.ChainHash)
 	fmt.Fprintln(w.output, "The beacon supplies public randomness after contributions close. The full policy is saved in draft.json; proof-tool validates it before signing.")
+	if a := w.d.Policy.Assurance; a != nil {
+		fmt.Fprintf(w.output, "Optional assurance: %d witness(es) per phase; %d mirror confirmation(s) per accepted contribution; %d passing ceremony audit(s); %d external security-audit signoff(s).\n", a.PublicWitnessesPerPhase, a.MirrorsPerAcceptedHead, a.PassingCeremonyAudits, a.ExternalSecurityAuditSignoffs)
+	}
 	for _, b := range w.d.Binaries {
 		fmt.Fprintf(w.output, "Additional allowed proof-tool binary: %s SHA-256 %s\n", b.Path, b.SHA256)
 	}
@@ -539,7 +569,7 @@ func (w *coordinatorWizard) policy() error {
 		return fmt.Errorf("invalid built-in policy: %w", err)
 	}
 	b := standard.Beacon
-	standardLabel := fmt.Sprintf("Use the standard beacon settings included with this Relay release\n   Source: %s / %s; a round every %d seconds\n   Future round required: %t; minimum challenge: %d bytes\n   Template witness lead time: %d seconds (for rehearsal).\n   This is the minimum time from a witness's observation of the closed phase to the beacon round.\n   Production requires at least 24 hours of witness lead time, not this short rehearsal setting.\n   Network identity and verification key are pinned in this release.", b.Provider, b.Network, b.Period, b.Future, b.Challenge, b.Lead)
+	standardLabel := fmt.Sprintf("Use the standard beacon source included with this Relay release\n   Source: %s / %s; a round every %d seconds\n   Future round required: %t; minimum challenge: %d bytes\n   Default closure-to-beacon wait: 180 seconds for rehearsal, 86400 seconds for production.\n   You can review and change the wait before initialization.\n   Network identity and verification key are pinned in this release.", b.Provider, b.Network, b.Period, b.Future, b.Challenge)
 	choices := []setupChoice{{"standard", standardLabel}, {"custom", "Advanced: load a custom policy file"}}
 	defaultChoice := "standard"
 	if w.d.Policy.Beacon.Provider != "" {
@@ -600,8 +630,93 @@ func (w *coordinatorWizard) policy() error {
 			fmt.Fprintf(w.output, "Enter a number from 1 to %d.\n", len(order))
 		}
 	}
+	defaultLead := uint32(180)
+	if w.d.Mode == "production" {
+		defaultLead = 24 * 60 * 60
+	}
+	if selection == "current" || selection == "custom" {
+		defaultLead = policy.Beacon.Lead
+	}
+	for {
+		answer, askErr := w.required("Seconds from phase closure to the chosen future beacon round", strconv.FormatUint(uint64(defaultLead), 10))
+		if askErr != nil {
+			return askErr
+		}
+		value, parseErr := strconv.ParseUint(answer, 10, 32)
+		if parseErr == nil && value > 0 {
+			policy.Beacon.Lead = uint32(value)
+			break
+		}
+		fmt.Fprintln(w.output, "Enter a positive whole number of seconds.")
+	}
+	if w.d.Mode == "production" && policy.Beacon.Lead < 24*60*60 {
+		fmt.Fprintf(w.output, "WARNING: production defaults to 86400 seconds (24 hours). You selected %d seconds. This leaves less time to detect a premature or incorrect closure before the beacon becomes known.\n", policy.Beacon.Lead)
+		if err := w.confirm("Sign this shorter production beacon wait into the immutable ceremony definition", "USE SHORTER PRODUCTION WAIT"); err != nil {
+			return err
+		}
+	}
+	currentAssurance := setupAssurance{PublicWitnessesPerPhase: 1, MirrorsPerAcceptedHead: 1, PassingCeremonyAudits: 1}
+	if policy.Assurance != nil {
+		currentAssurance = *policy.Assurance
+	}
+	assuranceChoices := []setupChoice{
+		{"recommended", "Recommended defaults — witnesses, mirrors and ceremony audit enabled"},
+		{"none", "Minimal ceremony — disable witnesses, mirrors and both audit requirements"},
+		{"custom", "Choose each requirement"},
+	}
+	assuranceDefault := "recommended"
+	if policy.Assurance != nil {
+		assuranceChoices = append([]setupChoice{{"current", "Keep the saved assurance requirements"}}, assuranceChoices...)
+		assuranceDefault = "current"
+	}
+	assuranceChoice, err := w.choose("Optional assurance controls", assuranceDefault, assuranceChoices)
+	if err != nil {
+		return err
+	}
+	switch assuranceChoice {
+	case "current":
+	case "recommended":
+		currentAssurance = setupAssurance{PublicWitnessesPerPhase: 1, MirrorsPerAcceptedHead: 1, PassingCeremonyAudits: 1}
+	case "none":
+		currentAssurance = setupAssurance{}
+	case "custom":
+		fields := []struct {
+			label string
+			value *uint8
+		}{
+			{"Public witnesses required per phase", &currentAssurance.PublicWitnessesPerPhase},
+			{"Mirror confirmations required per accepted contribution", &currentAssurance.MirrorsPerAcceptedHead},
+			{"Passing ceremony audits required", &currentAssurance.PassingCeremonyAudits},
+		}
+		for _, field := range fields {
+			for {
+				answer, askErr := w.required(field.label, strconv.Itoa(int(*field.value)))
+				if askErr != nil {
+					return askErr
+				}
+				value, parseErr := strconv.ParseUint(answer, 10, 8)
+				if parseErr == nil && value <= 20 {
+					*field.value = uint8(value)
+					break
+				}
+				fmt.Fprintln(w.output, "Enter a whole number from 0 to 20.")
+			}
+		}
+		fmt.Fprintln(w.output, "External security-audit signoffs are not available in this release; keep that requirement at 0.")
+	}
+	if currentAssurance.PassingCeremonyAudits > uint8(len(w.d.Identities.Auditors)) {
+		return fmt.Errorf("%d ceremony audits require at least that many assigned auditors", currentAssurance.PassingCeremonyAudits)
+	}
+	if currentAssurance.PassingCeremonyAudits == 0 && len(w.d.Identities.Auditors) != 0 {
+		return errors.New("zero ceremony audits requires removing auditor assignments from this draft")
+	}
+	if w.d.Mode == "rehearsal" && currentAssurance.ExternalSecurityAuditSignoffs != 0 {
+		return errors.New("rehearsals must set external security-audit signoffs to zero")
+	}
+	policy.Assurance = &currentAssurance
 	b = policy.Beacon
-	fmt.Fprintf(w.output, "Beacon: %s / %s. Witnesses must observe at least %d seconds before the beacon round. Future round required: %t.\nThe beacon provides public randomness after contributions close; Relay does not substitute another round.\nChain hash: %s\nPublic key: %s\n", b.Provider, b.Network, b.Lead, b.Future, b.ChainHash, b.PublicKey)
+	fmt.Fprintf(w.output, "Beacon: %s / %s. The selected future beacon round is at least %d seconds after closure. Future round required: %t.\nThe beacon provides public randomness after contributions close; Relay does not substitute another round.\nChain hash: %s\nPublic key: %s\n", b.Provider, b.Network, b.Lead, b.Future, b.ChainHash, b.PublicKey)
+	fmt.Fprintf(w.output, "Optional assurance: %d witness(es) per phase; %d mirror confirmation(s) per accepted contribution; %d passing ceremony audit(s); %d external security-audit signoff(s).\n", currentAssurance.PublicWitnessesPerPhase, currentAssurance.MirrorsPerAcceptedHead, currentAssurance.PassingCeremonyAudits, currentAssurance.ExternalSecurityAuditSignoffs)
 	if err := w.confirm("Review these beacon settings and the participant orders/minimums you selected; proof-tool still validates the complete policy before signing", "REVIEWED"); err != nil {
 		return err
 	}
@@ -833,8 +948,14 @@ func (w *coordinatorWizard) generateIdentity() error {
 
 func (w *coordinatorWizard) initialize() error {
 	resume := w.d.Status == "initialization-attempted"
-	if w.d.Tessera != nil || w.d.TesseraSetup != nil {
+	if w.d.Tessera != nil || w.d.TesseraSetup != nil || w.d.TesseraSetupV3 != nil {
 		if err := checkTesseraDraft(w.d); err != nil {
+			return err
+		}
+	}
+	if w.d.TesseraSetupV3 != nil && w.d.Mode == "production" && w.d.Policy.Beacon.Lead < 24*60*60 {
+		fmt.Fprintf(w.output, "WARNING: this imported production setup selects a %d-second closure-to-beacon wait; the recommended default is 86400 seconds (24 hours).\n", w.d.Policy.Beacon.Lead)
+		if err := w.confirm("Approve the exact shorter wait imported from Tessera before signing the definition", "USE SHORTER PRODUCTION WAIT"); err != nil {
 			return err
 		}
 	}
@@ -1120,7 +1241,7 @@ func (w *coordinatorWizard) menu() (result error) {
 		if w.d.Status == "draft" {
 			fmt.Fprintln(w.output, "15) Open setup downloaded from Tessera [Optional]")
 		}
-		if w.d.Status == "definition-verified" && (w.d.Tessera != nil || w.d.TesseraSetup != nil) && w.localAction == nil {
+		if w.d.Status == "definition-verified" && (w.d.Tessera != nil || w.d.TesseraSetup != nil || w.d.TesseraSetupV3 != nil) && w.localAction == nil {
 			if next.choice != "16" || showOther {
 				if w.tesseraExportPresent() {
 					fmt.Fprintln(w.output, "16) Export again for Tessera")
@@ -1157,7 +1278,7 @@ func (w *coordinatorWizard) menu() (result error) {
 			showOther = true
 			continue
 		}
-		if !showOther && choice != next.choice && !(choice == "3" && optionalIdentity) && !(choice == "12" && w.d.Status == "definition-verified" && w.tesseraExportPresent()) && !(choice == "15" && w.d.Status == "draft") && !(choice == "16" && w.d.Status == "definition-verified" && (w.d.Tessera != nil || w.d.TesseraSetup != nil) && w.localAction == nil) {
+		if !showOther && choice != next.choice && !(choice == "3" && optionalIdentity) && !(choice == "12" && w.d.Status == "definition-verified" && w.tesseraExportPresent()) && !(choice == "15" && w.d.Status == "draft") && !(choice == "16" && w.d.Status == "definition-verified" && (w.d.Tessera != nil || w.d.TesseraSetup != nil || w.d.TesseraSetupV3 != nil) && w.localAction == nil) {
 			fmt.Fprintln(w.output, "Choose a displayed action, or 17 to review other actions and requirements.")
 			continue
 		}

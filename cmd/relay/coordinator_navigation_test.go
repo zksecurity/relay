@@ -24,7 +24,7 @@ func TestCoordinatorPreparationRecommendations(t *testing.T) {
 			}
 		}},
 		{"recover identity", "3", func(w *coordinatorWizard) { w.d.Identities.Coordinator = setupIdentity{} }},
-		{"missing auditor", "3", func(w *coordinatorWizard) { w.d.Identities.Auditors = nil }},
+		{"missing auditor policy", "4", func(w *coordinatorWizard) { w.d.Identities.Auditors = nil }},
 		{"duplicate key", "3", func(w *coordinatorWizard) { w.d.Identities.ReleaseSigner = w.d.Identities.Coordinator }},
 		{"invalid policy", "4", func(w *coordinatorWizard) { w.d.Policy.Phase1.Minimum = 0 }},
 		{"invalid architecture", "5", func(w *coordinatorWizard) { w.d.ArchitecturePolicy = "invalid" }},
@@ -137,7 +137,7 @@ func TestCoordinatorOptionalIdentityShortcut(t *testing.T) {
 		{"approval", func(w *coordinatorWizard) { w.d.OfflinePreparation = true }, true},
 		{"basics", func(w *coordinatorWizard) { w.d.Mode = "" }, false},
 		{"missing coordinator", func(w *coordinatorWizard) { w.d.Identities.Coordinator = setupIdentity{} }, false},
-		{"required roster", func(w *coordinatorWizard) { w.d.Identities.Auditors = nil }, false},
+		{"optional auditor", func(w *coordinatorWizard) { w.d.Identities.Auditors = nil }, true},
 		{"frozen", func(w *coordinatorWizard) { w.d.Status = "initialization-attempted" }, false},
 		{"signed", func(w *coordinatorWizard) { w.d.Status = "definition-verified" }, false},
 		{"website", func(w *coordinatorWizard) { w.d.Tessera = &tesseraContext{} }, false},

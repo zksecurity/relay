@@ -195,7 +195,7 @@ func setupFixture(t *testing.T) coordinatorWizard {
 	}
 	d.Identities = setupRoster{identity("coordinator"), identity("signer"), []setupIdentity{identity("auditor1"), identity("auditor2")}, []setupParticipant{{identity("participant1")}}}
 	beacon := setupBeacon{Provider: "drand", Network: "quicknet-mainnet", ChainHash: "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971", PublicKey: "83cf0f2896adee7eb8b5f01fcad3912212c437e0073e911fb90022d3e760183c8c4b450b6a0a6c3ac6a5776a2d1064510d1fec758c921cc22b0e17e63aaf4bcb5ed66304de9cf809bd274ca73bab4af5a6e9c76a4bc09e76eae8991ef5ece45a", Scheme: "bls-unchained-g1-rfc9380", Genesis: 1692803367, Period: 3, Extraction: "sha256-domain-separated-length-prefixed-v1", Challenge: 32, Lead: 180, Future: true}
-	d.Policy = setupPolicy{setupPhase{[]string{"participant1"}, 1}, setupPhase{[]string{"participant1"}, 1}, beacon}
+	d.Policy = setupPolicy{Phase1: setupPhase{[]string{"participant1"}, 1}, Phase2: setupPhase{[]string{"participant1"}, 1}, Beacon: beacon}
 	return coordinatorWizard{d: d, draftPath: filepath.Join(d.Work, "coordinator-setup", "draft.json"), input: bufio.NewReader(strings.NewReader("")), output: new(bytes.Buffer), run: func([]string) error { return nil }}
 }
 
@@ -243,7 +243,7 @@ func TestCoordinatorPolicyBuiltInNeedsNoFile(t *testing.T) {
 	w := setupFixture(t)
 	w.d.Policy = setupPolicy{}
 	w.d.PolicyTemplate = "/missing/source-checkout/policy.json"
-	w.input = bufio.NewReader(strings.NewReader("\n\n0\nno\n999\n1\n\n1\nREVIEWED\n"))
+	w.input = bufio.NewReader(strings.NewReader("\n\n0\nno\n999\n1\n\n1\n\n\nREVIEWED\n"))
 	if err := w.policy(); err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestCoordinatorPolicyBuiltInNeedsNoFile(t *testing.T) {
 	if menuEnd < 0 {
 		t.Fatal("missing beacon choice prompt")
 	}
-	for _, want := range []string{"Source: drand / quicknet-mainnet; a round every 3 seconds", "Future round required: true; minimum challenge: 32 bytes", "Template witness lead time: 180 seconds", "Production requires at least 24 hours", "Network identity and verification key are pinned"} {
+	for _, want := range []string{"Source: drand / quicknet-mainnet; a round every 3 seconds", "Future round required: true; minimum challenge: 32 bytes", "Default closure-to-beacon wait: 180 seconds for rehearsal, 86400 seconds for production", "You can review and change the wait before initialization", "Network identity and verification key are pinned"} {
 		if !strings.Contains(output[:menuEnd], want) {
 			t.Fatalf("beacon menu missing %q before selection", want)
 		}
@@ -276,12 +276,42 @@ func TestCoordinatorPolicyRetainsSavedBeaconWithoutSourceFile(t *testing.T) {
 	w := setupFixture(t)
 	w.d.Policy.Beacon.Lead = 321
 	w.d.PolicyTemplate = "/no-longer-available/custom.json"
-	w.input = bufio.NewReader(strings.NewReader("\n\n\n\n\nREVIEWED\n"))
+	w.input = bufio.NewReader(strings.NewReader("\n\n\n\n\n\n\nREVIEWED\n"))
 	if err := w.policy(); err != nil {
 		t.Fatal(err)
 	}
 	if w.d.Policy.Beacon.Lead != 321 {
 		t.Fatal("saved beacon silently replaced")
+	}
+}
+
+func TestCoordinatorPolicyAllowsReviewedShortProductionBeaconWait(t *testing.T) {
+	w := setupFixture(t)
+	w.d.Mode = "production"
+	w.d.Circuit = "ownership-destination-v2"
+	w.d.Policy.Assurance = &setupAssurance{PassingCeremonyAudits: 1}
+	w.input = bufio.NewReader(strings.NewReader("\n\n\n\n\n12\nUSE SHORTER PRODUCTION WAIT\n\nREVIEWED\n"))
+	if err := w.policy(); err != nil {
+		t.Fatal(err)
+	}
+	if w.d.Policy.Beacon.Lead != 12 {
+		t.Fatalf("beacon lead = %d, want 12", w.d.Policy.Beacon.Lead)
+	}
+	if output := w.output.(*bytes.Buffer).String(); !strings.Contains(output, "WARNING: production defaults to 86400 seconds") || !strings.Contains(output, "USE SHORTER PRODUCTION WAIT") {
+		t.Fatalf("missing short-production warning: %s", output)
+	}
+}
+
+func TestCoordinatorDraftAllowsExplicitlyDisabledOptionalAssurance(t *testing.T) {
+	w := setupFixture(t)
+	w.d.Identities.Auditors = nil
+	w.d.Policy.Assurance = &setupAssurance{}
+	if err := w.d.validate(); err != nil {
+		t.Fatalf("explicitly disabled optional assurance rejected: %v", err)
+	}
+	w.d.Policy.Assurance = nil
+	if err := w.d.validate(); err == nil {
+		t.Fatal("legacy policy without its required auditor accepted")
 	}
 }
 
@@ -302,7 +332,7 @@ func TestCoordinatorPolicyCustomAndCancelledReview(t *testing.T) {
 	if err := writeJSONNoReplace(path, custom, 0600); err != nil {
 		t.Fatal(err)
 	}
-	w.input = bufio.NewReader(strings.NewReader("3\n" + path + "\n\n\n\n\nREVIEWED\n"))
+	w.input = bufio.NewReader(strings.NewReader("3\n" + path + "\n\n\n\n\n\n\nREVIEWED\n"))
 	if err := w.policy(); err != nil {
 		t.Fatal(err)
 	}

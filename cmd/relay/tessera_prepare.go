@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	setupv2 "github.com/zksecurity/relay/contracts/setupv2r2"
+	setupv3 "github.com/zksecurity/relay/contracts/setupv3"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
 func checkTesseraDraft(d coordinatorDraft) error {
+	if d.TesseraSetupV3 != nil {
+		return checkSetupDraftV3(d)
+	}
 	if d.TesseraSetup != nil {
 		return checkSetupDraftV2(d)
 	}
@@ -37,7 +40,7 @@ func (w *coordinatorWizard) importTesseraRoster() error {
 	if err != nil {
 		return err
 	}
-	raw, err := readTesseraRegularFile(path, setupv2.MaxBytes, false)
+	raw, err := readTesseraRegularFile(path, setupv3.MaxBytes, false)
 	if err != nil {
 		return err
 	}
@@ -52,6 +55,9 @@ func (w *coordinatorWizard) importTesseraRoster() error {
 	}
 	if header.Schema == "ceremony-setup-v2" {
 		return w.importSetupV2(path, raw)
+	}
+	if header.Schema == "ceremony-setup-v3" {
+		return w.importSetupV3(path, raw)
 	}
 	c, err := loadTesseraContext(path)
 	if err != nil {
@@ -85,6 +91,9 @@ func (w *coordinatorWizard) exportTesseraSetup() error {
 	}
 	if w.d.TesseraSetup != nil {
 		return w.exportSetupV2()
+	}
+	if w.d.TesseraSetupV3 != nil {
+		return w.exportSetupV3()
 	}
 	storage := tesseraStorage{Provider: w.d.Storage["provider"], Region: w.d.Storage["region"], PublicURL: w.d.Storage["published-base-url"], PublishedBucket: w.d.Storage["published-bucket"], InboxBucket: w.d.Storage["inbox-bucket"]}
 	if err := storage.validate(); err != nil {

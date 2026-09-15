@@ -20,6 +20,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	setupv3 "github.com/zksecurity/relay/contracts/setupv3"
 )
 
 const tesseraSignRequestSchema = "tessera-sign-request-v1"
@@ -56,17 +58,19 @@ type tesseraCapabilities struct {
 
 func runTessera(args []string) error {
 	if len(args) == 0 {
-		return errors.New("tessera requires capabilities, complete-setup, verify-setup, release-manifest, export-setup or confirm")
+		return errors.New("tessera requires capabilities, complete-setup, verify-setup, release-manifest-v3, export-setup or confirm")
 	}
 	switch args[0] {
 	case "release-manifest":
-		return runSetupManifest(args[1:])
+		return errors.New("new releases create setup v3 manifests; existing setup v2 ceremonies must use their pinned older Relay launcher")
+	case "release-manifest-v3":
+		return runSetupManifestV3(args[1:])
 	case "storage-credentials":
 		return runTesseraStorageCredentials(args[1:])
 	case "complete-setup":
-		return runSetupV2(args[1:], true)
+		return runSetupBySchema(args[1:], true)
 	case "verify-setup":
-		return runSetupV2(args[1:], false)
+		return runSetupBySchema(args[1:], false)
 	case "capabilities":
 		return runTesseraCapabilities(args[1:])
 	case "confirm":
@@ -91,8 +95,43 @@ func runTesseraCapabilities(args []string) error {
 	if !regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(commit) {
 		return errors.New("Tessera capabilities require an attested Relay release build with its source commit")
 	}
-	result := tesseraCapabilities{Schema: tesseraCapabilitiesSchema, RelayCommit: commit, FileSchemas: []string{tesseraConnectionSchema, tesseraRoleConnectionSchema, "ceremony-setup-v2", "ceremony-software-manifest-v2", "tessera-bundle-v1", "tessera-draft-context-v1", tesseraSignRequestSchema, tesseraSignResponseSchema}, SigningPurposes: []string{"tessera:assignment-confirmation:v1", "tessera:account-recovery:v1"}}
+	result := tesseraCapabilities{Schema: tesseraCapabilitiesSchema, RelayCommit: commit, FileSchemas: []string{tesseraConnectionSchema, tesseraRoleConnectionSchema, "ceremony-setup-v3", "ceremony-software-manifest-v3", "tessera-bundle-v1", "tessera-draft-context-v1", tesseraSignRequestSchema, tesseraSignResponseSchema}, SigningPurposes: []string{"tessera:assignment-confirmation:v1", "tessera:account-recovery:v1"}}
 	return json.NewEncoder(os.Stdout).Encode(result)
+}
+
+func runSetupBySchema(args []string, complete bool) error {
+	setupPath := ""
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--setup" && i+1 < len(args) {
+			setupPath = args[i+1]
+			break
+		}
+		if strings.HasPrefix(args[i], "--setup=") {
+			setupPath = strings.TrimPrefix(args[i], "--setup=")
+			break
+		}
+	}
+	if setupPath == "" {
+		return errors.New("--setup is required")
+	}
+	raw, err := readTesseraRegularFile(setupPath, setupv3.MaxBytes, false)
+	if err != nil {
+		return err
+	}
+	var header struct {
+		Schema string `json:"schema"`
+	}
+	if err := json.Unmarshal(raw, &header); err != nil {
+		return fmt.Errorf("setup: %w", err)
+	}
+	switch header.Schema {
+	case "ceremony-setup-v2":
+		return runSetupV2(args, complete)
+	case "ceremony-setup-v3":
+		return runSetupV3(args, complete)
+	default:
+		return fmt.Errorf("setup schema %q is unsupported", header.Schema)
+	}
 }
 
 func runTesseraConfirm(args []string) error {
