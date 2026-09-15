@@ -44,10 +44,16 @@ The semantic review caught a mismatch between a candidate inventory and the
 artifacts covered by chain replay. Exact-reference checks and per-file negative
 tests close it; the follow-up review found no remaining material issue in the
 implemented edges. The Linux ceremony/CLI suites and vet pass for this slice.
-These tests do not yet exercise a complete real contribution through the new
-authoring API. Remaining lifecycle authoring deliberately fails closed.
+A Linux subprocess test now exercises a real tiny Phase 1 contribution through
+the new authoring API: initialization, outbound handoff, receipt delivery
+retirement/reallocation, signed receipt, contribution, cleanup attestation,
+mathematical replay and exact acceptance. Same-size payload corruption is
+rejected. Independent review found no material false-positive coverage or
+ordinary-helper regression. This is single-process evidence with fixture
+environment/cleanup statements, not separate role journeys, cloud transport or
+proof of erasure. Remaining lifecycle authoring deliberately fails closed.
 
-Still required: a real-contribution checkpoint round trip, remaining lifecycle authoring,
+Still required: remaining lifecycle authoring,
 the new signer verification path, normal role-menu integration, full role
 rehearsals, live-provider testing and release/deployment. No existing ceremony
 is switched to the new transport by these foundations.
