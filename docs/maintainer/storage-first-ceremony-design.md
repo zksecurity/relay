@@ -711,6 +711,30 @@ committed round, drand signature and required independent relay responses. The
 CLI and final decision display that prior public commitment was not
 independently established.
 
+### Configurable beacon lead
+
+The coordinator chooses the beacon lead before initialization for both
+rehearsal and production. Relay writes it into the policy, Proof-tool signs it
+into the ceremony definition, and every later close, checkpoint and release
+verifies that exact value. It cannot be changed after initialization.
+
+Relay offers mode-specific defaults rather than hard-coded validity rules:
+
+- rehearsal default: 180 seconds; automated tests may use 12 seconds;
+- production default: 24 hours.
+
+A shorter production value is allowed, but the CLI must show the chosen value,
+the recommended 24-hour value and the lost review/observation time immediately
+before the coordinator signs the definition. It must never silently substitute
+a shorter value. If public witnesses are enabled, the existing production
+witness-observation window is reserved in addition to the configured beacon
+lead, and Relay displays the resulting total minimum close-to-round wait.
+
+This is a new signed-policy behavior. Existing versioned setup contracts and
+existing ceremonies keep their original rules. The storage-first Relay setup
+contract gets a new version; its guided setup exposes the setting for both
+modes and passes it unchanged to Proof-tool.
+
 ## Exact approval example
 
 Suppose the final signer reviews release A, whose manifest hash is
@@ -1200,8 +1224,9 @@ Such a fixture can test a verifier, but it cannot validate the user journey.
   prevents the second from signing. A simulated unexpected root conflict must
   block rather than publish another child.
 - One offline final-signer ZIP round trip.
-- One production-shaped run with shortened test timing, plus separate tests of
-  the real 24-hour production rule and final approval/rejection behavior.
+- One production-shaped run with a signed shortened beacon lead, plus separate
+  tests of the recommended 24-hour production setting and final
+  approval/rejection behavior.
 - One clean released-version run; development images do not establish release
   compatibility.
 
