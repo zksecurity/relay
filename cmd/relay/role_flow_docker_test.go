@@ -213,7 +213,11 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(trust, "release-public-key.hex"), []byte(roster.ReleaseSigner.PublicKey), 0600); err != nil {
 		t.Fatal(err)
 	}
-	f := roleFlow{state: roleFlowState{Schema: roleFlowSchema, Name: "docker-full-test", Role: "coordinator", Values: map[string]string{}}, stages: coordinatorFlowStages(), path: filepath.Join(work, "flow-state.json"), ui: coordinatorWizard{output: os.Stdout}}
+	f := roleFlow{state: roleFlowState{
+		Schema: roleFlowSchema, Name: "docker-full-test", Role: "coordinator",
+		Profile: guidedProfile{Work: work, Trust: trust, Image: online, Platform: platform},
+		Values:  map[string]string{"shared/coordinator-public-key-file": "/trust/coordinator-public-key.hex"},
+	}, stages: coordinatorFlowStages(), path: filepath.Join(work, "flow-state.json"), ui: coordinatorWizard{output: os.Stdout}}
 	find := func(role, stageID, taskID string) flowTask {
 		t.Helper()
 		for index, stage := range roleFlowStages(role) {
