@@ -71,6 +71,12 @@ func runCoordinatorCommitV4(args []string) error {
 		return err
 	}
 	objects := coordinatorClient(config, config.PublishedBucket)
+	for _, ref := range child.PublicationArtifacts() {
+		path := filepath.Join(root, filepath.FromSlash(ref.Name))
+		if err := storagefirst.PublishImmutable(objects, ref, path, filepath.Dir(root)); err != nil {
+			return fmt.Errorf("publish required public artifact %q: %w", ref.Name, err)
+		}
+	}
 	if err := storagefirst.PublishImmutable(objects, checkpointRef, checkpoint, filepath.Dir(root)); err != nil {
 		return fmt.Errorf("publish immutable checkpoint: %w", err)
 	}

@@ -124,15 +124,15 @@ func TestSyncV4RetainsVerifiedArtifactsAndRejectsConflicts(t *testing.T) {
 	objects[store.Key(sum(dependency))] = dependency
 	head := verifier.full.CheckpointRefs.Record.Digest.SHA256
 	discovery := verifier.discoveries[head]
-	discovery.Discovery.VerificationDependencies = []transcript.ArtifactRef{{Name: "phase1/genesis.bin", Digest: transcript.Digest{SHA256: sum(dependency), Size: int64(len(dependency))}}}
+	discovery.Discovery.VerificationDependencies = []transcript.ArtifactRef{{Name: "governance/record.json", Digest: transcript.Digest{SHA256: sum(dependency), Size: int64(len(dependency))}}}
 	verifier.discoveries[head] = discovery
-	verifier.requiredDependency = "phase1/genesis.bin"
+	verifier.requiredDependency = "governance/record.json"
 	root := filepath.Join(t.TempDir(), "public")
 	highWater := &highWaterFake{}
 	if _, err := SyncV4Retained(objects, verifier, highWater, id, t.TempDir(), root); err != nil {
 		t.Fatal(err)
 	}
-	for name, contents := range map[string][]byte{"checkpoints/0.json": []byte("checkpoint-0"), "checkpoints/2.sig": []byte("signature-2"), "phase1/genesis.bin": dependency} {
+	for name, contents := range map[string][]byte{"checkpoints/0.json": []byte("checkpoint-0"), "checkpoints/2.sig": []byte("signature-2"), "governance/record.json": dependency, "phase1/genesis.bin": []byte("phase1 genesis")} {
 		got, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
 		if err != nil || string(got) != string(contents) {
 			t.Fatalf("retained %s = %q, %v", name, got, err)
@@ -159,12 +159,21 @@ func syncFixtureV4(t *testing.T, last int) (memoryObjects, *verifierV4Fake, stri
 		objects[store.Key(sum(raw))] = raw
 		return transcript.ArtifactRef{Name: name, Digest: transcript.Digest{SHA256: sum(raw), Blake2b256: "blake2b256:" + sum(raw)[7:], Size: int64(len(raw))}}
 	}
+	definition := transcript.SignedArtifactRefs{
+		Record:    artifact("ceremony.json", []byte("signed definition")),
+		Signature: artifact("ceremony.sig", []byte("definition signature")),
+	}
+	chain := transcript.SignedArtifactRefs{
+		Record:    artifact("phase1/chain-0000.json", []byte("initial chain")),
+		Signature: artifact("phase1/chain-0000.sig", []byte("initial chain signature")),
+	}
+	genesis := artifact("phase1/genesis.bin", []byte("phase1 genesis"))
 	for n := 0; n <= last; n++ {
 		pair := transcript.SignedArtifactRefs{Record: artifact(fmt.Sprintf("checkpoints/%d.json", n), []byte(fmt.Sprintf("checkpoint-%d", n))), Signature: artifact(fmt.Sprintf("checkpoints/%d.sig", n), []byte(fmt.Sprintf("signature-%d", n)))}
 		d := transcript.CheckpointDiscoveryV4{Schema: "proof-tool-mpc-checkpoint-discovery-v4", Depth: "signed-checkpoint-discovery", CheckpointRefs: pair}
 		d.Discovery.CeremonyID, d.Discovery.Sequence, d.Discovery.PreviousCheckpoint, d.Discovery.VerificationDependencies = id, uint64(n), previous, []transcript.ArtifactRef{}
 		v.discoveries[pair.Record.Digest.SHA256] = d
-		v.full = transcript.CheckpointInspectionV4{Schema: "proof-tool-mpc-checkpoint-inspection-v4", Depth: "checkpoint-structure", CheckpointRefs: pair, Checkpoint: transcript.CheckpointStateV4{Schema: "proof-tool-mpc-checkpoint-v4", Workflow: "storage-first-v2", ReleaseVerification: "coordinator-full-replay-v1", CeremonyID: id, Sequence: uint64(n), PreviousCheckpoint: previous, Deliveries: []transcript.DeliverySlotV4{}}}
+		v.full = transcript.CheckpointInspectionV4{Schema: "proof-tool-mpc-checkpoint-inspection-v4", Depth: "checkpoint-structure", CheckpointRefs: pair, Checkpoint: transcript.CheckpointStateV4{Schema: "proof-tool-mpc-checkpoint-v4", Workflow: "storage-first-v2", ReleaseVerification: "coordinator-full-replay-v1", CeremonyID: id, Sequence: uint64(n), Definition: definition, PreviousCheckpoint: previous, Progress: transcript.CheckpointProgressV4{Phase1: transcript.CheckpointPhaseState{Phase: "phase1", HeadRecordID: sum([]byte("phase1 head")), HeadPayload: genesis, Chain: chain}}, Deliveries: []transcript.DeliverySlotV4{}}}
 		v.full.Commitments = transcript.CheckpointCommitmentsV4{Enrollments: []transcript.SignedArtifactRefs{}, Turns: []transcript.TurnCommitmentV4{}}
 		copy := pair
 		previous = &copy
@@ -303,10 +312,16 @@ func TestSyncV4RejectsRollbackAndForkWithoutChangingSavedProgress(t *testing.T) 
 	}
 }
 
-func TestSyncV4DoesNotFetchLargeHistoricalPayloads(t *testing.T) {
+func TestSyncV4RequiresCurrentPayload(t *testing.T) {
 	objects, verifier, id := syncFixtureV4(t, 1)
-	verifier.full.Checkpoint.Progress.Phase1.HeadPayload = transcript.ArtifactRef{Name: "phase1/large.bin", Digest: transcript.Digest{SHA256: sum([]byte("not stored")), Size: 32 << 20}}
+	body := []byte("current large payload fixture")
+	ref := transcript.ArtifactRef{Name: "phase1/current.bin", Digest: transcript.Digest{SHA256: sum(body), Blake2b256: "blake2b256:" + sum(body)[7:], Size: int64(len(body))}}
+	verifier.full.Checkpoint.Progress.Phase1.HeadPayload = ref
+	if _, err := SyncV4(objects, verifier, &highWaterFake{}, id, t.TempDir()); err == nil {
+		t.Fatal("missing current payload was accepted")
+	}
+	objects[store.Key(ref.Digest.SHA256)] = body
 	if _, err := SyncV4(objects, verifier, &highWaterFake{}, id, t.TempDir()); err != nil {
-		t.Fatalf("metadata sync required absent payload: %v", err)
+		t.Fatalf("available current payload was rejected: %v", err)
 	}
 }

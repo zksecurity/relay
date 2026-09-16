@@ -325,12 +325,27 @@ func TestAuthenticateRootChildV4ProjectsOnlyFullyCheckedToolResult(t *testing.T)
 	}
 	cpRef, sigRef := ref("checkpoints/4/checkpoint.json", cpBytes), ref("checkpoints/4/checkpoint.sig", sigBytes)
 	pair := transcript.SignedArtifactRefs{
-		Record:    transcript.ArtifactRef{Name: cpRef.Name, Digest: transcript.Digest{SHA256: cpRef.SHA256, Blake2b256: digestOfTest("a"), Size: cpRef.Size}},
-		Signature: transcript.ArtifactRef{Name: sigRef.Name, Digest: transcript.Digest{SHA256: sigRef.SHA256, Blake2b256: digestOfTest("b"), Size: sigRef.Size}},
+		Record:    transcript.ArtifactRef{Name: cpRef.Name, Digest: transcript.Digest{SHA256: cpRef.SHA256, Blake2b256: "blake2b256:" + strings.Repeat("a", 64), Size: cpRef.Size}},
+		Signature: transcript.ArtifactRef{Name: sigRef.Name, Digest: transcript.Digest{SHA256: sigRef.SHA256, Blake2b256: "blake2b256:" + strings.Repeat("b", 64), Size: sigRef.Size}},
 	}
-	inspection := transcript.CheckpointInspectionV4{CheckpointRefs: pair}
+	publicPair := func(base, seed string) transcript.SignedArtifactRefs {
+		return transcript.SignedArtifactRefs{
+			Record:    transcript.ArtifactRef{Name: base + ".json", Digest: transcript.Digest{SHA256: digestOfTest(seed), Blake2b256: "blake2b256:" + strings.Repeat(seed, 64), Size: 10}},
+			Signature: transcript.ArtifactRef{Name: base + ".sig", Digest: transcript.Digest{SHA256: digestOfTest(seed + "1"), Blake2b256: "blake2b256:" + strings.Repeat(seed+"1", 32), Size: 64}},
+		}
+	}
+	definition := publicPair("ceremony", "2")
+	chain := publicPair("phase1/chain-0000", "3")
+	head := transcript.ArtifactRef{Name: "phase1/genesis.bin", Digest: transcript.Digest{SHA256: digestOfTest("4"), Blake2b256: "blake2b256:" + strings.Repeat("4", 64), Size: 32}}
+	inspection := transcript.CheckpointInspectionV4{Schema: "proof-tool-mpc-checkpoint-inspection-v4", Depth: "checkpoint-structure", CheckpointRefs: pair, Commitments: transcript.CheckpointCommitmentsV4{Enrollments: []transcript.SignedArtifactRefs{}, Turns: []transcript.TurnCommitmentV4{}}}
+	inspection.Checkpoint.Schema = "proof-tool-mpc-checkpoint-v4"
+	inspection.Checkpoint.Workflow = "storage-first-v2"
+	inspection.Checkpoint.ReleaseVerification = "coordinator-full-replay-v1"
 	inspection.Checkpoint.CeremonyID = digestOfTest("1")
 	inspection.Checkpoint.Sequence = 4
+	inspection.Checkpoint.Definition = definition
+	inspection.Checkpoint.Progress.Phase1 = transcript.CheckpointPhaseState{Phase: "phase1", HeadRecordID: digestOfTest("5"), HeadPayload: head, Chain: chain}
+	inspection.Checkpoint.Deliveries = []transcript.DeliverySlotV4{}
 	inspection.Checkpoint.Transition.Kind = "phase1-candidate-accepted"
 	previous := pair
 	previous.Record.Name, previous.Record.Digest.SHA256 = "checkpoints/3/checkpoint.json", digestOfTest("c")

@@ -226,6 +226,15 @@ func syncV4(objects ObjectStore, verifier VerifierV4, highWater HighWater, cerem
 	if verified.Schema != "proof-tool-mpc-checkpoint-inspection-v4" || verified.Depth != "checkpoint-structure" || verified.ArtifactsVerified || verified.MathematicsReplayed || verified.GlobalFreshnessVerified || c.CeremonyID != ceremonyID || c.Sequence != backwards[0].Sequence || contentRef(verified.CheckpointRefs.Record) != root.Checkpoint || contentRef(verified.CheckpointRefs.Signature) != root.CheckpointSignature {
 		return SnapshotV4{}, errors.New("verified history differs from discovered head")
 	}
+	public, err := transcript.RequiredPublicArtifactsV4(verified)
+	if err != nil {
+		return SnapshotV4{}, fmt.Errorf("derive required public artifacts: %w", err)
+	}
+	for _, ref := range public {
+		if _, err := fetchNamed(objects, stage, contentRef(ref), names); err != nil {
+			return SnapshotV4{}, fmt.Errorf("fetch required public artifact %q: %w", ref.Name, err)
+		}
+	}
 	encoded, err := json.Marshal(c)
 	if err != nil {
 		return SnapshotV4{}, err

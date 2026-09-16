@@ -452,9 +452,19 @@ func TestCoordinatorInitializationRequiresConsentAndFreezesOnFailure(t *testing.
 	if err := w.initialize(); err == nil || calls != 1 || w.d.Status != "initialization-attempted" {
 		t.Fatal("uncertain attempt not frozen")
 	}
-	w.run = func([]string) error { calls++; return nil }
+	w.run = func(args []string) error {
+		calls++
+		if strings.Contains(strings.Join(args, " "), "mpc-ceremony init") {
+			root := filepath.Join(w.d.Work, "ceremony", "public")
+			if err := os.MkdirAll(root, 0700); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(root, "ceremony.json"), []byte(`{"schema":"proof-tool-mpc-ceremony-definition-v4"}`), 0600)
+		}
+		return nil
+	}
 	w.input = bufio.NewReader(strings.NewReader("RESUME INITIALIZATION\n"))
-	if err := w.initialize(); err != nil || calls != 5 || w.d.Status != "definition-verified" {
+	if err := w.initialize(); err != nil || calls != 7 || w.d.Status != "definition-verified" {
 		t.Fatal("exact interrupted initialization did not resume", err, calls, w.d.Status)
 	}
 	var frozen coordinatorDraft
@@ -476,20 +486,30 @@ func TestCoordinatorInitializationUsesProofToolAndExternalTrust(t *testing.T) {
 	w := setupFixture(t)
 	w.input = bufio.NewReader(strings.NewReader("INITIALIZE REHEARSAL\n"))
 	var calls [][]string
-	w.run = func(args []string) error { calls = append(calls, args); return nil }
+	w.run = func(args []string) error {
+		calls = append(calls, args)
+		if strings.Contains(strings.Join(args, " "), "mpc-ceremony init") {
+			root := filepath.Join(w.d.Work, "ceremony", "public")
+			if err := os.MkdirAll(root, 0700); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(root, "ceremony.json"), []byte(`{"schema":"proof-tool-mpc-ceremony-definition-v4"}`), 0600)
+		}
+		return nil
+	}
 	if err := w.initialize(); err != nil {
 		t.Fatal(err)
 	}
-	if len(calls) != 4 || w.d.Status != "definition-verified" {
+	if len(calls) != 6 || w.d.Status != "definition-verified" {
 		t.Fatal(calls, w.d.Status)
 	}
 	joined := strings.Join(calls[0], " ")
-	for _, s := range []string{"mpc-ceremony init --mode rehearsal", "--key-version rehearsal-tiny-v1", "--session-nonce-hex", "--coordinator-signing-key /keys/signing.hex", "--out-dir /work/ceremony/public"} {
+	for _, s := range []string{"mpc-ceremony init --mode rehearsal", "--key-version rehearsal-tiny-v1", "--session-nonce-hex", "--coordinator-signing-key /keys/signing.hex", "--release-verification coordinator-full-replay-v1", "--out-dir /work/ceremony/public"} {
 		if !strings.Contains(joined, s) {
 			t.Fatal(joined)
 		}
 	}
-	if !strings.Contains(strings.Join(calls[2], " "), "--coordinator-public-key-file /trust/setup-coordinator.hex") {
+	if !strings.Contains(strings.Join(calls[2], " "), "checkpoint initialize-v4") || !strings.Contains(strings.Join(calls[4], " "), "--coordinator-public-key-file /trust/setup-coordinator.hex") {
 		t.Fatal("missing independent trust anchor")
 	}
 }
@@ -545,7 +565,7 @@ func TestCoordinatorPrepareDocker(t *testing.T) {
 	if w.d.Status != "definition-verified" {
 		t.Fatal(w.d.Status)
 	}
-	for _, name := range []string{"ceremony.json", "ceremony.sig", "phase1"} {
+	for _, name := range []string{"ceremony.json", "ceremony.sig", "phase1", "checkpoints/initial/checkpoint.json", "checkpoints/initial/checkpoint.sig"} {
 		if _, err := os.Stat(filepath.Join(w.d.Work, "ceremony", "public", name)); err != nil {
 			t.Fatal(err)
 		}

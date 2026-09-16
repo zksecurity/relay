@@ -15,7 +15,7 @@ func TestSyncV4EnrollmentMetadataIsExactAndRequired(t *testing.T) {
 			artifact := func(name, body string) transcript.ArtifactRef {
 				b := []byte(body)
 				objects[store.Key(sum(b))] = b
-				return transcript.ArtifactRef{Name: name, Digest: transcript.Digest{SHA256: sum(b), Size: int64(len(b))}}
+				return transcript.ArtifactRef{Name: name, Digest: transcript.Digest{SHA256: sum(b), Blake2b256: "blake2b256:" + sum(b)[7:], Size: int64(len(b))}}
 			}
 			pair := transcript.SignedArtifactRefs{Record: artifact("enrollments/one.json", "public enrollment"), Signature: artifact("enrollments/one.sig", "signature")}
 			v.full.Commitments.Enrollments = []transcript.SignedArtifactRefs{pair}

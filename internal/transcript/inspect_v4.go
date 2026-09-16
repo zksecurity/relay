@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -191,6 +192,82 @@ type CheckpointInspectionV4 struct {
 	ArtifactsVerified       bool                    `json:"artifacts_verified"`
 	MathematicsReplayed     bool                    `json:"mathematics_replayed"`
 	GlobalFreshnessVerified bool                    `json:"global_freshness_verified"`
+}
+
+// RequiredPublicArtifactsV4 returns the exact public files a normal role needs
+// in addition to checkpoint ancestry. The set is derived only from an
+// approved-tool inspection: callers must never manufacture it by parsing a
+// downloaded checkpoint themselves.
+//
+// Historical contribution payloads are deliberately excluded. A current
+// role needs the authenticated definition and current phase inputs, while the
+// signed checkpoint ancestry retains the history needed for state guidance.
+func RequiredPublicArtifactsV4(p CheckpointInspectionV4) ([]ArtifactRef, error) {
+	if _, err := validateStoredInspectionV4(p); err != nil {
+		return nil, err
+	}
+	refs := map[string]ArtifactRef{}
+	add := func(ref ArtifactRef, limit int64) error {
+		if err := validateBoundedRefV4(ref, limit); err != nil {
+			return err
+		}
+		if previous, ok := refs[ref.Name]; ok && previous != ref {
+			return errors.New("authenticated public artifact name has conflicting references")
+		}
+		refs[ref.Name] = ref
+		return nil
+	}
+	addPair := func(pair *SignedArtifactRefs) error {
+		if pair == nil {
+			return nil
+		}
+		if err := add(pair.Record, 16<<20); err != nil {
+			return err
+		}
+		return add(pair.Signature, 4096)
+	}
+	if err := addPair(&p.Checkpoint.Definition); err != nil {
+		return nil, err
+	}
+	phases := []*CheckpointPhaseState{&p.Checkpoint.Progress.Phase1, p.Checkpoint.Progress.Phase2}
+	for _, phase := range phases {
+		if phase == nil {
+			continue
+		}
+		if err := addPair(&phase.Chain); err != nil {
+			return nil, err
+		}
+		if err := add(phase.HeadPayload, 16<<30); err != nil {
+			return nil, err
+		}
+	}
+	for _, pair := range []*SignedArtifactRefs{
+		p.Checkpoint.Progress.Phase1Closure,
+		p.Checkpoint.Progress.Phase1Beacon,
+		p.Checkpoint.Progress.Phase1Seal,
+		p.Checkpoint.Progress.Phase2Closure,
+		p.Checkpoint.Progress.Phase2Beacon,
+		p.Checkpoint.Progress.FinalCandidate,
+		p.Checkpoint.Progress.FinalRelease,
+	} {
+		if err := addPair(pair); err != nil {
+			return nil, err
+		}
+	}
+	if terminal := p.Checkpoint.Progress.Terminal; terminal != nil {
+		if err := addPair(&terminal.Record); err != nil {
+			return nil, err
+		}
+		if err := addPair(terminal.RestartDefinition); err != nil {
+			return nil, err
+		}
+	}
+	result := make([]ArtifactRef, 0, len(refs))
+	for _, ref := range refs {
+		result = append(result, ref)
+	}
+	slices.SortFunc(result, func(a, b ArtifactRef) int { return strings.Compare(a.Name, b.Name) })
+	return result, nil
 }
 
 func (i Inspector) checkpointV4(action, root, record, signature string) (inspectionResult, error) {

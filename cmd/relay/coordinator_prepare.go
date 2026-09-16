@@ -1035,7 +1035,7 @@ func (w *coordinatorWizard) initialize() error {
 	if err := ensurePrivateDirectory(root); err != nil {
 		return err
 	}
-	command := []string{"mpc-ceremony", "init", "--mode", w.d.Mode, "--key-version", w.d.Circuit, "--created-at", w.d.CreatedAt, "--session-nonce-hex", w.d.SessionNonceHex, "--participants", "/work/coordinator-setup/frozen/participants.json", "--policy", "/work/coordinator-setup/frozen/policy.json", "--coordinator-key-id", w.d.Identities.Coordinator.KeyID, "--coordinator-signing-key", "/keys/signing.hex", "--out-dir", "/work/ceremony/public"}
+	command := []string{"mpc-ceremony", "init", "--mode", w.d.Mode, "--key-version", w.d.Circuit, "--created-at", w.d.CreatedAt, "--session-nonce-hex", w.d.SessionNonceHex, "--participants", "/work/coordinator-setup/frozen/participants.json", "--policy", "/work/coordinator-setup/frozen/policy.json", "--coordinator-key-id", w.d.Identities.Coordinator.KeyID, "--coordinator-signing-key", "/keys/signing.hex", "--release-verification", "coordinator-full-replay-v1", "--out-dir", "/work/ceremony/public"}
 	for n, b := range w.d.Binaries {
 		// Copy first, then hash the copy. Never execute a host-provided binary.
 		target := filepath.Join(snapshot, fmt.Sprintf("allowed-%d", n))
@@ -1076,7 +1076,49 @@ func (w *coordinatorWizard) initialize() error {
 	if err := w.action("initialize", "coordinator", command, false, resume); err != nil {
 		return err
 	}
+	if err := w.initializeCheckpointV4(filepath.Join(root, "public")); err != nil {
+		return err
+	}
 	return w.verify()
+}
+
+func (w *coordinatorWizard) initializeCheckpointV4(root string) error {
+	definition := filepath.Join(root, "ceremony.json")
+	raw, err := readTesseraRegularFile(definition, 16<<20, false)
+	if err != nil {
+		return err
+	}
+	if err := rejectCommitJournalDuplicateFields(raw); err != nil {
+		return fmt.Errorf("initialized definition: %w", err)
+	}
+	var hint struct {
+		Schema string `json:"schema"`
+	}
+	if err := json.Unmarshal(raw, &hint); err != nil {
+		return err
+	}
+	if hint.Schema != "proof-tool-mpc-ceremony-definition-v4" {
+		// Existing V1-V3 ceremonies retain their released workflow and never gain
+		// V4 state merely because Relay was upgraded.
+		return nil
+	}
+	parent := filepath.Join(root, "checkpoints")
+	if err := ensurePrivateDirectory(parent); err != nil {
+		return err
+	}
+	out := filepath.Join(parent, "initial")
+	record, signature := filepath.Join(out, "checkpoint.json"), filepath.Join(out, "checkpoint.sig")
+	recordOK, signatureOK := regularPreparationFile(record), regularPreparationFile(signature)
+	if recordOK != signatureOK {
+		return errors.New("initial checkpoint output is incomplete; preserve it and inspect before retrying")
+	}
+	base := []string{"mpc-ceremony", "checkpoint"}
+	if recordOK {
+		command := append(base, "verify-stored-v4", "--ceremony", "/work/ceremony/public/ceremony.json", "--ceremony-signature", "/work/ceremony/public/ceremony.sig", "--coordinator-public-key-file", "/trust/setup-coordinator.hex", "--artifact-root", "/work/ceremony/public", "--checkpoint", "/work/ceremony/public/checkpoints/initial/checkpoint.json", "--checkpoint-signature", "/work/ceremony/public/checkpoints/initial/checkpoint.sig")
+		return w.action("verify-initial-checkpoint", "decision-signer", command, false)
+	}
+	command := append(base, "initialize-v4", "--ceremony", "/work/ceremony/public/ceremony.json", "--ceremony-signature", "/work/ceremony/public/ceremony.sig", "--coordinator-public-key-file", "/trust/setup-coordinator.hex", "--artifact-root", "/work/ceremony/public", "--coordinator-signing-key", "/keys/signing.hex", "--out-dir", "/work/ceremony/public/checkpoints/initial")
+	return w.action("initialize-checkpoint", "decision-signer", command, false)
 }
 func (w *coordinatorWizard) verify() error {
 	if w.d.Status == "draft" {
@@ -1170,7 +1212,17 @@ func (w *coordinatorWizard) configureStorage() error {
 			args = append(args, "--"+field, value)
 		}
 	}
-	return w.action("storage", "coordinator", args, true)
+	if err := w.action("storage", "coordinator", args, true); err != nil {
+		return err
+	}
+	initial := filepath.Join(w.d.Work, "ceremony", "public", "checkpoints", "initial")
+	if !regularPreparationFile(filepath.Join(initial, "checkpoint.json")) || !regularPreparationFile(filepath.Join(initial, "checkpoint.sig")) {
+		// Existing V1-V3 ceremonies have no V4 root and retain the released
+		// publication path. New V4 initialization always creates this pair.
+		return nil
+	}
+	commit := []string{"relay", "coordinator", "commit-v4", "--storage", "/work/ceremony/config/relay-storage.json", "--artifact-root", "/work/ceremony/public", "--checkpoint", "/work/ceremony/public/checkpoints/initial/checkpoint.json", "--checkpoint-signature", "/work/ceremony/public/checkpoints/initial/checkpoint.sig", "--ceremony", "/work/ceremony/public/ceremony.json", "--ceremony-signature", "/work/ceremony/public/ceremony.sig", "--coordinator-key", "/trust/setup-coordinator.hex"}
+	return w.action("publish-initial-checkpoint", "coordinator", commit, true)
 }
 
 func (w *coordinatorWizard) menu() (result error) {

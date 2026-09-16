@@ -27,6 +27,13 @@ type AuthenticatedRootChild struct {
 	checkpoint    Checkpoint
 	checkpointRef state.ContentRef
 	signatureRef  state.ContentRef
+	publicRefs    []state.ContentRef
+}
+
+// PublicationArtifacts returns the exact proof-tool-derived public files that
+// must be immutable and readable before this child becomes discoverable.
+func (c AuthenticatedRootChild) PublicationArtifacts() []state.ContentRef {
+	return append([]state.ContentRef(nil), c.publicRefs...)
 }
 
 // PublicationVerifierV4 is the narrow proof-tool boundary used before a V4
@@ -69,12 +76,20 @@ func AuthenticateRootChildV4(verifier PublicationVerifierV4, checkpointRef, sign
 	if projected.Transition == "" {
 		return AuthenticatedRootChild{}, errors.New("proof-tool V4 checkpoint projection has no transition kind")
 	}
+	public, err := transcript.RequiredPublicArtifactsV4(inspection)
+	if err != nil {
+		return AuthenticatedRootChild{}, fmt.Errorf("derive required public artifacts: %w", err)
+	}
+	publicRefs := make([]state.ContentRef, 0, len(public))
+	for _, ref := range public {
+		publicRefs = append(publicRefs, contentRef(ref))
+	}
 	if c.PreviousCheckpoint != nil {
 		previous := SignedRef{Checkpoint: contentRef(c.PreviousCheckpoint.Record), Signature: contentRef(c.PreviousCheckpoint.Signature)}
 		projected.Previous = &previous
 		projected.Position.PreviousDigest = previous.Checkpoint.SHA256
 	}
-	return AuthenticatedRootChild{checkpoint: projected, checkpointRef: checkpointRef, signatureRef: signatureRef}, nil
+	return AuthenticatedRootChild{checkpoint: projected, checkpointRef: checkpointRef, signatureRef: signatureRef, publicRefs: publicRefs}, nil
 }
 
 // AuthenticateRootChild binds a proof-tool-authenticated checkpoint projection
