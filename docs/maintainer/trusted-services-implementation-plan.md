@@ -451,6 +451,34 @@ Inspection must match the expected turn, preserve signature/software/chronology
 checks, and make no mathematics, freshness or physical-erasure claim. Rehash
 the returned closed inventory at upload; inspection does not freeze file paths.
 
+### Reviewed execution and restart integration
+
+Select `workflow-v4/state.json` only after authenticating the V4 definition;
+V1–V3 keep `workflow/state.json` unchanged. Bind the new state to the exact
+definition pair, ceremony, workspace and role identity. Reuse atomic saves,
+workspace locking, input hashing and coordinator commit durability—not legacy
+catalog stages, phase1-only local facts or generic retry dispatch.
+
+Persist a bounded operation record before launching anything: local operation
+ID and closed action kind, exact turn/predecessor, original runtime/mounts,
+command, inputs and expected output paths. Delivery attempts are separate from
+local operation IDs. Scope-only computation and return signing survive delivery
+reallocation; grants and uploads do not. Keep immutable predecessor copies and
+attempt-specific download directories rather than mutable “current” paths.
+
+Hold the workspace lock across loading, sync, recommendation and execution.
+Only a prepared operation is known not to have launched. Running, cancelled or
+failed children remain uncertain until exact output inspection. Saved success
+is a locator, not proof: reverify artifacts before deriving guidance. A sync
+failure may allow local inspection of retained work, never new ceremony work.
+
+Coordinator actions also retain the existing commit-journal link: child success
+does not mean publication. Confirm the exact authenticated child and root CAS;
+on a conflict, sync and inspect without reparenting the signed child. Participant
+upload success means only uploaded files/manifest, not contribution acceptance.
+Test crashes at each save/launch/output/upload/CAS boundary, backend advancement,
+grant expiry, partial five/seven-file output and isolation from legacy journals.
+
 ### Incident and termination records
 
 Use separate V4 transitions for an informational incident, abort and restart.
