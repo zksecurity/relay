@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -8,6 +9,37 @@ import (
 
 	"github.com/zksecurity/relay/internal/transcript"
 )
+
+func TestWorkflowV4BeaconDownloadUsesSecondEndpointOnlyAsFallback(t *testing.T) {
+	var tried []string
+	err := fetchWorkflowV4QuicknetRoundUsing(42, "/unused", func(origin string, round uint64, destination string) error {
+		tried = append(tried, origin)
+		if origin == workflowV4ProtocolLabsDrand {
+			return errors.New("unavailable")
+		}
+		if origin != workflowV4CloudflareDrand || round != 42 || destination != "/unused" {
+			t.Fatalf("unexpected fallback request: %q %d %q", origin, round, destination)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tried) != 2 || tried[0] != workflowV4ProtocolLabsDrand || tried[1] != workflowV4CloudflareDrand {
+		t.Fatalf("fallback order = %#v", tried)
+	}
+
+	tried = nil
+	if err := fetchWorkflowV4QuicknetRoundUsing(42, "/unused", func(origin string, _ uint64, _ string) error {
+		tried = append(tried, origin)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(tried) != 1 || tried[0] != workflowV4ProtocolLabsDrand {
+		t.Fatalf("successful primary should avoid fallback: %#v", tried)
+	}
+}
 
 func TestWorkflowV4LifecycleClosesOnlyCompletedOpenPhase(t *testing.T) {
 	protocol := transcript.DefinitionProtocol{Definition: transcript.Definition{Phase1Participants: []string{"p1"}, Phase2Participants: []string{"p1"}}}
@@ -25,10 +57,6 @@ func TestWorkflowV4LifecycleClosesOnlyCompletedOpenPhase(t *testing.T) {
 		t.Fatalf("closed phase1 action = %q, %v", action, err)
 	}
 	state.Progress.Phase1Beacon = &transcript.SignedArtifactRefs{}
-	if action, _, err := workflowV4CoordinatorLifecycleAction(state, commitments, protocol); err != nil || action != workflowV4EvidencePhase1 {
-		t.Fatalf("beacon evidence phase1 action = %q, %v", action, err)
-	}
-	commitments.BeaconEvidence = append(commitments.BeaconEvidence, transcript.PhaseCommitmentV4{Phase: "phase1"})
 	if action, _, err := workflowV4CoordinatorLifecycleAction(state, commitments, protocol); err != nil || action != workflowV4SealPhase1 {
 		t.Fatalf("beacon phase1 action = %q, %v", action, err)
 	}
@@ -45,10 +73,6 @@ func TestWorkflowV4LifecycleClosesOnlyCompletedOpenPhase(t *testing.T) {
 		t.Fatalf("closed phase2 action = %q, %v", action, err)
 	}
 	state.Progress.Phase2Beacon = &transcript.SignedArtifactRefs{}
-	if action, _, err := workflowV4CoordinatorLifecycleAction(state, commitments, protocol); err != nil || action != workflowV4EvidencePhase2 {
-		t.Fatalf("beacon evidence phase2 action = %q, %v", action, err)
-	}
-	commitments.BeaconEvidence = append(commitments.BeaconEvidence, transcript.PhaseCommitmentV4{Phase: "phase2"})
 	if action, _, err := workflowV4CoordinatorLifecycleAction(state, commitments, protocol); err != nil || action != workflowV4Finalize {
 		t.Fatalf("completed ceremony action = %q, %v", action, err)
 	}
@@ -142,37 +166,6 @@ func TestWorkflowV4BeaconCommandUsesCommittedClosure(t *testing.T) {
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("command %q lacks %q", joined, want)
-		}
-	}
-}
-
-func TestWorkflowV4BeaconEvidenceCommandsUseTwoRelayInputsAndExactReview(t *testing.T) {
-	work, trust, keys := t.TempDir(), t.TempDir(), t.TempDir()
-	online := guidedProfile{Work: work, Trust: trust, Keys: keys}
-	signer := guidedProfile{Work: work, Trust: trust, Keys: keys}
-	closure := pairV4Test("phase1/closure")
-	root := filepath.Join(work, "ceremony", "public")
-	observations := filepath.Join(root, "phase1", "beacon-evidence", "observations.json")
-	out := filepath.Join(root, "phase1", "beacon-evidence", "prepared")
-	when := time.Date(2026, 9, 16, 1, 2, 3, 4, time.UTC)
-	prepare, err := workflowV4PrepareBeaconEvidenceCommand(online, signer, closure, observations, out, when)
-	if err != nil {
-		t.Fatal(err)
-	}
-	record := filepath.Join(out, "canonical.json")
-	signature := filepath.Join(root, "phase1", "beacon-evidence", "record.sig")
-	sign, err := workflowV4SignBeaconEvidenceCommand(online, signer, record, signature, strings.Repeat("a", 64))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for command, wants := range map[string][]string{
-		strings.Join(prepare, " "): {"ops prepare-beacon-evidence", "--closure /work/ceremony/public/" + closure.Record.Name, "--observations /work/ceremony/public/phase1/beacon-evidence/observations.json", "--recorded-at " + when.Format(time.RFC3339Nano)},
-		strings.Join(sign, " "):    {"ops sign", "--record-type beacon-evidence", "--reviewed-sha256 " + strings.Repeat("a", 64), "--out /work/ceremony/public/phase1/beacon-evidence/record.sig"},
-	} {
-		for _, want := range wants {
-			if !strings.Contains(command, want) {
-				t.Fatalf("command %q lacks %q", command, want)
-			}
 		}
 	}
 }

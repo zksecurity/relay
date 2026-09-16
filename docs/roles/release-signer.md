@@ -25,7 +25,7 @@ or an online upload profile onto the signing machine.
 
 ## Follow the workflow
 
-- Review the exact candidate, both phases, auditor identities, beacon evidence,
+- Review the exact candidate, both phases, any enabled auditor identities, the signed beacon records,
   witness/mirror evidence, incidents, and contribution-bound cleanup statements.
 - Supply the evidence paths when prompted and require verification to pass.
 - Authorize signing only the exact verified release manifest.

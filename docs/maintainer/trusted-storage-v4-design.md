@@ -215,8 +215,10 @@ coordinator-replay review. A replay-required policy remains available; this is
 never inferred from a CLI flag or missing field.
 
 The V4 operational bundle contains accepted chains, participant contribution and
-cleanup records, coordinator replay evidence, beacon evidence and any enabled
-observer/audit evidence. It contains no input/return custody records.
+cleanup records, coordinator replay evidence, each signed phase beacon with its
+one verified raw drand response, and any enabled observer/audit evidence. A
+second drand endpoint is only an availability fallback. It contains no
+input/return custody records.
 
 V4 uses explicit V4 bundle, final-transcript, decision and release schemas.
 Removed custody fields are absent, not encoded as empty legacy fields. V1–V3

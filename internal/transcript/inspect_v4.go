@@ -277,11 +277,6 @@ func RequiredPublicArtifactsV4(p CheckpointInspectionV4) ([]ArtifactRef, error) 
 			return nil, err
 		}
 	}
-	for _, evidence := range p.Commitments.BeaconEvidence {
-		if err := addPair(&evidence.Pair); err != nil {
-			return nil, err
-		}
-	}
 	if terminal := p.Checkpoint.Progress.Terminal; terminal != nil {
 		if err := addPair(&terminal.Record); err != nil {
 			return nil, err

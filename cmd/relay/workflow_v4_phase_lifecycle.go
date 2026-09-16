@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,17 +17,15 @@ import (
 )
 
 const (
-	workflowV4ClosePhase1    = "close-phase1"
-	workflowV4ClosePhase2    = "close-phase2"
-	workflowV4BeaconPhase1   = "record-phase1-beacon"
-	workflowV4BeaconPhase2   = "record-phase2-beacon"
-	workflowV4EvidencePhase1 = "record-phase1-beacon-evidence"
-	workflowV4EvidencePhase2 = "record-phase2-beacon-evidence"
-	workflowV4SealPhase1     = "seal-phase1"
-	workflowV4StartPhase2    = "start-phase2"
-	workflowV4Finalize       = "finalize-candidate"
-	workflowV4Review         = "freeze-release-review"
-	workflowV4Release        = "complete-signed-release"
+	workflowV4ClosePhase1  = "close-phase1"
+	workflowV4ClosePhase2  = "close-phase2"
+	workflowV4BeaconPhase1 = "record-phase1-beacon"
+	workflowV4BeaconPhase2 = "record-phase2-beacon"
+	workflowV4SealPhase1   = "seal-phase1"
+	workflowV4StartPhase2  = "start-phase2"
+	workflowV4Finalize     = "finalize-candidate"
+	workflowV4Review       = "freeze-release-review"
+	workflowV4Release      = "complete-signed-release"
 )
 
 const workflowV4QuicknetChainHash = "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971"
@@ -40,7 +37,7 @@ const (
 
 // workflowV4CoordinatorLifecycleAction selects ceremony-wide work only when no
 // participant turn remains open. It does not infer completion from local files.
-func workflowV4CoordinatorLifecycleAction(state transcript.CheckpointStateV4, commitments transcript.CheckpointCommitmentsV4, protocol transcript.DefinitionProtocol) (string, string, error) {
+func workflowV4CoordinatorLifecycleAction(state transcript.CheckpointStateV4, _ transcript.CheckpointCommitmentsV4, protocol transcript.DefinitionProtocol) (string, string, error) {
 	phase1, err := protocol.Definition.Schedule("phase1")
 	if err != nil {
 		return "", "", err
@@ -50,9 +47,6 @@ func workflowV4CoordinatorLifecycleAction(state transcript.CheckpointStateV4, co
 	}
 	if state.Progress.Phase1Closure != nil && state.Progress.Phase1Beacon == nil {
 		return workflowV4BeaconPhase1, "Fetch and verify the exact future beacon round committed by the Phase 1 closure", nil
-	}
-	if state.Progress.Phase1Beacon != nil && !workflowV4HasBeaconEvidence(commitments, "phase1") {
-		return workflowV4EvidencePhase1, "Verify the Phase 1 beacon through two independent public relay operators", nil
 	}
 	if state.Progress.Phase1Beacon != nil && state.Progress.Phase1Seal == nil {
 		return workflowV4SealPhase1, "Apply the authenticated Phase 1 beacon and commit the sealed Phase 1 transcript", nil
@@ -71,9 +65,6 @@ func workflowV4CoordinatorLifecycleAction(state transcript.CheckpointStateV4, co
 		if state.Progress.Phase2Closure != nil && state.Progress.Phase2Beacon == nil {
 			return workflowV4BeaconPhase2, "Fetch and verify the exact future beacon round committed by the Phase 2 closure", nil
 		}
-		if state.Progress.Phase2Beacon != nil && !workflowV4HasBeaconEvidence(commitments, "phase2") {
-			return workflowV4EvidencePhase2, "Verify the Phase 2 beacon through two independent public relay operators", nil
-		}
 		if state.Progress.Phase2Beacon != nil && state.Progress.FinalCandidate == nil {
 			return workflowV4Finalize, "Replay both completed phases and prepare the coordinator-signed final candidate", nil
 		}
@@ -87,23 +78,7 @@ func workflowV4CoordinatorLifecycleAction(state transcript.CheckpointStateV4, co
 	return "", "", nil
 }
 
-func workflowV4HasBeaconEvidence(commitments transcript.CheckpointCommitmentsV4, phase string) bool {
-	for _, evidence := range commitments.BeaconEvidence {
-		if evidence.Phase == phase {
-			return true
-		}
-	}
-	return false
-}
-
 func runWorkflowV4CoordinatorLifecycle(ui *coordinatorWizard, action string, snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, online, signer guidedProfile, inspector transcript.Inspector) error {
-	if action == workflowV4EvidencePhase1 || action == workflowV4EvidencePhase2 {
-		phase := "phase1"
-		if action == workflowV4EvidencePhase2 {
-			phase = "phase2"
-		}
-		return runWorkflowV4BeaconEvidenceLifecycle(ui, phase, snapshot, online, signer, inspector)
-	}
 	if action == workflowV4BeaconPhase1 || action == workflowV4BeaconPhase2 {
 		phase := "phase1"
 		if action == workflowV4BeaconPhase2 {
@@ -671,7 +646,19 @@ func runWorkflowV4BeaconLifecycle(ui *coordinatorWizard, phase string, snapshot 
 }
 
 func fetchWorkflowV4QuicknetRound(round uint64, destination string) error {
-	return fetchWorkflowV4QuicknetRoundFrom(workflowV4ProtocolLabsDrand, round, destination)
+	return fetchWorkflowV4QuicknetRoundUsing(round, destination, fetchWorkflowV4QuicknetRoundFrom)
+}
+
+func fetchWorkflowV4QuicknetRoundUsing(round uint64, destination string, fetch func(string, uint64, string) error) error {
+	var failures []string
+	for _, origin := range []string{workflowV4ProtocolLabsDrand, workflowV4CloudflareDrand} {
+		if err := fetch(origin, round, destination); err == nil {
+			return nil
+		} else {
+			failures = append(failures, err.Error())
+		}
+	}
+	return fmt.Errorf("download committed drand round from every configured endpoint: %s", strings.Join(failures, "; "))
 }
 
 func fetchWorkflowV4QuicknetRoundFrom(origin string, round uint64, destination string) error {
@@ -703,170 +690,6 @@ func fetchWorkflowV4QuicknetRoundFrom(origin string, round uint64, destination s
 		return err
 	}
 	return setupWriteBytesNewOrExact(destination, raw, 0o600)
-}
-
-type workflowV4BeaconObservationInput struct {
-	RelayID         string `json:"relay_id"`
-	OperatorID      string `json:"operator_id"`
-	Endpoint        string `json:"endpoint"`
-	RawResponseName string `json:"raw_response_name"`
-	RetrievedAt     string `json:"retrieved_at"`
-}
-
-type workflowV4BeaconObservationSet struct {
-	Schema       string                             `json:"schema"`
-	Observations []workflowV4BeaconObservationInput `json:"observations"`
-}
-
-func runWorkflowV4BeaconEvidenceLifecycle(ui *coordinatorWizard, phase string, snapshot storagefirst.SnapshotV4, online, signer guidedProfile, inspector transcript.Inspector) error {
-	state, err := snapshot.State()
-	if err != nil {
-		return err
-	}
-	var closure, beacon *transcript.SignedArtifactRefs
-	if phase == "phase1" {
-		closure, beacon = state.Progress.Phase1Closure, state.Progress.Phase1Beacon
-	} else if phase == "phase2" {
-		closure, beacon = state.Progress.Phase2Closure, state.Progress.Phase2Beacon
-	} else {
-		return errors.New("unknown beacon evidence phase")
-	}
-	if closure == nil || beacon == nil {
-		return errors.New("authenticated phase closure and beacon are required before relay evidence")
-	}
-	journey, err := inspector.Journey()
-	if err != nil {
-		return fmt.Errorf("inspect signed beacon round: %w", err)
-	}
-	var round uint64
-	for _, candidate := range journey.Phases {
-		if candidate.Phase == phase {
-			round = candidate.BeaconRound
-		}
-	}
-	if round == 0 {
-		return errors.New("proof-tool did not report the signed beacon round")
-	}
-	if err := ui.confirm(fmt.Sprintf("Download Quicknet round %d from Protocol Labs and Cloudflare, verify both responses, and sign the evidence", round), "VERIFY TWO BEACON RELAYS"); err != nil {
-		return err
-	}
-	root := filepath.Join(online.Work, "ceremony", "public")
-	evidenceDir := filepath.Join(root, phase, "beacon-evidence")
-	if err := ensureWorkflowV4Directory(online.Work, evidenceDir); err != nil {
-		return err
-	}
-	type relay struct{ id, operator, origin, filename string }
-	relays := []relay{
-		{id: "cloudflare-quicknet", operator: "cloudflare", origin: workflowV4CloudflareDrand, filename: "cloudflare-response.json"},
-		{id: "protocol-labs-quicknet", operator: "protocol-labs", origin: workflowV4ProtocolLabsDrand, filename: "protocol-labs-response.json"},
-	}
-	evidencePaths := make([]string, 0, len(relays))
-	for _, relay := range relays {
-		evidencePaths = append(evidencePaths, filepath.Join(evidenceDir, relay.filename))
-	}
-	observationsPath := filepath.Join(evidenceDir, "observations.json")
-	if !regularPreparationFile(observationsPath) {
-		observations := workflowV4BeaconObservationSet{Schema: "proof-tool-mpc-beacon-observation-input-v1", Observations: []workflowV4BeaconObservationInput{}}
-		for index, relay := range relays {
-			path := evidencePaths[index]
-			if err := fetchWorkflowV4QuicknetRoundFrom(relay.origin, round, path); err != nil {
-				return fmt.Errorf("download %s response: %w", relay.operator, err)
-			}
-			name, err := filepath.Rel(root, path)
-			if err != nil {
-				return err
-			}
-			endpoint := fmt.Sprintf("%s/%s/public/%d", relay.origin, workflowV4QuicknetChainHash, round)
-			observations.Observations = append(observations.Observations, workflowV4BeaconObservationInput{RelayID: relay.id, OperatorID: relay.operator, Endpoint: endpoint, RawResponseName: filepath.ToSlash(name), RetrievedAt: time.Now().UTC().Format(time.RFC3339Nano)})
-		}
-		rawObservations, err := json.Marshal(observations)
-		if err != nil {
-			return err
-		}
-		if err := setupWriteBytesNewOrExact(observationsPath, append(rawObservations, '\n'), 0o600); err != nil {
-			return err
-		}
-	}
-	preparedDir := filepath.Join(evidenceDir, "prepared")
-	canonical := filepath.Join(preparedDir, "canonical.json")
-	signature := filepath.Join(evidenceDir, "record.sig")
-	if !regularPreparationFile(canonical) {
-		command, err := workflowV4PrepareBeaconEvidenceCommand(online, signer, *closure, observationsPath, preparedDir, time.Now().UTC())
-		if err != nil {
-			return err
-		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
-			return err
-		}
-	}
-	canonicalBytes, err := os.ReadFile(canonical)
-	if err != nil {
-		return err
-	}
-	digest := fmt.Sprintf("%x", sha256.Sum256(canonicalBytes))
-	if !regularPreparationFile(signature) {
-		if err := ui.confirm("Sign the exact verified two-operator beacon evidence (SHA-256 "+digest+")", "SIGN BEACON EVIDENCE"); err != nil {
-			return err
-		}
-		command, err := workflowV4SignBeaconEvidenceCommand(online, signer, canonical, signature, digest)
-		if err != nil {
-			return err
-		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
-			return err
-		}
-	}
-	basis := strings.TrimPrefix(snapshot.Head().Record.Digest.SHA256, "sha256:")[:16]
-	outputDir := filepath.Join(root, "checkpoints", phase, "lifecycle", "beacon-evidence-"+basis)
-	if _, err := os.Lstat(filepath.Join(outputDir, "checkpoint.json")); errors.Is(err, os.ErrNotExist) {
-		command, err := workflowV4RecordCommand(snapshot, online, signer, "beacon-evidence-recorded", canonical, signature, evidencePaths, outputDir)
-		if err != nil {
-			return err
-		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
-			return err
-		}
-	} else if err != nil {
-		return err
-	}
-	return runWorkflowV4CommitCommand(online, outputDir)
-}
-
-func workflowV4PrepareBeaconEvidenceCommand(online, signer guidedProfile, closure transcript.SignedArtifactRefs, observations, out string, recordedAt time.Time) ([]string, error) {
-	root := filepath.Join(online.Work, "ceremony", "public")
-	mapWork := func(path string) (string, error) { return pathWithin(signer.Work, path, "/work") }
-	ceremony, err := mapWork(filepath.Join(root, "ceremony.json"))
-	if err != nil {
-		return nil, err
-	}
-	ceremonySignature, _ := mapWork(filepath.Join(root, "ceremony.sig"))
-	transcriptRoot, _ := mapWork(root)
-	closureRecord, _ := mapWork(filepath.Join(root, filepath.FromSlash(closure.Record.Name)))
-	closureSignature, _ := mapWork(filepath.Join(root, filepath.FromSlash(closure.Signature.Name)))
-	observationsPath, _ := mapWork(observations)
-	outDir, _ := mapWork(out)
-	coordinatorKey, err := pathWithin(signer.Trust, filepath.Join(online.Trust, "setup-coordinator.hex"), "/trust")
-	if err != nil {
-		return nil, err
-	}
-	return []string{"mpc-ceremony", "ops", "prepare-beacon-evidence", "--ceremony", ceremony, "--ceremony-signature", ceremonySignature, "--coordinator-public-key-file", coordinatorKey, "--transcript-root", transcriptRoot, "--closure", closureRecord, "--closure-signature", closureSignature, "--observations", observationsPath, "--recorded-at", recordedAt.UTC().Format(time.RFC3339Nano), "--out-dir", outDir}, nil
-}
-
-func workflowV4SignBeaconEvidenceCommand(online, signer guidedProfile, record, signature, reviewedSHA string) ([]string, error) {
-	root := filepath.Join(online.Work, "ceremony", "public")
-	mapWork := func(path string) (string, error) { return pathWithin(signer.Work, path, "/work") }
-	ceremony, err := mapWork(filepath.Join(root, "ceremony.json"))
-	if err != nil {
-		return nil, err
-	}
-	ceremonySignature, _ := mapWork(filepath.Join(root, "ceremony.sig"))
-	recordPath, _ := mapWork(record)
-	signaturePath, _ := mapWork(signature)
-	coordinatorKey, err := pathWithin(signer.Trust, filepath.Join(online.Trust, "setup-coordinator.hex"), "/trust")
-	if err != nil {
-		return nil, err
-	}
-	return []string{"mpc-ceremony", "ops", "sign", "--ceremony", ceremony, "--ceremony-signature", ceremonySignature, "--coordinator-public-key-file", coordinatorKey, "--record-type", "beacon-evidence", "--record", recordPath, "--signing-key", "/keys/signing.hex", "--reviewed", "--reviewed-sha256", reviewedSHA, "--out", signaturePath}, nil
 }
 
 func workflowV4BeaconCommand(online, signer guidedProfile, phase string, closure transcript.SignedArtifactRefs, response string, publishedAt time.Time) ([]string, error) {

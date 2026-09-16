@@ -1203,7 +1203,8 @@ The model must check at least these invariants:
     action, while every supplied artifact for an enabled role is verified even
     after its minimum is satisfied.
 22. Zero witnesses removes only witness evidence; it never removes the future
-    beacon, committed round or multi-relay verification.
+    beacon or verification of one signed drand response for the committed round.
+    A second endpoint is an availability fallback, not additional evidence.
 23. GO accepts `NOT_REQUIRED` only for a gate whose matching authenticated
     minimum is zero.
 24. Delivery retirement does not reject an artifact; candidate rejection blocks

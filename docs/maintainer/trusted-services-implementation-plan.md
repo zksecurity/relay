@@ -98,14 +98,12 @@ review closed a disclosure-size mismatch by sharing the existing 1 MiB bundle
 limit and bounded new observer indices. Audit gates and
 the release path remain incomplete; this is not readiness to publish V4.
 
-Witness and multi-relay beacon evidence also have typed edges. Witnesses bind
-the exact committed closure and enrolled key; partial collection is allowed,
-with the full signed minimum checked at sealing/final-candidate preparation.
-Multi-relay evidence verifies every raw drand response and is still required
-when witnesses are disabled. Independent review found no material mismatch with
-the unchanged bundle. The subprocess tests cover observer-disabled/enabled runs
-and refuse sealing when witness or multi-relay evidence is omitted. Historical
-responses and fixture relay-operator statements do not establish live retrieval.
+Witness evidence has a typed edge when witnesses are enabled. The ordinary
+signed phase-beacon record binds one raw drand response to the committed future
+round and is sufficient after proof-tool verifies the drand signature. Relay
+tries a second endpoint only when the first is unavailable or invalid; it does
+not create a separate two-operator evidence record. Witnesses are optional and
+are not part of the initial storage-first role journey.
 
 Final-candidate preparation now derives replay inputs from the authenticated
 predecessor checkpoint, replays both phases through the existing full verifier,
@@ -196,8 +194,8 @@ before V4 can ship:
   preserve its result ID, correct the receipt and retire/reallocate delivery if
   needed. Never permanently reject otherwise-valid candidate bytes because a
   coordinator-created receipt was missing or malformed.
-- Add typed evidence-recorded edges for enrollments, mirror/witness receipts,
-  multi-relay beacon evidence, audits and applicable governance. They preserve
+- Add typed evidence-recorded edges for enrollments, optional mirror/witness
+  receipts, audits and applicable governance. They preserve
   protocol progress and deliveries. Derive readiness from authenticated ancestry
   rather than storing duplicate mutable counters. Do not count disabled controls.
 - Preserve cross-phase beacon separation at checkpoint preparation, not merely
@@ -208,9 +206,10 @@ before V4 can ship:
   at most 82 required enrollments, below the existing 128 limit. A regression
   assertion guards that bound; no bundle-schema change is needed for capacity.
 
-Gate outbound delivery on participant enrollment, closure on each head's mirror
-minimum, sealing/final-candidate preparation on the applicable witness and beacon
-evidence, and release signing on enrollment, bundle and exact-candidate audits.
+Gate outbound delivery on participant enrollment, closure on each enabled
+head-mirror minimum, sealing/final-candidate preparation on any enabled witness
+minimum and the ordinary signed beacon, and release signing on enrollment,
+bundle and any enabled exact-candidate audits.
 External security audits remain part of the later production decision. Reuse
 operational bundle v3 and existing signed records where their meaning is unchanged;
 do not add another participant envelope or manual transfer step.
@@ -593,7 +592,8 @@ not user-maintained file lists. Require a frozen final candidate and no final
 release. Sort every signed-record collection by logical record name. For each
 accepted turn, use its exact committed chain prefix, input receipt and original
 handoff, accepted return handoff/receipt, and matching mirror records. Use the
-committed closures, witness records and multi-relay raw evidence for each phase.
+committed closures, ordinary signed beacon and its single verified raw drand
+response, plus witness records only when witnessing is enabled.
 Include the complete committed enrollment collection, including roster members
 who did not contribute in a threshold rehearsal. Run the existing unsigned
 bundle verifier before returning anything for review/signing. This operation
@@ -721,7 +721,8 @@ not a caller-selectable skip flag. Final review separately requires the exact
 coordinator replay claim; a standalone bundle check does not prove that replay.
 Released V1–V3 payload checks remain unchanged. The dependency-only test uses
 the copied definition/signature too, retaining only the independent public-key
-trust anchor externally; missing signed records and raw beacon evidence fail.
+trust anchor externally; missing signed records and the signed beacon's exact raw
+drand response fail.
 The Linux ceremony/CLI suites and vet pass this correction, including explicit
 V3 missing-payload rejection and all three V4 real tiny fixture configurations.
 Before inlining the dependency inventory into FinalTranscript V3, test its
