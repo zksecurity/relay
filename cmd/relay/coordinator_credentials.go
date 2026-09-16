@@ -20,6 +20,10 @@ func sameProfileExceptCredentials(a, b guidedProfile) bool {
 // Rotate only credential references, never images, release pins, identities or
 // ceremony bindings. Preserve the previous profile and all operation attempts.
 func (w *coordinatorWizard) refreshWorkflowCredentials(dir string, p guidedProfile) error {
+	return w.refreshWorkflowCredentialsExcept(dir, p, "")
+}
+
+func (w *coordinatorWizard) refreshWorkflowCredentialsExcept(dir string, p guidedProfile, allowedAttemptID string) error {
 	next := p
 	next.Credentials, next.R2Parent, next.R2Control = w.d.Credentials, w.d.R2Parent, w.d.R2Control
 	needsRefresh := !reflect.DeepEqual(next, p)
@@ -58,6 +62,9 @@ func (w *coordinatorWizard) refreshWorkflowCredentials(dir string, p guidedProfi
 		}
 		for _, a := range latest {
 			if a.Status == "running" || a.Status == "failed" {
+				if allowedAttemptID != "" && a.ID == allowedAttemptID && a.RecoveryClass == recoveryPublication {
+					continue
+				}
 				return errCredentialsNeedRecovery
 			}
 		}

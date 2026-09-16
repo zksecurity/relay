@@ -1,5 +1,25 @@
 ## What changed
 
+- Added a narrowly scoped recovery command for the affected 1828 coordinator
+  release when its first Phase 1 publication was interrupted by expired AWS
+  session credentials. The command accepts only the retained authenticated
+  index-0 publication, rotates only credential-file references, verifies any
+  existing remote bytes, uses create-only writes for missing objects and the
+  initial head, and resumes the original frozen workflow only after complete
+  reconciliation. It refuses advanced, closed, conflicting, ambiguous or
+  differently pinned workflows.
+  Ordinary `coordinator publish` has no recovery switch. The hotfix launcher
+  invokes a container-only compatibility command with the locked 1828 profile
+  and workflow mounted read-only, then revalidates the complete profile,
+  runtime, storage target and retained attempt after credential rotation.
+  A retry also recognizes a completion checkpoint that landed despite an
+  ambiguous local save result, without publishing again.
+  In the original coordinator preparation, choose `6) Storage settings`, then
+  AWS and the same existing resources to capture a fresh credential snapshot;
+  do not change any storage value. Then run the hotfix launcher's
+  `relay ceremony recover-publication CEREMONY_NAME`; on success, resume with
+  the original release's start script.
+
 - Reworked the ceremony flow map into seven explicit lanes covering identity
   collection, enrollment and storage distribution, participant custody turns,
   per-head mirror evidence, closure and beacon timing, phase transition,
@@ -88,6 +108,11 @@
   retry a command, complete a task, or overwrite an existing report.
 
 ## Tessera compatibility
+
+The recovery command does not change setup contracts, signed definitions,
+ceremony data, proof-tool pins, Tessera fields or selected releases. It is an
+explicit compatibility bridge for one frozen Relay release and does not make
+the hotfix release the ceremony runtime. No Tessera change is required.
 
 Setup contracts, ceremony data, and Tessera request fields are unchanged.
 The ceremony-flow documentation does not change Tessera integration behavior.

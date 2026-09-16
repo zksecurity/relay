@@ -1,0 +1,1 @@
+{"release_commit":"1828c720da11a3f9a83ba905a6c3352b6ca06615","schema":"relay-guided-role-v1","name":"frozen-1828-golden","role":"coordinator","image":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","platform":"linux/arm64","work":"/fixture/work","trust":"/fixture/trust","keys":"/fixture/keys","aws_credentials":"/fixture/old.aws"}
