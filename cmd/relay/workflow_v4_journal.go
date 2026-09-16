@@ -213,7 +213,7 @@ func (j *workflowV4Journal) pending() (*workflowV4Operation, error) {
 		return nil, errors.New("reopen the V4 workspace before inspecting saved operations")
 	}
 	for _, operation := range j.state.Operations {
-		if operation.Status != "reconciled" && operation.Status != "abandoned" {
+		if !workflowV4OperationResolved(operation.Status) {
 			raw, err := json.Marshal(operation)
 			if err != nil {
 				return nil, err
@@ -241,7 +241,7 @@ func (j *workflowV4Journal) prepare(plan workflowV4OperationPlan) error {
 		return err
 	}
 	for _, earlier := range j.state.Operations {
-		if earlier.Status != "abandoned" && plan.Kind == "contribute" && earlier.Plan.Kind == plan.Kind && earlier.Plan.Scope == plan.Scope {
+		if earlier.Status != "abandoned" && earlier.Status != "failed-no-effects" && plan.Kind == "contribute" && earlier.Plan.Kind == plan.Kind && earlier.Plan.Scope == plan.Scope {
 			return errors.New("this turn already has a computation operation; inspect its retained result instead of computing again")
 		}
 	}
@@ -352,6 +352,11 @@ func (j *workflowV4Journal) transition(id, status string) error {
 			return errors.New("V4 operation may have run")
 		}
 		op.Resolved = &now
+	case "failed-no-effects":
+		if op.Status != "running" {
+			return errors.New("only a running operation may be resolved as having no effects")
+		}
+		op.Resolved = &now
 	default:
 		return errors.New("unsupported V4 operation status")
 	}
@@ -397,6 +402,9 @@ func validateWorkflowV4Pair(pair transcript.SignedArtifactRefs) error {
 		if err := validateWorkflowV4Ref(ref); err != nil {
 			return err
 		}
+		if ref.Digest.Blake2b256 == "" {
+			return errors.New("signed V4 protocol references require both authenticated digests")
+		}
 	}
 	return nil
 }
@@ -405,8 +413,11 @@ func validateWorkflowV4Ref(ref transcript.ArtifactRef) error {
 	if err := transcript.ValidateName(ref.Name); err != nil {
 		return err
 	}
-	if !validCoordinatorCommitDigest(ref.Digest.SHA256) || !validCoordinatorCommitDigest(strings.Replace(ref.Digest.Blake2b256, "blake2b256:", "sha256:", 1)) || !strings.HasPrefix(ref.Digest.Blake2b256, "blake2b256:") || ref.Digest.Size < 1 || ref.Digest.Size > 16<<30 {
+	if !validCoordinatorCommitDigest(ref.Digest.SHA256) || ref.Digest.Size < 1 || ref.Digest.Size > 16<<30 {
 		return errors.New("invalid V4 retained file digest")
+	}
+	if ref.Digest.Blake2b256 != "" && (!validCoordinatorCommitDigest(strings.Replace(ref.Digest.Blake2b256, "blake2b256:", "sha256:", 1)) || !strings.HasPrefix(ref.Digest.Blake2b256, "blake2b256:")) {
+		return errors.New("invalid V4 retained BLAKE2b-256 digest")
 	}
 	return nil
 }
@@ -431,7 +442,7 @@ func validateWorkflowV4State(s workflowV4State, binding workflowV4Binding, path 
 		if err := validateWorkflowV4Plan(op.Plan, binding); err != nil {
 			return err
 		}
-		if op.Plan.Kind == "contribute" && op.Status != "abandoned" {
+		if op.Plan.Kind == "contribute" && op.Status != "abandoned" && op.Status != "failed-no-effects" {
 			if computations[op.Plan.Scope] {
 				return errors.New("V4 journal repeats a computation for the same turn")
 			}
@@ -461,6 +472,10 @@ func validateWorkflowV4State(s workflowV4State, binding workflowV4Binding, path 
 			if op.Started != nil || op.Returned != nil || op.Resolved == nil {
 				return errors.New("invalid abandoned V4 operation")
 			}
+		case "failed-no-effects":
+			if op.Started == nil || op.Returned != nil || op.Resolved == nil {
+				return errors.New("invalid no-effects V4 operation")
+			}
 		default:
 			return errors.New("unknown V4 operation status")
 		}
@@ -475,11 +490,15 @@ func validateWorkflowV4State(s workflowV4State, binding workflowV4Binding, path 
 			}
 			previous = *stamp
 		}
-		if n != len(s.Operations)-1 && op.Status != "reconciled" && op.Status != "abandoned" {
+		if n != len(s.Operations)-1 && !workflowV4OperationResolved(op.Status) {
 			return errors.New("new work follows an unresolved V4 operation")
 		}
 	}
 	return nil
+}
+
+func workflowV4OperationResolved(status string) bool {
+	return status == "reconciled" || status == "abandoned" || status == "failed-no-effects"
 }
 
 func validateWorkflowV4Plan(p workflowV4OperationPlan, b workflowV4Binding) error {
@@ -610,6 +629,15 @@ func validateWorkflowV4PlanPaths(p workflowV4OperationPlan, b workflowV4Binding)
 			return errors.New("V4 input is outside retained public mounts")
 		}
 		retained := filepath.Join(b.Work, "workflow-v4", "inputs", p.ID, filepath.FromSlash(input.Ref.Name))
+		if p.Kind != "contribute" {
+			inputsRoot := filepath.Join(b.Work, "workflow-v4", "inputs")
+			if relative, err := filepath.Rel(inputsRoot, input.Path); err == nil {
+				parts := strings.Split(filepath.ToSlash(relative), "/")
+				if len(parts) > 1 && validFlowAttemptID(parts[0]) && strings.Join(parts[1:], "/") == input.Ref.Name {
+					retained = input.Path
+				}
+			}
+		}
 		record = record || (input.Ref == p.Predecessor.Record && input.Path == retained)
 		signature = signature || (input.Ref == p.Predecessor.Signature && input.Path == retained)
 	}
@@ -627,7 +655,8 @@ func validateWorkflowV4PlanPaths(p workflowV4OperationPlan, b workflowV4Binding)
 			return err
 		}
 		rel, _ := filepath.Rel(b.Work, output)
-		if strings.HasPrefix(rel, "workflow") || strings.HasPrefix(rel, ".relay-") {
+		resultPath := filepath.Join(b.Work, "workflow-v4", "results", p.ID+".json")
+		if (strings.HasPrefix(rel, "workflow") && !(p.Kind == "upload-candidate" && output == resultPath)) || strings.HasPrefix(rel, ".relay-") {
 			return errors.New("V4 output cannot replace recovery state")
 		}
 		for path := range seen {

@@ -38,6 +38,8 @@ const (
 	dockerMacSwapUnassessed   = "not-assessed-macos-host"
 )
 
+var errContributorNotCreated = errors.New("contributor container was not created")
+
 type dockerCommandClient interface {
 	Output(args ...string) ([]byte, []byte, error)
 	Attached(stdout, stderr io.Writer, args ...string) error
@@ -481,10 +483,28 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 			return nil, fmt.Errorf("create contributor response was uncertain and reconciliation failed: %w", reconcileErr)
 		}
 		if !found {
-			_ = os.Remove(d.activeStatePath())
-			_ = syncDirectory(filepath.Dir(d.activeStatePath()))
-			_ = os.RemoveAll(handoff)
-			return nil, fmt.Errorf("create contributor container: %s", dockerDiagnostic(stderr, err))
+			if removeErr := os.Remove(d.activeStatePath()); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				return nil, fmt.Errorf("create contributor failed and its retained intent could not be removed: %w", removeErr)
+			}
+			if syncErr := syncDirectory(filepath.Dir(d.activeStatePath())); syncErr != nil {
+				return nil, fmt.Errorf("create contributor failed and intent removal could not be synced: %w", syncErr)
+			}
+			if d.executionIntentPath != "" {
+				var retained dockerActiveState
+				if readErr := setupReadJSON(d.executionIntentPath, &retained); readErr != nil || !reflect.DeepEqual(retained, state) {
+					return nil, errors.New("create contributor failed but its V4 invocation record changed; inspect before continuing")
+				}
+				if removeErr := os.Remove(d.executionIntentPath); removeErr != nil {
+					return nil, fmt.Errorf("create contributor failed and its V4 invocation could not be removed: %w", removeErr)
+				}
+				if syncErr := syncDirectory(filepath.Dir(d.executionIntentPath)); syncErr != nil {
+					return nil, fmt.Errorf("create contributor failed and V4 invocation removal could not be synced: %w", syncErr)
+				}
+			}
+			if removeErr := os.RemoveAll(handoff); removeErr != nil {
+				return nil, fmt.Errorf("create contributor failed and its empty handoff could not be removed: %w", removeErr)
+			}
+			return nil, fmt.Errorf("%w: %s", errContributorNotCreated, dockerDiagnostic(stderr, err))
 		}
 		stdout = []byte(containerID)
 	}
@@ -578,6 +598,13 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 	if err := validateContributionHandoff(publicCandidate); err != nil {
 		_ = os.RemoveAll(handoff)
 		return nil, err
+	}
+	// Publish the public contribution and its lifecycle evidence as one
+	// directory rename. A crash must not expose a candidate that cannot later
+	// prove which contributor container was removed.
+	if err := writeJSONNoReplace(filepath.Join(publicCandidate, dockerLifecycleLogName), receipt, 0o600); err != nil {
+		_ = os.RemoveAll(handoff)
+		return nil, fmt.Errorf("stage contributor lifecycle evidence: %w", err)
 	}
 	if _, err := os.Lstat(o.outDir); err == nil || !errors.Is(err, os.ErrNotExist) {
 		_ = os.RemoveAll(handoff)

@@ -34,7 +34,7 @@ func (j *workflowV4Journal) executePreparedContribution(id, dockerCLI string, sn
 	if err != nil {
 		return err
 	}
-	if r.Action != "contribute" || !r.Ready || r.Scope != p.Scope {
+	if r.Action != "contribute" || !r.Ready || r.Scope != p.Scope || r.AttemptID != p.AttemptID {
 		return errors.New("authenticated turn does not authorize this saved contribution")
 	}
 	if !filepath.IsAbs(dockerCLI) || filepath.Clean(dockerCLI) != dockerCLI {
@@ -63,6 +63,11 @@ func (j *workflowV4Journal) executePreparedContribution(id, dockerCLI string, sn
 		return j.transition(id, "running")
 	}
 	if err := runNextAt(o, pos, when); err != nil {
+		if errors.Is(err, errContributorNotCreated) {
+			if transitionErr := j.transition(id, "failed-no-effects"); transitionErr != nil {
+				return errors.Join(err, transitionErr)
+			}
+		}
 		return err
 	}
 	return j.transition(id, "returned-needs-verification")

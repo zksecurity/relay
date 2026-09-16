@@ -32,7 +32,7 @@ func TestV4ParticipantTurnRecommendationsAndRetries(t *testing.T) {
 			who := view.Scope.ParticipantID
 			now := time.Date(2026, 9, 16, 0, 0, 0, 0, time.UTC)
 			attempt := strings.Repeat("ab", 16)
-			index.Turns = []transcript.TurnCommitmentV4{{Scope: view.Scope, Allocations: []transcript.CandidateAllocationV4{{CheckpointSequence: 1, AttemptID: attempt, AllocatedAt: now.Format(time.RFC3339)}}}}
+			index.Turns = []transcript.TurnCommitmentV4{{Scope: view.Scope, Allocations: []transcript.CandidateAllocationV4{{CheckpointSequence: 1, Checkpoint: allocationPairV4(1), AttemptID: attempt, AllocatedAt: now.Format(time.RFC3339)}}}}
 			c.Deliveries = []transcript.DeliverySlotV4{{Scope: view.Scope, Kind: "candidate", AttemptID: attempt, Status: "allocated"}}
 			local := LocalTurnV4{Scope: view.Scope}
 			check := func(action string, ready bool) TurnRecommendationV4 {
@@ -63,7 +63,7 @@ func TestV4ParticipantTurnRecommendationsAndRetries(t *testing.T) {
 			check("wait-for-replacement-attempt", false)
 			replacement := strings.Repeat("cd", 16)
 			c.Deliveries = append(c.Deliveries, transcript.DeliverySlotV4{Scope: view.Scope, Kind: "candidate", AttemptID: replacement, Status: "allocated"})
-			index.Turns[0].Allocations = append([]transcript.CandidateAllocationV4{{CheckpointSequence: 2, AttemptID: replacement, AllocatedAt: now.Add(time.Minute).Format(time.RFC3339)}}, index.Turns[0].Allocations...)
+			index.Turns[0].Allocations = append([]transcript.CandidateAllocationV4{{CheckpointSequence: 2, Checkpoint: allocationPairV4(2), AttemptID: replacement, AllocatedAt: now.Add(time.Minute).Format(time.RFC3339)}}, index.Turns[0].Allocations...)
 			local.Grant = &TurnGrantV4{AttemptID: replacement, ExpiresAt: now.Add(time.Hour)}
 			check("upload-candidate", true)
 			c.Deliveries[0].Status = "rejected"
@@ -88,7 +88,7 @@ func TestV4CoordinatorVerifiesSubmissionBeforeAnotherAction(t *testing.T) {
 	_, p, c, index, enrollments, view := enrolledTurnV4(t, "phase1")
 	now := time.Now().UTC()
 	attempt := strings.Repeat("ab", 16)
-	index.Turns = []transcript.TurnCommitmentV4{{Scope: view.Scope, Allocations: []transcript.CandidateAllocationV4{{CheckpointSequence: 1, AttemptID: attempt, AllocatedAt: now.Format(time.RFC3339)}}}}
+	index.Turns = []transcript.TurnCommitmentV4{{Scope: view.Scope, Allocations: []transcript.CandidateAllocationV4{{CheckpointSequence: 1, Checkpoint: allocationPairV4(1), AttemptID: attempt, AllocatedAt: now.Format(time.RFC3339)}}}}
 	c.Deliveries = []transcript.DeliverySlotV4{{Scope: view.Scope, Kind: "candidate", AttemptID: attempt, Status: "allocated"}}
 	local := LocalTurnV4{Scope: view.Scope}
 	s := encodeTurnFixtureV4(t, c, index, enrollments)

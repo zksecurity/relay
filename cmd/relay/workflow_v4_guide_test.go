@@ -103,7 +103,7 @@ func TestWorkflowV4StatusDoesNotInventLocalReadiness(t *testing.T) {
 	turn := storagefirst.TurnViewV4{Stage: storagefirst.TurnCandidateV4, Scope: transcript.ContributionScopeV4{Phase: "phase2", Index: 2, ParticipantID: "participant-test"}}
 	pending := &workflowV4Operation{Plan: workflowV4OperationPlan{Kind: "contribute"}, Status: "running"}
 	printWorkflowV4Status(&out, "participant", c, turn, pending, time.Date(2026, 9, 16, 0, 0, 0, 0, time.UTC))
-	for _, want := range []string{"Phase 2: 1", "phase2 turn 2", "Retained operation needs inspection", "not be repeated automatically", "not connected", "mathematics were not replayed"} {
+	for _, want := range []string{"Phase 2: 1", "phase2 turn 2", "Retained operation needs inspection", "not be repeated automatically", "mathematics were not replayed"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("missing %q: %s", want, out.String())
 		}

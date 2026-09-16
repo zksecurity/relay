@@ -14,8 +14,8 @@ func TestContributionInventoryV4ProjectionBoundary(t *testing.T) {
 		computed.Files = append(computed.Files, inspectionTestRef(name))
 	}
 	complete := computed
-	complete.Files = append(append([]ArtifactRef{}, computed.Files...), inspectionTestRef("return-handoff.json"), inspectionTestRef("return-handoff.sig"))
-	p := ContributionInventoryInspectionV4{Schema: "proof-tool-mpc-contribution-inventory-inspection-v4", Depth: "candidate-signatures-and-digests", SignaturesVerified: true, PayloadDigestVerified: true, Inventory: ContributionInventoryFactsV4{Scope: scope, Predecessor: pair, Computed: computed, ComputedCandidateID: "sha256:" + hex64, Complete: &complete, CandidateResultID: "sha256:" + strings.Repeat("b", 64)}}
+	complete.Files = append([]ArtifactRef{}, computed.Files...)
+	p := ContributionInventoryInspectionV4{Schema: "proof-tool-mpc-contribution-inventory-inspection-v4", Depth: "candidate-signatures-and-digests", SignaturesVerified: true, PayloadDigestVerified: true, Inventory: ContributionInventoryFactsV4{Scope: scope, Predecessor: pair, Computed: computed, ComputedCandidateID: "sha256:" + hex64, Complete: &complete, CandidateResultID: "sha256:" + hex64}}
 	check := func(p ContributionInventoryInspectionV4) error {
 		i := testInspector()
 		i.run = inspectionTestRunner(t, inspectionResult{Schema: commandResultSchema, OK: true, Command: "inspect contribution-inventory-v4", ContributionInventoryV4: &p}, "inspect contribution-inventory-v4")
@@ -33,11 +33,11 @@ func TestContributionInventoryV4ProjectionBoundary(t *testing.T) {
 		"erasure":     func(p *ContributionInventoryInspectionV4) { p.PhysicalErasureVerified = true },
 		"unchecked":   func(p *ContributionInventoryInspectionV4) { p.SignaturesVerified = false },
 		"partial": func(p *ContributionInventoryInspectionV4) {
-			p.Inventory.Complete.Files = p.Inventory.Complete.Files[:6]
+			p.Inventory.Complete.Files = p.Inventory.Complete.Files[:4]
 		},
 		"changed-five": func(p *ContributionInventoryInspectionV4) { p.Inventory.Complete.Files[0].Digest.Size++ },
-		"same-id": func(p *ContributionInventoryInspectionV4) {
-			p.Inventory.CandidateResultID = p.Inventory.ComputedCandidateID
+		"different-id": func(p *ContributionInventoryInspectionV4) {
+			p.Inventory.CandidateResultID = "sha256:" + strings.Repeat("b", 64)
 		},
 		"oversize":         func(p *ContributionInventoryInspectionV4) { p.Inventory.Computed.Files[2].Digest.Size = 16<<30 + 1 },
 		"name":             func(p *ContributionInventoryInspectionV4) { p.Inventory.Computed.Files[0].Name = "private.key" },

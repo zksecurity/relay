@@ -236,8 +236,8 @@ func TestDeliveryRejectsPrivateAndIncompleteInventories(t *testing.T) {
 		t.Fatal("unpaired return evidence accepted")
 	}
 	i["return-handoff.json"] = 1024
-	if err := i.validateKind("candidate"); err != nil {
-		t.Fatal(err)
+	if err := i.validateKind("candidate"); err == nil {
+		t.Fatal("obsolete return-custody files accepted")
 	}
 }
 

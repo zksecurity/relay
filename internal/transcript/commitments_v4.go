@@ -14,9 +14,10 @@ type CheckpointCommitmentsV4 struct {
 }
 
 type CandidateAllocationV4 struct {
-	CheckpointSequence uint64 `json:"checkpoint_sequence"`
-	AttemptID          string `json:"attempt_id"`
-	AllocatedAt        string `json:"allocated_at"`
+	CheckpointSequence uint64             `json:"checkpoint_sequence"`
+	Checkpoint         SignedArtifactRefs `json:"checkpoint"`
+	AttemptID          string             `json:"attempt_id"`
+	AllocatedAt        string             `json:"allocated_at"`
 }
 
 // Receipt-era fields are retained only so an interrupted development build can
@@ -87,6 +88,9 @@ func validateCommitmentsV4(c CheckpointStateV4, index CheckpointCommitmentsV4) e
 				return errors.New("invalid candidate allocation order")
 			}
 			previousSequence = allocation.CheckpointSequence
+			if err := validatePairV4(allocation.Checkpoint); err != nil {
+				return err
+			}
 			if !commitmentAttemptV4(c, s, allocation.AttemptID, false) {
 				return errors.New("candidate allocation has no matching delivery")
 			}

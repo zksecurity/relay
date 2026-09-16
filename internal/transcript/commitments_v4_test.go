@@ -45,7 +45,7 @@ func TestCheckpointEnrollmentMetadataBoundaryV4(t *testing.T) {
 	}
 }
 
-func TestTurnCommitmentProjectionRetainsHistoricalOutboundsV4(t *testing.T) {
+func TestTurnCommitmentProjectionRejectsReceiptEraStateV4(t *testing.T) {
 	pair := func(name string) SignedArtifactRefs {
 		return SignedArtifactRefs{Record: inspectionTestRef(name + ".json"), Signature: inspectionTestRef(name + ".sig")}
 	}
@@ -54,30 +54,8 @@ func TestTurnCommitmentProjectionRetainsHistoricalOutboundsV4(t *testing.T) {
 	state := CheckpointStateV4{CeremonyID: scope.CeremonyID, Sequence: 5, Deliveries: []DeliverySlotV4{{Scope: scope, AttemptID: a, Kind: "receipt", Status: "retired"}, {Scope: scope, AttemptID: b, Kind: "receipt", Status: "accepted"}, {Scope: scope, AttemptID: c, Kind: "candidate", Status: "accepted", ContributionResultID: "sha256:" + hex64}}}
 	returnHandoff, returnReceipt := pair("return-handoff"), pair("return-receipt")
 	index := CheckpointCommitmentsV4{Enrollments: []SignedArtifactRefs{}, Turns: []TurnCommitmentV4{{Scope: scope, Outbounds: []OutboundCommitmentV4{{CheckpointSequence: 3, PublishedAttemptID: b, Pair: pair("new")}, {CheckpointSequence: 1, PublishedAttemptID: a, Pair: pair("old")}}, InputReceipt: &AcceptedTurnRecordV4{AttemptID: b, Pair: pair("input-receipt")}, AcceptedChain: &AcceptedChainCommitmentV4{AttemptID: c, ContributionResultID: "sha256:" + hex64, Pair: pair("accepted-chain")}, ReturnHandoff: &returnHandoff, ReturnReceipt: &returnReceipt}}}
-	if err := validateCommitmentsV4(state, index); err != nil {
-		t.Fatal(err)
-	}
-	for name, change := range map[string]func(*CheckpointCommitmentsV4){
-		"duplicate turn": func(p *CheckpointCommitmentsV4) { p.Turns = append(p.Turns, p.Turns[0]) },
-		"reversed history": func(p *CheckpointCommitmentsV4) {
-			p.Turns[0].Outbounds[0], p.Turns[0].Outbounds[1] = p.Turns[0].Outbounds[1], p.Turns[0].Outbounds[0]
-		},
-		"wrong publication attempt": func(p *CheckpointCommitmentsV4) { p.Turns[0].Outbounds[0].PublishedAttemptID = c },
-		"wrong result": func(p *CheckpointCommitmentsV4) {
-			p.Turns[0].AcceptedChain.ContributionResultID = "sha256:" + strings.Repeat("f", 64)
-		},
-		"missing return receipt": func(p *CheckpointCommitmentsV4) { p.Turns[0].ReturnReceipt = nil },
-		"missing outbounds":      func(p *CheckpointCommitmentsV4) { p.Turns[0].Outbounds = nil },
-	} {
-		var bad CheckpointCommitmentsV4
-		b, _ := json.Marshal(index)
-		if err := json.Unmarshal(b, &bad); err != nil {
-			t.Fatal(err)
-		}
-		change(&bad)
-		if err := validateCommitmentsV4(state, bad); err == nil {
-			t.Errorf("accepted %s", name)
-		}
+	if err := validateCommitmentsV4(state, index); err == nil {
+		t.Fatal("receipt-era V4 commitment state accepted")
 	}
 }
 

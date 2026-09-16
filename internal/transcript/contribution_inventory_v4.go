@@ -2,7 +2,7 @@ package transcript
 
 import (
 	"errors"
-	"slices"
+	"reflect"
 )
 
 type CandidateInventoryV4 struct {
@@ -61,11 +61,11 @@ func (i Inspector) ContributionInventoryV4(chain, signature, scopeFile, candidat
 			return ContributionInventoryFactsV4{}, errors.New("final candidate identity without complete inventory")
 		}
 	} else {
-		if err := validateInventoryProjectionV4(*f.Complete, expected, 7); err != nil {
+		if err := validateInventoryProjectionV4(*f.Complete, expected, 5); err != nil {
 			return ContributionInventoryFactsV4{}, err
 		}
-		if !taggedHash(f.CandidateResultID, "sha256:") || f.CandidateResultID == f.ComputedCandidateID || !slices.Equal(f.Computed.Files, f.Complete.Files[:5]) {
-			return ContributionInventoryFactsV4{}, errors.New("complete inventory does not retain exact computed files")
+		if !taggedHash(f.CandidateResultID, "sha256:") || f.CandidateResultID != f.ComputedCandidateID || !reflect.DeepEqual(f.Computed, *f.Complete) {
+			return ContributionInventoryFactsV4{}, errors.New("complete inventory differs from the fixed five-file candidate")
 		}
 	}
 	return f, nil
@@ -79,10 +79,10 @@ func validateInventoryProjectionV4(i CandidateInventoryV4, expected Contribution
 }
 
 func validateContributionFilesV4(files []ArtifactRef, expected ContributionScopeV4, count int) error {
-	if (count != 3 && count != 5 && count != 7) || len(files) != count || !taggedHash(expected.CeremonyID, "sha256:") || !taggedHash(expected.ParentHeadID, "sha256:") || (expected.Phase != "phase1" && expected.Phase != "phase2") || expected.Index == 0 || expected.Index > 20 || expected.ParticipantID == "" {
+	if (count != 3 && count != 5) || len(files) != count || !taggedHash(expected.CeremonyID, "sha256:") || !taggedHash(expected.ParentHeadID, "sha256:") || (expected.Phase != "phase1" && expected.Phase != "phase2") || expected.Index == 0 || expected.Index > 20 || expected.ParticipantID == "" {
 		return errors.New("invalid contribution file projection")
 	}
-	names := []string{"attestation.json", "attestation.sig", "contribution.bin", "erasure.json", "erasure.sig", "return-handoff.json", "return-handoff.sig"}
+	names := []string{"attestation.json", "attestation.sig", "contribution.bin", "erasure.json", "erasure.sig"}
 	for n, ref := range files {
 		limit := int64(16 << 20)
 		if n == 2 {

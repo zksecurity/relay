@@ -82,6 +82,51 @@ func workflowV4TestPlan(t *testing.T, b workflowV4Binding) workflowV4OperationPl
 	return p
 }
 
+func retargetWorkflowV4TestPlan(t *testing.T, p workflowV4OperationPlan, id string) workflowV4OperationPlan {
+	t.Helper()
+	copy := p
+	copy.ID = id
+	copy.Inputs = append([]workflowV4Input(nil), p.Inputs...)
+	oldRoot := filepath.Join(p.Runtime.Mounts["/work"], "workflow-v4", "inputs", p.ID)
+	newRoot := filepath.Join(p.Runtime.Mounts["/work"], "workflow-v4", "inputs", id)
+	for n := range copy.Inputs {
+		if !strings.HasPrefix(copy.Inputs[n].Path, oldRoot+string(filepath.Separator)) {
+			continue
+		}
+		original := copy.Inputs[n].Path
+		copy.Inputs[n].Path = strings.Replace(original, oldRoot, newRoot, 1)
+		if err := os.MkdirAll(filepath.Dir(copy.Inputs[n].Path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := os.ReadFile(original)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(copy.Inputs[n].Path, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	copy.Command = append([]string(nil), p.Command...)
+	for n := range copy.Command {
+		copy.Command[n] = strings.ReplaceAll(copy.Command[n], p.ID, id)
+	}
+	copy.Outputs = []string{filepath.Join(p.Runtime.Mounts["/work"], "candidate-"+id)}
+	oldOutput, err := workflowV4ContainerPath(p.Runtime, p.Outputs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	newOutput, err := workflowV4ContainerPath(copy.Runtime, copy.Outputs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for n := range copy.Command {
+		if copy.Command[n] == oldOutput {
+			copy.Command[n] = newOutput
+		}
+	}
+	return copy
+}
+
 func TestWorkflowV4JournalRestartDoesNotReplay(t *testing.T) {
 	protocol, binding := workflowV4TestBinding(t)
 	j, err := openWorkflowV4Journal(protocol, binding.Definition, binding)
@@ -202,6 +247,32 @@ func TestWorkflowV4JournalPreparedAndSuccessfulBoundaries(t *testing.T) {
 	}
 	if err := j.reconcile(plan.ID, nil); err == nil {
 		t.Fatal("reconciled without verification")
+	}
+}
+
+func TestWorkflowV4JournalAllowsExplicitNewComputationAfterProvenNoEffect(t *testing.T) {
+	protocol, binding := workflowV4TestBinding(t)
+	j, err := openWorkflowV4Journal(protocol, binding.Definition, binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer j.close()
+	first := workflowV4TestPlan(t, binding)
+	if err := j.prepare(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.transition(first.ID, "running"); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.transition(first.ID, "failed-no-effects"); err != nil {
+		t.Fatal(err)
+	}
+	if pending, err := j.pending(); err != nil || pending != nil {
+		t.Fatalf("resolved no-effect operation remains pending: %+v %v", pending, err)
+	}
+	second := retargetWorkflowV4TestPlan(t, first, strings.Repeat("2", 32))
+	if err := j.prepare(second); err != nil {
+		t.Fatalf("explicit replacement computation was blocked: %v", err)
 	}
 }
 

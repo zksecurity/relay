@@ -145,12 +145,16 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 	objects := store.Client{PublicBaseURL: config.PublishedBaseURL}
 	ui := coordinatorWizard{input: bufio.NewReader(os.Stdin), output: os.Stdout}
 	for {
-		downloadPhase := ""
+		var snapshot storagefirst.SnapshotV4
+		var turn storagefirst.TurnViewV4
+		var progress workflowV4ParticipantProgress
+		var recommendation storagefirst.TurnRecommendationV4
+		actionLabel := ""
 		pending, err := j.pending()
 		if err != nil {
 			return err
 		}
-		snapshot, err := j.syncV4(objects, inspector, cli)
+		snapshot, err = j.syncV4(objects, inspector, cli)
 		if err != nil {
 			ui.message(toneError, "Storage synchronization failed: %v\nNo new ceremony action is authorized. Retained work is unchanged.\n", err)
 			printWorkflowV4Pending(ui.output, pending)
@@ -168,12 +172,13 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 			}
 			if p.Role == "participant" {
 				who = identity.ID
+				phase = participant.Phase
 			}
 			scheduled, err := workflowV4ScheduledInPhase(protocol, phase, who)
 			if err != nil {
 				return err
 			}
-			turn := storagefirst.TurnViewV4{Stage: "not-scheduled-in-this-phase"}
+			turn = storagefirst.TurnViewV4{Stage: "not-scheduled-in-this-phase"}
 			if scheduled || c.Progress.Terminal != nil {
 				// For an unscheduled participant, terminal status is global;
 				// never present another participant's active turn as theirs.
@@ -185,10 +190,24 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 					return err
 				}
 			}
+			if p.Role == "participant" && turn.Scope.ParticipantID != "" {
+				progress, err = j.participantProgressV4(turn.Scope, cli)
+				if err != nil {
+					ui.message(toneError, "Retained participant work could not be verified: %v\nNo operation was repeated.\n", err)
+				} else {
+					recommendation, err = workflowV4ParticipantRecommendation(snapshot, protocol, *participant, progress, time.Now().UTC())
+					if err != nil {
+						return err
+					}
+					actionLabel = workflowV4ParticipantActionLabel(recommendation, pending)
+				}
+			}
 			printWorkflowV4Status(ui.output, p.Role, c, turn, pending, time.Now().UTC())
-			if p.Role == "participant" && pending == nil && turn.Stage == storagefirst.TurnReceiptV4 {
-				downloadPhase = phase
-				fmt.Fprintln(ui.output, "1) Download your input packet and named public files")
+			if recommendation.Reason != "" {
+				fmt.Fprintf(ui.output, "Next: %s\n", recommendation.Reason)
+			}
+			if actionLabel != "" {
+				fmt.Fprintf(ui.output, "1) %s\n", actionLabel)
 			}
 		}
 		fmt.Fprintln(ui.output, "[R] Refresh from storage\n[Q] Save and exit")
@@ -198,20 +217,15 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 		}
 		switch strings.ToUpper(strings.TrimSpace(answer)) {
 		case "1":
-			if downloadPhase == "" {
-				fmt.Fprintln(ui.output, "No input download is available for your current turn.")
+			if p.Role != "participant" || participant == nil || actionLabel == "" {
+				fmt.Fprintln(ui.output, "No participant action is available for the authenticated state.")
 				continue
 			}
-			received, err := snapshot.FetchOutboundV4(objects, protocol, downloadPhase, identity.ID, p.Work)
-			if err != nil {
-				ui.message(toneError, "Input download failed: %v\nNo receipt was prepared or signed.\n", err)
+			if err := runWorkflowV4ParticipantAction(&ui, j, snapshot, protocol, *participant, config, cli, turn, progress); err != nil {
+				ui.message(toneError, "Participant action stopped: %v\nSaved state and verified public files were retained. No action is automatically repeated.\n", err)
 				continue
 			}
-			fmt.Fprintf(ui.output, "Input files saved in: %s\nSHA-256 and sizes match the signed backend references. Proof-tool must still check the handoff signature and full signed digests before receipt signing.\n", received.Root)
-			for _, ref := range received.Files {
-				fmt.Fprintf(ui.output, "  %s\n", filepath.Join(received.Root, filepath.FromSlash(ref.Name)))
-			}
-			fmt.Fprintln(ui.output, "These are receipt inputs, not a computation-ready transcript. Receipt preparation/signing is the next integration step; no receipt or completion claim was created.")
+			fmt.Fprintln(ui.output, "Action finished locally. Relay will refresh signed storage state before recommending anything else.")
 		case "Q":
 			return nil
 		case "R":
@@ -239,7 +253,10 @@ func printWorkflowV4Status(out io.Writer, role string, c transcript.CheckpointSt
 	}
 	printWorkflowV4Pending(out, pending)
 	fmt.Fprintln(out, "This is the newest update returned by the configured storage service, not proof that no newer state exists elsewhere.")
-	fmt.Fprintln(out, "Signatures and recorded progress checked; contribution mathematics were not replayed by this refresh.\nSigning, contribution and upload actions are not connected in this development build. No signing, contribution or upload was performed.")
+	fmt.Fprintln(out, "Signatures and recorded progress checked; contribution mathematics were not replayed by this refresh.")
+	if role == "coordinator" {
+		fmt.Fprintln(out, "Coordinator allocation and acceptance actions are not connected in this development build.")
+	}
 }
 
 func printWorkflowV4Pending(out io.Writer, pending *workflowV4Operation) {

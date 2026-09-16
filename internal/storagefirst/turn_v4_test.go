@@ -2,11 +2,20 @@ package storagefirst
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/zksecurity/relay/internal/transcript"
 )
+
+func allocationPairV4(sequence uint64) transcript.SignedArtifactRefs {
+	ref := func(name string) transcript.ArtifactRef {
+		return transcript.ArtifactRef{Name: name, Digest: transcript.Digest{SHA256: sum([]byte(name)), Blake2b256: "blake2b256:" + strings.Repeat("b", 64), Size: 1}}
+	}
+	prefix := fmt.Sprintf("checkpoints/%04d", sequence)
+	return transcript.SignedArtifactRefs{Record: ref(prefix + ".json"), Signature: ref(prefix + ".sig")}
+}
 
 // Fixtures are already-verified projection data, not a cryptographic test.
 func turnFixtureV4(t *testing.T, phase string) (SnapshotV4, transcript.DefinitionProtocol, transcript.CheckpointStateV4, transcript.CheckpointCommitmentsV4, transcript.EnrollmentMetadataV4) {
@@ -70,7 +79,7 @@ func TestTurnV4BothPhasesUseProgressNotLatestEvent(t *testing.T) {
 				t.Fatal(err)
 			}
 			candidateAttempt := strings.Repeat("cd", 16)
-			turn := transcript.TurnCommitmentV4{Scope: view.Scope, Allocations: []transcript.CandidateAllocationV4{{CheckpointSequence: 1, AttemptID: candidateAttempt, AllocatedAt: "2026-09-16T00:00:00Z"}}}
+			turn := transcript.TurnCommitmentV4{Scope: view.Scope, Allocations: []transcript.CandidateAllocationV4{{CheckpointSequence: 1, Checkpoint: allocationPairV4(1), AttemptID: candidateAttempt, AllocatedAt: "2026-09-16T00:00:00Z"}}}
 			index.Turns = []transcript.TurnCommitmentV4{turn}
 			c.Deliveries = []transcript.DeliverySlotV4{{Scope: view.Scope, Kind: "candidate", AttemptID: candidateAttempt, Status: "allocated"}}
 			check(TurnCandidateV4)
@@ -80,7 +89,7 @@ func TestTurnV4BothPhasesUseProgressNotLatestEvent(t *testing.T) {
 			check(TurnReallocateV4)
 			replacement := strings.Repeat("ef", 16)
 			c.Deliveries = append(c.Deliveries, transcript.DeliverySlotV4{Scope: view.Scope, Kind: "candidate", AttemptID: replacement, Status: "allocated"})
-			index.Turns[0].Allocations = append([]transcript.CandidateAllocationV4{{CheckpointSequence: c.Sequence, AttemptID: replacement, AllocatedAt: "2026-09-16T00:01:00Z"}}, index.Turns[0].Allocations...)
+			index.Turns[0].Allocations = append([]transcript.CandidateAllocationV4{{CheckpointSequence: c.Sequence, Checkpoint: allocationPairV4(c.Sequence), AttemptID: replacement, AllocatedAt: "2026-09-16T00:01:00Z"}}, index.Turns[0].Allocations...)
 			check(TurnCandidateV4)
 			result := sum([]byte("result"))
 			c.Deliveries[1].Status = "accepted"

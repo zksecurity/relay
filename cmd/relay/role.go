@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
@@ -363,7 +364,14 @@ func runNextAt(o roleOpts, pos position, contributedAt time.Time) error {
 		if err != nil {
 			return err
 		}
-		return writeJSONAtomic(filepath.Join(o.outDir, dockerLifecycleLogName), receipt, 0o600)
+		var retained dockerLifecycleReceipt
+		if err := setupReadJSON(filepath.Join(o.outDir, dockerLifecycleLogName), &retained); err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(retained, *receipt) {
+			return errors.New("promoted lifecycle evidence differs from the completed contributor")
+		}
+		return nil
 	}
 	command := append([]string{o.ceremonyExecutable()}, contributionCommandArgs(o, pos, contributedAt)...)
 

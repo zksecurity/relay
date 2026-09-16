@@ -111,6 +111,7 @@ func (j *workflowV4Journal) reconcileCandidateOperation(id, scopeFile, dockerCLI
 			if err != nil {
 				return err
 			}
+			facts.CandidateInventory = &inventory
 			facts.ComputedCandidateID = inventory.ComputedCandidateID
 			facts.CandidateResultID = inventory.CandidateResultID
 			if err := verifyWorkflowV4CleanupTime(p, receipt, inventory.Computed.Files[3]); err != nil {

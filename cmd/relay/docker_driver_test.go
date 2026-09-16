@@ -627,6 +627,26 @@ func TestDockerContributionLaunchBoundary(t *testing.T) {
 	}
 }
 
+func TestDockerContributionReportsProvenCreateNoEffect(t *testing.T) {
+	o, pos, driver, fake := dockerContributionFixture(t)
+	driver.executionIntentPath = filepath.Join(t.TempDir(), "intent.json")
+	driver.replaceUnstartedIntent = true
+	fake.createErrAfter = true
+	fake.onCreate = func() { fake.removed = true }
+	err := runNextAt(o, pos, time.Now())
+	if !errors.Is(err, errContributorNotCreated) {
+		t.Fatalf("create failure = %v", err)
+	}
+	for _, path := range []string{driver.activeStatePath(), driver.executionIntentPath} {
+		if _, statErr := os.Lstat(path); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("retained uncertain intent %s: %v", path, statErr)
+		}
+	}
+	if _, statErr := os.Lstat(o.outDir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("candidate unexpectedly exists: %v", statErr)
+	}
+}
+
 func TestSignedCeremonyBinarySHA256SelectsConfiguredPlatform(t *testing.T) {
 	amdDigest := "sha256:" + strings.Repeat("a", 64)
 	armDigest := "sha256:" + strings.Repeat("b", 64)

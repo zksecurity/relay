@@ -17,7 +17,7 @@ type TurnGrantV4 struct {
 // Artifacts bind Scope; grants and uploaded manifests additionally bind attempts.
 // Callers inspect an interrupted operation instead of presenting empty facts.
 // Participant inventory identities must be reconstructed together by proof-tool:
-// the final seven-file inventory must contain the exact five computed files.
+// cleanup completes the fixed five-file candidate inventory.
 // These strings alone do not establish that relationship.
 type LocalTurnV4 struct {
 	Scope            transcript.ContributionScopeV4
@@ -26,13 +26,10 @@ type LocalTurnV4 struct {
 	// only after reconciling the original contributor container's absence.
 	// It does not establish cleanup confirmation or authorize uploading.
 	GeneratedOutput            *transcript.ComputationOutputFactsV4
-	OutboundSHA256             string
-	ReceiptSHA256              string
-	ReceiptHandoffSHA256       string
+	CandidateInventory         *transcript.ContributionInventoryFactsV4
 	ComputedCandidateID        string
 	CandidateResultID          string
 	CandidateReceivedAttemptID string
-	ReturnReceiptResultID      string
 	Grant                      *TurnGrantV4
 	UploadedAttemptID          string
 	UploadedArtifactID         string
@@ -90,11 +87,14 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 			return TurnRecommendationV4{}, errors.New("invalid retained artifact identity")
 		}
 	}
-	if local.Scope == (transcript.ContributionScopeV4{}) && (local.GeneratedOutput != nil || local.ComputedCandidateID != "" || local.CandidateResultID != "" || local.Grant != nil || local.UploadedAttemptID != "") {
+	if local.Scope == (transcript.ContributionScopeV4{}) && (local.GeneratedOutput != nil || local.CandidateInventory != nil || local.ComputedCandidateID != "" || local.CandidateResultID != "" || local.Grant != nil || local.UploadedAttemptID != "") {
 		return TurnRecommendationV4{}, errors.New("retained work has no exact turn scope")
 	}
 	if local.GeneratedOutput != nil && local.GeneratedOutput.Scope != view.Scope {
 		return TurnRecommendationV4{}, errors.New("generated output belongs to another turn")
+	}
+	if local.CandidateInventory != nil && (local.CandidateInventory.Scope != view.Scope || local.CandidateInventory.ComputedCandidateID != local.ComputedCandidateID || local.CandidateInventory.CandidateResultID != local.CandidateResultID) {
+		return TurnRecommendationV4{}, errors.New("completed candidate inventory differs from retained turn facts")
 	}
 	if local.UploadedAttemptID != "" && !validAttempt(local.UploadedAttemptID) {
 		return TurnRecommendationV4{}, errors.New("invalid retained upload attempt")

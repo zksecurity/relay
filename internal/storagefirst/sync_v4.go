@@ -29,6 +29,8 @@ type VerifierV4 interface {
 type SnapshotV4 struct {
 	root        state.Root
 	version     store.ObjectVersion
+	head        transcript.SignedArtifactRefs
+	files       []state.ContentRef
 	inspection  []byte
 	commitments []byte
 	enrollments []byte
@@ -36,6 +38,8 @@ type SnapshotV4 struct {
 }
 
 func (s SnapshotV4) Root() (state.Root, store.ObjectVersion) { return s.root, s.version }
+func (s SnapshotV4) Head() transcript.SignedArtifactRefs     { return s.head }
+func (s SnapshotV4) Files() []state.ContentRef               { return append([]state.ContentRef(nil), s.files...) }
 func (s SnapshotV4) Checked() int                            { return s.checked }
 func (s SnapshotV4) State() (transcript.CheckpointStateV4, error) {
 	if len(s.inspection) == 0 {
@@ -270,7 +274,12 @@ func syncV4(objects ObjectStore, verifier VerifierV4, highWater HighWater, cerem
 			return SnapshotV4{}, fmt.Errorf("save verified progress: %w", err)
 		}
 	}
-	return SnapshotV4{root: root, version: version, inspection: encoded, commitments: commitments, enrollments: enrollments, checked: len(backwards)}, nil
+	files := make([]state.ContentRef, 0, len(names))
+	for _, ref := range names {
+		files = append(files, ref)
+	}
+	slices.SortFunc(files, func(a, b state.ContentRef) int { return strings.Compare(a.Name, b.Name) })
+	return SnapshotV4{root: root, version: version, head: verified.CheckpointRefs, files: files, inspection: encoded, commitments: commitments, enrollments: enrollments, checked: len(backwards)}, nil
 }
 
 func retainVerifiedV4Artifacts(stage, destination string, names fetchedNames) error {

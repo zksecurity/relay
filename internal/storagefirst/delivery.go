@@ -91,11 +91,6 @@ func (i DeliveryInventory) validateKind(kind string) error {
 	want := []string{"receipt.json", "receipt.sig"}
 	if kind == "candidate" {
 		want = []string{"attestation.json", "attestation.sig", "contribution.bin", "erasure.json", "erasure.sig"}
-		// The workflow decides whether return evidence is required. A manifest
-		// cannot opt out of an inventory already selected by that workflow.
-		if _, present := i["return-handoff.json"]; present {
-			want = append(want, "return-handoff.json", "return-handoff.sig")
-		}
 	} else if kind != "receipt" {
 		return errors.New("unsupported delivery kind")
 	}
