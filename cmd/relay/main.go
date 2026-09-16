@@ -88,6 +88,7 @@ func usage() {
   relay ceremony open NAME --role ROLE [--grant FILE] [--resume-candidate DIR]
   relay ceremony open NAME --role ROLE --action ACTION [-- TOOL ARGS...]
   relay ceremony guide NAME --role ROLE
+  relay ceremony recover-publication NAME [--settings-root DIR]
   relay ceremony prepare --name NAME --role ROLE --release RELEASE --work DIR --trust DIR --keys DIR
   relay role --role ROLE --image DIGEST --work DIR [mount flags] -- TOOL ARGS...
   relay coordinator configure-storage [provider and ceremony flags] --out FILE
@@ -253,6 +254,8 @@ func runCeremony(args []string) error {
 		return runRolePrepare(args[1:])
 	case "guide":
 		return runRoleFlow(args[1:])
+	case "recover-publication":
+		return runLegacyPublicationRecovery(args[1:])
 	case "setup":
 		return runGuidedSetup(args[1:])
 	case "open":

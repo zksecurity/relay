@@ -23,6 +23,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -171,6 +172,19 @@ func (c Client) Head(key string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// Size returns the provider-reported byte length of an existing object.
+func (c Client) Size(key string) (int64, error) {
+	raw, err := c.run("head-object", "--bucket", c.Bucket, "--key", key, "--query", "ContentLength", "--output", "text")
+	if err != nil {
+		return 0, err
+	}
+	size, err := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64)
+	if err != nil || size < 0 {
+		return 0, errors.New("object storage returned an invalid content length")
+	}
+	return size, nil
 }
 
 // Put writes an object, replacing any existing one.

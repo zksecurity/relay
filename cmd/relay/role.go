@@ -433,8 +433,11 @@ func runPublish(args []string) error {
 	set.StringVar(&chainSignaturePath, "chain-signature", "", "detached signature for the chain head")
 	set.BoolVar(&closed, "closed", false, "mark the phase as closed")
 	var verify bool
+	var recoverInitial bool
 	set.BoolVar(&verify, "verify", false,
 		"after publishing, re-derive the expected file set and confirm the bucket holds all of it")
+	set.BoolVar(&recoverInitial, "recover-initial", false,
+		"reconcile only an interrupted initial phase1 publication using create-only writes")
 	if err := set.Parse(args); err != nil {
 		return err
 	}
@@ -457,6 +460,12 @@ func runPublish(args []string) error {
 		return errors.New("--chain and --chain-signature are required")
 	}
 	return runWithProgress("publishing authenticated transcript", func() error {
+		if recoverInitial {
+			if closed {
+				return errors.New("--recover-initial cannot publish a closed phase")
+			}
+			return recoverInitialPublication(o, chainPath, chainSignaturePath)
+		}
 		return publishHead(o, chainPath, chainSignaturePath, closed, verify)
 	})
 }
