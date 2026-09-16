@@ -102,6 +102,28 @@ func TestStoredCheckpointV4RejectsMalformedProgress(t *testing.T) {
 	}
 }
 
+func TestStoredCheckpointV4RejectsMalformedBeaconCommitmentProjection(t *testing.T) {
+	pair := SignedArtifactRefs{Record: inspectionTestRef("record.json"), Signature: inspectionTestRef("record.sig")}
+	c := CheckpointStateV4{Schema: "proof-tool-mpc-checkpoint-v4", Workflow: "storage-first-v2", ReleaseVerification: "coordinator-full-replay-v1", CeremonyID: "sha256:" + hex64, Definition: pair, AcceptedArtifacts: []ArtifactRef{}, Deliveries: []DeliverySlotV4{}}
+	c.Progress.Phase1 = CheckpointPhaseState{Phase: "phase1", HeadRecordID: "sha256:" + hex64, HeadPayload: inspectionTestRef("payload.bin"), Chain: pair}
+	check := func(commitments CheckpointCommitmentsV4) error {
+		i := testInspector()
+		p := CheckpointInspectionV4{Schema: "proof-tool-mpc-checkpoint-inspection-v4", Depth: "checkpoint-structure", Checkpoint: c, CheckpointRefs: pair, Commitments: commitments}
+		i.run = inspectionTestRunner(t, inspectionResult{Schema: commandResultSchema, OK: true, Command: "checkpoint verify-stored-v4", CheckpointInspectionV4: &p}, "checkpoint verify-stored-v4")
+		_, err := i.StoredCheckpointV4("/stage", "/stage/record.json", "/stage/record.sig")
+		return err
+	}
+	base := CheckpointCommitmentsV4{Enrollments: []SignedArtifactRefs{}, Turns: []TurnCommitmentV4{}, BeaconEvidence: []PhaseCommitmentV4{{Phase: "phase1", Pair: pair}}}
+	if err := check(base); err != nil {
+		t.Fatal(err)
+	}
+	bad := base
+	bad.BeaconEvidence = []PhaseCommitmentV4{{Phase: "phase2", Pair: pair}, {Phase: "phase1", Pair: pair}}
+	if err := check(bad); err == nil {
+		t.Fatal("accepted unordered beacon evidence commitments")
+	}
+}
+
 func TestRequiredPublicArtifactsV4ReleaseReviewOmitsHistoricalReplayPayloads(t *testing.T) {
 	pair := func(base string) SignedArtifactRefs {
 		return SignedArtifactRefs{Record: inspectionTestRef(base + ".json"), Signature: inspectionTestRef(base + ".sig")}

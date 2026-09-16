@@ -149,6 +149,30 @@ func TestSyncV4RetainsVerifiedArtifactsAndRejectsConflicts(t *testing.T) {
 	}
 }
 
+func TestSyncV4FreshWorkspaceDownloadsCompleteFinalReleaseInventory(t *testing.T) {
+	objects, verifier, id := syncFixtureV4(t, 2)
+	artifact := func(name string, raw []byte) transcript.ArtifactRef {
+		objects[store.Key(sum(raw))] = raw
+		return transcript.ArtifactRef{Name: name, Digest: transcript.Digest{SHA256: sum(raw), Blake2b256: "blake2b256:" + sum(raw)[7:], Size: int64(len(raw))}}
+	}
+	release := transcript.SignedArtifactRefs{
+		Record:    artifact("final/release/release.json", []byte("signed final release")),
+		Signature: artifact("final/release/release.sig", []byte("final release signature")),
+	}
+	largeMember := artifact("final/release/ownership.pk", []byte("production-sized public key placeholder"))
+	verifier.full.Checkpoint.Progress.FinalRelease = &release
+	verifier.full.Commitments.FinalReleaseArtifacts = []transcript.ArtifactRef{largeMember, release.Record, release.Signature}
+	root := filepath.Join(t.TempDir(), "fresh-public")
+	if _, err := SyncV4Retained(objects, verifier, &highWaterFake{}, id, t.TempDir(), root); err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range verifier.full.Commitments.FinalReleaseArtifacts {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(ref.Name))); err != nil {
+			t.Fatalf("fresh sync omitted final release member %s: %v", ref.Name, err)
+		}
+	}
+}
+
 func syncFixtureV4(t *testing.T, last int) (memoryObjects, *verifierV4Fake, string) {
 	t.Helper()
 	id := sum([]byte("ceremony"))

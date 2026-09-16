@@ -241,7 +241,11 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 					actionLabel = workflowV4CoordinatorActionLabel(recommendation, coordinatorProgress)
 				}
 			} else if p.Role == "coordinator" {
-				lifecycleAction, actionLabel, err = workflowV4CoordinatorLifecycleAction(c, protocol)
+				commitments, commitmentErr := snapshot.Commitments()
+				if commitmentErr != nil {
+					return commitmentErr
+				}
+				lifecycleAction, actionLabel, err = workflowV4CoordinatorLifecycleAction(c, commitments, protocol)
 				if err != nil {
 					return err
 				}

@@ -12,7 +12,13 @@ import (
 type CheckpointCommitmentsV4 struct {
 	Enrollments           []SignedArtifactRefs `json:"enrollments"`
 	Turns                 []TurnCommitmentV4   `json:"turns"`
+	BeaconEvidence        []PhaseCommitmentV4  `json:"beacon_evidence"`
 	FinalReleaseArtifacts []ArtifactRef        `json:"final_release_artifacts"`
+}
+
+type PhaseCommitmentV4 struct {
+	Phase string             `json:"phase"`
+	Pair  SignedArtifactRefs `json:"pair"`
 }
 
 type CandidateAllocationV4 struct {
@@ -54,8 +60,21 @@ type TurnCommitmentV4 struct {
 }
 
 func validateCommitmentsV4(c CheckpointStateV4, index CheckpointCommitmentsV4) error {
-	if index.Enrollments == nil || len(index.Enrollments) > 128 || index.Turns == nil || len(index.Turns) > 40 || len(index.FinalReleaseArtifacts) > 2053 {
+	if index.Enrollments == nil || len(index.Enrollments) > 128 || index.Turns == nil || len(index.Turns) > 40 || len(index.BeaconEvidence) > 2 || len(index.FinalReleaseArtifacts) > 2053 {
 		return errors.New("missing or oversized commitment index")
+	}
+	lastPhase := ""
+	for _, evidence := range index.BeaconEvidence {
+		if evidence.Phase != "phase1" && evidence.Phase != "phase2" {
+			return errors.New("invalid beacon evidence phase commitment")
+		}
+		if evidence.Phase <= lastPhase {
+			return errors.New("beacon evidence commitments must be sorted and unique")
+		}
+		if err := validatePairV4(evidence.Pair); err != nil {
+			return err
+		}
+		lastPhase = evidence.Phase
 	}
 	if (c.Progress.FinalRelease != nil) != (len(index.FinalReleaseArtifacts) != 0) {
 		return errors.New("final release download inventory does not match ceremony progress")
