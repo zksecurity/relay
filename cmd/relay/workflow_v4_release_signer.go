@@ -64,7 +64,7 @@ func runWorkflowV4ReleaseSignerAction(ui *coordinatorWizard, snapshot storagefir
 	if !progress.PackageReady {
 		return runWorkflowV4ReleaseSigning(ui, snapshot, online, signer, expected, progress)
 	}
-	return runWorkflowV4ReleaseUpload(ui, snapshot, protocol, config, identity.ID, progress)
+	return runWorkflowV4ReleaseUpload(ui, snapshot, protocol, config, online, identity.ID, expected.Identity.KeyID, progress)
 }
 
 func runWorkflowV4ReleaseSigning(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, online, signer guidedProfile, expected transcript.ExpectedEnrollment, progress workflowV4ReleaseSignerProgress) error {
@@ -172,7 +172,13 @@ func workflowV4ReleaseSignCommand(online, signer guidedProfile, head transcript.
 	return []string{"mpc-ceremony", "release", "sign", "--ceremony", ceremony, "--ceremony-signature", ceremonySig, "--coordinator-public-key-file", coordinatorKey, "--review-checkpoint", checkpoint, "--review-checkpoint-signature", checkpointSig, "--operational-evidence-root", artifactRoot, "--operational-bundle", bundle, "--operational-bundle-signature", bundleSig, "--release-signing-key", "/keys/signing.hex", "--signature-key-id", keyID, "--released-at", releasedAt.Format(time.RFC3339Nano), "--release-dir", out}, nil
 }
 
-func runWorkflowV4ReleaseUpload(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, config access.StorageConfig, identity string, progress workflowV4ReleaseSignerProgress) error {
+func runWorkflowV4ReleaseUpload(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, config access.StorageConfig, online guidedProfile, identity, keyID string, progress workflowV4ReleaseSignerProgress) error {
+	// The signing command self-verifies, but a retained package may have been
+	// changed between invocations. Re-authenticate all bytes immediately before
+	// granting them transport significance.
+	if err := runWorkflowV4VerifyReleasePackage(online, progress.PackageDir, keyID); err != nil {
+		return fmt.Errorf("verify retained signed release package: %w", err)
+	}
 	grantPath, err := ui.required("Absolute path to the private release upload grant received from the coordinator or Tessera", "")
 	if err != nil {
 		return err
