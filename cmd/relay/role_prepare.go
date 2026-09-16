@@ -323,7 +323,7 @@ func (p *rolePreparer) defaultPublicImport() string {
 			return "ceremony-set"
 		}
 	}
-	if _, err := os.Lstat(preparationDestination(p.d, "storage")); p.d.Role != "release-signer" && errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(preparationDestination(p.d, "storage")); errors.Is(err, os.ErrNotExist) {
 		return "storage"
 	}
 	return "" // No missing-file recommendation; existence is not authentication.
@@ -534,10 +534,10 @@ func (p *rolePreparer) nextPreparationAction() rolePreparationNext {
 	if p.d.Role != "upload-station" && !p.historicalOnboarding() && !p.publicHandoffReported("enrollment") {
 		return rolePreparationNext{"10", "Send your public enrollment folder to the coordinator", "Send my-enrollment, including its signature and disclosure. Report sending separately; coordinator verification and acceptance are not implied."}
 	}
+	if err := p.requirePublicStorage(); err != nil {
+		return rolePreparationNext{"3", "Get public storage settings from your coordinator and import them", err.Error()}
+	}
 	if p.d.Role != "release-signer" {
-		if err := p.requirePublicStorage(); err != nil {
-			return rolePreparationNext{"3", "Get public storage settings from your coordinator and import them", err.Error()}
-		}
 		role := p.d.Role
 		if role == "upload-station" {
 			role = "release"

@@ -61,7 +61,7 @@ func TestTurnCommitmentProjectionRejectsReceiptEraStateV4(t *testing.T) {
 
 func TestCheckpointGuidanceV4UsesOneApprovedCommand(t *testing.T) {
 	pair := SignedArtifactRefs{Record: inspectionTestRef("checkpoint.json"), Signature: inspectionTestRef("checkpoint.sig")}
-	c := CheckpointStateV4{Schema: "proof-tool-mpc-checkpoint-v4", Workflow: "storage-first-v2", ReleaseVerification: "coordinator-full-replay-v1", CeremonyID: "sha256:" + hex64, Definition: pair, Deliveries: []DeliverySlotV4{}}
+	c := CheckpointStateV4{Schema: "proof-tool-mpc-checkpoint-v4", Workflow: "storage-first-v2", ReleaseVerification: "coordinator-full-replay-v1", CeremonyID: "sha256:" + hex64, Definition: pair, AcceptedArtifacts: []ArtifactRef{}, Deliveries: []DeliverySlotV4{}}
 	c.Progress.Phase1 = CheckpointPhaseState{Phase: "phase1", HeadRecordID: "sha256:" + hex64, HeadPayload: inspectionTestRef("genesis.bin"), Chain: pair}
 	structure := CheckpointInspectionV4{Schema: "proof-tool-mpc-checkpoint-inspection-v4", Depth: "checkpoint-structure", Checkpoint: c, CheckpointRefs: pair, Commitments: CheckpointCommitmentsV4{Enrollments: []SignedArtifactRefs{}, Turns: []TurnCommitmentV4{}}}
 	metadata := EnrollmentMetadataInspectionV4{Schema: "proof-tool-mpc-enrollment-metadata-v4", Depth: "committed-enrollment-signatures", EnrollmentSignaturesVerified: true, Metadata: EnrollmentMetadataV4{CeremonyID: c.CeremonyID, Checkpoint: pair, Enrollments: []CommittedEnrollmentMetadataV4{}}}

@@ -180,8 +180,9 @@ type CheckpointStateV4 struct {
 	Transition          struct {
 		Kind string `json:"kind"`
 	} `json:"transition"`
-	Progress   CheckpointProgressV4 `json:"progress"`
-	Deliveries []DeliverySlotV4     `json:"deliveries"`
+	Progress          CheckpointProgressV4 `json:"progress"`
+	AcceptedArtifacts []ArtifactRef        `json:"accepted_artifacts"`
+	Deliveries        []DeliverySlotV4     `json:"deliveries"`
 }
 
 type CheckpointInspectionV4 struct {
@@ -230,16 +231,31 @@ func RequiredPublicArtifactsV4(p CheckpointInspectionV4) ([]ArtifactRef, error) 
 	if err := addPair(&p.Checkpoint.Definition); err != nil {
 		return nil, err
 	}
-	phases := []*CheckpointPhaseState{&p.Checkpoint.Progress.Phase1, p.Checkpoint.Progress.Phase2}
-	for _, phase := range phases {
-		if phase == nil {
-			continue
+	if p.Checkpoint.Progress.ReleaseReview != nil {
+		// At review time the authenticated accepted-artifact inventory names
+		// every public dependency. Historical replay payloads are deliberately
+		// omitted because the release signer verifies the coordinator's bound
+		// replay claim instead of repeating contribution mathematics.
+		for _, ref := range p.Checkpoint.AcceptedArtifacts {
+			if historicalReplayPayloadV4(ref.Name) {
+				continue
+			}
+			if err := add(ref, 16<<30); err != nil {
+				return nil, err
+			}
 		}
-		if err := addPair(&phase.Chain); err != nil {
-			return nil, err
-		}
-		if err := add(phase.HeadPayload, 16<<30); err != nil {
-			return nil, err
+	} else {
+		phases := []*CheckpointPhaseState{&p.Checkpoint.Progress.Phase1, p.Checkpoint.Progress.Phase2}
+		for _, phase := range phases {
+			if phase == nil {
+				continue
+			}
+			if err := addPair(&phase.Chain); err != nil {
+				return nil, err
+			}
+			if err := add(phase.HeadPayload, 16<<30); err != nil {
+				return nil, err
+			}
 		}
 	}
 	for _, pair := range []*SignedArtifactRefs{
@@ -270,6 +286,13 @@ func RequiredPublicArtifactsV4(p CheckpointInspectionV4) ([]ArtifactRef, error) 
 	}
 	slices.SortFunc(result, func(a, b ArtifactRef) int { return strings.Compare(a.Name, b.Name) })
 	return result, nil
+}
+
+func historicalReplayPayloadV4(name string) bool {
+	if name == "phase1/genesis.bin" || name == "phase2/genesis.bin" {
+		return true
+	}
+	return (strings.HasPrefix(name, "phase1/contributions/") || strings.HasPrefix(name, "phase2/contributions/")) && strings.HasSuffix(name, "/contribution.bin")
 }
 
 func (i Inspector) checkpointV4(action, root, record, signature string) (inspectionResult, error) {
@@ -355,6 +378,17 @@ func validateProgressV4(c CheckpointStateV4) error {
 		return validateBoundedRefV4(p.HeadPayload, 16<<30)
 	}
 	p := c.Progress
+	if c.AcceptedArtifacts == nil || len(c.AcceptedArtifacts) > 2048 {
+		return errors.New("invalid accepted artifact projection")
+	}
+	for index, ref := range c.AcceptedArtifacts {
+		if err := validateBoundedRefV4(ref, 16<<30); err != nil {
+			return err
+		}
+		if index > 0 && c.AcceptedArtifacts[index-1].Name >= ref.Name {
+			return errors.New("accepted artifact projection must be sorted and unique")
+		}
+	}
 	if err := phase(p.Phase1, "phase1"); err != nil {
 		return err
 	}

@@ -58,12 +58,15 @@ func workflowV4RouteHint(p guidedProfile) (bool, error) {
 }
 
 func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
-	if p.Role != "coordinator" && p.Role != "participant" {
+	if p.Role != "coordinator" && p.Role != "participant" && p.Role != "release-signer" {
 		return errors.New("this V4 role journey is not connected yet; no legacy actions were opened")
 	}
 	var participant *access.RoleConfig
 	storagePath := filepath.Join(p.Work, "ceremony", "config", "relay-storage.json")
 	key := filepath.Join(p.Trust, "setup-coordinator.hex")
+	if p.Role == "release-signer" {
+		key = filepath.Join(p.Trust, "coordinator-public-key.hex")
+	}
 	dockerCLI := "docker"
 	if p.Role == "participant" {
 		c, err := loadRoleConfig(p.Config, "participant")
@@ -149,6 +152,7 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 		var turn storagefirst.TurnViewV4
 		var progress workflowV4ParticipantProgress
 		var coordinatorProgress workflowV4CoordinatorProgress
+		var releaseProgress workflowV4ReleaseSignerProgress
 		var recommendation storagefirst.TurnRecommendationV4
 		lifecycleAction := ""
 		actionLabel := ""
@@ -176,12 +180,30 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 				who = identity.ID
 				phase = participant.Phase
 			}
-			scheduled, err := workflowV4ScheduledInPhase(protocol, phase, who)
-			if err != nil {
-				return err
+			scheduled := false
+			if p.Role != "release-signer" {
+				scheduled, err = workflowV4ScheduledInPhase(protocol, phase, who)
+				if err != nil {
+					return err
+				}
 			}
 			turn = storagefirst.TurnViewV4{Stage: "not-scheduled-in-this-phase"}
-			if scheduled || c.Progress.Terminal != nil {
+			if p.Role == "release-signer" {
+				turn.Stage = "waiting-for-coordinator-review"
+				if c.Progress.FinalRelease != nil {
+					turn.Stage = "release-recorded"
+				} else if c.Progress.ReleaseReview != nil {
+					turn.Stage = "release-review-ready"
+					releaseProgress, err = workflowV4ReleaseSignerProgressFor(p.Work)
+					if err != nil {
+						ui.message(toneError, "Retained release-signer work could not be verified: %v\nNo operation was repeated.\n", err)
+					} else if releaseProgress.PackageReady {
+						actionLabel = "Upload the exact signed release package using the private release grant"
+					} else {
+						actionLabel = "Review and sign the exact coordinator-reviewed release package"
+					}
+				}
+			} else if scheduled || c.Progress.Terminal != nil {
 				// For an unscheduled participant, terminal status is global;
 				// never present another participant's active turn as theirs.
 				if !scheduled {
@@ -257,6 +279,11 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 				}
 				if actionErr != nil {
 					ui.message(toneError, "Coordinator action stopped: %v\nSigned files and verified downloads were retained. No action is automatically repeated.\n", actionErr)
+					continue
+				}
+			} else if p.Role == "release-signer" {
+				if err := runWorkflowV4ReleaseSignerAction(&ui, snapshot, protocol, config, p, signer, identity, releaseProgress); err != nil {
+					ui.message(toneError, "Release-signer action stopped: %v\nVerified downloads and any complete signed package were retained. No signing or upload is automatically repeated.\n", err)
 					continue
 				}
 			}

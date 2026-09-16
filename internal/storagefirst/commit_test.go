@@ -365,6 +365,7 @@ func TestAuthenticateRootChildV4ProjectsOnlyFullyCheckedToolResult(t *testing.T)
 	inspection.Checkpoint.Sequence = 4
 	inspection.Checkpoint.Definition = definition
 	inspection.Checkpoint.Progress.Phase1 = transcript.CheckpointPhaseState{Phase: "phase1", HeadRecordID: digestOfTest("5"), HeadPayload: head, Chain: chain}
+	inspection.Checkpoint.AcceptedArtifacts = []transcript.ArtifactRef{}
 	inspection.Checkpoint.Deliveries = []transcript.DeliverySlotV4{}
 	inspection.Checkpoint.Transition.Kind = "phase1-candidate-accepted"
 	previous := pair

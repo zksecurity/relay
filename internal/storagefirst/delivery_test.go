@@ -191,6 +191,45 @@ func TestEnrollmentDeliveryUsesExactThreePublicFiles(t *testing.T) {
 	}
 }
 
+func TestReleaseDeliverySupportsAuthenticatedNestedPackage(t *testing.T) {
+	scope := DeliveryScope{CeremonyID: digestOfTest("0"), AttemptID: strings.Repeat("c", 32), Kind: "release"}
+	inventory := DeliveryInventory{"manifest.json": 1024, "manifest.sig": 4096, "operational/evidence-bundle.json": 4096}
+	dir := t.TempDir()
+	paths, refs := map[string]string{}, map[string]state.ContentRef{}
+	for name := range inventory {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		body := []byte("signed release " + name)
+		if err := os.WriteFile(path, body, 0600); err != nil {
+			t.Fatal(err)
+		}
+		paths[name] = path
+		refs[name] = state.ContentRef{Name: name, SHA256: digestBytes(body), Size: int64(len(body))}
+	}
+	objects := &deliveryStore{objects: make(map[string][]byte)}
+	if err := UploadDelivery(objects, scope, inventory, refs, paths, dir); err != nil {
+		t.Fatal(err)
+	}
+	received, discovered, err := FetchReleaseDelivery(objects, scope, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(discovered) != len(inventory) {
+		t.Fatalf("discovered %d files, want %d", len(discovered), len(inventory))
+	}
+	for name, ref := range refs {
+		if err := verifyLocalRef(ref, filepath.Join(received, filepath.FromSlash(name))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bad := DeliveryInventory{"file": 1, "file/child": 1}
+	if err := bad.validateKind("release"); err == nil {
+		t.Fatal("overlapping release paths accepted")
+	}
+}
+
 func TestDeliveryRejectsManifestScopeAndInventoryChanges(t *testing.T) {
 	s, scope, inventory, refs, paths := deliveryFixture(t)
 	if err := UploadDelivery(s, scope, inventory, refs, paths, t.TempDir()); err != nil {

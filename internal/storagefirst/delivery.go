@@ -20,7 +20,7 @@ import (
 )
 
 const deliverySchema = "relay-submission-transport-v1"
-const maxDeliveryManifestBytes = 16 << 10
+const maxDeliveryManifestBytes = 1 << 20
 
 // DeliveryScope comes from the active protocol slot, not from the manifest.
 // The provider prefix is derived here in Relay and never passed to proof-tool.
@@ -34,7 +34,7 @@ func (s DeliveryScope) validate() error {
 	if !validDigest(s.CeremonyID) || !validAttempt(s.AttemptID) {
 		return errors.New("delivery requires an exact ceremony and allocated attempt")
 	}
-	if s.Kind != "receipt" && s.Kind != "candidate" && s.Kind != "enrollment" {
+	if s.Kind != "receipt" && s.Kind != "candidate" && s.Kind != "enrollment" && s.Kind != "release" {
 		return errors.New("unsupported delivery kind")
 	}
 	return nil
@@ -68,12 +68,15 @@ type deliveryFile struct {
 type DeliveryInventory map[string]int64
 
 func (i DeliveryInventory) validate() error {
-	if len(i) == 0 || len(i) > 32 {
+	if len(i) == 0 || len(i) > 2048 {
 		return errors.New("invalid delivery inventory count")
 	}
 	for name, limit := range i {
-		if name == "manifest.json" || !validComponent(name) || strings.ContainsAny(name, ":\x00\r\n\t") || limit <= 0 {
-			return errors.New("delivery inventory requires plain file names and positive bounds")
+		// A release package legitimately contains its signed manifest.json. It
+		// is stored below files/ and remains distinct from this transport
+		// layer's own prefix-level manifest.json.
+		if !validDeliveryName(name) || strings.ContainsAny(name, ":\x00\r\n\t") || limit <= 0 || limit > 16<<30 {
+			return errors.New("delivery inventory requires safe relative file names and positive bounded sizes")
 		}
 		for _, r := range name {
 			if r < 32 || r > 126 {
@@ -84,9 +87,34 @@ func (i DeliveryInventory) validate() error {
 	return nil
 }
 
+func validDeliveryName(name string) bool {
+	if name == "" || len(name) > 512 || strings.HasPrefix(name, "/") || strings.Contains(name, "\\") || filepath.Clean(name) != name {
+		return false
+	}
+	for _, component := range strings.Split(name, "/") {
+		if !validComponent(component) {
+			return false
+		}
+	}
+	return true
+}
+
 func (i DeliveryInventory) validateKind(kind string) error {
 	if err := i.validate(); err != nil {
 		return err
+	}
+	if kind == "release" {
+		names := make([]string, 0, len(i))
+		for name := range i {
+			names = append(names, name)
+		}
+		slices.Sort(names)
+		for index, name := range names {
+			if index > 0 && strings.HasPrefix(name, names[index-1]+"/") {
+				return errors.New("release delivery paths overlap as a file and directory")
+			}
+		}
+		return nil
 	}
 	want := []string{"receipt.json", "receipt.sig"}
 	if kind == "candidate" {
@@ -200,7 +228,9 @@ func UploadDelivery(objects ImmutableStore, scope DeliveryScope, inventory Deliv
 			return err
 		}
 	}
-	manifestPath := filepath.Join(tmp, "manifest.json")
+	// Keep transport framing outside the staged payload namespace. A signed
+	// release package legitimately has its own files/manifest.json.
+	manifestPath := filepath.Join(tmp, ".relay-transport-manifest")
 	if err := os.WriteFile(manifestPath, raw, 0600); err != nil {
 		return err
 	}
@@ -249,6 +279,9 @@ func stageDeliveryFile(source, destination string, expected deliveryFile) error 
 	opened, err := input.Stat()
 	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) || opened.Size() != expected.Size {
 		return errors.New("delivery source changed while opening")
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
+		return err
 	}
 	output, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
@@ -318,6 +351,9 @@ func FetchDelivery(objects ObjectStore, scope DeliveryScope, inventory DeliveryI
 	}
 	for _, file := range m.Files {
 		local := filepath.Join(dir, file.Name)
+		if err = os.MkdirAll(filepath.Dir(local), 0700); err != nil {
+			return dir, err
+		}
 		version, fetchErr := objects.GetVersionedAtMost(prefix+"/files/"+file.Name, local, file.Size)
 		if fetchErr != nil {
 			return dir, fetchErr
@@ -330,4 +366,81 @@ func FetchDelivery(objects ObjectStore, scope DeliveryScope, inventory DeliveryI
 		}
 	}
 	return dir, nil
+}
+
+// FetchReleaseDelivery discovers a release package inventory from the trusted
+// delivery service's immutable manifest, then verifies every downloaded byte.
+// The caller must still ask proof-tool to authenticate the closed package; the
+// transport manifest is not release approval.
+func FetchReleaseDelivery(objects ObjectStore, scope DeliveryScope, tempParent string) (dir string, inventory DeliveryInventory, err error) {
+	if objects == nil || scope.Kind != "release" {
+		return "", nil, errors.New("release delivery store and release scope required")
+	}
+	prefix, err := scope.Prefix()
+	if err != nil {
+		return "", nil, err
+	}
+	dir, err = os.MkdirTemp(tempParent, "relay-release-received-")
+	if err != nil {
+		return "", nil, err
+	}
+	defer func() {
+		if err != nil {
+			os.RemoveAll(dir)
+			dir = ""
+		}
+	}()
+	manifestPath := filepath.Join(dir, "manifest.json")
+	if _, err = objects.GetVersionedAtMost(prefix+"/manifest.json", manifestPath, maxDeliveryManifestBytes); err != nil {
+		return dir, nil, err
+	}
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return dir, nil, err
+	}
+	var wire deliveryManifest
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err = decoder.Decode(&wire); err != nil {
+		return dir, nil, err
+	}
+	exact, marshalErr := json.Marshal(wire)
+	if marshalErr != nil || !bytes.Equal(raw, exact) || wire.Schema != deliverySchema || wire.CeremonyID != scope.CeremonyID || wire.AttemptID != scope.AttemptID || wire.Kind != scope.Kind {
+		return dir, nil, errors.New("release delivery manifest is not exact or does not match its allocated scope")
+	}
+	inventory = DeliveryInventory{}
+	previous := ""
+	for _, file := range wire.Files {
+		if file.Name <= previous || file.Size <= 0 || file.Size > 16<<30 || !validDigest(file.SHA256) {
+			return dir, nil, errors.New("release delivery manifest has invalid, duplicate or unordered files")
+		}
+		previous = file.Name
+		inventory[file.Name] = file.Size
+	}
+	if err = inventory.validateKind(scope.Kind); err != nil {
+		return dir, nil, err
+	}
+	if _, err = decodeDelivery(raw, scope, inventory); err != nil {
+		return dir, nil, err
+	}
+	if err = os.Remove(manifestPath); err != nil {
+		return dir, nil, err
+	}
+	for _, file := range wire.Files {
+		local := filepath.Join(dir, filepath.FromSlash(file.Name))
+		if err = os.MkdirAll(filepath.Dir(local), 0700); err != nil {
+			return dir, nil, err
+		}
+		version, fetchErr := objects.GetVersionedAtMost(prefix+"/files/"+file.Name, local, file.Size)
+		if fetchErr != nil {
+			return dir, nil, fetchErr
+		}
+		if version.Size != file.Size {
+			return dir, nil, errors.New("release delivery download size differs")
+		}
+		if err = verifyLocalRef(state.ContentRef{SHA256: file.SHA256, Size: file.Size}, local); err != nil {
+			return dir, nil, fmt.Errorf("release delivery payload: %w", err)
+		}
+	}
+	return dir, inventory, nil
 }

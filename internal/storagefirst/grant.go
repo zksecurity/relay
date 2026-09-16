@@ -91,6 +91,48 @@ func ValidateEnrollmentGrantV4At(snapshot SnapshotV4, protocol transcript.Defini
 	return nil
 }
 
+// ValidateReleaseGrantV4At binds one upload credential to the exact frozen
+// release-review checkpoint and the authenticated release-signer assignment.
+func ValidateReleaseGrantV4At(snapshot SnapshotV4, protocol transcript.DefinitionProtocol, identity string, grant access.StorageFirstGrant, destination GrantDestination, now time.Time) error {
+	if err := grant.CheckUnexpired(now); err != nil {
+		return err
+	}
+	if grant.CeremonyID != protocol.Definition.CeremonyID || grant.IdentityID != identity || grant.SubmissionKind != access.SubmissionKindRelease || grant.Phase != "release" || grant.Index != 1 {
+		return errors.New("grant belongs to another ceremony, release signer or submission kind")
+	}
+	if grant.Provider != destination.Provider || grant.Endpoint != destination.Endpoint || grant.Region != destination.Region || grant.InboxBucket != destination.InboxBucket {
+		return errors.New("grant storage destination differs from the verified local storage setup")
+	}
+	state, err := snapshot.State()
+	if err != nil {
+		return err
+	}
+	if state.Progress.ReleaseReview == nil || state.Progress.FinalRelease != nil || grant.CheckpointDigest != snapshot.Head().Record.Digest.SHA256 {
+		return errors.New("release grant does not match the exact current frozen review checkpoint")
+	}
+	journey, err := protocol.Definition.RequireJourney()
+	if err != nil {
+		return err
+	}
+	assigned := false
+	for _, expected := range journey.RequiredEnrollments {
+		if expected.Role == "release-signer" && expected.Identity.ID == identity {
+			assigned = true
+		}
+	}
+	if !assigned {
+		return errors.New("release grant does not match the signed release-signer assignment")
+	}
+	prefix, err := (DeliveryScope{CeremonyID: grant.CeremonyID, AttemptID: grant.AttemptID, Kind: access.SubmissionKindRelease}).Prefix()
+	if err != nil {
+		return err
+	}
+	if grant.Prefix != prefix+"/" || grant.ManifestKey != prefix+"/manifest.json" {
+		return errors.New("grant object scope differs from the release attempt")
+	}
+	return nil
+}
+
 type GrantDestination struct {
 	Provider    string
 	Endpoint    string

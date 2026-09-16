@@ -48,8 +48,12 @@ func TestWorkflowV4LifecycleClosesOnlyCompletedOpenPhase(t *testing.T) {
 		t.Fatalf("final candidate review action = %q, %v", action, err)
 	}
 	state.Progress.ReleaseReview = &transcript.SignedArtifactRefs{}
+	if action, _, err := workflowV4CoordinatorLifecycleAction(state, protocol); err != nil || action != workflowV4Release {
+		t.Fatalf("signed review release action = %q, %v", action, err)
+	}
+	state.Progress.FinalRelease = &transcript.SignedArtifactRefs{}
 	if action, _, err := workflowV4CoordinatorLifecycleAction(state, protocol); err != nil || action != "" {
-		t.Fatalf("signed review should wait for release signer, action = %q, %v", action, err)
+		t.Fatalf("completed release action = %q, %v", action, err)
 	}
 }
 

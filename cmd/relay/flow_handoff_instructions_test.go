@@ -25,16 +25,13 @@ func TestPublicImportDefaultMatchesMissingStorage(t *testing.T) {
 				}
 			}
 			want := "storage"
-			if role == "release-signer" {
-				want = ""
-			}
 			if p.defaultPublicImport() != want {
 				t.Fatalf("got %q want %q", p.defaultPublicImport(), want)
 			}
 			p.ui.input = bufio.NewReader(strings.NewReader(""))
 			_ = p.importFile()
 			out := p.ui.output.(*bytes.Buffer).String()
-			if role != "release-signer" && !strings.Contains(out, "Choose a number [4]") {
+			if !strings.Contains(out, "Choose a number [4]") {
 				t.Fatal(out)
 			}
 			if strings.Contains(out, "folder (recommended)") {

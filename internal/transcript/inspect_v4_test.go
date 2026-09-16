@@ -64,7 +64,7 @@ func TestDefinitionProtocolV4ExactDispatch(t *testing.T) {
 
 func TestStoredCheckpointV4RejectsMalformedProgress(t *testing.T) {
 	pair := SignedArtifactRefs{Record: inspectionTestRef("record.json"), Signature: inspectionTestRef("record.sig")}
-	c := CheckpointStateV4{Schema: "proof-tool-mpc-checkpoint-v4", Workflow: "storage-first-v2", ReleaseVerification: "coordinator-full-replay-v1", CeremonyID: "sha256:" + hex64, Definition: pair, Deliveries: []DeliverySlotV4{{Scope: ContributionScopeV4{CeremonyID: "sha256:" + hex64, Phase: "phase1", Index: 1, ParticipantID: "participant", ParentHeadID: "sha256:" + hex64}, Kind: "candidate", Status: "allocated", AttemptID: strings.Repeat("ab", 16)}}}
+	c := CheckpointStateV4{Schema: "proof-tool-mpc-checkpoint-v4", Workflow: "storage-first-v2", ReleaseVerification: "coordinator-full-replay-v1", CeremonyID: "sha256:" + hex64, Definition: pair, AcceptedArtifacts: []ArtifactRef{}, Deliveries: []DeliverySlotV4{{Scope: ContributionScopeV4{CeremonyID: "sha256:" + hex64, Phase: "phase1", Index: 1, ParticipantID: "participant", ParentHeadID: "sha256:" + hex64}, Kind: "candidate", Status: "allocated", AttemptID: strings.Repeat("ab", 16)}}}
 	c.Progress.Phase1 = CheckpointPhaseState{Phase: "phase1", HeadRecordID: "sha256:" + hex64, HeadPayload: inspectionTestRef("payload.bin"), Chain: pair}
 	check := func(c CheckpointStateV4) error {
 		i := testInspector()
@@ -98,6 +98,41 @@ func TestStoredCheckpointV4RejectsMalformedProgress(t *testing.T) {
 		change(&bad)
 		if err := check(bad); err == nil {
 			t.Errorf("accepted malformed %s", name)
+		}
+	}
+}
+
+func TestRequiredPublicArtifactsV4ReleaseReviewOmitsHistoricalReplayPayloads(t *testing.T) {
+	pair := func(base string) SignedArtifactRefs {
+		return SignedArtifactRefs{Record: inspectionTestRef(base + ".json"), Signature: inspectionTestRef(base + ".sig")}
+	}
+	definition := pair("ceremony")
+	chain := pair("phase1/chain-0001")
+	review := pair("operational/evidence-bundle")
+	checkpoint := pair("checkpoints/0012/checkpoint")
+	contribution := inspectionTestRef("phase1/contributions/0001/contribution.bin")
+	genesis := inspectionTestRef("phase1/genesis.bin")
+	key := inspectionTestRef("final/candidate/ownership.pk")
+	c := CheckpointStateV4{Schema: "proof-tool-mpc-checkpoint-v4", Workflow: "storage-first-v2", ReleaseVerification: "coordinator-full-replay-v1", CeremonyID: "sha256:" + hex64, Definition: definition, AcceptedArtifacts: []ArtifactRef{key, review.Record, review.Signature, contribution, genesis}, Deliveries: []DeliverySlotV4{}}
+	c.Progress.Phase1 = CheckpointPhaseState{Phase: "phase1", HeadRecordID: "sha256:" + hex64, HeadPayload: contribution, Chain: chain}
+	c.Progress.ReleaseReview = &review
+	p := CheckpointInspectionV4{Schema: "proof-tool-mpc-checkpoint-inspection-v4", Depth: "checkpoint-structure", Checkpoint: c, CheckpointRefs: checkpoint, Commitments: CheckpointCommitmentsV4{Enrollments: []SignedArtifactRefs{}, Turns: []TurnCommitmentV4{}}}
+	refs, err := RequiredPublicArtifactsV4(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, ref := range refs {
+		names[ref.Name] = true
+	}
+	for _, want := range []string{"ceremony.json", "operational/evidence-bundle.json", "operational/evidence-bundle.sig", "final/candidate/ownership.pk"} {
+		if !names[want] {
+			t.Fatalf("missing release dependency %s", want)
+		}
+	}
+	for _, unwanted := range []string{contribution.Name, genesis.Name} {
+		if names[unwanted] {
+			t.Fatalf("historical replay payload scheduled for release-signer download: %s", unwanted)
 		}
 	}
 }

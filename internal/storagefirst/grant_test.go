@@ -73,6 +73,44 @@ func TestValidateEnrollmentGrantV4BindsAssignmentAndAncestry(t *testing.T) {
 	}
 }
 
+func TestValidateReleaseGrantV4BindsFrozenReviewAndSigner(t *testing.T) {
+	snapshot, protocol, c, index, enrollments := turnFixtureV4(t, "phase2")
+	head := allocationPairV4(12)
+	snapshot.head = head
+	c.Progress.ReleaseReview = &head
+	snapshot = encodeTurnFixtureV4(t, c, index, enrollments)
+	snapshot.head = head
+	attempt := strings.Repeat("cd", 16)
+	prefix, err := (DeliveryScope{CeremonyID: protocol.Definition.CeremonyID, AttemptID: attempt, Kind: access.SubmissionKindRelease}).Prefix()
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := access.StorageFirstGrant{Schema: access.GrantSchemaV2, Provider: "r2", CeremonyID: protocol.Definition.CeremonyID, GrantRequestID: strings.Repeat("e", 32), CheckpointDigest: head.Record.Digest.SHA256, SubmissionKind: access.SubmissionKindRelease, Phase: "release", Index: 1, IdentityID: "signer", AttemptID: attempt, Endpoint: "https://account.r2.cloudflarestorage.com", Region: "auto", InboxBucket: "inbox", Prefix: prefix + "/", ManifestKey: prefix + "/manifest.json", IssuedAt: "2026-09-16T00:00:00Z", ExpiresAt: "2026-09-16T01:00:00Z", Credentials: access.SessionCredentials{AccessKeyID: "id", SecretAccessKey: "secret", SessionToken: "token"}}
+	destination := GrantDestination{Provider: grant.Provider, Endpoint: grant.Endpoint, Region: grant.Region, InboxBucket: grant.InboxBucket}
+	now := time.Date(2026, 9, 16, 0, 30, 0, 0, time.UTC)
+	if err := ValidateReleaseGrantV4At(snapshot, protocol, "signer", grant, destination, now); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*access.StorageFirstGrant){
+		func(g *access.StorageFirstGrant) { g.CheckpointDigest = digestOfTest("wrong") },
+		func(g *access.StorageFirstGrant) { g.IdentityID = "coord" },
+		func(g *access.StorageFirstGrant) { g.SubmissionKind = access.SubmissionKindCandidate },
+		func(g *access.StorageFirstGrant) { g.Phase = "phase2" },
+	} {
+		changed := grant
+		mutate(&changed)
+		if err := ValidateReleaseGrantV4At(snapshot, protocol, "signer", changed, destination, now); err == nil {
+			t.Fatal("wrong release grant accepted")
+		}
+	}
+	c.Progress.FinalRelease = &head
+	completed := encodeTurnFixtureV4(t, c, index, enrollments)
+	completed.head = head
+	if err := ValidateReleaseGrantV4At(completed, protocol, "signer", grant, destination, now); err == nil {
+		t.Fatal("release grant remained valid after final release")
+	}
+}
+
 func storageFirstBoundGrant(cp Checkpoint, slot Slot) access.StorageFirstGrant {
 	prefix := strings.TrimSuffix(slot.ManifestKey, "manifest.json")
 	return access.StorageFirstGrant{

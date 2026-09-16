@@ -365,7 +365,7 @@ func (j *workflowV4Journal) transition(id, status string) error {
 }
 
 func validateWorkflowV4Binding(b workflowV4Binding) error {
-	if !validCoordinatorCommitDigest(b.CeremonyID) || b.Name == "" || b.IdentityID == "" || (b.Role != "coordinator" && b.Role != "participant") {
+	if !validCoordinatorCommitDigest(b.CeremonyID) || b.Name == "" || b.IdentityID == "" || (b.Role != "coordinator" && b.Role != "participant" && b.Role != "release-signer") {
 		return errors.New("invalid V4 workspace ceremony or role binding")
 	}
 	if err := validateCommitLocalPath(b.Work); err != nil {

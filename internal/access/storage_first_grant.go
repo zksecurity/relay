@@ -15,6 +15,7 @@ const (
 
 	SubmissionKindCandidate  = "candidate"
 	SubmissionKindEnrollment = "enrollment"
+	SubmissionKindRelease    = "release"
 
 	maxStorageFirstContributionIndex = 255
 	maxStorageFirstGrantLifetime     = time.Hour
@@ -81,8 +82,12 @@ func (g StorageFirstGrant) Validate() error {
 		if g.Phase != "setup" || g.Index == 0 || g.Index > 20 {
 			return errors.New("enrollment grant requires setup phase and a role index between 1 and 20")
 		}
+	case SubmissionKindRelease:
+		if g.Phase != "release" || g.Index != 1 {
+			return errors.New("release grant requires release phase and index 1")
+		}
 	default:
-		return errors.New("submission_kind must be candidate or enrollment")
+		return errors.New("submission_kind must be candidate, enrollment or release")
 	}
 	if !validComponent(g.IdentityID) || !validComponent(g.InboxBucket) {
 		return errors.New("grant identity or inbox bucket is invalid")

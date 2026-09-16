@@ -264,8 +264,11 @@ func runGrant(args []string) error {
 		if submissionKind == access.SubmissionKindCandidate && role != access.RoleParticipant {
 			return errors.New("V4 candidate grants support only participants")
 		}
-		if submissionKind != access.SubmissionKindCandidate && submissionKind != access.SubmissionKindEnrollment {
-			return errors.New("V4 grants support candidate or enrollment uploads")
+		if submissionKind == access.SubmissionKindRelease && role != access.RoleRelease {
+			return errors.New("V4 release grants support only the release signer")
+		}
+		if submissionKind != access.SubmissionKindCandidate && submissionKind != access.SubmissionKindEnrollment && submissionKind != access.SubmissionKindRelease {
+			return errors.New("V4 grants support candidate, enrollment or release uploads")
 		}
 		prefix, err = (storagefirst.DeliveryScope{CeremonyID: config.CeremonyID, AttemptID: attemptID, Kind: submissionKind}).Prefix()
 	} else {

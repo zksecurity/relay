@@ -25,6 +25,7 @@ const (
 	workflowV4StartPhase2  = "start-phase2"
 	workflowV4Finalize     = "finalize-candidate"
 	workflowV4Review       = "freeze-release-review"
+	workflowV4Release      = "complete-signed-release"
 )
 
 const workflowV4QuicknetChainHash = "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971"
@@ -65,6 +66,9 @@ func workflowV4CoordinatorLifecycleAction(state transcript.CheckpointStateV4, pr
 		if state.Progress.FinalCandidate != nil && state.Progress.ReleaseReview == nil {
 			return workflowV4Review, "Assemble and sign the exact operational evidence bundle for release review", nil
 		}
+		if state.Progress.ReleaseReview != nil && state.Progress.FinalRelease == nil {
+			return workflowV4Release, "Issue the release signer upload grant or verify and record the returned signed package", nil
+		}
 	}
 	return "", "", nil
 }
@@ -88,6 +92,9 @@ func runWorkflowV4CoordinatorLifecycle(ui *coordinatorWizard, action string, sna
 	}
 	if action == workflowV4Review {
 		return runWorkflowV4ReleaseReviewLifecycle(ui, snapshot, online, signer)
+	}
+	if action == workflowV4Release {
+		return runWorkflowV4FinalReleaseLifecycle(ui, snapshot, protocol, online, signer)
 	}
 	phase := "phase1"
 	if action == workflowV4ClosePhase2 {
