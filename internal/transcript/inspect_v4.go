@@ -158,6 +158,7 @@ type CheckpointProgressV4 struct {
 	Phase2Closure  *SignedArtifactRefs   `json:"phase2_closure,omitempty"`
 	Phase2Beacon   *SignedArtifactRefs   `json:"phase2_beacon,omitempty"`
 	FinalCandidate *SignedArtifactRefs   `json:"final_candidate,omitempty"`
+	ReleaseReview  *SignedArtifactRefs   `json:"release_review,omitempty"`
 	FinalRelease   *SignedArtifactRefs   `json:"final_release,omitempty"`
 	Terminal       *struct {
 		Kind              string              `json:"kind"`
@@ -248,6 +249,7 @@ func RequiredPublicArtifactsV4(p CheckpointInspectionV4) ([]ArtifactRef, error) 
 		p.Checkpoint.Progress.Phase2Closure,
 		p.Checkpoint.Progress.Phase2Beacon,
 		p.Checkpoint.Progress.FinalCandidate,
+		p.Checkpoint.Progress.ReleaseReview,
 		p.Checkpoint.Progress.FinalRelease,
 	} {
 		if err := addPair(pair); err != nil {
@@ -361,7 +363,7 @@ func validateProgressV4(c CheckpointStateV4) error {
 			return err
 		}
 	}
-	for _, pair := range []*SignedArtifactRefs{p.Phase1Closure, p.Phase1Beacon, p.Phase1Seal, p.Phase2Closure, p.Phase2Beacon, p.FinalCandidate, p.FinalRelease} {
+	for _, pair := range []*SignedArtifactRefs{p.Phase1Closure, p.Phase1Beacon, p.Phase1Seal, p.Phase2Closure, p.Phase2Beacon, p.FinalCandidate, p.ReleaseReview, p.FinalRelease} {
 		if pair != nil {
 			if err := validatePairV4(*pair); err != nil {
 				return err

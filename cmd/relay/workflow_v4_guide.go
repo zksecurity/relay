@@ -278,6 +278,8 @@ func printWorkflowV4Status(out io.Writer, role string, c transcript.CheckpointSt
 	fmt.Fprintf(out, "Backend turn status: %s\n", turn.Stage)
 	if c.Progress.FinalRelease != nil {
 		fmt.Fprintln(out, "Final release recorded; public publication is a separate check.")
+	} else if c.Progress.ReleaseReview != nil {
+		fmt.Fprintln(out, "Coordinator evidence is frozen for review; waiting for the release signer.")
 	} else if c.Progress.FinalCandidate != nil {
 		fmt.Fprintln(out, "Final files prepared for review; release is not yet recorded.")
 	} else if c.Progress.Phase1Closure != nil && c.Progress.Phase2 == nil {

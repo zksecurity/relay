@@ -44,8 +44,40 @@ func TestWorkflowV4LifecycleClosesOnlyCompletedOpenPhase(t *testing.T) {
 		t.Fatalf("completed ceremony action = %q, %v", action, err)
 	}
 	state.Progress.FinalCandidate = &transcript.SignedArtifactRefs{}
+	if action, _, err := workflowV4CoordinatorLifecycleAction(state, protocol); err != nil || action != workflowV4Review {
+		t.Fatalf("final candidate review action = %q, %v", action, err)
+	}
+	state.Progress.ReleaseReview = &transcript.SignedArtifactRefs{}
 	if action, _, err := workflowV4CoordinatorLifecycleAction(state, protocol); err != nil || action != "" {
-		t.Fatalf("final candidate should wait for release signer, action = %q, %v", action, err)
+		t.Fatalf("signed review should wait for release signer, action = %q, %v", action, err)
+	}
+}
+
+func TestWorkflowV4BundleCommandsBindExactCheckpoint(t *testing.T) {
+	work, trust, keys := t.TempDir(), t.TempDir(), t.TempDir()
+	online := guidedProfile{Work: work, Trust: trust, Keys: keys}
+	signer := guidedProfile{Work: work, Trust: trust, Keys: keys}
+	head := pairV4Test("0012")
+	bundle := filepath.Join(work, "ceremony", "public", "operational", "evidence-bundle.json")
+	signature := filepath.Join(work, "ceremony", "public", "operational", "evidence-bundle.sig")
+	when := time.Date(2026, 9, 16, 1, 2, 3, 4, time.UTC)
+	prepare, err := workflowV4BundleCommand(head, online, signer, "prepare", bundle, signature, "", when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sign, err := workflowV4BundleCommand(head, online, signer, "sign", bundle, signature, strings.Repeat("a", 64), time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for command, wants := range map[string][]string{
+		strings.Join(prepare, " "): {"ops prepare-bundle-v4", "--checkpoint /work/ceremony/public/checkpoints/0012/checkpoint.json", "--assembled-at " + when.Format(time.RFC3339Nano), "--out /work/ceremony/public/operational/evidence-bundle.json"},
+		strings.Join(sign, " "):    {"ops sign-bundle-v4", "--checkpoint-signature /work/ceremony/public/checkpoints/0012/checkpoint.sig", "--reviewed-sha256 " + strings.Repeat("a", 64), "--out /work/ceremony/public/operational/evidence-bundle.sig"},
+	} {
+		for _, want := range wants {
+			if !strings.Contains(command, want) {
+				t.Fatalf("command %q lacks %q", command, want)
+			}
+		}
 	}
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ const (
 	workflowV4SealPhase1   = "seal-phase1"
 	workflowV4StartPhase2  = "start-phase2"
 	workflowV4Finalize     = "finalize-candidate"
+	workflowV4Review       = "freeze-release-review"
 )
 
 const workflowV4QuicknetChainHash = "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971"
@@ -60,6 +62,9 @@ func workflowV4CoordinatorLifecycleAction(state transcript.CheckpointStateV4, pr
 		if state.Progress.Phase2Beacon != nil && state.Progress.FinalCandidate == nil {
 			return workflowV4Finalize, "Replay both completed phases and prepare the coordinator-signed final candidate", nil
 		}
+		if state.Progress.FinalCandidate != nil && state.Progress.ReleaseReview == nil {
+			return workflowV4Review, "Assemble and sign the exact operational evidence bundle for release review", nil
+		}
 	}
 	return "", "", nil
 }
@@ -80,6 +85,9 @@ func runWorkflowV4CoordinatorLifecycle(ui *coordinatorWizard, action string, sna
 	}
 	if action == workflowV4Finalize {
 		return runWorkflowV4FinalizeLifecycle(ui, snapshot, protocol, online, signer)
+	}
+	if action == workflowV4Review {
+		return runWorkflowV4ReleaseReviewLifecycle(ui, snapshot, online, signer)
 	}
 	phase := "phase1"
 	if action == workflowV4ClosePhase2 {
@@ -144,6 +152,98 @@ func runWorkflowV4CoordinatorLifecycle(ui *coordinatorWizard, action string, sna
 		return err
 	}
 	return runWorkflowV4CommitCommand(online, outputDir)
+}
+
+func runWorkflowV4ReleaseReviewLifecycle(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, online, signer guidedProfile) error {
+	state, err := snapshot.State()
+	if err != nil {
+		return err
+	}
+	if state.Progress.FinalCandidate == nil || state.Progress.ReleaseReview != nil || state.Progress.FinalRelease != nil {
+		return errors.New("release review requires one authenticated final candidate and no existing review or release")
+	}
+	root := filepath.Join(online.Work, "ceremony", "public")
+	operational := filepath.Join(root, "operational")
+	if err := os.MkdirAll(operational, 0o700); err != nil {
+		return err
+	}
+	bundle := filepath.Join(operational, "evidence-bundle.json")
+	signature := filepath.Join(operational, "evidence-bundle.sig")
+	if !regularPreparationFile(bundle) {
+		if regularPreparationFile(signature) {
+			return errors.New("retained evidence signature has no canonical bundle; preserve it for inspection")
+		}
+		command, err := workflowV4BundleCommand(snapshot.Head(), online, signer, "prepare", bundle, signature, "", time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+			return err
+		}
+	}
+	raw, err := os.ReadFile(bundle)
+	if err != nil {
+		return err
+	}
+	digest := fmt.Sprintf("%x", sha256.Sum256(raw))
+	if !regularPreparationFile(signature) {
+		if err := ui.confirm("Review and freeze the exact coordinator evidence bundle (SHA-256 "+digest+"). Later evidence cannot be added to this release.", "SIGN EVIDENCE BUNDLE"); err != nil {
+			return err
+		}
+		command, err := workflowV4BundleCommand(snapshot.Head(), online, signer, "sign", bundle, signature, digest, time.Time{})
+		if err != nil {
+			return err
+		}
+		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+			return err
+		}
+	}
+	basis := strings.TrimPrefix(snapshot.Head().Record.Digest.SHA256, "sha256:")[:16]
+	outputDir := filepath.Join(root, "checkpoints", "final", "review-"+basis)
+	if _, err := os.Lstat(filepath.Join(outputDir, "checkpoint.json")); errors.Is(err, os.ErrNotExist) {
+		command, err := workflowV4RecordCommand(snapshot, online, signer, "release-review-recorded", bundle, signature, nil, outputDir)
+		if err != nil {
+			return err
+		}
+		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	return runWorkflowV4CommitCommand(online, outputDir)
+}
+
+func workflowV4BundleCommand(head transcript.SignedArtifactRefs, online, signer guidedProfile, action, bundle, signature, reviewedSHA string, assembledAt time.Time) ([]string, error) {
+	root := filepath.Join(online.Work, "ceremony", "public")
+	mapWork := func(path string) (string, error) { return pathWithin(signer.Work, path, "/work") }
+	ceremony, err := mapWork(filepath.Join(root, "ceremony.json"))
+	if err != nil {
+		return nil, err
+	}
+	ceremonySignature, _ := mapWork(filepath.Join(root, "ceremony.sig"))
+	artifactRoot, _ := mapWork(root)
+	checkpoint, err := mapWork(filepath.Join(root, filepath.FromSlash(head.Record.Name)))
+	if err != nil {
+		return nil, err
+	}
+	checkpointSignature, _ := mapWork(filepath.Join(root, filepath.FromSlash(head.Signature.Name)))
+	bundlePath, _ := mapWork(bundle)
+	signaturePath, _ := mapWork(signature)
+	coordinatorKey, err := pathWithin(signer.Trust, filepath.Join(online.Trust, "setup-coordinator.hex"), "/trust")
+	if err != nil {
+		return nil, err
+	}
+	command := []string{"mpc-ceremony", "ops", "prepare-bundle-v4", "--ceremony", ceremony, "--ceremony-signature", ceremonySignature, "--coordinator-public-key-file", coordinatorKey, "--artifact-root", artifactRoot, "--checkpoint", checkpoint, "--checkpoint-signature", checkpointSignature}
+	switch action {
+	case "prepare":
+		return append(command, "--assembled-at", assembledAt.UTC().Format(time.RFC3339Nano), "--out", bundlePath), nil
+	case "sign":
+		command[2] = "sign-bundle-v4"
+		return append(command, "--operational-bundle", bundlePath, "--coordinator-signing-key", "/keys/signing.hex", "--reviewed", "--reviewed-sha256", reviewedSHA, "--out", signaturePath), nil
+	default:
+		return nil, errors.New("unsupported evidence-bundle action")
+	}
 }
 
 func runWorkflowV4FinalizeLifecycle(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, online, signer guidedProfile) error {
