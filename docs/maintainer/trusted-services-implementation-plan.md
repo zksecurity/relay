@@ -20,6 +20,14 @@ view does not execute turns; connecting those actions remains the next task.
 Independent review corrected phase-specific participant handling and kept
 pending local work visible when storage is unavailable. Legacy guides are unchanged.
 
+The normal participant guide can now fetch receipt inputs for its active turn
+from exact committed references. Fresh staging has no operation-completion marker;
+after interruption, another read-only fetch is safe and does not overwrite earlier
+copies. SHA-256/size checks are transport checks; proof-tool still checks signatures
+and both signed digests before receipt signing. This is not a computation-ready
+Phase 2 transcript. Receipt signing, its later dependency staging, and production
+large-object transfer timeouts remain required integration work.
+
 Current boundary: proof-tool's V4 library and explicit CLI now cover checkpoint
 authoring, checkpoint-bound bundle preparation/signing, final review, package
 signing/verification and Decision V3. These changes are pushed, not released.

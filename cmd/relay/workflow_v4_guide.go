@@ -145,6 +145,7 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 	objects := store.Client{PublicBaseURL: config.PublishedBaseURL}
 	ui := coordinatorWizard{input: bufio.NewReader(os.Stdin), output: os.Stdout}
 	for {
+		downloadPhase := ""
 		pending, err := j.pending()
 		if err != nil {
 			return err
@@ -185,6 +186,10 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 				}
 			}
 			printWorkflowV4Status(ui.output, p.Role, c, turn, pending, time.Now().UTC())
+			if p.Role == "participant" && pending == nil && turn.Stage == storagefirst.TurnReceiptV4 {
+				downloadPhase = phase
+				fmt.Fprintln(ui.output, "1) Download your input packet and named public files")
+			}
 		}
 		fmt.Fprintln(ui.output, "[R] Refresh from storage\n[Q] Save and exit")
 		answer, err := ui.ask("Choose", "Q")
@@ -192,11 +197,26 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 			return err
 		}
 		switch strings.ToUpper(strings.TrimSpace(answer)) {
+		case "1":
+			if downloadPhase == "" {
+				fmt.Fprintln(ui.output, "No input download is available for your current turn.")
+				continue
+			}
+			received, err := snapshot.FetchOutboundV4(objects, protocol, downloadPhase, identity.ID, p.Work)
+			if err != nil {
+				ui.message(toneError, "Input download failed: %v\nNo receipt was prepared or signed.\n", err)
+				continue
+			}
+			fmt.Fprintf(ui.output, "Input files saved in: %s\nSHA-256 and sizes match the signed backend references. Proof-tool must still check the handoff signature and full signed digests before receipt signing.\n", received.Root)
+			for _, ref := range received.Files {
+				fmt.Fprintf(ui.output, "  %s\n", filepath.Join(received.Root, filepath.FromSlash(ref.Name)))
+			}
+			fmt.Fprintln(ui.output, "These are receipt inputs, not a computation-ready transcript. Receipt preparation/signing is the next integration step; no receipt or completion claim was created.")
 		case "Q":
 			return nil
 		case "R":
 		default:
-			fmt.Fprintln(ui.output, "Choose R or Q.")
+			fmt.Fprintln(ui.output, "Choose a displayed action, R or Q.")
 		}
 	}
 }
@@ -219,7 +239,7 @@ func printWorkflowV4Status(out io.Writer, role string, c transcript.CheckpointSt
 	}
 	printWorkflowV4Pending(out, pending)
 	fmt.Fprintln(out, "This is the newest update returned by the configured storage service, not proof that no newer state exists elsewhere.")
-	fmt.Fprintln(out, "Signatures and recorded progress checked; contribution mathematics were not replayed by this refresh.\nTurn actions are not connected in this development build. No signing, contribution or upload was performed.")
+	fmt.Fprintln(out, "Signatures and recorded progress checked; contribution mathematics were not replayed by this refresh.\nSigning, contribution and upload actions are not connected in this development build. No signing, contribution or upload was performed.")
 }
 
 func printWorkflowV4Pending(out io.Writer, pending *workflowV4Operation) {
