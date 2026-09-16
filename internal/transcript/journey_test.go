@@ -42,6 +42,24 @@ func TestDefinitionJourneyUsesAuthenticatedMinimums(t *testing.T) {
 	}
 }
 
+func TestDefinitionJourneyAllowsExplicitlyDisabledV2Assurance(t *testing.T) {
+	j := &DefinitionJourney{
+		Schema: "proof-tool-mpc-definition-journey-v2", ObserverRequirementSource: "signed ceremony assurance_policy",
+		RequiredEnrollments: []ExpectedEnrollment{
+			{Role: "coordinator", RoleIndex: 1, Identity: PublicIdentity{ID: "coordinator", KeyID: "coordinator-key", PublicKeyFingerprint: "coordinator-fingerprint"}},
+			{Role: "release-signer", RoleIndex: 1, Identity: PublicIdentity{ID: "release", KeyID: "release-key", PublicKeyFingerprint: "release-fingerprint"}},
+			{Role: "participant", RoleIndex: 1, Identity: PublicIdentity{ID: "participant", KeyID: "participant-key", PublicKeyFingerprint: "participant-fingerprint"}},
+		},
+	}
+	if _, err := (Definition{Journey: j}).RequireJourney(); err != nil {
+		t.Fatalf("zero-assurance journey rejected: %v", err)
+	}
+	j.MinimumPassingCeremonyAudits = 1
+	if _, err := (Definition{Journey: j}).RequireJourney(); err == nil {
+		t.Fatal("positive audit requirement accepted without an auditor enrollment")
+	}
+}
+
 func TestJourneyRejectsIncompleteOrInconsistentMetadata(t *testing.T) {
 	valid := func() Journey {
 		return Journey{Schema: "proof-tool-mpc-journey-inspection-v1", CeremonyID: "ceremony", Mode: "rehearsal", Depth: "metadata", Phases: []PhaseJourney{

@@ -91,6 +91,81 @@ func (f *roleFlow) decisionRequirement() (string, error) {
 	}
 }
 
+// resolvePolicyTask derives guidance and CLI defaults only from the
+// authenticated definition. It never makes an optional control mandatory and
+// never weakens proof-tool verification.
+func (f *roleFlow) resolvePolicyTask(task flowTask) (flowTask, bool, error) {
+	needsPolicy := task.Assurance != "" || task.ID == "close" || task.ID == "ops-prepare" ||
+		(f.state.Role == "release-signer" && task.ID == "sign") ||
+		(f.state.Role == "coordinator" && task.ID == "verify-decision")
+	if !needsPolicy {
+		return task, true, nil
+	}
+	d, err := f.authenticatedDefinition()
+	if err != nil {
+		return task, false, err
+	}
+	requirements, err := d.RequireJourney()
+	if err != nil {
+		return task, false, err
+	}
+	count := map[string]int{
+		"witness": requirements.MinimumPublicWitnesses,
+		"mirror":  requirements.MinimumMirrorsPerAcceptedHead,
+		"audit":   requirements.MinimumPassingCeremonyAudits,
+	}[task.Assurance]
+	if task.Assurance != "" && count == 0 {
+		return task, false, nil
+	}
+	for index := range task.Fields {
+		field := &task.Fields[index]
+		if task.ID == "close" && field.Flag == "beacon-round-lead" && requirements.BeaconRoundLeadSeconds > 0 {
+			field.Default = fmt.Sprint(requirements.BeaconRoundLeadSeconds)
+			field.Label = "Signed seconds from closure to the future beacon round"
+		}
+	}
+	// Modern proof-tool derives the exact witness quorum from the signed
+	// definition. An operator-controlled flag would be ambiguous and is rejected.
+	if task.ID == "ops-prepare" {
+		fields := make([]flowField, 0, len(task.Fields))
+		for _, field := range task.Fields {
+			if field.Flag != "witness-quorum" {
+				fields = append(fields, field)
+			}
+		}
+		task.Fields = fields
+	}
+	if (f.state.Role == "release-signer" && task.ID == "sign") ||
+		(f.state.Role == "coordinator" && task.ID == "verify-decision") {
+		if requirements.MinimumPassingCeremonyAudits == 0 {
+			fields := make([]flowField, 0, len(task.Fields))
+			for _, field := range task.Fields {
+				if field.Flag != "audit-report" && field.Flag != "audit-signature" &&
+					!(task.ID == "verify-decision" && field.Flag == "signature" && strings.Contains(strings.ToLower(field.Label), "auditor")) {
+					fields = append(fields, field)
+				}
+			}
+			task.Fields, task.ExtraFields, task.ExtraLabel = fields, nil, ""
+		}
+	}
+	return task, true, nil
+}
+
+func (f *roleFlow) requireEnabledRole() error {
+	gate := map[string]string{"witness": "witness", "mirror": "mirror", "auditor": "audit"}[f.state.Role]
+	if gate == "" {
+		return nil
+	}
+	_, enabled, err := f.resolvePolicyTask(flowTask{Assurance: gate})
+	if err != nil {
+		return fmt.Errorf("authenticate the signed definition before opening this role: %w", err)
+	}
+	if !enabled {
+		return fmt.Errorf("%s role is disabled by the signed ceremony assurance policy", f.state.Role)
+	}
+	return nil
+}
+
 func (f *roleFlow) checkScheduledTurns() error {
 	phase := strings.TrimSuffix(f.stages[f.state.Stage].ID, "-turns")
 	phase = strings.TrimSuffix(phase, "-close")

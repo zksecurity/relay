@@ -1,7 +1,8 @@
 # Prepare a setup for Tessera
 
 This chapter describes the legacy v1 roster flow. New website drafts use the
-[shared v2 setup](tessera-setup-v2.md).
+[shared setup contract](tessera-setup-v3.md). Existing ceremonies using the
+[v2 contract](tessera-setup-v2.md) remain supported.
 
 Use a CLI release containing `tessera export-setup` and the matching installed
 role images. Older releases do not support this workflow. Run

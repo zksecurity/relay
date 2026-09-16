@@ -75,6 +75,40 @@ func TestTranscriptGrowthPreservesEarlierEvidenceButReplacementDoesNot(t *testin
 	}
 }
 
+func TestNestedFreshOutputMayGrowInputTreeButCannotReplaceEvidence(t *testing.T) {
+	f := flowFixture(t)
+	f.state.Profile.Work = t.TempDir()
+	root := filepath.Join(f.state.Profile.Work, "public")
+	if err := os.MkdirAll(filepath.Join(root, "operational"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	existing := filepath.Join(root, "operational", "receipt.json")
+	if err := os.WriteFile(existing, []byte("signed evidence"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	task := flowTask{Fields: []flowField{
+		ff("evidence-root", "Evidence", "/work/public"),
+		ff("out-dir", "Output", "/work/public/operational"),
+	}}
+	command := []string{"--evidence-root", "/work/public", "--out-dir", "/work/public/operational"}
+	bindings, err := f.captureDirectories(task, command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "operational", "evidence-bundle.json"), []byte("new output"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.checkDirectoryBindings(bindings); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(existing, []byte("changed"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.checkDirectoryBindings(bindings); err == nil {
+		t.Fatal("replacement of pre-existing evidence went unnoticed")
+	}
+}
+
 func TestEvidenceTreeRefusesKeysAndSymlinks(t *testing.T) {
 	for _, kind := range []string{"key", "symlink"} {
 		t.Run(kind, func(t *testing.T) {

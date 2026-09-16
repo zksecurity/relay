@@ -15,6 +15,7 @@ const (
 	chainInspectionSchema       = "proof-tool-mpc-chain-inspection-v1"
 	participantInspectionSchema = "proof-tool-mpc-participant-inspection-v1"
 	enrollmentInspectionSchema  = "proof-tool-mpc-enrollment-inspection-v1"
+	submissionInspectionSchema  = "proof-tool-mpc-submission-inspection-v1"
 )
 
 // InspectionRunner invokes the trusted ceremony tool. It is exported so Relay
@@ -39,15 +40,147 @@ type Inspector struct {
 }
 
 type inspectionResult struct {
-	Schema                string                 `json:"schema"`
-	OK                    bool                   `json:"ok"`
-	Command               string                 `json:"command"`
-	DefinitionInspection  *Definition            `json:"definition_inspection"`
-	ChainInspection       *chainInspection       `json:"chain_inspection"`
-	ParticipantInspection *ParticipantInspection `json:"participant_inspection"`
-	EnrollmentInspection  *EnrollmentInspection  `json:"enrollment_inspection"`
-	JourneyInspection     *Journey               `json:"journey_inspection"`
-	Error                 inspectionCommandError `json:"error"`
+	Schema                         string                             `json:"schema"`
+	OK                             bool                               `json:"ok"`
+	Command                        string                             `json:"command"`
+	DefinitionInspection           *Definition                        `json:"definition_inspection"`
+	DefinitionProtocolInspection   *DefinitionProtocol                `json:"definition_protocol_inspection"`
+	CheckpointDiscoveryV4          *CheckpointDiscoveryV4             `json:"checkpoint_discovery_v4"`
+	CheckpointInspectionV4         *CheckpointInspectionV4            `json:"checkpoint_inspection_v4"`
+	EnrollmentMetadataV4           *EnrollmentMetadataInspectionV4    `json:"enrollment_metadata_v4"`
+	ContributionInventoryV4        *ContributionInventoryInspectionV4 `json:"contribution_inventory_v4"`
+	ChainInspection                *chainInspection                   `json:"chain_inspection"`
+	ParticipantInspection          *ParticipantInspection             `json:"participant_inspection"`
+	EnrollmentInspection           *EnrollmentInspection              `json:"enrollment_inspection"`
+	JourneyInspection              *Journey                           `json:"journey_inspection"`
+	CheckpointInspection           *CheckpointInspection              `json:"checkpoint_inspection"`
+	CheckpointTransitionInspection *CheckpointTransitionInspection    `json:"checkpoint_transition_inspection"`
+	CheckpointEvidenceInspection   *CheckpointEvidenceInspection      `json:"checkpoint_evidence_inspection"`
+	SubmissionInspection           *SubmissionInspection              `json:"submission_inspection"`
+	Error                          inspectionCommandError             `json:"error"`
+}
+
+// SignedArtifactRefs is the transport projection of a canonical record and
+// its detached signature.
+type SignedArtifactRefs struct {
+	Record    ArtifactRef `json:"record"`
+	Signature ArtifactRef `json:"signature"`
+}
+
+type CheckpointTransition struct {
+	Kind          string `json:"kind"`
+	Phase         string `json:"phase"`
+	Index         uint8  `json:"index"`
+	ParticipantID string `json:"participant_id"`
+	AttemptID     string `json:"attempt_id"`
+	NextAttemptID string `json:"next_attempt_id"`
+}
+
+type CheckpointPhaseState struct {
+	Phase         string             `json:"phase"`
+	AcceptedCount uint8              `json:"accepted_count"`
+	HeadRecordID  string             `json:"head_record_id"`
+	HeadPayload   ArtifactRef        `json:"head_payload"`
+	Chain         SignedArtifactRefs `json:"chain"`
+}
+
+type CheckpointSubmissionSlot struct {
+	Kind                  string              `json:"kind"`
+	Phase                 string              `json:"phase"`
+	Index                 uint8               `json:"index"`
+	IdentityID            string              `json:"identity_id"`
+	AttemptID             string              `json:"attempt_id"`
+	ManifestKey           string              `json:"manifest_key"`
+	BasisCheckpointSHA256 string              `json:"basis_checkpoint_sha256"`
+	ParentHeadID          string              `json:"parent_head_id"`
+	Status                string              `json:"status"`
+	Acknowledgement       *SignedArtifactRefs `json:"acknowledgement"`
+}
+
+type CheckpointInspection struct {
+	Schema             string                     `json:"schema"`
+	CeremonyID         string                     `json:"ceremony_id"`
+	Workflow           string                     `json:"workflow"`
+	RelayReleaseID     string                     `json:"relay_release_id"`
+	Sequence           uint64                     `json:"sequence"`
+	Digest             Digest                     `json:"digest"`
+	Definition         SignedArtifactRefs         `json:"definition"`
+	PreviousCheckpoint *SignedArtifactRefs        `json:"previous_checkpoint"`
+	Transition         CheckpointTransition       `json:"transition"`
+	Phase1             CheckpointPhaseState       `json:"phase1"`
+	Phase1Closure      *SignedArtifactRefs        `json:"phase1_closure,omitempty"`
+	Phase1Beacon       *SignedArtifactRefs        `json:"phase1_beacon,omitempty"`
+	Phase1Seal         *SignedArtifactRefs        `json:"phase1_seal,omitempty"`
+	Phase2             *CheckpointPhaseState      `json:"phase2,omitempty"`
+	Phase2Closure      *SignedArtifactRefs        `json:"phase2_closure,omitempty"`
+	Phase2Beacon       *SignedArtifactRefs        `json:"phase2_beacon,omitempty"`
+	FinalCandidate     *SignedArtifactRefs        `json:"final_candidate,omitempty"`
+	FinalRelease       *SignedArtifactRefs        `json:"final_release,omitempty"`
+	Submissions        []CheckpointSubmissionSlot `json:"submissions"`
+	AcceptedArtifacts  []ArtifactRef              `json:"accepted_artifacts"`
+}
+
+type CheckpointTransitionInspection struct {
+	Schema                   string               `json:"schema"`
+	CeremonyID               string               `json:"ceremony_id"`
+	PreviousSequence         uint64               `json:"previous_sequence"`
+	Sequence                 uint64               `json:"sequence"`
+	PreviousCheckpointDigest Digest               `json:"previous_checkpoint_digest"`
+	PreviousSignatureDigest  Digest               `json:"previous_signature_digest"`
+	CheckpointDigest         Digest               `json:"checkpoint_digest"`
+	Transition               CheckpointTransition `json:"transition"`
+	Checkpoint               CheckpointInspection `json:"checkpoint"`
+}
+
+// CheckpointEvidenceInspection is emitted only after proof-tool has
+// reconstructed the checkpoint from all of its stored evidence. Structural
+// checkpoint inspection deliberately does not set this result.
+type CheckpointEvidenceInspection struct {
+	Schema                   string `json:"schema"`
+	CeremonyID               string `json:"ceremony_id"`
+	Sequence                 uint64 `json:"sequence"`
+	CheckpointDigest         Digest `json:"checkpoint_digest"`
+	TransitionKind           string `json:"transition_kind"`
+	FullyVerified            bool   `json:"fully_verified"`
+	VerifiedEvidenceBoundary string `json:"verified_evidence_boundary"`
+}
+
+// SubmissionInspection is emitted only after proof-tool authenticates the
+// participant envelope and binds it to the exact allocated checkpoint slot and
+// transport manifest bytes supplied by the caller.
+type SubmissionInspection struct {
+	Schema                     string        `json:"schema"`
+	CeremonyID                 string        `json:"ceremony_id"`
+	Workflow                   string        `json:"workflow"`
+	RelayReleaseID             string        `json:"relay_release_id"`
+	SubmitterID                string        `json:"submitter_id"`
+	SubmitterKeyID             string        `json:"submitter_key_id"`
+	SubmitterRole              string        `json:"submitter_role"`
+	Kind                       string        `json:"kind"`
+	Phase                      string        `json:"phase"`
+	Index                      uint8         `json:"index"`
+	ParentCheckpointSHA256     string        `json:"parent_checkpoint_sha256"`
+	AllocationCheckpointSHA256 string        `json:"allocation_checkpoint_sha256"`
+	ParentHeadID               string        `json:"parent_head_id"`
+	AttemptID                  string        `json:"attempt_id"`
+	ManifestKey                string        `json:"manifest_key"`
+	Payloads                   []ArtifactRef `json:"payloads"`
+	EnvelopeDigest             Digest        `json:"envelope_digest"`
+	EnvelopeSignatureDigest    Digest        `json:"envelope_signature_digest"`
+	ManifestDigest             Digest        `json:"manifest_digest"`
+}
+
+type SubmissionInspectionPaths struct {
+	CheckpointPath          string
+	CheckpointSignaturePath string
+	Kind                    string
+	Phase                   string
+	Index                   uint8
+	SubmitterID             string
+	AttemptID               string
+	EnvelopePath            string
+	EnvelopeSignaturePath   string
+	ManifestPath            string
 }
 
 type PublicIdentity struct {
@@ -221,6 +354,135 @@ func (i Inspector) Enrollment(recordPath, signaturePath string) (EnrollmentInspe
 		return EnrollmentInspection{}, fmt.Errorf("enrollment independence disclosure: %w", err)
 	}
 	return inspection, nil
+}
+
+func (i Inspector) Checkpoint(checkpointPath, signaturePath string) (CheckpointInspection, error) {
+	result, err := i.execute(
+		"inspect", "checkpoint",
+		"--ceremony", i.CeremonyPath,
+		"--ceremony-signature", i.CeremonySignaturePath,
+		"--coordinator-public-key-file", i.CoordinatorPublicKeyPath,
+		"--checkpoint", checkpointPath,
+		"--checkpoint-signature", signaturePath,
+	)
+	if err != nil {
+		return CheckpointInspection{}, err
+	}
+	if result.Command != "inspect checkpoint" || result.CheckpointInspection == nil {
+		return CheckpointInspection{}, errors.New("mpc-ceremony returned no checkpoint inspection")
+	}
+	inspection := *result.CheckpointInspection
+	if err := validateCheckpointInspection(inspection); err != nil {
+		return CheckpointInspection{}, err
+	}
+	return inspection, nil
+}
+
+func (i Inspector) CheckpointTransition(previousPath, previousSignaturePath, nextPath, nextSignaturePath string) (CheckpointTransitionInspection, error) {
+	result, err := i.execute(
+		"inspect", "checkpoint-transition",
+		"--ceremony", i.CeremonyPath,
+		"--ceremony-signature", i.CeremonySignaturePath,
+		"--coordinator-public-key-file", i.CoordinatorPublicKeyPath,
+		"--previous-checkpoint", previousPath,
+		"--previous-checkpoint-signature", previousSignaturePath,
+		"--checkpoint", nextPath,
+		"--checkpoint-signature", nextSignaturePath,
+	)
+	if err != nil {
+		return CheckpointTransitionInspection{}, err
+	}
+	if result.Command != "inspect checkpoint-transition" || result.CheckpointTransitionInspection == nil {
+		return CheckpointTransitionInspection{}, errors.New("mpc-ceremony returned no checkpoint transition inspection")
+	}
+	inspection := *result.CheckpointTransitionInspection
+	if inspection.Schema != "proof-tool-mpc-checkpoint-transition-inspection-v1" ||
+		inspection.CeremonyID == "" || inspection.Sequence != inspection.PreviousSequence+1 {
+		return CheckpointTransitionInspection{}, errors.New("mpc-ceremony returned an invalid checkpoint transition inspection")
+	}
+	if err := validateCheckpointInspection(inspection.Checkpoint); err != nil {
+		return CheckpointTransitionInspection{}, err
+	}
+	return inspection, nil
+}
+
+// CheckpointEvidence asks proof-tool to walk the fetched ancestry and
+// re-derive every checkpoint from the exact signed evidence stored under
+// artifactRoot. It is the only checkpoint inspection suitable for advancing
+// Relay's durable high-water mark.
+func (i Inspector) CheckpointEvidence(artifactRoot, checkpointPath, signaturePath string) (CheckpointEvidenceInspection, error) {
+	result, err := i.execute(
+		"checkpoint", "verify-stored",
+		"--ceremony", i.CeremonyPath,
+		"--ceremony-signature", i.CeremonySignaturePath,
+		"--coordinator-public-key-file", i.CoordinatorPublicKeyPath,
+		"--artifact-root", artifactRoot,
+		"--checkpoint", checkpointPath,
+		"--checkpoint-signature", signaturePath,
+	)
+	if err != nil {
+		return CheckpointEvidenceInspection{}, err
+	}
+	if result.Command != "checkpoint verify-stored" || result.CheckpointEvidenceInspection == nil {
+		return CheckpointEvidenceInspection{}, errors.New("mpc-ceremony returned no checkpoint evidence inspection")
+	}
+	inspection := *result.CheckpointEvidenceInspection
+	if inspection.Schema != "proof-tool-mpc-checkpoint-evidence-inspection-v1" || !inspection.FullyVerified ||
+		inspection.CeremonyID == "" || inspection.CheckpointDigest.SHA256 == "" || inspection.TransitionKind == "" ||
+		inspection.VerifiedEvidenceBoundary == "" {
+		return CheckpointEvidenceInspection{}, errors.New("mpc-ceremony did not fully verify checkpoint evidence")
+	}
+	return inspection, nil
+}
+
+func validateCheckpointInspection(value CheckpointInspection) error {
+	if value.Schema != "proof-tool-mpc-checkpoint-inspection-v1" || value.CeremonyID == "" ||
+		value.Workflow != "storage-first-v1" || value.RelayReleaseID == "" || value.Digest.SHA256 == "" {
+		return errors.New("mpc-ceremony returned an invalid checkpoint inspection")
+	}
+	for _, ref := range append([]ArtifactRef{value.Phase1.HeadPayload, value.Phase1.Chain.Record, value.Phase1.Chain.Signature}, value.AcceptedArtifacts...) {
+		if err := validateRef(ref); err != nil {
+			return fmt.Errorf("checkpoint inspection artifact: %w", err)
+		}
+	}
+	if value.Phase2 != nil {
+		for _, ref := range []ArtifactRef{value.Phase2.HeadPayload, value.Phase2.Chain.Record, value.Phase2.Chain.Signature} {
+			if err := validateRef(ref); err != nil {
+				return fmt.Errorf("checkpoint Phase 2 artifact: %w", err)
+			}
+		}
+	}
+	for label, refs := range map[string]*SignedArtifactRefs{
+		"Phase 1 closure": value.Phase1Closure, "Phase 1 beacon": value.Phase1Beacon,
+		"Phase 1 seal": value.Phase1Seal, "Phase 2 closure": value.Phase2Closure,
+		"Phase 2 beacon": value.Phase2Beacon, "final candidate": value.FinalCandidate,
+		"final release": value.FinalRelease,
+	} {
+		if refs == nil {
+			continue
+		}
+		if err := validateRef(refs.Record); err != nil {
+			return fmt.Errorf("checkpoint %s: %w", label, err)
+		}
+		if err := validateRef(refs.Signature); err != nil {
+			return fmt.Errorf("checkpoint %s signature: %w", label, err)
+		}
+	}
+	if err := validateRef(value.Definition.Record); err != nil {
+		return fmt.Errorf("checkpoint definition: %w", err)
+	}
+	if err := validateRef(value.Definition.Signature); err != nil {
+		return fmt.Errorf("checkpoint definition signature: %w", err)
+	}
+	if value.PreviousCheckpoint != nil {
+		if err := validateRef(value.PreviousCheckpoint.Record); err != nil {
+			return fmt.Errorf("previous checkpoint: %w", err)
+		}
+		if err := validateRef(value.PreviousCheckpoint.Signature); err != nil {
+			return fmt.Errorf("previous checkpoint signature: %w", err)
+		}
+	}
+	return nil
 }
 
 func (i Inspector) execute(args ...string) (inspectionResult, error) {

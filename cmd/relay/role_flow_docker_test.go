@@ -213,7 +213,11 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(trust, "release-public-key.hex"), []byte(roster.ReleaseSigner.PublicKey), 0600); err != nil {
 		t.Fatal(err)
 	}
-	f := roleFlow{state: roleFlowState{Schema: roleFlowSchema, Name: "docker-full-test", Role: "coordinator", Values: map[string]string{}}, stages: coordinatorFlowStages(), path: filepath.Join(work, "flow-state.json"), ui: coordinatorWizard{output: os.Stdout}}
+	f := roleFlow{state: roleFlowState{
+		Schema: roleFlowSchema, Name: "docker-full-test", Role: "coordinator",
+		Profile: guidedProfile{Work: work, Trust: trust, Image: online, Platform: platform},
+		Values:  map[string]string{"shared/coordinator-public-key-file": "/trust/coordinator-public-key.hex"},
+	}, stages: coordinatorFlowStages(), path: filepath.Join(work, "flow-state.json"), ui: coordinatorWizard{output: os.Stdout}}
 	find := func(role, stageID, taskID string) flowTask {
 		t.Helper()
 		for index, stage := range roleFlowStages(role) {
@@ -233,6 +237,13 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 		t.Helper()
 		f.stages, f.state.Role = roleFlowStages(role), role
 		task := find(role, stage, id)
+		resolved, applicable, err := f.resolvePolicyTask(task)
+		if err != nil {
+			t.Fatalf("%s/%s/%s policy: %v", role, stage, id, err)
+		}
+		if !applicable {
+			t.Fatalf("%s/%s/%s is disabled by the fixture policy", role, stage, id)
+		}
 		// This integration invokes selected cryptographic recipes directly; its
 		// same-host fixture performs the intervening synchronization, publication,
 		// and human handoffs outside roleFlow.execute. Record those fixture steps
@@ -259,10 +270,10 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 		}
 		used := map[string]int{}
 		var input strings.Builder
-		if len(task.ExtraFields) > 0 {
+		if len(resolved.ExtraFields) > 0 {
 			input.WriteString("0\n")
 		}
-		for _, field := range task.Fields {
+		for _, field := range resolved.Fields {
 			value := field.Default
 			if options := values[field.Flag]; len(options) > 0 {
 				n := used[field.Flag]
@@ -520,7 +531,11 @@ func TestRoleFlowDockerFullCeremony(t *testing.T) {
 	reviewedSHA := fmt.Sprintf("%x", sha256.Sum256(bytes.TrimSpace(reviewedBundle)))
 	execute("coordinator", "coordinator", "operational-evidence", "ops-sign", map[string][]string{"record": {preparedBundle + ".json"}, "out": {preparedBundle + ".sig"}, "reviewed-sha256": {reviewedSHA}})
 	execute("coordinator", "coordinator", "release", "ops-verify", map[string][]string{"record": {preparedBundle + ".json"}, "signature": {preparedBundle + ".sig"}})
-	execute("release-signer", "release-signer", "sign", "sign", map[string][]string{"audit-report": {"/work/auditor-01.json", "/work/auditor-02.json"}, "audit-signature": {"/work/auditor-01.sig", "/work/auditor-02.sig"}, "signature-key-id": {roster.ReleaseSigner.KeyID}, "operational-bundle": {preparedBundle + ".json"}, "operational-bundle-signature": {preparedBundle + ".sig"}})
+	releaseInputs := map[string][]string{"audit-report": {"/work/auditor-01.json", "/work/auditor-02.json"}, "audit-signature": {"/work/auditor-01.sig", "/work/auditor-02.sig"}, "signature-key-id": {roster.ReleaseSigner.KeyID}, "operational-bundle": {preparedBundle + ".json"}, "operational-bundle-signature": {preparedBundle + ".sig"}}
+	for key, values := range replay {
+		releaseInputs[key] = values
+	}
+	execute("release-signer", "release-signer", "sign", "sign", releaseInputs)
 	execute("coordinator", "coordinator", "release", "release-verify", map[string][]string{"signature-key-id": {roster.ReleaseSigner.KeyID}})
 	if binary := os.Getenv("RELAY_VERIFY_MPC_BINARY"); binary != "" {
 		publicTrust := filepath.Join(work, "verification-trust")

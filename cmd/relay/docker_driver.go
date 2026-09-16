@@ -1157,7 +1157,7 @@ func signedCeremonyBinarySHA256(path, platform string) (string, error) {
 			)
 		}
 		digest = definition.Software.ToolBinary.SHA256
-	case "proof-tool-mpc-ceremony-definition-v2":
+	case "proof-tool-mpc-ceremony-definition-v2", "proof-tool-mpc-ceremony-definition-v3":
 		for _, binary := range definition.Software.Binaries {
 			if binary.GoOS+"/"+binary.GoArch != platform {
 				continue

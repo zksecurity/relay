@@ -90,13 +90,13 @@ func (f *roleFlow) captureDirectories(task flowTask, command []string) (map[stri
 				return nil, err
 			}
 			if !st.IsDir() || st.Mode()&os.ModeSymlink != 0 {
-				return nil, errors.New("public evidence input must be a real directory")
+				return nil, fmt.Errorf("public evidence input %s (%s) must be a real directory", field.Flag, value)
 			}
 			digest, err := flowTreeHash(local)
 			if err != nil {
 				return nil, err
 			}
-			if strings.Contains(field.Flag, "transcript") {
+			if strings.Contains(field.Flag, "transcript") || commandWritesInside(task, command, value) {
 				// Transcript growth is normal. Bind every retained file, allowing
 				// new heads/beacons but never replacement or removal of old bytes.
 				err = filepath.WalkDir(local, func(path string, e fs.DirEntry, err error) error {
@@ -123,6 +123,29 @@ func (f *roleFlow) captureDirectories(task flowTask, command []string) (map[stri
 		}
 	}
 	return result, nil
+}
+
+// If a command writes an output below one of its input directories, bind all
+// files that existed before the command instead of binding the directory as a
+// closed tree. Existing bytes may not change or disappear, while the command
+// may add its fresh output. The proof tool still authenticates the resulting
+// output; this is only Relay's concurrent-change guard.
+func commandWritesInside(task flowTask, command []string, input string) bool {
+	input = strings.TrimSuffix(filepath.Clean(input), "/") + "/"
+	for _, field := range append(append([]flowField{}, task.Fields...), task.ExtraFields...) {
+		if !flowOutputField(task, field) {
+			continue
+		}
+		for n, arg := range command {
+			if arg == "--"+field.Flag && n+1 < len(command) {
+				output := strings.TrimSuffix(filepath.Clean(command[n+1]), "/") + "/"
+				if strings.HasPrefix(output, input) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func (f *roleFlow) checkDirectoryBindings(bindings map[string]string) error {

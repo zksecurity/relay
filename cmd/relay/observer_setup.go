@@ -131,7 +131,17 @@ func (f *roleFlow) prepareObserverSetup() error {
 	if err != nil {
 		return err
 	}
-	role, err := f.ui.choose("Prepare setup instructions for", "", []setupChoice{{"witness", "Witness"}, {"mirror", "Mirror"}})
+	var choices []setupChoice
+	if requirements.MinimumPublicWitnesses > 0 {
+		choices = append(choices, setupChoice{"witness", "Witness"})
+	}
+	if requirements.MinimumMirrorsPerAcceptedHead > 0 {
+		choices = append(choices, setupChoice{"mirror", "Mirror"})
+	}
+	if len(choices) == 0 {
+		return errors.New("witnesses and mirrors are disabled by the signed ceremony policy")
+	}
+	role, err := f.ui.choose("Prepare setup instructions for", "", choices)
 	if err != nil {
 		return err
 	}
@@ -259,6 +269,14 @@ func (p *rolePreparer) checkObserverSetup(s observerSetup) error {
 	d, err := p.authenticatedSetupDefinition()
 	if err != nil {
 		return err
+	}
+	requirements, err := d.RequireJourney()
+	if err != nil {
+		return err
+	}
+	if (s.Role == "witness" && requirements.MinimumPublicWitnesses == 0) ||
+		(s.Role == "mirror" && requirements.MinimumMirrorsPerAcceptedHead == 0) {
+		return fmt.Errorf("%s role is disabled by the signed ceremony policy", s.Role)
 	}
 	after, err := setupFileHash(path)
 	if err != nil || before != after || before != s.DefinitionSHA256 || d.CeremonyID != s.CeremonyID {
