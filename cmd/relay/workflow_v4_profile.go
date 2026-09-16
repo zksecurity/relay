@@ -25,7 +25,7 @@ func workflowV4ProfileBinding(p, signer guidedProfile, protocol transcript.Defin
 	}
 	assigned := false
 	for _, e := range journey.RequiredEnrollments {
-		if e.Role == p.Role && e.Identity.ID == identity.ID && e.Identity.KeyID == identity.KeyID && e.Identity.PublicKeyFingerprint == identity.Fingerprint {
+		if e.Role == p.Role && e.Identity.ID == identity.ID && e.Identity.KeyID == identity.KeyID && e.Identity.Ed25519PublicKeyHex == identity.PublicKey && e.Identity.PublicKeyFingerprint == identity.Fingerprint {
 			assigned = true
 		}
 	}

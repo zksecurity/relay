@@ -31,6 +31,10 @@ type roleOpts struct {
 	operationID    string
 	phase1Seal     string
 	phase1SealSig  string
+	artifactRoot   string
+	checkpoint     string
+	checkpointSig  string
+	attemptID      string
 	docker         *dockerDriver
 }
 
@@ -414,6 +418,14 @@ func contributionCommandArgs(o roleOpts, pos position, contributedAt time.Time) 
 			sealSig = filepath.Join(o.root, "phase1", "sealed", "seal.sig")
 		}
 		command = append(command, "--phase1-seal", seal, "--phase1-seal-signature", sealSig)
+	}
+	if o.attemptID != "" {
+		command = append(command,
+			"--artifact-root", o.artifactRoot,
+			"--checkpoint", o.checkpoint,
+			"--checkpoint-signature", o.checkpointSig,
+			"--attempt-id", o.attemptID,
+		)
 	}
 	return command
 }

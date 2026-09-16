@@ -2,7 +2,6 @@ package storagefirst
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -42,29 +41,12 @@ func outboundFixtureV4(t *testing.T, phase string) (SnapshotV4, transcript.Defin
 	return encodeTurnFixtureV4(t, c, index, e), p, objects, who
 }
 
-func TestFetchOutboundV4PlacesReceiptInputsBothPhases(t *testing.T) {
+func TestFetchOutboundV4RejectsReceiptEraState(t *testing.T) {
 	for _, phase := range []string{"phase1", "phase2"} {
 		s, p, objects, who := outboundFixtureV4(t, phase)
 		parent := t.TempDir()
-		result, err := s.FetchOutboundV4(objects, p, phase, who, parent)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if result.Scope.ParticipantID != who || len(result.Files) != 7 {
-			t.Fatal("wrong receipt input set")
-		}
-		for _, ref := range result.Files {
-			raw, err := os.ReadFile(filepath.Join(result.Root, ref.Name))
-			if err != nil || sum(raw) != ref.Digest.SHA256 {
-				t.Fatal("missing or changed input", ref.Name, err)
-			}
-		}
-		if _, err := os.Stat(filepath.Join(result.Root, phase, "genesis.bin")); err != nil {
-			t.Fatal("payload logical path missing", err)
-		}
-		second, err := s.FetchOutboundV4(objects, p, phase, who, parent)
-		if err != nil || second.Root == result.Root {
-			t.Fatal("repeat overwrote earlier download", err)
+		if _, err := s.FetchOutboundV4(objects, p, phase, who, parent); err == nil {
+			t.Fatal("receipt-era outbound state was accepted by V4")
 		}
 	}
 }

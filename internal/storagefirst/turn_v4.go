@@ -13,7 +13,7 @@ type TurnViewV4 struct {
 	Stage            string
 	Scope            transcript.ContributionScopeV4
 	Commitment       *transcript.TurnCommitmentV4
-	ReceiptAttempt   *transcript.DeliverySlotV4
+	ReceiptAttempt   *transcript.DeliverySlotV4 // receipt-era development state; never populated by released V4
 	CandidateAttempt *transcript.DeliverySlotV4
 }
 
@@ -21,8 +21,8 @@ const (
 	TurnPhaseNotStartedV4 = "phase-not-started"
 	TurnWaitingV4         = "waiting-for-earlier-participant"
 	TurnEnrollmentV4      = "participant-enrollment-needed"
-	TurnOutboundV4        = "outbound-needed"
-	TurnReceiptV4         = "receipt-needed"
+	TurnAllocationV4      = "candidate-allocation-needed"
+	TurnReceiptV4         = "receipt-era-state-not-supported"
 	TurnCandidateV4       = "candidate-needed"
 	TurnReallocateV4      = "replacement-attempt-needed"
 	TurnAcceptedV4        = "accepted-result"
@@ -133,46 +133,13 @@ func (s SnapshotV4) TurnV4(protocol transcript.DefinitionProtocol, phase, partic
 			continue
 		}
 		copy := slot
-		switch slot.Kind {
-		case "receipt":
-			if view.ReceiptAttempt != nil {
-				return TurnViewV4{}, errors.New("multiple active receipt attempts")
-			}
-			view.ReceiptAttempt = &copy
-		case "candidate":
-			if view.CandidateAttempt != nil {
-				return TurnViewV4{}, errors.New("multiple active candidate attempts")
-			}
-			view.CandidateAttempt = &copy
-		default:
+		if slot.Kind != "candidate" {
 			return TurnViewV4{}, fmt.Errorf("unknown active delivery kind %q", slot.Kind)
 		}
-	}
-	if view.ReceiptAttempt != nil && view.CandidateAttempt != nil {
-		return TurnViewV4{}, errors.New("receipt and candidate simultaneously active")
-	}
-	if view.Commitment != nil && view.Commitment.InputReceipt != nil {
-		if view.ReceiptAttempt != nil {
-			return TurnViewV4{}, errors.New("accepted receipt still allocated")
+		if view.CandidateAttempt != nil {
+			return TurnViewV4{}, errors.New("multiple active candidate attempts")
 		}
-		view.Stage = TurnCandidateV4
-		if view.CandidateAttempt == nil {
-			view.Stage = TurnReallocateV4
-		}
-		return view, nil
-	}
-	if view.CandidateAttempt != nil {
-		return TurnViewV4{}, errors.New("candidate attempt precedes signed receipt acceptance")
-	}
-	if view.Commitment != nil && len(view.Commitment.Outbounds) > 0 {
-		view.Stage = TurnReceiptV4
-		if view.ReceiptAttempt == nil {
-			view.Stage = TurnReallocateV4
-		}
-		return view, nil
-	}
-	if view.ReceiptAttempt != nil {
-		return TurnViewV4{}, errors.New("receipt attempt has no published input packet")
+		view.CandidateAttempt = &copy
 	}
 	// Outbound authoring requires this participant's enrollment, not completion
 	// of the entire final-evidence roster. Other enrollments remain parallel work.
@@ -194,9 +161,19 @@ func (s SnapshotV4) TurnV4(protocol transcript.DefinitionProtocol, phase, partic
 	for _, item := range enrollments.Enrollments {
 		e := item.Enrollment
 		if e.Role == expected.Role && e.RoleIndex == expected.RoleIndex && e.Identity == expected.Identity {
-			view.Stage = TurnOutboundV4
+			view.Stage = TurnAllocationV4
 			break
 		}
+	}
+	if view.Stage == TurnEnrollmentV4 {
+		return view, nil
+	}
+	if view.CandidateAttempt != nil {
+		view.Stage = TurnCandidateV4
+		return view, nil
+	}
+	if view.Commitment != nil && len(view.Commitment.Allocations) > 0 {
+		view.Stage = TurnReallocateV4
 	}
 	return view, nil
 }

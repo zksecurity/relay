@@ -43,18 +43,21 @@ func workflowV4TestBinding(t *testing.T) (transcript.DefinitionProtocol, workflo
 func workflowV4TestPlan(t *testing.T, b workflowV4Binding) workflowV4OperationPlan {
 	t.Helper()
 	id := strings.Repeat("1", 32)
+	attempt := strings.Repeat("a", 32)
 	record := workflowV4TestRef("phase1/chain.json", "chain")
 	signature := workflowV4TestRef("phase1/chain.sig", "signature")
-	p := workflowV4OperationPlan{ID: id, Kind: "contribute", Scope: transcript.ContributionScopeV4{CeremonyID: b.CeremonyID, Phase: "phase1", Index: 1, ParticipantID: b.IdentityID, ParentHeadID: "sha256:" + strings.Repeat("c", 64)}, Predecessor: transcript.SignedArtifactRefs{Record: record, Signature: signature}, Runtime: workflowV4Runtime{Image: "example.test/role@sha256:" + strings.Repeat("d", 64), Platform: "linux/arm64", Mounts: map[string]string{"/work": b.Work}}, Command: []string{"mpc-ceremony", "contribute"}, Outputs: []string{filepath.Join(b.Work, "candidate")}}
+	checkpoint := workflowV4TestRef("checkpoints/0001/checkpoint.json", "checkpoint")
+	checkpointSignature := workflowV4TestRef("checkpoints/0001/checkpoint.sig", "checkpoint-signature")
+	p := workflowV4OperationPlan{ID: id, Kind: "contribute", Scope: transcript.ContributionScopeV4{CeremonyID: b.CeremonyID, Phase: "phase1", Index: 1, ParticipantID: b.IdentityID, ParentHeadID: "sha256:" + strings.Repeat("c", 64)}, Predecessor: transcript.SignedArtifactRefs{Record: record, Signature: signature}, Allocation: transcript.SignedArtifactRefs{Record: checkpoint, Signature: checkpointSignature}, AttemptID: attempt, Runtime: workflowV4Runtime{Image: "example.test/role@sha256:" + strings.Repeat("d", 64), Platform: "linux/arm64", Mounts: map[string]string{"/work": b.Work}}, Command: []string{"mpc-ceremony", "contribute"}, Outputs: []string{filepath.Join(b.Work, "candidate")}}
 	for destination, source := range b.Runtimes["contributor"].Mounts {
 		p.Runtime.Mounts[destination] = source
 	}
-	for n, ref := range []transcript.ArtifactRef{record, signature} {
+	for n, ref := range []transcript.ArtifactRef{record, signature, checkpoint, checkpointSignature} {
 		path := filepath.Join(b.Work, "workflow-v4", "inputs", id, filepath.FromSlash(ref.Name))
 		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, []byte([]string{"chain", "signature"}[n]), 0600); err != nil {
+		if err := os.WriteFile(path, []byte([]string{"chain", "signature", "checkpoint", "checkpoint-signature"}[n]), 0600); err != nil {
 			t.Fatal(err)
 		}
 		p.Inputs = append(p.Inputs, workflowV4Input{Path: path, Ref: ref})
@@ -75,7 +78,7 @@ func workflowV4TestPlan(t *testing.T, b workflowV4Binding) workflowV4OperationPl
 		p.Inputs = append(p.Inputs, workflowV4Input{Path: item.path, Ref: item.ref})
 	}
 	containerRoot := "/work/workflow-v4/inputs/" + id
-	p.Command = []string{"mpc-ceremony", "phase1", "contribute", "--ceremony", containerRoot + "/ceremony.json", "--ceremony-signature", containerRoot + "/ceremony.sig", "--coordinator-public-key-file", "/trust/coordinator.hex", "--transcript-dir", containerRoot, "--chain", containerRoot + "/phase1/chain.json", "--chain-signature", containerRoot + "/phase1/chain.sig", "--participant-id", b.IdentityID, "--participant-signing-key", "/keys/signing.hex", "--environment", containerRoot + "/environment.json", "--contributed-at", "2026-01-01T00:00:00Z", "--out-dir", "/work/candidate"}
+	p.Command = []string{"mpc-ceremony", "phase1", "contribute", "--ceremony", containerRoot + "/ceremony.json", "--ceremony-signature", containerRoot + "/ceremony.sig", "--coordinator-public-key-file", "/trust/coordinator.hex", "--transcript-dir", containerRoot, "--chain", containerRoot + "/phase1/chain.json", "--chain-signature", containerRoot + "/phase1/chain.sig", "--participant-id", b.IdentityID, "--participant-signing-key", "/keys/signing.hex", "--environment", containerRoot + "/environment.json", "--contributed-at", "2026-01-01T00:00:00Z", "--out-dir", "/work/candidate", "--artifact-root", containerRoot, "--checkpoint", containerRoot + "/checkpoints/0001/checkpoint.json", "--checkpoint-signature", containerRoot + "/checkpoints/0001/checkpoint.sig", "--attempt-id", attempt}
 	return p
 }
 

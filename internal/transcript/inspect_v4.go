@@ -270,7 +270,7 @@ func validateProgressV4(c CheckpointStateV4) error {
 			return errors.New("duplicate delivery attempt projection")
 		}
 		seen[slot.AttemptID] = true
-		if slot.Kind != "receipt" && slot.Kind != "candidate" {
+		if slot.Kind != "candidate" {
 			return errors.New("invalid delivery kind projection")
 		}
 		switch slot.Status {
@@ -279,11 +279,7 @@ func validateProgressV4(c CheckpointStateV4) error {
 				return errors.New("unaccepted delivery claims a candidate result")
 			}
 		case "accepted", "rejected":
-			if slot.Kind == "receipt" {
-				if slot.Status == "rejected" || slot.ContributionResultID != "" {
-					return errors.New("invalid receipt disposition")
-				}
-			} else if !taggedHash(slot.ContributionResultID, "sha256:") {
+			if !taggedHash(slot.ContributionResultID, "sha256:") {
 				return errors.New("missing candidate disposition identity")
 			}
 		default:

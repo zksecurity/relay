@@ -118,6 +118,37 @@ func TestSyncV4StagesDependenciesAndResumesPartialPersistence(t *testing.T) {
 	}
 }
 
+func TestSyncV4RetainsVerifiedArtifactsAndRejectsConflicts(t *testing.T) {
+	objects, verifier, id := syncFixtureV4(t, 2)
+	dependency := []byte("current transcript payload")
+	objects[store.Key(sum(dependency))] = dependency
+	head := verifier.full.CheckpointRefs.Record.Digest.SHA256
+	discovery := verifier.discoveries[head]
+	discovery.Discovery.VerificationDependencies = []transcript.ArtifactRef{{Name: "phase1/genesis.bin", Digest: transcript.Digest{SHA256: sum(dependency), Size: int64(len(dependency))}}}
+	verifier.discoveries[head] = discovery
+	verifier.requiredDependency = "phase1/genesis.bin"
+	root := filepath.Join(t.TempDir(), "public")
+	highWater := &highWaterFake{}
+	if _, err := SyncV4Retained(objects, verifier, highWater, id, t.TempDir(), root); err != nil {
+		t.Fatal(err)
+	}
+	for name, contents := range map[string][]byte{"checkpoints/0.json": []byte("checkpoint-0"), "checkpoints/2.sig": []byte("signature-2"), "phase1/genesis.bin": dependency} {
+		got, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
+		if err != nil || string(got) != string(contents) {
+			t.Fatalf("retained %s = %q, %v", name, got, err)
+		}
+	}
+	if _, err := SyncV4Retained(objects, verifier, highWater, id, t.TempDir(), root); err != nil {
+		t.Fatal("identical retention did not resume", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "phase1", "genesis.bin"), []byte("changed"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SyncV4Retained(objects, verifier, highWater, id, t.TempDir(), root); err == nil {
+		t.Fatal("conflicting retained file accepted")
+	}
+}
+
 func syncFixtureV4(t *testing.T, last int) (memoryObjects, *verifierV4Fake, string) {
 	t.Helper()
 	id := sum([]byte("ceremony"))

@@ -5,6 +5,13 @@ release evidence or authorization by itself. It follows the
 [storage-first design](storage-first-ceremony-design.md) and
 [release verification model](release-verification-trust-model.md).
 
+The trusted coordinator/storage review removed custody receipts from the next
+format. The normative replacement is
+[Trusted-storage ceremony V4](trusted-storage-v4-design.md). Definitions and
+Checkpoints V1–V3 are released compatibility formats and remain unchanged. The
+earlier receipt-based V4 draft is unreleased and will be replaced rather than
+preserved.
+
 ## What we trust
 
 The coordinator follows ceremony rules and runs mathematical verification.

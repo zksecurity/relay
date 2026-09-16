@@ -648,6 +648,22 @@ func (d *dockerDriver) contributionArgs(o roleOpts, pos position, contributedAt 
 	container.signingKey = "/relay/key/participant.key"
 	container.envPath = "/relay/config/environment.json"
 	container.outDir = output
+	if container.attemptID != "" {
+		container.artifactRoot = "/relay/input"
+		if o.checkpoint == "" || o.checkpointSig == "" || o.checkpoint == o.checkpointSig {
+			return nil, nil, errors.New("V4 contribution requires distinct allocation checkpoint and signature paths")
+		}
+		for _, item := range []struct {
+			source      string
+			destination *string
+		}{{o.checkpoint, &container.checkpoint}, {o.checkpointSig, &container.checkpointSig}} {
+			mapped, err := pathWithin(d.root, item.source, "/relay/input")
+			if err != nil {
+				return nil, nil, fmt.Errorf("allocation checkpoint path: %w", err)
+			}
+			*item.destination = mapped
+		}
+	}
 	// Explicit phase-1 seal paths use the same read-only transcript mount as
 	// default paths. Never pass a host path into the isolated contributor.
 	for _, sealPath := range []*string{&container.phase1Seal, &container.phase1SealSig} {

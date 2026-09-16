@@ -64,32 +64,28 @@ func TestTurnV4BothPhasesUseProgressNotLatestEvent(t *testing.T) {
 					e.Enrollments = append(e.Enrollments, transcript.CommittedEnrollmentMetadataV4{Enrollment: transcript.EnrollmentInspection{Role: required.Role, RoleIndex: required.RoleIndex, Identity: required.Identity}})
 				}
 			}
-			check(TurnOutboundV4) // Other required enrollments deliberately absent.
+			check(TurnAllocationV4) // Other required enrollments deliberately absent.
 			view, err := encodeTurnFixtureV4(t, c, index, e).TurnV4(p, phase, who)
 			if err != nil {
 				t.Fatal(err)
 			}
-			receiptAttempt := strings.Repeat("ab", 16)
 			candidateAttempt := strings.Repeat("cd", 16)
-			turn := transcript.TurnCommitmentV4{Scope: view.Scope, Outbounds: []transcript.OutboundCommitmentV4{{CheckpointSequence: 1, PublishedAttemptID: receiptAttempt}}}
+			turn := transcript.TurnCommitmentV4{Scope: view.Scope, Allocations: []transcript.CandidateAllocationV4{{CheckpointSequence: 1, AttemptID: candidateAttempt, AllocatedAt: "2026-09-16T00:00:00Z"}}}
 			index.Turns = []transcript.TurnCommitmentV4{turn}
-			c.Deliveries = []transcript.DeliverySlotV4{{Scope: view.Scope, Kind: "receipt", AttemptID: receiptAttempt, Status: "allocated"}}
-			check(TurnReceiptV4)
+			c.Deliveries = []transcript.DeliverySlotV4{{Scope: view.Scope, Kind: "candidate", AttemptID: candidateAttempt, Status: "allocated"}}
+			check(TurnCandidateV4)
 			c.Sequence += 4 // Unrelated committed evidence does not change this turn.
-			check(TurnReceiptV4)
+			check(TurnCandidateV4)
 			c.Deliveries[0].Status = "retired"
 			check(TurnReallocateV4)
-			c.Deliveries = append(c.Deliveries, transcript.DeliverySlotV4{Scope: view.Scope, Kind: "receipt", AttemptID: strings.Repeat("ef", 16), Status: "allocated"})
-			check(TurnReceiptV4)
+			replacement := strings.Repeat("ef", 16)
+			c.Deliveries = append(c.Deliveries, transcript.DeliverySlotV4{Scope: view.Scope, Kind: "candidate", AttemptID: replacement, Status: "allocated"})
+			index.Turns[0].Allocations = append([]transcript.CandidateAllocationV4{{CheckpointSequence: c.Sequence, AttemptID: replacement, AllocatedAt: "2026-09-16T00:01:00Z"}}, index.Turns[0].Allocations...)
+			check(TurnCandidateV4)
+			result := sum([]byte("result"))
 			c.Deliveries[1].Status = "accepted"
-			index.Turns[0].InputReceipt = &transcript.AcceptedTurnRecordV4{AttemptID: c.Deliveries[1].AttemptID}
-			c.Deliveries = append(c.Deliveries, transcript.DeliverySlotV4{Scope: view.Scope, Kind: "candidate", AttemptID: candidateAttempt, Status: "allocated"})
-			check(TurnCandidateV4)
-			c.Sequence++
-			check(TurnCandidateV4)
-			c.Deliveries[2].Status = "retired"
-			check(TurnReallocateV4)
-			index.Turns[0].AcceptedChain = &transcript.AcceptedChainCommitmentV4{AttemptID: candidateAttempt, ContributionResultID: sum([]byte("result"))}
+			c.Deliveries[1].ContributionResultID = result
+			index.Turns[0].AcceptedChain = &transcript.AcceptedChainCommitmentV4{AttemptID: replacement, ContributionResultID: result}
 			if phase == "phase1" {
 				c.Progress.Phase1.AcceptedCount = 1
 				c.Progress.Phase1.HeadRecordID = sum([]byte("next"))

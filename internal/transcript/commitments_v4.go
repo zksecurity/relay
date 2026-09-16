@@ -3,6 +3,7 @@ package transcript
 import (
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Commitments locate signed records in verified checkpoint ancestry. They do
@@ -12,6 +13,14 @@ type CheckpointCommitmentsV4 struct {
 	Turns       []TurnCommitmentV4   `json:"turns"`
 }
 
+type CandidateAllocationV4 struct {
+	CheckpointSequence uint64 `json:"checkpoint_sequence"`
+	AttemptID          string `json:"attempt_id"`
+	AllocatedAt        string `json:"allocated_at"`
+}
+
+// Receipt-era fields are retained only so an interrupted development build can
+// be inspected. The released V4 validator below rejects them.
 type OutboundCommitmentV4 struct {
 	CheckpointSequence uint64             `json:"checkpoint_sequence"`
 	PublishedAttemptID string             `json:"published_attempt_id"`
@@ -31,10 +40,12 @@ type AcceptedChainCommitmentV4 struct {
 
 type TurnCommitmentV4 struct {
 	Scope ContributionScopeV4 `json:"scope"`
-	// Newest first, but an accepted receipt can acknowledge an older packet.
-	Outbounds     []OutboundCommitmentV4     `json:"outbounds"`
-	InputReceipt  *AcceptedTurnRecordV4      `json:"input_receipt,omitempty"`
+	// Newest first. Retired attempts remain visible, while only one matching
+	// delivery slot may be active.
+	Allocations   []CandidateAllocationV4    `json:"allocations"`
 	AcceptedChain *AcceptedChainCommitmentV4 `json:"accepted_chain,omitempty"`
+	Outbounds     []OutboundCommitmentV4     `json:"outbounds,omitempty"`
+	InputReceipt  *AcceptedTurnRecordV4      `json:"input_receipt,omitempty"`
 	ReturnHandoff *SignedArtifactRefs        `json:"return_handoff,omitempty"`
 	ReturnReceipt *SignedArtifactRefs        `json:"return_receipt,omitempty"`
 }
@@ -55,6 +66,9 @@ func validateCommitmentsV4(c CheckpointStateV4, index CheckpointCommitmentsV4) e
 	}
 	last = ""
 	for _, turn := range index.Turns {
+		if len(turn.Outbounds) != 0 || turn.InputReceipt != nil || turn.ReturnHandoff != nil || turn.ReturnReceipt != nil {
+			return errors.New("receipt-era turn commitments are not valid in v4")
+		}
 		s := turn.Scope
 		if s.CeremonyID != c.CeremonyID || (s.Phase != "phase1" && s.Phase != "phase2") || s.Index == 0 || s.Index > 20 || s.ParticipantID == "" || !taggedHash(s.ParentHeadID, "sha256:") {
 			return errors.New("invalid turn commitment scope")
@@ -64,28 +78,20 @@ func validateCommitmentsV4(c CheckpointStateV4, index CheckpointCommitmentsV4) e
 			return errors.New("unordered or duplicate turn commitment")
 		}
 		last = key
-		if turn.Outbounds == nil || len(turn.Outbounds) == 0 || len(turn.Outbounds) > 16 {
-			return errors.New("invalid outbound commitment history")
+		if turn.Allocations == nil || len(turn.Allocations) == 0 || len(turn.Allocations) > 16 {
+			return errors.New("invalid allocation commitment history")
 		}
 		previousSequence := c.Sequence + 1
-		for _, outbound := range turn.Outbounds {
-			if outbound.CheckpointSequence >= previousSequence || outbound.CheckpointSequence == 0 {
-				return errors.New("invalid outbound publication order")
+		for _, allocation := range turn.Allocations {
+			if allocation.CheckpointSequence >= previousSequence || allocation.CheckpointSequence == 0 {
+				return errors.New("invalid candidate allocation order")
 			}
-			previousSequence = outbound.CheckpointSequence
-			if err := validatePairV4(outbound.Pair); err != nil {
-				return err
+			previousSequence = allocation.CheckpointSequence
+			if !commitmentAttemptV4(c, s, allocation.AttemptID, false) {
+				return errors.New("candidate allocation has no matching delivery")
 			}
-			if !commitmentAttemptV4(c, s, outbound.PublishedAttemptID, "receipt", false) {
-				return errors.New("outbound publication has no matching delivery")
-			}
-		}
-		if r := turn.InputReceipt; r != nil {
-			if err := validatePairV4(r.Pair); err != nil {
-				return err
-			}
-			if !commitmentAttemptV4(c, s, r.AttemptID, "receipt", true) {
-				return errors.New("accepted receipt has no matching delivery")
+			if _, err := time.Parse(time.RFC3339Nano, allocation.AllocatedAt); err != nil {
+				return errors.New("candidate allocation has invalid time")
 			}
 		}
 		if r := turn.AcceptedChain; r != nil {
@@ -102,23 +108,13 @@ func validateCommitmentsV4(c CheckpointStateV4, index CheckpointCommitmentsV4) e
 				return errors.New("accepted chain has no matching candidate result")
 			}
 		}
-		if (turn.AcceptedChain != nil) != (turn.ReturnHandoff != nil) || (turn.AcceptedChain != nil) != (turn.ReturnReceipt != nil) || (turn.AcceptedChain != nil && turn.InputReceipt == nil) {
-			return errors.New("incomplete accepted turn commitments")
-		}
-		for _, pair := range []*SignedArtifactRefs{turn.ReturnHandoff, turn.ReturnReceipt} {
-			if pair != nil {
-				if err := validatePairV4(*pair); err != nil {
-					return err
-				}
-			}
-		}
 	}
 	return nil
 }
 
-func commitmentAttemptV4(c CheckpointStateV4, scope ContributionScopeV4, id, kind string, accepted bool) bool {
+func commitmentAttemptV4(c CheckpointStateV4, scope ContributionScopeV4, id string, accepted bool) bool {
 	for _, slot := range c.Deliveries {
-		if slot.Scope == scope && slot.AttemptID == id && slot.Kind == kind && (!accepted || slot.Status == "accepted") {
+		if slot.Scope == scope && slot.AttemptID == id && slot.Kind == "candidate" && (!accepted || slot.Status == "accepted") {
 			return true
 		}
 	}

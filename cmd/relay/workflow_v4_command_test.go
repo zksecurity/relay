@@ -61,8 +61,9 @@ func TestWorkflowV4CommandSigningBindsReviewedRecord(t *testing.T) {
 	_, binding := workflowV4TestBinding(t)
 	plan := workflowV4TestPlan(t, binding)
 	plan.Kind = "sign-return"
+	plan.AttemptID = ""
 	root := "/work/workflow-v4/inputs/" + plan.ID
-	record := plan.Inputs[5] // synthetic canonical record for the command-binding test
+	record := plan.Inputs[len(plan.Inputs)-1] // synthetic canonical record for the command-binding test
 	plan.Outputs = []string{filepath.Join(binding.Work, "return.sig")}
 	plan.Command = []string{"mpc-ceremony", "ops", "sign", "--ceremony", root + "/ceremony.json", "--ceremony-signature", root + "/ceremony.sig", "--coordinator-public-key-file", "/trust/coordinator.hex", "--record-type", "handoff", "--record", root + "/environment.json", "--signing-key", "/keys/signing.hex", "--reviewed", "--reviewed-sha256", strings.TrimPrefix(record.Ref.Digest.SHA256, "sha256:"), "--out", "/work/return.sig"}
 	if err := validateWorkflowV4Plan(plan, binding); err != nil {

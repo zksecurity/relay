@@ -98,7 +98,7 @@ func workflowV4ContributionOptions(p workflowV4OperationPlan) (roleOpts, positio
 	if err != nil {
 		return o, pos, zero, err
 	}
-	o = roleOpts{root: paths["--transcript-dir"], definition: paths["--ceremony"], definitionSig: paths["--ceremony-signature"], coordinatorKey: paths["--coordinator-public-key-file"], phase: p.Scope.Phase, role: p.Scope.ParticipantID, signingKey: paths["--participant-signing-key"], envPath: paths["--environment"], outDir: paths["--out-dir"], operationID: p.ID, phase1Seal: paths["--phase1-seal"], phase1SealSig: paths["--phase1-seal-signature"]}
+	o = roleOpts{root: paths["--transcript-dir"], definition: paths["--ceremony"], definitionSig: paths["--ceremony-signature"], coordinatorKey: paths["--coordinator-public-key-file"], phase: p.Scope.Phase, role: p.Scope.ParticipantID, signingKey: paths["--participant-signing-key"], envPath: paths["--environment"], outDir: paths["--out-dir"], operationID: p.ID, phase1Seal: paths["--phase1-seal"], phase1SealSig: paths["--phase1-seal-signature"], artifactRoot: paths["--artifact-root"], checkpoint: paths["--checkpoint"], checkpointSig: paths["--checkpoint-signature"], attemptID: flags["--attempt-id"]}
 	pos.chainPath = paths["--chain"]
 	pos.chain.ChainSignaturePath = paths["--chain-signature"]
 	pos.nextID, pos.nextIndex = o.role, int(p.Scope.Index)

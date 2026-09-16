@@ -32,7 +32,7 @@ func TestValidateGrantBindsExactAuthenticatedSlot(t *testing.T) {
 	for name, mutate := range map[string]func(*access.StorageFirstGrant){
 		"checkpoint": func(g *access.StorageFirstGrant) { g.CheckpointDigest = digestOfTest("f") },
 		"identity":   func(g *access.StorageFirstGrant) { g.IdentityID = "participant-2" },
-		"kind":       func(g *access.StorageFirstGrant) { g.SubmissionKind = access.SubmissionKindReceipt },
+		"kind":       func(g *access.StorageFirstGrant) { g.SubmissionKind = "receipt" },
 		"attempt":    func(g *access.StorageFirstGrant) { g.AttemptID = strings.Repeat("f", 32) },
 		"ceremony":   func(g *access.StorageFirstGrant) { g.CeremonyID = digestOfTest("f") },
 		"other safe prefix": func(g *access.StorageFirstGrant) {

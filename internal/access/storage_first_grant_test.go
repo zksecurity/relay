@@ -9,11 +9,11 @@ import (
 
 func validStorageFirstGrant() StorageFirstGrant {
 	attempt := strings.Repeat("b", 32)
-	prefix := "submissions/phase1/0001/receipt/participant-03/" + attempt + "/"
+	prefix := "submissions/" + strings.TrimPrefix(testCeremony, "sha256:") + "/" + attempt + "/"
 	return StorageFirstGrant{
 		Schema: GrantSchemaV2, Provider: "r2", CeremonyID: testCeremony,
 		GrantRequestID: strings.Repeat("a", 32), CheckpointDigest: "sha256:" + strings.Repeat("c", 64),
-		SubmissionKind: SubmissionKindReceipt, Phase: "phase1", Index: 1,
+		SubmissionKind: SubmissionKindCandidate, Phase: "phase1", Index: 1,
 		IdentityID: "participant-03", AttemptID: attempt,
 		Endpoint: "https://account.r2.cloudflarestorage.com", Region: "auto", InboxBucket: "inbox",
 		Prefix: prefix, ManifestKey: prefix + "manifest.json",
@@ -34,7 +34,7 @@ func TestStorageFirstGrantStrictBinding(t *testing.T) {
 		{"request", func(g *StorageFirstGrant) { g.GrantRequestID = "request" }},
 		{"checkpoint", func(g *StorageFirstGrant) { g.CheckpointDigest = strings.Repeat("c", 64) }},
 		{"kind", func(g *StorageFirstGrant) { g.SubmissionKind = "release" }},
-		{"phase", func(g *StorageFirstGrant) { g.Phase = "phase2" }},
+		{"phase", func(g *StorageFirstGrant) { g.Phase = "phase3" }},
 		{"index", func(g *StorageFirstGrant) { g.Index = 0 }},
 		{"identity", func(g *StorageFirstGrant) { g.IdentityID = "../other" }},
 		{"attempt", func(g *StorageFirstGrant) { g.AttemptID = strings.Repeat("A", 32) }},
@@ -52,6 +52,16 @@ func TestStorageFirstGrantStrictBinding(t *testing.T) {
 				t.Fatal("changed grant accepted")
 			}
 		})
+	}
+}
+
+func TestStorageFirstGrantSupportsBothCeremonyPhases(t *testing.T) {
+	for _, phase := range []string{"phase1", "phase2"} {
+		grant := validStorageFirstGrant()
+		grant.Phase = phase
+		if err := grant.Validate(); err != nil {
+			t.Fatalf("%s: %v", phase, err)
+		}
 	}
 }
 

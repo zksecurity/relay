@@ -53,6 +53,7 @@ type workflowV4OperationPlan struct {
 	Kind              string                         `json:"kind"`
 	Scope             transcript.ContributionScopeV4 `json:"scope"`
 	Predecessor       transcript.SignedArtifactRefs  `json:"predecessor"`
+	Allocation        transcript.SignedArtifactRefs  `json:"allocation,omitempty"`
 	AttemptID         string                         `json:"attempt_id,omitempty"`
 	Runtime           workflowV4Runtime              `json:"runtime"`
 	Command           []string                       `json:"command"`
@@ -488,11 +489,18 @@ func validateWorkflowV4Plan(p workflowV4OperationPlan, b workflowV4Binding) erro
 	if err := validateWorkflowV4Pair(p.Predecessor); err != nil {
 		return err
 	}
+	if p.Kind == "contribute" {
+		if err := validateWorkflowV4Pair(p.Allocation); err != nil {
+			return errors.New("V4 contribution requires its exact signed allocation checkpoint")
+		}
+	}
 	wantRole, attemptBound, commit := "participant", false, false
 	switch p.Kind {
 	case "download-outbound", "upload-receipt", "upload-candidate":
 		attemptBound = true
-	case "sign-receipt", "contribute", "attest-erasure", "sign-return":
+	case "contribute", "attest-erasure":
+		attemptBound = true
+	case "sign-receipt", "sign-return":
 	case "download-receipt", "download-candidate", "issue-grant":
 		wantRole, attemptBound = "coordinator", true
 	case "sign-return-receipt":

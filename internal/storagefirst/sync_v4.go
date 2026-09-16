@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/zksecurity/relay/internal/state"
 	"github.com/zksecurity/relay/internal/store"
@@ -70,6 +73,21 @@ func (s SnapshotV4) Enrollments() (transcript.EnrollmentMetadataV4, error) {
 // hold their workspace lock across sync and any subsequent mutation intent.
 // Existing V1–V3 ceremonies continue using Sync and their original semantics.
 func SyncV4(objects ObjectStore, verifier VerifierV4, highWater HighWater, ceremonyID, tempParent string) (SnapshotV4, error) {
+	return syncV4(objects, verifier, highWater, ceremonyID, tempParent, "")
+}
+
+// SyncV4Retained authenticates the same complete history as SyncV4 and then
+// retains every verified public artifact at its signed logical path. Existing
+// identical files make retries harmless; a different file at the same path is
+// a conflict. High-water advances only after retention succeeds.
+func SyncV4Retained(objects ObjectStore, verifier VerifierV4, highWater HighWater, ceremonyID, tempParent, retainedRoot string) (SnapshotV4, error) {
+	if !filepath.IsAbs(retainedRoot) || filepath.Clean(retainedRoot) != retainedRoot {
+		return SnapshotV4{}, errors.New("retained V4 artifact root must be an absolute clean path")
+	}
+	return syncV4(objects, verifier, highWater, ceremonyID, tempParent, retainedRoot)
+}
+
+func syncV4(objects ObjectStore, verifier VerifierV4, highWater HighWater, ceremonyID, tempParent, retainedRoot string) (SnapshotV4, error) {
 	if objects == nil || verifier == nil || highWater == nil || !validDigest(ceremonyID) {
 		return SnapshotV4{}, errors.New("storage, V4 verifier, high-water and ceremony identity are required")
 	}
@@ -240,6 +258,11 @@ func SyncV4(objects ObjectStore, verifier VerifierV4, highWater HighWater, cerem
 	if err != nil {
 		return SnapshotV4{}, err
 	}
+	if retainedRoot != "" {
+		if err := retainVerifiedV4Artifacts(stage, retainedRoot, names); err != nil {
+			return SnapshotV4{}, fmt.Errorf("retain verified public ceremony files: %w", err)
+		}
+	}
 	// One complete verification passed. A partial persistence failure is safe
 	// to resume; incomplete metadata never advances this workspace's position.
 	for n := start; n >= 0; n-- {
@@ -248,4 +271,111 @@ func SyncV4(objects ObjectStore, verifier VerifierV4, highWater HighWater, cerem
 		}
 	}
 	return SnapshotV4{root: root, version: version, inspection: encoded, commitments: commitments, enrollments: enrollments, checked: len(backwards)}, nil
+}
+
+func retainVerifiedV4Artifacts(stage, destination string, names fetchedNames) error {
+	if len(names) == 0 {
+		return errors.New("verified artifact set is empty")
+	}
+	if err := ensureRetainedDirectory(destination, destination, "."); err != nil {
+		return err
+	}
+	logical := make([]string, 0, len(names))
+	for name := range names {
+		logical = append(logical, name)
+	}
+	slices.Sort(logical)
+	for _, name := range logical {
+		ref := names[name]
+		relative := filepath.FromSlash(name)
+		if err := ensureRetainedDirectory(destination, filepath.Dir(filepath.Join(destination, relative)), filepath.Dir(relative)); err != nil {
+			return err
+		}
+		source := filepath.Join(stage, relative)
+		target := filepath.Join(destination, relative)
+		if _, err := os.Lstat(target); err == nil {
+			if err := verifyLocalRef(ref, target); err != nil {
+				return fmt.Errorf("existing %q differs from verified storage bytes", name)
+			}
+			continue
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		temp, err := os.CreateTemp(filepath.Dir(target), ".relay-v4-artifact-")
+		if err != nil {
+			return err
+		}
+		tempPath := temp.Name()
+		ok := false
+		defer func() {
+			if !ok {
+				_ = os.Remove(tempPath)
+			}
+		}()
+		input, err := os.Open(source)
+		if err != nil {
+			temp.Close()
+			return err
+		}
+		_, copyErr := io.Copy(temp, input)
+		closeInputErr := input.Close()
+		syncErr := temp.Sync()
+		closeErr := temp.Close()
+		if copyErr != nil || closeInputErr != nil || syncErr != nil || closeErr != nil {
+			return errors.Join(copyErr, closeInputErr, syncErr, closeErr)
+		}
+		if err := verifyLocalRef(ref, tempPath); err != nil {
+			return err
+		}
+		if err := os.Link(tempPath, target); err != nil {
+			if _, statErr := os.Lstat(target); statErr == nil {
+				if verifyErr := verifyLocalRef(ref, target); verifyErr == nil {
+					ok = true
+					_ = os.Remove(tempPath)
+					continue
+				}
+			}
+			return err
+		}
+		if err := os.Remove(tempPath); err != nil {
+			return err
+		}
+		ok = true
+	}
+	return nil
+}
+
+func ensureRetainedDirectory(root, target, relative string) error {
+	if !filepath.IsAbs(root) || filepath.Clean(root) != root || !filepath.IsAbs(target) || filepath.Clean(target) != target {
+		return errors.New("retained artifact directory must use absolute clean paths")
+	}
+	within, err := filepath.Rel(root, target)
+	if err != nil || within == ".." || filepath.IsAbs(within) || strings.HasPrefix(within, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("retained artifact directory %q escapes its root", relative)
+	}
+	current := root
+	if info, err := os.Lstat(current); errors.Is(err, os.ErrNotExist) {
+		if err := os.Mkdir(current, 0700); err != nil {
+			return err
+		}
+	} else if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("retained artifact root must be a real directory")
+	}
+	if within == "." {
+		return nil
+	}
+	for _, component := range strings.Split(within, string(filepath.Separator)) {
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if errors.Is(err, os.ErrNotExist) {
+			if err := os.Mkdir(current, 0700); err != nil {
+				return err
+			}
+			continue
+		}
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("retained artifact parent %q is not a real directory", relative)
+		}
+	}
+	return nil
 }

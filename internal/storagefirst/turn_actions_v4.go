@@ -44,7 +44,6 @@ type TurnRecommendationV4 struct {
 	Reason    string
 	Scope     transcript.ContributionScopeV4
 	AttemptID string
-	Outbound  *transcript.SignedArtifactRefs
 }
 
 // RecommendTurnV4 does not execute work. Before any consequential action the
@@ -86,12 +85,12 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 	if local.Scope != (transcript.ContributionScopeV4{}) && local.Scope != view.Scope {
 		return TurnRecommendationV4{}, errors.New("retained work belongs to another turn; select its exact scope before proceeding")
 	}
-	for _, digest := range []string{local.OutboundSHA256, local.ReceiptSHA256, local.ReceiptHandoffSHA256, local.ComputedCandidateID, local.CandidateResultID, local.ReturnReceiptResultID, local.UploadedArtifactID} {
+	for _, digest := range []string{local.ComputedCandidateID, local.CandidateResultID, local.UploadedArtifactID} {
 		if digest != "" && !validDigest(digest) {
 			return TurnRecommendationV4{}, errors.New("invalid retained artifact identity")
 		}
 	}
-	if local.Scope == (transcript.ContributionScopeV4{}) && (local.GeneratedOutput != nil || local.OutboundSHA256 != "" || local.ReceiptSHA256 != "" || local.ComputedCandidateID != "" || local.CandidateResultID != "" || local.Grant != nil || local.UploadedAttemptID != "") {
+	if local.Scope == (transcript.ContributionScopeV4{}) && (local.GeneratedOutput != nil || local.ComputedCandidateID != "" || local.CandidateResultID != "" || local.Grant != nil || local.UploadedAttemptID != "") {
 		return TurnRecommendationV4{}, errors.New("retained work has no exact turn scope")
 	}
 	if local.GeneratedOutput != nil && local.GeneratedOutput.Scope != view.Scope {
@@ -109,7 +108,7 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 	if observedAttempt != "" && !validAttempt(observedAttempt) {
 		return TurnRecommendationV4{}, errors.New("invalid observed submission attempt")
 	}
-	if (local.ReceiptSHA256 == "") != (local.ReceiptHandoffSHA256 == "") || (local.UploadedAttemptID == "") != (local.UploadedArtifactID == "") || (local.ReturnReceiptResultID != "" && local.ReturnReceiptResultID != local.CandidateResultID) {
+	if (local.UploadedAttemptID == "") != (local.UploadedArtifactID == "") {
 		return TurnRecommendationV4{}, errors.New("inconsistent retained artifact bindings")
 	}
 	if role == Participant && local.CandidateResultID != "" && local.ComputedCandidateID == "" {
@@ -125,14 +124,11 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 			if delivery.Scope != view.Scope || delivery.AttemptID != local.UploadedAttemptID {
 				continue
 			}
-			matched = (delivery.Kind == "receipt" && local.ReceiptSHA256 != "" && local.UploadedArtifactID == local.ReceiptSHA256) || (delivery.Kind == "candidate" && local.CandidateResultID != "" && local.UploadedArtifactID == local.CandidateResultID)
+			matched = delivery.Kind == "candidate" && local.CandidateResultID != "" && local.UploadedArtifactID == local.CandidateResultID
 		}
 		if !matched {
 			return answer("inspect-retained-operation", true, "A recorded upload has no matching retained artifact and exact delivery attempt. Inspect existing work before signing or computing again.")
 		}
-	}
-	if (local.GeneratedOutput != nil || local.ComputedCandidateID != "" || local.CandidateResultID != "") && (view.Commitment == nil || view.Commitment.InputReceipt == nil) {
-		return answer("inspect-retained-operation", true, "A retained candidate has no accepted input receipt in this state. Inspect it; do not recompute or upload.")
 	}
 	if local.CandidateResultID != "" && view.Stage != TurnAcceptedV4 {
 		for _, prior := range c.Deliveries {
@@ -150,11 +146,11 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 			return answer("collect-participant-enrollment", true, "Receive and verify this scheduled participant's signed enrollment.")
 		}
 		return answer("submit-your-enrollment", true, "Send your signed enrollment through the ceremony submission service.")
-	case TurnOutboundV4:
+	case TurnAllocationV4:
 		if role == Coordinator {
-			return answer("prepare-and-publish-outbound", true, "Prepare and sign the input packet for this exact turn.")
+			return answer("allocate-candidate-attempt", true, "Allocate one candidate attempt for this exact participant, phase, turn and current head.")
 		}
-		return answer("wait-for-input-packet", false, "The coordinator must publish your signed input packet.")
+		return answer("wait-for-candidate-allocation", false, "The coordinator must publish your signed candidate allocation.")
 	case TurnAcceptedV4:
 		if local.CandidateResultID == "" {
 			return answer("inspect-accepted-result", true, "The coordinator accepted this turn; recover and verify the exact result before marking local work complete.")
@@ -167,14 +163,9 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 		if role == Coordinator {
 			return answer("allocate-replacement-attempt", true, "No active upload attempt remains; review retained work before allocating a replacement.")
 		}
-		return answer("wait-for-replacement-attempt", false, "Keep your existing signed files; the coordinator must allocate replacement upload access.")
+		return answer("wait-for-replacement-attempt", false, "Keep any completed candidate; the coordinator must allocate a replacement transport attempt.")
 	}
-	var slot *transcript.DeliverySlotV4
-	if view.Stage == TurnReceiptV4 {
-		slot = view.ReceiptAttempt
-	} else if view.Stage == TurnCandidateV4 {
-		slot = view.CandidateAttempt
-	}
+	slot := view.CandidateAttempt
 	if slot == nil {
 		return TurnRecommendationV4{}, errors.New("turn has no supported active attempt")
 	}
@@ -182,65 +173,27 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 	grantReady := local.Grant != nil && local.Grant.AttemptID == slot.AttemptID && !now.IsZero() && local.Grant.ExpiresAt.After(now)
 	if role == Coordinator {
 		if observedAttempt == slot.AttemptID {
-			if slot.Kind == "candidate" {
-				if local.CandidateResultID == "" || local.CandidateReceivedAttemptID != slot.AttemptID {
-					return answer("download-and-check-candidate", true, "Download the exact submitted candidate and verify its inventory and signed return packet.")
-				}
-				if local.ReturnReceiptResultID != local.CandidateResultID {
-					return answer("prepare-and-sign-return-receipt", true, "Verify the received candidate files and sign the coordinator return receipt before acceptance.")
-				}
+			if local.CandidateResultID == "" || local.CandidateReceivedAttemptID != slot.AttemptID {
+				return answer("download-and-check-candidate", true, "Download the exact five-file candidate and verify its signed inventory.")
 			}
-			return answer("verify-and-accept-"+slot.Kind, true, "Download and verify this exact submission before signing acceptance.")
+			return answer("verify-and-accept-candidate", true, "Replay and verify this exact candidate, then conditionally publish its signed acceptance checkpoint.")
 		}
 		if !grantReady {
-			return answer("issue-"+slot.Kind+"-grant", true, "Issue or renew access for this exact active upload attempt.")
+			return answer("issue-candidate-grant", true, "Issue or renew upload access for this exact active candidate attempt.")
 		}
-		return answer("wait-for-"+slot.Kind, false, "Waiting for the allocated submission; upload alone will not mean acceptance.")
-	}
-	if view.Stage == TurnReceiptV4 {
-		outbound := view.Commitment.Outbounds[0].Pair
-		if local.ReceiptSHA256 != "" {
-			found := false
-			for _, entry := range view.Commitment.Outbounds {
-				if entry.Pair.Record.Digest.SHA256 == local.ReceiptHandoffSHA256 {
-					outbound = entry.Pair
-					found = true
-					break
-				}
-			}
-			if !found {
-				return TurnRecommendationV4{}, errors.New("retained receipt acknowledges an uncommitted input packet")
-			}
-		}
-		r.Outbound = &outbound
-		if local.ReceiptSHA256 == "" {
-			if local.OutboundSHA256 != outbound.Record.Digest.SHA256 {
-				return answer("download-and-verify-outbound", true, "Download the signed input packet and every public file it names.")
-			}
-			return answer("prepare-and-sign-receipt", true, "Verify the retained input files and sign your receipt.")
-		}
-		if local.UploadedAttemptID == slot.AttemptID && local.UploadedArtifactID == local.ReceiptSHA256 {
-			return answer("wait-for-receipt-acceptance", false, "Receipt uploaded; wait for signed coordinator acceptance before computation.")
-		}
-		if !grantReady {
-			return answer("get-receipt-grant", false, "Obtain current upload access for this receipt attempt; keep your signed receipt.")
-		}
-		return answer("upload-receipt", true, "Upload the exact signed receipt to the active attempt.")
+		return answer("wait-for-candidate", false, "Waiting for the candidate manifest; upload alone will not mean acceptance.")
 	}
 	if local.ComputedCandidateID == "" {
-		if !grantReady {
-			return answer("get-candidate-grant", false, "Receipt acceptance is verified; obtain upload access for the active candidate attempt.")
-		}
-		return answer("contribute", true, "Signed receipt acceptance and current upload access are present. Confirm before starting isolated computation.")
+		return answer("contribute", true, "The signed allocation authorizes this exact turn. Proof-tool will recheck it and the complete input snapshot before generating randomness.")
 	}
 	if local.UploadedAttemptID == slot.AttemptID && local.UploadedArtifactID == local.CandidateResultID {
-		return answer("wait-for-candidate-acceptance", false, "Candidate uploaded; wait for the coordinator's exact signed result.")
+		return answer("wait-for-candidate-acceptance", false, "Candidate manifest uploaded; wait for the coordinator's exact signed result.")
 	}
 	if local.CandidateResultID == "" {
-		return answer("prepare-and-sign-return-handoff", true, "Prepare the return packet for this exact completed candidate; do not recompute.")
+		return answer("confirm-cleanup-and-sign-attestation", true, "Verify cleanup and complete the fixed five-file candidate; do not recompute.")
 	}
 	if !grantReady {
 		return answer("get-candidate-grant", false, "Keep the completed candidate and return packet; obtain current upload access.")
 	}
-	return answer("upload-candidate", true, "Upload the retained candidate and signed return packet without recomputing.")
+	return answer("upload-candidate", true, "Upload the retained five-file candidate, then publish its manifest last without recomputing.")
 }

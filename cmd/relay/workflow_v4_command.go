@@ -50,7 +50,7 @@ func validateWorkflowV4Command(p workflowV4OperationPlan, b workflowV4Binding) e
 	}
 	inputByFlag := []string{"--ceremony", "--ceremony-signature", "--coordinator-public-key-file"}
 	if p.Kind == "contribute" {
-		inputByFlag = append(inputByFlag, "--chain", "--chain-signature", "--environment")
+		inputByFlag = append(inputByFlag, "--chain", "--chain-signature", "--environment", "--checkpoint", "--checkpoint-signature")
 		if p.Scope.Phase == "phase2" {
 			inputByFlag = append(inputByFlag, "--phase1-seal", "--phase1-seal-signature")
 		}
@@ -89,6 +89,14 @@ func validateWorkflowV4Command(p workflowV4OperationPlan, b workflowV4Binding) e
 			if input.Ref != p.Predecessor.Signature {
 				return errors.New("V4 command uses another predecessor signature")
 			}
+		case "--checkpoint":
+			if input.Ref != p.Allocation.Record {
+				return errors.New("V4 command uses another allocation checkpoint")
+			}
+		case "--checkpoint-signature":
+			if input.Ref != p.Allocation.Signature {
+				return errors.New("V4 command uses another allocation signature")
+			}
 		}
 	}
 	if p.Kind == "attest-erasure" {
@@ -114,10 +122,10 @@ func validateWorkflowV4Command(p workflowV4OperationPlan, b workflowV4Binding) e
 		return errors.New("V4 child must use the role's protected signing key")
 	}
 	if p.Kind == "contribute" {
-		for _, flag := range []string{"--transcript-dir", "--participant-id", "--contributed-at"} {
+		for _, flag := range []string{"--transcript-dir", "--artifact-root", "--participant-id", "--contributed-at", "--attempt-id"} {
 			allowed[flag] = true
 		}
-		if flags["--participant-id"] != p.Scope.ParticipantID {
+		if flags["--participant-id"] != p.Scope.ParticipantID || flags["--attempt-id"] != p.AttemptID {
 			return errors.New("V4 command participant differs from the turn")
 		}
 		timestamp, err := time.Parse(time.RFC3339, flags["--contributed-at"])
@@ -125,7 +133,7 @@ func validateWorkflowV4Command(p workflowV4OperationPlan, b workflowV4Binding) e
 			return errors.New("V4 contribution needs an exact UTC timestamp")
 		}
 		root := flags["--transcript-dir"]
-		if !strings.HasPrefix(root, "/work/") || filepath.Clean(root) != root {
+		if !strings.HasPrefix(root, "/work/") || filepath.Clean(root) != root || flags["--artifact-root"] != root {
 			return errors.New("V4 transcript root must be retained under work")
 		}
 		for _, flag := range []string{"--chain", "--chain-signature"} {

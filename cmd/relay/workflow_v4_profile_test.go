@@ -20,7 +20,7 @@ func TestWorkflowV4ProfileBinding(t *testing.T) {
 	for n := range protocol.Definition.Journey.RequiredEnrollments {
 		e := &protocol.Definition.Journey.RequiredEnrollments[n]
 		if e.Role == "coordinator" {
-			e.Identity.KeyID, e.Identity.PublicKeyFingerprint = identity.KeyID, identity.Fingerprint
+			e.Identity.KeyID, e.Identity.Ed25519PublicKeyHex, e.Identity.PublicKeyFingerprint = identity.KeyID, identity.PublicKey, identity.Fingerprint
 		}
 	}
 	b, err := workflowV4ProfileBinding(p, signer, protocol, identity, nil)
@@ -64,7 +64,7 @@ func TestWorkflowV4ParticipantProfileBinding(t *testing.T) {
 	for n := range protocol.Definition.Journey.RequiredEnrollments {
 		e := &protocol.Definition.Journey.RequiredEnrollments[n]
 		if e.Role == "participant" {
-			e.Identity.KeyID, e.Identity.PublicKeyFingerprint = id.KeyID, id.Fingerprint
+			e.Identity.KeyID, e.Identity.Ed25519PublicKeyHex, e.Identity.PublicKeyFingerprint = id.KeyID, id.PublicKey, id.Fingerprint
 		}
 	}
 	root := filepath.Join(p.Work, "ceremony", "public")

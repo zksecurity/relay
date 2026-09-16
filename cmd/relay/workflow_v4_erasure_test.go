@@ -132,7 +132,19 @@ func TestWorkflowV4ErasureExecutionDoesNotReplay(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(p.Runtime.Mounts["/keys"], "signing.hex"), []byte("synthetic-key"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			i := transcript.Inspector{Executable: "approved-test-tool", CeremonyPath: p.Inputs[2].Path, CeremonySignaturePath: p.Inputs[3].Path, CoordinatorPublicKeyPath: p.Inputs[4].Path, TranscriptRoot: filepath.Dir(p.Inputs[2].Path)}
+			var ceremonyPath, ceremonySignaturePath, coordinatorKeyPath string
+			for _, input := range p.Inputs {
+				switch input.Ref {
+				case binding.Definition.Record:
+					ceremonyPath = input.Path
+				case binding.Definition.Signature:
+					ceremonySignaturePath = input.Path
+				}
+				if filepath.Base(input.Path) == "coordinator.hex" {
+					coordinatorKeyPath = input.Path
+				}
+			}
+			i := transcript.Inspector{Executable: "approved-test-tool", CeremonyPath: ceremonyPath, CeremonySignaturePath: ceremonySignaturePath, CoordinatorPublicKeyPath: coordinatorKeyPath, TranscriptRoot: filepath.Dir(ceremonyPath)}
 			i.Runner = func(string, ...string) ([]byte, []byte, error) {
 				result := map[string]any{"schema": "proof-tool-mpc-command-result-v1", "ok": true, "command": "inspect computation-output-v4", "computation_output_v4": transcript.ComputationOutputInspectionV4{Schema: "proof-tool-mpc-computation-output-inspection-v4", Depth: "computation-signatures-and-digests", SignaturesVerified: true, PayloadDigestVerified: true, Output: transcript.ComputationOutputFactsV4{Scope: p.Scope, Predecessor: p.Predecessor, Files: files}}}
 				b, err := json.Marshal(result)

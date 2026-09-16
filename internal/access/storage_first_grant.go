@@ -13,7 +13,6 @@ const (
 	// GrantSchema remain the supported v1 format for existing ceremonies.
 	GrantSchemaV2 = "relay-role-grant-v2"
 
-	SubmissionKindReceipt   = "receipt"
 	SubmissionKindCandidate = "candidate"
 
 	maxStorageFirstContributionIndex = 255
@@ -69,13 +68,11 @@ func (g StorageFirstGrant) Validate() error {
 	if !validHashID(g.CheckpointDigest) {
 		return errors.New("checkpoint_digest is not a tagged SHA-256 digest")
 	}
-	switch g.SubmissionKind {
-	case SubmissionKindReceipt, SubmissionKindCandidate:
-	default:
-		return errors.New("submission_kind must be receipt or candidate")
+	if g.SubmissionKind != SubmissionKindCandidate {
+		return errors.New("submission_kind must be candidate")
 	}
-	if g.Phase != "phase1" {
-		return errors.New("storage-first v2 grants currently support phase1 only")
+	if g.Phase != "phase1" && g.Phase != "phase2" {
+		return errors.New("storage-first grant phase must be phase1 or phase2")
 	}
 	if g.Index == 0 || g.Index > maxStorageFirstContributionIndex {
 		return fmt.Errorf("grant index must be between 1 and %d", maxStorageFirstContributionIndex)

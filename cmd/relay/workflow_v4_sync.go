@@ -70,5 +70,5 @@ func (j *workflowV4Journal) syncV4(objects storagefirst.ObjectStore, trust trans
 	if err != nil {
 		return zero, err
 	}
-	return storagefirst.SyncV4(objects, trust, highWater, b.CeremonyID, b.Work)
+	return storagefirst.SyncV4Retained(objects, trust, highWater, b.CeremonyID, b.Work, filepath.Join(b.Work, "ceremony", "public"))
 }
