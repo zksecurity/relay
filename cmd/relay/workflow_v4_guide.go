@@ -150,6 +150,7 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 		var progress workflowV4ParticipantProgress
 		var coordinatorProgress workflowV4CoordinatorProgress
 		var recommendation storagefirst.TurnRecommendationV4
+		lifecycleAction := ""
 		actionLabel := ""
 		pending, err := j.pending()
 		if err != nil {
@@ -217,6 +218,11 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 					}
 					actionLabel = workflowV4CoordinatorActionLabel(recommendation, coordinatorProgress)
 				}
+			} else if p.Role == "coordinator" {
+				lifecycleAction, actionLabel, err = workflowV4CoordinatorLifecycleAction(c, protocol)
+				if err != nil {
+					return err
+				}
 			}
 			printWorkflowV4Status(ui.output, p.Role, c, turn, pending, time.Now().UTC())
 			if recommendation.Reason != "" {
@@ -243,8 +249,14 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 					continue
 				}
 			} else if p.Role == "coordinator" {
-				if err := runWorkflowV4CoordinatorAction(&ui, snapshot, protocol, config, p, signer, inspector, recommendation, turn, coordinatorProgress); err != nil {
-					ui.message(toneError, "Coordinator action stopped: %v\nSigned files and verified downloads were retained. No action is automatically repeated.\n", err)
+				var actionErr error
+				if lifecycleAction != "" {
+					actionErr = runWorkflowV4CoordinatorLifecycle(&ui, lifecycleAction, snapshot, protocol, p, signer, inspector)
+				} else {
+					actionErr = runWorkflowV4CoordinatorAction(&ui, snapshot, protocol, config, p, signer, inspector, recommendation, turn, coordinatorProgress)
+				}
+				if actionErr != nil {
+					ui.message(toneError, "Coordinator action stopped: %v\nSigned files and verified downloads were retained. No action is automatically repeated.\n", actionErr)
 					continue
 				}
 			}
