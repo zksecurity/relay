@@ -83,14 +83,10 @@ func runWorkflowV4FinalReleaseLifecycle(ui *coordinatorWizard, snapshot storagef
 	}
 	record := filepath.Join(releaseDir, "manifest.json")
 	signature := filepath.Join(releaseDir, "manifest.sig")
-	evidence := make([]string, 0, len(paths)-2)
-	for name, path := range paths {
-		if name != "manifest.json" && name != "manifest.sig" {
-			evidence = append(evidence, path)
-		}
+	evidence, err := workflowV4FinalReleaseEvidence(paths)
+	if err != nil {
+		return err
 	}
-	// Stable ordering keeps review output and tests deterministic.
-	sort.Strings(evidence)
 	basis := strings.TrimPrefix(snapshot.Head().Record.Digest.SHA256, "sha256:")[:16]
 	outputDir := filepath.Join(root, "checkpoints", "final", "release-"+basis)
 	if _, err := os.Lstat(filepath.Join(outputDir, "checkpoint.json")); errors.Is(err, os.ErrNotExist) {
@@ -113,6 +109,21 @@ func runWorkflowV4FinalReleaseLifecycle(ui *coordinatorWizard, snapshot storagef
 		fmt.Fprintln(ui.output, "Final signed release checkpoint recorded. Public publication remains a separate action.")
 	}
 	return nil
+}
+
+func workflowV4FinalReleaseEvidence(paths map[string]string) ([]string, error) {
+	names := []string{workflowV4ReleaseTranscriptFile, workflowV4ReleaseManifestPublicFile, workflowV4ReleaseChecksumsFile}
+	evidence := make([]string, 0, len(names))
+	for _, name := range names {
+		path := paths[name]
+		if path == "" {
+			return nil, fmt.Errorf("verified release package lacks required checkpoint bootstrap %q", name)
+		}
+		evidence = append(evidence, path)
+	}
+	// Keep review output and generated commands deterministic.
+	sort.Strings(evidence)
+	return evidence, nil
 }
 
 func workflowV4ReleaseSignerAssignment(protocol transcript.DefinitionProtocol) (transcript.ExpectedEnrollment, error) {

@@ -206,7 +206,7 @@ func validateEnrollmentMetadataV4(p EnrollmentMetadataInspectionV4) (EnrollmentM
 		}
 		last = item.Refs.Record.Name
 		e := item.Enrollment
-		if e.Schema != "proof-tool-mpc-enrollment-record-v1" || e.CeremonyID != p.Metadata.CeremonyID || e.Identity.ID == "" || e.Identity.DisplayName == "" || !taggedHash(e.Identity.KeyID, "ed25519:") || !taggedHash(e.Identity.PublicKeyFingerprint, "sha256:") || !taggedHash("ed25519:"+e.Identity.Ed25519PublicKeyHex, "ed25519:") || e.RoleIndex < 1 || e.RoleIndex > 20 || e.EnrolledAt == "" {
+		if e.Schema != "proof-tool-mpc-enrollment-record-v1" || e.CeremonyID != p.Metadata.CeremonyID || e.Identity.ID == "" || e.Identity.DisplayName == "" || !protocolID(e.Identity.KeyID) || !taggedHash(e.Identity.PublicKeyFingerprint, "sha256:") || !taggedHash("ed25519:"+e.Identity.Ed25519PublicKeyHex, "ed25519:") || e.RoleIndex < 1 || e.RoleIndex > 20 || e.EnrolledAt == "" {
 			return EnrollmentMetadataInspectionV4{}, errors.New("invalid committed enrollment metadata")
 		}
 		switch e.Role {
@@ -225,4 +225,19 @@ func validateEnrollmentMetadataV4(p EnrollmentMetadataInspectionV4) (EnrollmentM
 		}
 	}
 	return p, nil
+}
+
+// Key IDs are authenticated labels, not necessarily fingerprints. Match the
+// proof-tool protocol's ID grammar instead of imposing an ed25519:<digest>
+// convention that the signed ceremony format does not require.
+func protocolID(value string) bool {
+	if value == "" || len(value) > 128 {
+		return false
+	}
+	for _, r := range value {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' && r != '_' && r != '.' && r != ':' {
+			return false
+		}
+	}
+	return true
 }

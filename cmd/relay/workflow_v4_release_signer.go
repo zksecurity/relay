@@ -16,7 +16,12 @@ import (
 	"github.com/zksecurity/relay/internal/transcript"
 )
 
-const workflowV4ReleasePackageDir = "release-package"
+const (
+	workflowV4ReleasePackageDir         = "release-package"
+	workflowV4ReleaseTranscriptFile     = "setup-transcript.json"
+	workflowV4ReleaseChecksumsFile      = "checksums.sha256"
+	workflowV4ReleaseManifestPublicFile = "manifest-public-key.hex"
+)
 
 type workflowV4ReleaseSignerProgress struct {
 	PackageReady bool
@@ -37,7 +42,7 @@ func workflowV4ReleaseSignerProgressFor(work string) (workflowV4ReleaseSignerPro
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return p, errors.New("retained release package path is not a real directory")
 	}
-	for _, name := range []string{"manifest.json", "manifest.sig", "manifest-public-key.hex", "final-transcript.json", "release-checksums.sha256"} {
+	for _, name := range []string{"manifest.json", "manifest.sig", workflowV4ReleaseManifestPublicFile, workflowV4ReleaseTranscriptFile, workflowV4ReleaseChecksumsFile} {
 		if !regularPreparationFile(filepath.Join(p.PackageDir, name)) {
 			return p, errors.New("retained release package is incomplete; preserve it for inspection")
 		}

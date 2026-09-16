@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zksecurity/relay/internal/access"
 	"github.com/zksecurity/relay/internal/state"
@@ -134,4 +136,255 @@ func TestV4LiveInitialR2(t *testing.T) {
 		t.Fatalf("unexpected authenticated live initial state: sequence=%d transition=%s history=%d", checkpoint.Sequence, checkpoint.Transition.Kind, snapshot.Checked())
 	}
 	t.Logf("authenticated live R2 initial V4 state for ceremony %s", protocol.Definition.CeremonyID)
+}
+
+// TestV4LiveReleaseR2 is an explicit live-provider check for the last private
+// handoff. It validates a retained V4 release grant against the authenticated
+// frozen review, uploads a complete signed package, downloads it through the
+// coordinator's inbox access, and authenticates the downloaded package with
+// proof-tool. It never publishes the package.
+func TestV4LiveReleaseR2(t *testing.T) {
+	configPath := os.Getenv("RELAY_V4_LIVE_R2_CONFIG")
+	credentialsPath := os.Getenv("RELAY_V4_LIVE_R2_CREDENTIALS")
+	proofBinary := os.Getenv("RELAY_V4_LIVE_PROOF_BINARY")
+	ceremonyRoot := os.Getenv("RELAY_V4_LIVE_CEREMONY_ROOT")
+	coordinatorKey := os.Getenv("RELAY_V4_LIVE_COORDINATOR_KEY")
+	packageDir := os.Getenv("RELAY_V4_LIVE_RELEASE_PACKAGE")
+	grantPath := os.Getenv("RELAY_V4_LIVE_RELEASE_GRANT")
+	if configPath == "" || credentialsPath == "" || proofBinary == "" || ceremonyRoot == "" || coordinatorKey == "" || packageDir == "" || grantPath == "" {
+		t.Skip("set the RELAY_V4_LIVE_R2_CONFIG, RELAY_V4_LIVE_R2_CREDENTIALS, RELAY_V4_LIVE_PROOF_BINARY, RELAY_V4_LIVE_CEREMONY_ROOT, RELAY_V4_LIVE_COORDINATOR_KEY, RELAY_V4_LIVE_RELEASE_PACKAGE and RELAY_V4_LIVE_RELEASE_GRANT paths")
+	}
+	for _, path := range []string{configPath, credentialsPath, proofBinary, ceremonyRoot, coordinatorKey, packageDir, grantPath} {
+		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+			t.Fatal("live test paths must be absolute and clean")
+		}
+	}
+	config, err := loadStorageConfig(configPath)
+	if err != nil || config.Provider != "r2" {
+		t.Fatalf("live test requires an existing valid R2 configuration: %v", err)
+	}
+	inspector := transcript.Inspector{
+		Executable:               proofBinary,
+		CeremonyPath:             filepath.Join(ceremonyRoot, "ceremony.json"),
+		CeremonySignaturePath:    filepath.Join(ceremonyRoot, "ceremony.sig"),
+		CoordinatorPublicKeyPath: coordinatorKey,
+		TranscriptRoot:           ceremonyRoot,
+	}
+	protocol, err := inspector.DefinitionProtocol()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if protocol.Definition.CeremonyID != config.CeremonyID {
+		t.Fatal("live R2 configuration belongs to another ceremony")
+	}
+	releaseSigner, err := workflowV4ReleaseSignerAssignment(protocol)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := t.TempDir()
+	if err := os.Chmod(workspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	highWater, err := state.OpenWorkspaceHighWater(filepath.Join(workspace, "high-water"), protocol.Definition.CeremonyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := storagefirst.SyncV4(store.Client{PublicBaseURL: config.PublishedBaseURL}, inspector, highWater, protocol.Definition.CeremonyID, workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant, err := loadStorageFirstGrant(grantPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := storagefirst.GrantDestination{Provider: config.Provider, Endpoint: config.Endpoint, Region: config.Region, InboxBucket: config.InboxBucket}
+	if err := storagefirst.ValidateReleaseGrantV4At(snapshot, protocol, releaseSigner.Identity.ID, grant, destination, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	inventory, sources, paths, err := workflowV4ReleaseFiles(packageDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := storagefirst.DeliveryScope{CeremonyID: grant.CeremonyID, AttemptID: grant.AttemptID, Kind: access.SubmissionKindRelease}
+	uploadTemp := filepath.Join(workspace, "upload")
+	if err := os.Mkdir(uploadTemp, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := storagefirst.UploadDelivery(storageFirstGrantClient(grant), scope, inventory, sources, paths, uploadTemp); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", credentialsPath)
+	downloaded := filepath.Join(workspace, "downloaded-release")
+	if err := runCoordinatorFetchReleaseV4([]string{"--storage", configPath, "--attempt-id", grant.AttemptID, "--out-dir", downloaded}); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(proofBinary, "release", "verify",
+		"--ceremony", inspector.CeremonyPath,
+		"--ceremony-signature", inspector.CeremonySignaturePath,
+		"--coordinator-public-key-file", coordinatorKey,
+		"--keys-dir", downloaded,
+		"--manifest-public-key-file", filepath.Join(downloaded, "manifest-public-key.hex"),
+		"--signature-key-id", releaseSigner.Identity.KeyID,
+	)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("authenticate downloaded release package: %v: %s", err, output)
+	}
+	t.Logf("uploaded, downloaded and authenticated release package for ceremony %s", protocol.Definition.CeremonyID)
+}
+
+// TestV4LiveFinalizeReleaseR2 records the proof-authenticated package as the
+// final signed checkpoint, publishes that checkpoint and all newly referenced
+// public files, then proves a fresh client can reconstruct the terminal state.
+func TestV4LiveFinalizeReleaseR2(t *testing.T) {
+	configPath := os.Getenv("RELAY_V4_LIVE_R2_CONFIG")
+	credentialsPath := os.Getenv("RELAY_V4_LIVE_R2_CREDENTIALS")
+	proofBinary := os.Getenv("RELAY_V4_LIVE_PROOF_BINARY")
+	ceremonyRoot := os.Getenv("RELAY_V4_LIVE_CEREMONY_ROOT")
+	coordinatorKey := os.Getenv("RELAY_V4_LIVE_COORDINATOR_KEY")
+	coordinatorSigningKey := os.Getenv("RELAY_V4_LIVE_COORDINATOR_SIGNING_KEY")
+	packageDir := os.Getenv("RELAY_V4_LIVE_RELEASE_PACKAGE")
+	if configPath == "" || credentialsPath == "" || proofBinary == "" || ceremonyRoot == "" || coordinatorKey == "" || coordinatorSigningKey == "" || packageDir == "" {
+		t.Skip("set the V4 live R2, proof, ceremony, coordinator and release-package paths")
+	}
+	for _, path := range []string{configPath, credentialsPath, proofBinary, ceremonyRoot, coordinatorKey, coordinatorSigningKey, packageDir} {
+		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+			t.Fatal("live test paths must be absolute and clean")
+		}
+	}
+	config, err := loadStorageConfig(configPath)
+	if err != nil || config.Provider != "r2" {
+		t.Fatalf("live test requires an existing valid R2 configuration: %v", err)
+	}
+	inspector := transcript.Inspector{Executable: proofBinary, CeremonyPath: filepath.Join(ceremonyRoot, "ceremony.json"), CeremonySignaturePath: filepath.Join(ceremonyRoot, "ceremony.sig"), CoordinatorPublicKeyPath: coordinatorKey, TranscriptRoot: ceremonyRoot}
+	protocol, err := inspector.DefinitionProtocol()
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := t.TempDir()
+	if err := os.Chmod(workspace, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sync := func(name string) storagefirst.SnapshotV4 {
+		t.Helper()
+		highWater, err := state.OpenWorkspaceHighWater(filepath.Join(workspace, name), protocol.Definition.CeremonyID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		snapshot, err := storagefirst.SyncV4(store.Client{PublicBaseURL: config.PublishedBaseURL}, inspector, highWater, protocol.Definition.CeremonyID, workspace)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return snapshot
+	}
+	snapshot := sync("before")
+	stateView, err := snapshot.State()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stateView.Progress.FinalRelease != nil {
+		t.Logf("fresh client authenticated existing final release at sequence %d", stateView.Sequence)
+		return
+	}
+	if stateView.Progress.ReleaseReview == nil {
+		t.Fatal("live ceremony has no frozen release review")
+	}
+	releaseSigner, err := workflowV4ReleaseSignerAssignment(protocol)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verify := exec.Command(proofBinary, "release", "verify", "--ceremony", inspector.CeremonyPath, "--ceremony-signature", inspector.CeremonySignaturePath, "--coordinator-public-key-file", coordinatorKey, "--keys-dir", packageDir, "--manifest-public-key-file", filepath.Join(packageDir, "manifest-public-key.hex"), "--signature-key-id", releaseSigner.Identity.KeyID)
+	if output, err := verify.CombinedOutput(); err != nil {
+		t.Fatalf("authenticate retained release package: %v: %s", err, output)
+	}
+	_, _, sourcePaths, err := workflowV4ReleaseFiles(packageDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseDir := filepath.Join(ceremonyRoot, "final", "release")
+	if err := os.MkdirAll(releaseDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, source := range sourcePaths {
+		target := filepath.Join(releaseDir, filepath.FromSlash(name))
+		if err := copyLiveFileNewOrExact(source, target); err != nil {
+			t.Fatalf("stage release file %q: %v", name, err)
+		}
+	}
+	_, _, releasePaths, err := workflowV4ReleaseFiles(releaseDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, signature := releasePaths["manifest.json"], releasePaths["manifest.sig"]
+	evidence, err := workflowV4FinalReleaseEvidence(releasePaths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	basis := strings.TrimPrefix(snapshot.Head().Record.Digest.SHA256, "sha256:")[:16]
+	outDir := filepath.Join(ceremonyRoot, "checkpoints", "final", "release-"+basis)
+	if err := os.MkdirAll(filepath.Dir(outDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"checkpoint", "record-v4", "--ceremony", inspector.CeremonyPath, "--ceremony-signature", inspector.CeremonySignaturePath, "--coordinator-public-key-file", coordinatorKey, "--artifact-root", ceremonyRoot, "--checkpoint", filepath.Join(ceremonyRoot, filepath.FromSlash(snapshot.Head().Record.Name)), "--checkpoint-signature", filepath.Join(ceremonyRoot, filepath.FromSlash(snapshot.Head().Signature.Name)), "--transition", "final-release-recorded", "--record", record, "--record-signature", signature}
+	for _, path := range evidence {
+		args = append(args, "--evidence", path)
+	}
+	args = append(args, "--coordinator-signing-key", coordinatorSigningKey, "--out-dir", outDir)
+	if output, err := exec.Command(proofBinary, args...).CombinedOutput(); err != nil {
+		t.Fatalf("record final release checkpoint: %v: %s", err, output)
+	}
+	config.CeremonyPath = inspector.CeremonyPath
+	config.CeremonySignature = inspector.CeremonySignaturePath
+	config.CoordinatorPublicKey = coordinatorKey
+	config.CeremonyBinary = proofBinary
+	hostConfig := filepath.Join(workspace, "storage.json")
+	if err := writeJSONNoReplace(hostConfig, config, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", credentialsPath)
+	if err := runCoordinatorCommitV4([]string{"--storage", hostConfig, "--artifact-root", ceremonyRoot, "--checkpoint", filepath.Join(outDir, "checkpoint.json"), "--checkpoint-signature", filepath.Join(outDir, "checkpoint.sig"), "--ceremony", inspector.CeremonyPath, "--ceremony-signature", inspector.CeremonySignaturePath, "--coordinator-key", coordinatorKey, "--ceremony-binary", proofBinary}); err != nil {
+		t.Fatal(err)
+	}
+	completed := sync("after")
+	completedState, err := completed.State()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completedState.Sequence != stateView.Sequence+1 || completedState.Progress.FinalRelease == nil || completedState.Transition.Kind != "final-release-recorded" {
+		t.Fatalf("fresh client did not reconstruct terminal release state: sequence=%d transition=%s", completedState.Sequence, completedState.Transition.Kind)
+	}
+	t.Logf("fresh client authenticated terminal release checkpoint at sequence %d", completedState.Sequence)
+}
+
+func copyLiveFileNewOrExact(source, target string) error {
+	if existing, err := workflowV4LocalRef(filepath.Base(target), target); err == nil {
+		want, err := workflowV4LocalRef(filepath.Base(source), source)
+		if err != nil {
+			return err
+		}
+		if existing.Digest != want.Digest {
+			return errors.New("existing destination differs")
+		}
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return err
+	}
+	in, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(out, in)
+	closeErr := out.Close()
+	if copyErr != nil || closeErr != nil {
+		_ = os.Remove(target)
+		return errors.Join(copyErr, closeErr)
+	}
+	return nil
 }

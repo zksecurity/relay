@@ -61,3 +61,46 @@ func TestWorkflowV4ReleaseFilesPreserveNestedNamesAndRejectSymlink(t *testing.T)
 		t.Fatal("release package symlink accepted")
 	}
 }
+
+func TestWorkflowV4FinalReleaseCheckpointUsesOnlyProtocolBootstraps(t *testing.T) {
+	paths := map[string]string{
+		"manifest.json":           "/release/manifest.json",
+		"manifest.sig":            "/release/manifest.sig",
+		"setup-transcript.json":   "/release/setup-transcript.json",
+		"manifest-public-key.hex": "/release/manifest-public-key.hex",
+		"checksums.sha256":        "/release/checksums.sha256",
+		"ownership.pk":            "/release/ownership.pk",
+	}
+	evidence, err := workflowV4FinalReleaseEvidence(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/release/checksums.sha256", "/release/manifest-public-key.hex", "/release/setup-transcript.json"}
+	if strings.Join(evidence, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("checkpoint evidence = %q, want %q", evidence, want)
+	}
+	delete(paths, "setup-transcript.json")
+	if _, err := workflowV4FinalReleaseEvidence(paths); err == nil {
+		t.Fatal("missing final release bootstrap accepted")
+	}
+}
+
+func TestWorkflowV4ReleaseSignerRecognizesProofToolPackageLayout(t *testing.T) {
+	work := t.TempDir()
+	root := filepath.Join(work, "workflow-v4", "release", workflowV4ReleasePackageDir)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"manifest.json", "manifest.sig", workflowV4ReleaseManifestPublicFile, workflowV4ReleaseTranscriptFile, workflowV4ReleaseChecksumsFile} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	progress, err := workflowV4ReleaseSignerProgressFor(work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !progress.PackageReady {
+		t.Fatal("complete proof-tool release package was not recognized")
+	}
+}

@@ -19,6 +19,12 @@ func TestCheckpointEnrollmentMetadataBoundaryV4(t *testing.T) {
 	if err := check(p); err != nil {
 		t.Fatal(err)
 	}
+	plainKeyID := p
+	plainKeyID.Metadata.Enrollments = append([]CommittedEnrollmentMetadataV4(nil), p.Metadata.Enrollments...)
+	plainKeyID.Metadata.Enrollments[0].Enrollment.Identity.KeyID = "participant-key"
+	if err := check(plainKeyID); err != nil {
+		t.Fatalf("proof-tool-compatible key ID rejected: %v", err)
+	}
 	for name, change := range map[string]func(*EnrollmentMetadataInspectionV4){
 		"signature unchecked":  func(p *EnrollmentMetadataInspectionV4) { p.EnrollmentSignaturesVerified = false },
 		"disclosure overclaim": func(p *EnrollmentMetadataInspectionV4) { p.DisclosureContentsVerified = true },
@@ -28,9 +34,12 @@ func TestCheckpointEnrollmentMetadataBoundaryV4(t *testing.T) {
 		"duplicate": func(p *EnrollmentMetadataInspectionV4) {
 			p.Metadata.Enrollments = append(p.Metadata.Enrollments, p.Metadata.Enrollments[0])
 		},
-		"wrong ceremony":      func(p *EnrollmentMetadataInspectionV4) { p.Metadata.Enrollments[0].Enrollment.CeremonyID = "other" },
-		"role":                func(p *EnrollmentMetadataInspectionV4) { p.Metadata.Enrollments[0].Enrollment.Role = "operator" },
-		"assignment":          func(p *EnrollmentMetadataInspectionV4) { p.Metadata.Enrollments[0].Enrollment.RoleIndex = 21 },
+		"wrong ceremony": func(p *EnrollmentMetadataInspectionV4) { p.Metadata.Enrollments[0].Enrollment.CeremonyID = "other" },
+		"role":           func(p *EnrollmentMetadataInspectionV4) { p.Metadata.Enrollments[0].Enrollment.Role = "operator" },
+		"assignment":     func(p *EnrollmentMetadataInspectionV4) { p.Metadata.Enrollments[0].Enrollment.RoleIndex = 21 },
+		"invalid key id": func(p *EnrollmentMetadataInspectionV4) {
+			p.Metadata.Enrollments[0].Enrollment.Identity.KeyID = "Upper Case"
+		},
 		"oversized signature": func(p *EnrollmentMetadataInspectionV4) { p.Metadata.Enrollments[0].Refs.Signature.Digest.Size = 4097 },
 	} {
 		var bad EnrollmentMetadataInspectionV4
