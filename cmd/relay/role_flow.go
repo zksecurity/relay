@@ -294,12 +294,19 @@ func ensureOfflineSigningProfile(p guidedProfile, root string) error {
 }
 
 func saveJSONAtomic(path string, value any) error {
+	return saveJSONAtomicWithLimit(path, value, 1<<20)
+}
+
+func saveJSONAtomicWithLimit(path string, value any, maximum int) error {
 	// Private, fsynced replacement; callers hold the workflow lock.
+	if maximum <= 0 {
+		return errors.New("invalid workflow size limit")
+	}
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	if len(raw) > 1<<20 {
+	if len(raw) > maximum {
 		return errors.New("workflow history reached its size limit; preserve it and review archival/recovery with a maintainer before further actions")
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".flow-*")

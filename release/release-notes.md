@@ -1,5 +1,10 @@
 ## What changed
 
+- Added the separate V4 operation journal and strict private-state reader.
+  It retains the original inputs/runtime across interruption and will not replay
+  an uncertain operation. This is restart infrastructure; normal V4 role-menu
+  execution is still being connected.
+
 - Added a separate V4 metadata-sync bridge that discovers signed history,
   verifies its complete ancestry before recording progress, and avoids fetching
   old contribution payloads. Normal role-menu integration is still pending.

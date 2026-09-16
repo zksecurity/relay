@@ -479,6 +479,35 @@ upload success means only uploaded files/manifest, not contribution acceptance.
 Test crashes at each save/launch/output/upload/CAS boundary, backend advancement,
 grant expiry, partial five/seven-file output and isolation from legacy journals.
 
+The journal foundation is implemented in `cmd/relay/workflow_v4_journal.go`;
+normal menu execution is not connected yet. Its separate create-only workspace
+marker binds the exact state location, definition pair and role. The state is
+limited to 16 MiB and 8,192 operations; legacy atomic saves retain their 1 MiB
+limit. Strict reading rejects duplicate/unknown fields and non-private files.
+Failed saves disable the current handle, because a rename may have succeeded
+before fsync reported failure. Reopening reads the durable status. Prepared
+operations can be abandoned only with no declared outputs; running work requires
+exact-result inspection. Coordinator reconciliation also checks the complete
+saved publication plan and committed conditional-write status, in addition to
+the caller's live artifact/publication verification. These local records are
+not cryptographic proof or permission to skip revalidation.
+
+Review tightened the journal's integration contract: its header also pins the
+approved runtime profiles, and opening checks the role against authenticated
+roster metadata plus the exact authenticated definition pair. Computation and
+record-signing commands must match their kind, retained input/output paths and
+reviewed record hash. Receipt downloads are a separate attempt-bound operation.
+Publication journals use `workflow-v4/commits/<operation-id>.json`, and their
+initial output list must equal the outer operation's output list. Network and
+coordinated-publication handlers use fixed internal dispatch tokens, not a shell
+command. Those handlers remain to be implemented: they must consume only the
+saved plan, and persist each actual checkpoint/signing child command before it
+runs. The local journal tests do not establish that handler integration.
+Before menu wiring, replace generic reconciliation callbacks with closed
+per-kind artifact/publication reconcilers and test every handler's interruption
+boundaries. A second independent review found no remaining material defect in
+the journal foundation; it did not review those still-unimplemented handlers.
+
 ### Incident and termination records
 
 Use separate V4 transitions for an informational incident, abort and restart.
