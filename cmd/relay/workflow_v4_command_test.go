@@ -164,3 +164,44 @@ func TestWorkflowV4RuntimeRejectsOverlappingTrustAndKeys(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkflowV4CleanupCommandBindsSeparateOutputs(t *testing.T) {
+	_, binding := workflowV4TestBinding(t)
+	plan := workflowV4TestPlan(t, binding)
+	plan.Kind = "attest-erasure"
+	plan.Runtime = binding.Runtimes["signer"]
+	root := "/work/workflow-v4/inputs/" + plan.ID
+	plan.Command = []string{"mpc-ceremony", "phase1", "attest-erasure", "--ceremony", root + "/ceremony.json", "--ceremony-signature", root + "/ceremony.sig", "--coordinator-public-key-file", "/trust/coordinator.hex", "--participant-id", plan.Scope.ParticipantID, "--participant-signing-key", "/keys/signing.hex", "--candidate-dir", "/work/candidate", "--destroyed-at", "2026-09-16T00:00:00Z"}
+	plan.Outputs = []string{filepath.Join(binding.Work, "candidate", "erasure.json"), filepath.Join(binding.Work, "candidate", "erasure.sig")}
+	for _, name := range []string{"attestation.json", "attestation.sig", "contribution.bin", "relay-lifecycle.json"} {
+		plan.Inputs = append(plan.Inputs, workflowV4Input{Path: filepath.Join(binding.Work, "candidate", name), Ref: workflowV4TestRef(name, name)})
+	}
+	if err := validateWorkflowV4Plan(plan, binding); err != nil {
+		t.Fatal(err)
+	}
+	plan.Outputs[1] = filepath.Join(binding.Work, "candidate", "attestation.sig")
+	if err := validateWorkflowV4Plan(plan, binding); err == nil {
+		t.Fatal("cleanup may overwrite computation signature")
+	}
+	plan.Outputs[1] = filepath.Join(binding.Work, "candidate", "erasure.sig")
+	plan.Inputs = plan.Inputs[:len(plan.Inputs)-1]
+	if err := validateWorkflowV4Plan(plan, binding); err == nil {
+		t.Fatal("cleanup accepted without lifecycle input")
+	}
+}
+
+func TestWorkflowV4ContributionOptionsPreserveSavedCommand(t *testing.T) {
+	_, b := workflowV4TestBinding(t)
+	p := workflowV4TestPlan(t, b)
+	o, pos, when, err := workflowV4ContributionOptions(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.operationID != p.ID || o.outDir != p.Outputs[0] || pos.chainPath != p.Inputs[0].Path || when.Format(time.RFC3339) != "2026-01-01T00:00:00Z" {
+		t.Fatal("lost saved contribution binding")
+	}
+	p.Command = append(p.Command, "--unexpected", "value")
+	if _, _, _, err := workflowV4ContributionOptions(p); err == nil {
+		t.Fatal("driver silently discarded a saved argument")
+	}
+}

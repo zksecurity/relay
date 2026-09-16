@@ -49,6 +49,7 @@ type inspectionResult struct {
 	CheckpointInspectionV4         *CheckpointInspectionV4            `json:"checkpoint_inspection_v4"`
 	EnrollmentMetadataV4           *EnrollmentMetadataInspectionV4    `json:"enrollment_metadata_v4"`
 	ContributionInventoryV4        *ContributionInventoryInspectionV4 `json:"contribution_inventory_v4"`
+	ComputationOutputV4            *ComputationOutputInspectionV4     `json:"computation_output_v4"`
 	ChainInspection                *chainInspection                   `json:"chain_inspection"`
 	ParticipantInspection          *ParticipantInspection             `json:"participant_inspection"`
 	EnrollmentInspection           *EnrollmentInspection              `json:"enrollment_inspection"`

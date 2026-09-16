@@ -492,7 +492,7 @@ func validateWorkflowV4Plan(p workflowV4OperationPlan, b workflowV4Binding) erro
 	switch p.Kind {
 	case "download-outbound", "upload-receipt", "upload-candidate":
 		attemptBound = true
-	case "sign-receipt", "contribute", "sign-return":
+	case "sign-receipt", "contribute", "attest-erasure", "sign-return":
 	case "download-receipt", "download-candidate", "issue-grant":
 		wantRole, attemptBound = "coordinator", true
 	case "sign-return-receipt":
@@ -532,7 +532,7 @@ func validateWorkflowV4Plan(p workflowV4OperationPlan, b workflowV4Binding) erro
 	if p.Kind == "contribute" {
 		class = "contributor"
 	}
-	if p.Kind == "sign-receipt" || p.Kind == "sign-return" || p.Kind == "sign-return-receipt" {
+	if p.Kind == "sign-receipt" || p.Kind == "sign-return" || p.Kind == "sign-return-receipt" || p.Kind == "attest-erasure" {
 		class = "signer"
 	}
 	if expected, ok := b.Runtimes[class]; !ok || !reflect.DeepEqual(expected, p.Runtime) {

@@ -23,6 +23,9 @@ func validateWorkflowV4Command(p workflowV4OperationPlan, b workflowV4Binding) e
 	if p.Kind == "contribute" {
 		prefix = []string{"mpc-ceremony", p.Scope.Phase, "contribute"}
 	}
+	if p.Kind == "attest-erasure" {
+		prefix = []string{"mpc-ceremony", p.Scope.Phase, "attest-erasure"}
+	}
 	if len(p.Command) < len(prefix) || !reflect.DeepEqual(p.Command[:len(prefix)], prefix) {
 		return errors.New("V4 command does not match its operation kind")
 	}
@@ -51,7 +54,7 @@ func validateWorkflowV4Command(p workflowV4OperationPlan, b workflowV4Binding) e
 		if p.Scope.Phase == "phase2" {
 			inputByFlag = append(inputByFlag, "--phase1-seal", "--phase1-seal-signature")
 		}
-	} else {
+	} else if p.Kind != "attest-erasure" {
 		inputByFlag = append(inputByFlag, "--record")
 	}
 	inputRefs := make(map[string]workflowV4Input)
@@ -87,6 +90,9 @@ func validateWorkflowV4Command(p workflowV4OperationPlan, b workflowV4Binding) e
 				return errors.New("V4 command uses another predecessor signature")
 			}
 		}
+	}
+	if p.Kind == "attest-erasure" {
+		return validateWorkflowV4ErasureCommand(p, flags, allowed, inputRefs)
 	}
 	outputFlag, keyFlag := "--out", "--signing-key"
 	if p.Kind == "contribute" {
@@ -142,6 +148,44 @@ func validateWorkflowV4Command(p workflowV4OperationPlan, b workflowV4Binding) e
 	for flag := range flags {
 		if !allowed[flag] {
 			return errors.New("unsupported V4 child command argument")
+		}
+	}
+	return nil
+}
+
+// Cleanup signing is a separate side effect, never an implicit tail of
+// computation. The executor additionally verifies the original lifecycle
+// receipt and records the operator's confirmation before preparing this plan.
+func validateWorkflowV4ErasureCommand(p workflowV4OperationPlan, flags map[string]string, allowed map[string]bool, inputs map[string]workflowV4Input) error {
+	for _, flag := range []string{"--candidate-dir", "--participant-id", "--participant-signing-key", "--destroyed-at"} {
+		allowed[flag] = true
+	}
+	for flag := range flags {
+		if !allowed[flag] {
+			return errors.New("unsupported V4 cleanup command argument")
+		}
+	}
+	if flags["--participant-id"] != p.Scope.ParticipantID || p.Runtime.Mounts["/keys"] == "" || flags["--participant-signing-key"] != "/keys/signing.hex" {
+		return errors.New("V4 cleanup signer differs from the participant")
+	}
+	stamp := flags["--destroyed-at"]
+	when, err := time.Parse(time.RFC3339, stamp)
+	if err != nil || when.IsZero() || when.UTC().Format(time.RFC3339) != stamp {
+		return errors.New("V4 cleanup needs an exact UTC timestamp")
+	}
+	root := flags["--candidate-dir"]
+	if !strings.HasPrefix(root, "/work/") || filepath.Clean(root) != root || len(p.Outputs) != 2 {
+		return errors.New("V4 cleanup requires the retained candidate and two exact outputs")
+	}
+	for _, name := range []string{"attestation.json", "attestation.sig", "contribution.bin", "relay-lifecycle.json"} {
+		if _, ok := inputs[filepath.Join(root, name)]; !ok {
+			return errors.New("V4 cleanup lacks a retained computation or lifecycle input")
+		}
+	}
+	for n, name := range []string{"erasure.json", "erasure.sig"} {
+		output, err := workflowV4ContainerPath(p.Runtime, p.Outputs[n])
+		if err != nil || output != filepath.Join(root, name) {
+			return errors.New("V4 cleanup output differs from its declared candidate")
 		}
 	}
 	return nil

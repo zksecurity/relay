@@ -71,6 +71,18 @@ func TestV4ParticipantTurnRecommendationsAndRetries(t *testing.T) {
 			local.PendingOperation = true
 			check("inspect-retained-operation", true)
 			local.PendingOperation = false
+			local.GeneratedOutput = &transcript.ComputationOutputFactsV4{Scope: view.Scope}
+			check("confirm-cleanup-and-sign-attestation", true)
+			// Expired upload access cannot force recomputation or prevent cleanup.
+			local.Grant.ExpiresAt = now
+			check("confirm-cleanup-and-sign-attestation", true)
+			c.Deliveries[2].Status = "retired"
+			check("confirm-cleanup-and-sign-attestation", true)
+			c.Deliveries[2].Status = "allocated"
+			local.Grant.ExpiresAt = now.Add(time.Hour)
+			local.PendingOperation = true // Cleanup signing may have started.
+			check("inspect-retained-operation", true)
+			local.PendingOperation = false
 			local.ComputedCandidateID = sum([]byte("computed-five-files"))
 			check("prepare-and-sign-return-handoff", true)
 			// Restart after computation must never suggest another contribution.

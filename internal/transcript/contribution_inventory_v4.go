@@ -72,11 +72,18 @@ func (i Inspector) ContributionInventoryV4(chain, signature, scopeFile, candidat
 }
 
 func validateInventoryProjectionV4(i CandidateInventoryV4, expected ContributionScopeV4, count int) error {
-	if i.Schema != "proof-tool-mpc-candidate-inventory-v1" || i.Scope != expected || len(i.Files) != count || !taggedHash(expected.CeremonyID, "sha256:") || !taggedHash(expected.ParentHeadID, "sha256:") || (expected.Phase != "phase1" && expected.Phase != "phase2") || expected.Index == 0 || expected.Index > 20 || expected.ParticipantID == "" {
+	if i.Schema != "proof-tool-mpc-candidate-inventory-v1" || i.Scope != expected {
 		return errors.New("invalid candidate inventory projection")
 	}
+	return validateContributionFilesV4(i.Files, expected, count)
+}
+
+func validateContributionFilesV4(files []ArtifactRef, expected ContributionScopeV4, count int) error {
+	if (count != 3 && count != 5 && count != 7) || len(files) != count || !taggedHash(expected.CeremonyID, "sha256:") || !taggedHash(expected.ParentHeadID, "sha256:") || (expected.Phase != "phase1" && expected.Phase != "phase2") || expected.Index == 0 || expected.Index > 20 || expected.ParticipantID == "" {
+		return errors.New("invalid contribution file projection")
+	}
 	names := []string{"attestation.json", "attestation.sig", "contribution.bin", "erasure.json", "erasure.sig", "return-handoff.json", "return-handoff.sig"}
-	for n, ref := range i.Files {
+	for n, ref := range files {
 		limit := int64(16 << 20)
 		if n == 2 {
 			limit = 16 << 30 // proof-tool MaxArtifactSize

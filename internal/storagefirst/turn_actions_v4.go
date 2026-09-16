@@ -20,8 +20,12 @@ type TurnGrantV4 struct {
 // the final seven-file inventory must contain the exact five computed files.
 // These strings alone do not establish that relationship.
 type LocalTurnV4 struct {
-	Scope                      transcript.ContributionScopeV4
-	PendingOperation           bool
+	Scope            transcript.ContributionScopeV4
+	PendingOperation bool
+	// GeneratedOutput is reconstructed by the three-file proof-tool inspection
+	// only after reconciling the original contributor container's absence.
+	// It does not establish cleanup confirmation or authorize uploading.
+	GeneratedOutput            *transcript.ComputationOutputFactsV4
 	OutboundSHA256             string
 	ReceiptSHA256              string
 	ReceiptHandoffSHA256       string
@@ -87,8 +91,11 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 			return TurnRecommendationV4{}, errors.New("invalid retained artifact identity")
 		}
 	}
-	if local.Scope == (transcript.ContributionScopeV4{}) && (local.OutboundSHA256 != "" || local.ReceiptSHA256 != "" || local.ComputedCandidateID != "" || local.CandidateResultID != "" || local.Grant != nil || local.UploadedAttemptID != "") {
+	if local.Scope == (transcript.ContributionScopeV4{}) && (local.GeneratedOutput != nil || local.OutboundSHA256 != "" || local.ReceiptSHA256 != "" || local.ComputedCandidateID != "" || local.CandidateResultID != "" || local.Grant != nil || local.UploadedAttemptID != "") {
 		return TurnRecommendationV4{}, errors.New("retained work has no exact turn scope")
+	}
+	if local.GeneratedOutput != nil && local.GeneratedOutput.Scope != view.Scope {
+		return TurnRecommendationV4{}, errors.New("generated output belongs to another turn")
 	}
 	if local.UploadedAttemptID != "" && !validAttempt(local.UploadedAttemptID) {
 		return TurnRecommendationV4{}, errors.New("invalid retained upload attempt")
@@ -124,7 +131,7 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 			return answer("inspect-retained-operation", true, "A recorded upload has no matching retained artifact and exact delivery attempt. Inspect existing work before signing or computing again.")
 		}
 	}
-	if (local.ComputedCandidateID != "" || local.CandidateResultID != "") && (view.Commitment == nil || view.Commitment.InputReceipt == nil) {
+	if (local.GeneratedOutput != nil || local.ComputedCandidateID != "" || local.CandidateResultID != "") && (view.Commitment == nil || view.Commitment.InputReceipt == nil) {
 		return answer("inspect-retained-operation", true, "A retained candidate has no accepted input receipt in this state. Inspect it; do not recompute or upload.")
 	}
 	if local.CandidateResultID != "" && view.Stage != TurnAcceptedV4 {
@@ -133,6 +140,9 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 				return answer("inspect-rejected-result", true, "This exact result was rejected. Do not upload it on a replacement attempt or recompute automatically.")
 			}
 		}
+	}
+	if role == Participant && local.GeneratedOutput != nil && local.ComputedCandidateID == "" && (view.Stage == TurnCandidateV4 || view.Stage == TurnReallocateV4) {
+		return answer("confirm-cleanup-and-sign-attestation", true, "Computation output is verified. Check container cleanup and confirm your precautions before signing the cleanup statement; do not contribute again.")
 	}
 	switch view.Stage {
 	case TurnEnrollmentV4:

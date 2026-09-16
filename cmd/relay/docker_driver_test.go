@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"syscall"
@@ -566,6 +567,63 @@ func TestDockerContributionDoesNotReplaceConcurrentLifecycleState(t *testing.T) 
 	}
 	if !fake.removed {
 		t.Fatal("new contributor was not removed after lifecycle-state conflict")
+	}
+}
+
+func TestDockerContributionPersistsActualCommandBeforeCreate(t *testing.T) {
+	o, pos, driver, fake := dockerContributionFixture(t)
+	checked := false
+	fake.onCreate = func() {
+		var state dockerActiveState
+		if err := setupReadJSON(driver.activeStatePath(), &state); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(state.CreateArgs, fake.createArgs) {
+			t.Fatal("saved intent differs from actual Docker invocation")
+		}
+		if !strings.Contains(strings.Join(state.CreateArgs, " "), "/relay/output/candidate") {
+			t.Fatal("missing rewritten candidate destination")
+		}
+		checked = true
+	}
+	if err := runNextAt(o, pos, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if !checked {
+		t.Fatal("create was not observed")
+	}
+}
+
+func TestDockerContributionLaunchBoundary(t *testing.T) {
+	for _, preflightFailure := range []bool{false, true} {
+		t.Run(map[bool]string{false: "intent-before-boundary", true: "preflight-before-boundary"}[preflightFailure], func(t *testing.T) {
+			o, pos, d, fake := dockerContributionFixture(t)
+			d.executionIntentPath = filepath.Join(t.TempDir(), "intent.json")
+			if preflightFailure {
+				d.hostSwapStatus = func() (string, error) { return "", errors.New("preflight failed") }
+			}
+			crossed := false
+			d.beforeCreate = func() error {
+				crossed = true
+				var intent dockerActiveState
+				if err := setupReadJSON(d.executionIntentPath, &intent); err != nil {
+					t.Fatal(err)
+				}
+				if len(intent.CreateArgs) == 0 {
+					t.Fatal("running boundary precedes durable invocation")
+				}
+				return errors.New("boundary persistence failed")
+			}
+			if err := runNextAt(o, pos, time.Now()); err == nil {
+				t.Fatal("ignored prelaunch failure")
+			}
+			if crossed == preflightFailure {
+				t.Fatal("incorrect launch boundary ordering")
+			}
+			if len(fake.createArgs) != 0 {
+				t.Fatal("created contributor after failed prelaunch boundary")
+			}
+		})
 	}
 }
 
