@@ -35,6 +35,18 @@ func TestWorkflowV4LifecycleClosesOnlyCompletedOpenPhase(t *testing.T) {
 	if action, _, err := workflowV4CoordinatorLifecycleAction(state, protocol); err != nil || action != workflowV4ClosePhase2 {
 		t.Fatalf("completed phase2 action = %q, %v", action, err)
 	}
+	state.Progress.Phase2Closure = &transcript.SignedArtifactRefs{}
+	if action, _, err := workflowV4CoordinatorLifecycleAction(state, protocol); err != nil || action != workflowV4BeaconPhase2 {
+		t.Fatalf("closed phase2 action = %q, %v", action, err)
+	}
+	state.Progress.Phase2Beacon = &transcript.SignedArtifactRefs{}
+	if action, _, err := workflowV4CoordinatorLifecycleAction(state, protocol); err != nil || action != workflowV4Finalize {
+		t.Fatalf("completed ceremony action = %q, %v", action, err)
+	}
+	state.Progress.FinalCandidate = &transcript.SignedArtifactRefs{}
+	if action, _, err := workflowV4CoordinatorLifecycleAction(state, protocol); err != nil || action != "" {
+		t.Fatalf("final candidate should wait for release signer, action = %q, %v", action, err)
+	}
 }
 
 func TestWorkflowV4SealAndPhase2CommandsUseAuthenticatedPairs(t *testing.T) {
@@ -110,4 +122,44 @@ func TestWorkflowV4CloseCommandUsesAuthenticatedPhaseFiles(t *testing.T) {
 			t.Fatalf("command %q lacks %q", joined, want)
 		}
 	}
+}
+
+func TestWorkflowV4FinalizeCommandsUseCompleteAuthenticatedReplay(t *testing.T) {
+	work, trust, keys := t.TempDir(), t.TempDir(), t.TempDir()
+	online := guidedProfile{Work: work, Trust: trust, Keys: keys}
+	signer := guidedProfile{Work: work, Trust: trust, Keys: keys}
+	state := transcript.CheckpointStateV4{CeremonyID: "sha256:" + strings.Repeat("a", 64)}
+	state.Progress.Phase1 = transcript.CheckpointPhaseState{Phase: "phase1", Chain: pairV4Test("phase1/chain")}
+	state.Progress.Phase1Closure = pointerPairV4Test("phase1/closure")
+	state.Progress.Phase1Beacon = pointerPairV4Test("phase1/beacon")
+	state.Progress.Phase1Seal = pointerPairV4Test("phase1/seal")
+	state.Progress.Phase2 = &transcript.CheckpointPhaseState{Phase: "phase2", Chain: pairV4Test("phase2/chain")}
+	state.Progress.Phase2Closure = pointerPairV4Test("phase2/closure")
+	state.Progress.Phase2Beacon = pointerPairV4Test("phase2/beacon")
+	when := time.Date(2026, 9, 16, 1, 2, 3, 4, time.UTC)
+	output := filepath.Join(work, "ceremony", "public", "final", "candidate")
+	evidence := filepath.Join(work, "ceremony", "public", "final", "public-finalization-evidence.json")
+	command, err := workflowV4FinalizeCommand(state, online, signer, "complete", output, evidence, when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(command, " ")
+	for _, want := range []string{
+		"mpc-ceremony finalize complete",
+		"--phase1-chain /work/ceremony/public/" + state.Progress.Phase1.Chain.Record.Name,
+		"--phase1-seal /work/ceremony/public/" + state.Progress.Phase1Seal.Record.Name,
+		"--phase2-chain /work/ceremony/public/" + state.Progress.Phase2.Chain.Record.Name,
+		"--phase2-beacon /work/ceremony/public/" + state.Progress.Phase2Beacon.Record.Name,
+		"--public-evidence /work/ceremony/public/final/public-finalization-evidence.json",
+		"--out-dir /work/ceremony/public/final/candidate",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("finalize command %q lacks %q", joined, want)
+		}
+	}
+}
+
+func pointerPairV4Test(name string) *transcript.SignedArtifactRefs {
+	pair := pairV4Test(name)
+	return &pair
 }

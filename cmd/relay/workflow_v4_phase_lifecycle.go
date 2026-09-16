@@ -22,6 +22,7 @@ const (
 	workflowV4BeaconPhase2 = "record-phase2-beacon"
 	workflowV4SealPhase1   = "seal-phase1"
 	workflowV4StartPhase2  = "start-phase2"
+	workflowV4Finalize     = "finalize-candidate"
 )
 
 const workflowV4QuicknetChainHash = "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971"
@@ -56,6 +57,9 @@ func workflowV4CoordinatorLifecycleAction(state transcript.CheckpointStateV4, pr
 		if state.Progress.Phase2Closure != nil && state.Progress.Phase2Beacon == nil {
 			return workflowV4BeaconPhase2, "Fetch and verify the exact future beacon round committed by the Phase 2 closure", nil
 		}
+		if state.Progress.Phase2Beacon != nil && state.Progress.FinalCandidate == nil {
+			return workflowV4Finalize, "Replay both completed phases and prepare the coordinator-signed final candidate", nil
+		}
 	}
 	return "", "", nil
 }
@@ -73,6 +77,9 @@ func runWorkflowV4CoordinatorLifecycle(ui *coordinatorWizard, action string, sna
 	}
 	if action == workflowV4StartPhase2 {
 		return runWorkflowV4StartPhase2Lifecycle(ui, snapshot, online, signer)
+	}
+	if action == workflowV4Finalize {
+		return runWorkflowV4FinalizeLifecycle(ui, snapshot, protocol, online, signer)
 	}
 	phase := "phase1"
 	if action == workflowV4ClosePhase2 {
@@ -137,6 +144,172 @@ func runWorkflowV4CoordinatorLifecycle(ui *coordinatorWizard, action string, sna
 		return err
 	}
 	return runWorkflowV4CommitCommand(online, outputDir)
+}
+
+func runWorkflowV4FinalizeLifecycle(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, online, signer guidedProfile) error {
+	state, err := snapshot.State()
+	if err != nil {
+		return err
+	}
+	if state.Progress.Phase1Closure == nil || state.Progress.Phase1Beacon == nil || state.Progress.Phase1Seal == nil || state.Progress.Phase2 == nil || state.Progress.Phase2Closure == nil || state.Progress.Phase2Beacon == nil || state.Progress.FinalCandidate != nil {
+		return errors.New("final candidate requires both authenticated completed phases and no existing candidate")
+	}
+	if err := ui.confirm("Replay both phases, verify the public proof evidence, and create the exact coordinator-signed candidate", "FINALIZE CANDIDATE"); err != nil {
+		return err
+	}
+	root := filepath.Join(online.Work, "ceremony", "public")
+	finalRoot := filepath.Join(root, "final")
+	if err := os.MkdirAll(finalRoot, 0o700); err != nil {
+		return err
+	}
+	preliminary := filepath.Join(finalRoot, "preliminary")
+	if _, err := os.Lstat(preliminary); errors.Is(err, os.ErrNotExist) {
+		command, err := workflowV4FinalizeCommand(state, online, signer, "prepare", preliminary, "", time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	publicEvidence := filepath.Join(finalRoot, "public-finalization-evidence.json")
+	if !regularPreparationFile(publicEvidence) {
+		if protocol.Definition.Mode != "rehearsal" {
+			return fmt.Errorf("public proof evidence is required before finalization; place the reviewed public artifact at %s and retry", publicEvidence)
+		}
+		command, err := workflowV4RehearsalEvidenceCommand(state.CeremonyID, online, signer, preliminary, publicEvidence)
+		if err != nil {
+			return err
+		}
+		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+			return err
+		}
+	}
+	candidate := filepath.Join(finalRoot, "candidate")
+	if _, err := os.Lstat(candidate); errors.Is(err, os.ErrNotExist) {
+		command, err := workflowV4FinalizeCommand(state, online, signer, "complete", candidate, publicEvidence, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	record := filepath.Join(candidate, "candidate.json")
+	signature := filepath.Join(candidate, "candidate.sig.json")
+	evidence := []string{
+		filepath.Join(candidate, "ownership.pk"),
+		filepath.Join(candidate, "ownership.vk"),
+		filepath.Join(candidate, "candidate-checksums.sha256"),
+		filepath.Join(candidate, "public-finalization-evidence.json"),
+	}
+	for _, path := range append([]string{record, signature}, evidence...) {
+		if !regularPreparationFile(path) {
+			return errors.New("final candidate output is incomplete; preserve it for inspection")
+		}
+	}
+	basis := strings.TrimPrefix(snapshot.Head().Record.Digest.SHA256, "sha256:")[:16]
+	outputDir := filepath.Join(root, "checkpoints", "final", "candidate-"+basis)
+	if _, err := os.Lstat(filepath.Join(outputDir, "checkpoint.json")); errors.Is(err, os.ErrNotExist) {
+		command, err := workflowV4RecordCommand(snapshot, online, signer, "final-candidate-recorded", record, signature, evidence, outputDir)
+		if err != nil {
+			return err
+		}
+		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	return runWorkflowV4CommitCommand(online, outputDir)
+}
+
+func workflowV4FinalizeCommand(state transcript.CheckpointStateV4, online, signer guidedProfile, action, outputDir, publicEvidence string, at time.Time) ([]string, error) {
+	args, err := workflowV4ReplayArgs(state, online, signer)
+	if err != nil {
+		return nil, err
+	}
+	out, err := pathWithin(signer.Work, outputDir, "/work")
+	if err != nil {
+		return nil, err
+	}
+	command := append([]string{"mpc-ceremony", "finalize", action}, args...)
+	command = append(command, "--coordinator-signing-key", "/keys/signing.hex")
+	switch action {
+	case "prepare":
+		command = append(command, "--prepared-at", at.UTC().Format(time.RFC3339Nano))
+	case "complete":
+		evidence, err := pathWithin(signer.Work, publicEvidence, "/work")
+		if err != nil {
+			return nil, err
+		}
+		command = append(command, "--public-evidence", evidence, "--finalized-at", at.UTC().Format(time.RFC3339Nano))
+	default:
+		return nil, errors.New("unsupported finalization action")
+	}
+	return append(command, "--out-dir", out), nil
+}
+
+func workflowV4ReplayArgs(state transcript.CheckpointStateV4, online, signer guidedProfile) ([]string, error) {
+	if state.Progress.Phase1Closure == nil || state.Progress.Phase1Beacon == nil || state.Progress.Phase1Seal == nil || state.Progress.Phase2 == nil || state.Progress.Phase2Closure == nil || state.Progress.Phase2Beacon == nil {
+		return nil, errors.New("complete authenticated replay inputs required")
+	}
+	root := filepath.Join(online.Work, "ceremony", "public")
+	mapWork := func(path string) (string, error) { return pathWithin(signer.Work, path, "/work") }
+	mapRef := func(ref transcript.ArtifactRef) (string, error) {
+		return mapWork(filepath.Join(root, filepath.FromSlash(ref.Name)))
+	}
+	ceremony, err := mapWork(filepath.Join(root, "ceremony.json"))
+	if err != nil {
+		return nil, err
+	}
+	ceremonySignature, _ := mapWork(filepath.Join(root, "ceremony.sig"))
+	transcriptRoot, _ := mapWork(root)
+	coordinatorKey, err := pathWithin(signer.Trust, filepath.Join(online.Trust, "setup-coordinator.hex"), "/trust")
+	if err != nil {
+		return nil, err
+	}
+	values := []struct {
+		flag string
+		ref  transcript.ArtifactRef
+	}{
+		{"--phase1-chain", state.Progress.Phase1.Chain.Record}, {"--phase1-chain-signature", state.Progress.Phase1.Chain.Signature},
+		{"--phase1-close", state.Progress.Phase1Closure.Record}, {"--phase1-close-signature", state.Progress.Phase1Closure.Signature},
+		{"--phase1-beacon", state.Progress.Phase1Beacon.Record}, {"--phase1-beacon-signature", state.Progress.Phase1Beacon.Signature},
+		{"--phase1-seal", state.Progress.Phase1Seal.Record}, {"--phase1-seal-signature", state.Progress.Phase1Seal.Signature},
+		{"--phase2-chain", state.Progress.Phase2.Chain.Record}, {"--phase2-chain-signature", state.Progress.Phase2.Chain.Signature},
+		{"--phase2-close", state.Progress.Phase2Closure.Record}, {"--phase2-close-signature", state.Progress.Phase2Closure.Signature},
+		{"--phase2-beacon", state.Progress.Phase2Beacon.Record}, {"--phase2-beacon-signature", state.Progress.Phase2Beacon.Signature},
+	}
+	args := []string{"--ceremony", ceremony, "--ceremony-signature", ceremonySignature, "--coordinator-public-key-file", coordinatorKey, "--transcript-root", transcriptRoot}
+	for _, value := range values {
+		path, err := mapRef(value.ref)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, value.flag, path)
+	}
+	return args, nil
+}
+
+func workflowV4RehearsalEvidenceCommand(ceremonyID string, online, signer guidedProfile, preliminary, output string) ([]string, error) {
+	keys, err := pathWithin(signer.Work, preliminary, "/work")
+	if err != nil {
+		return nil, err
+	}
+	out, err := pathWithin(signer.Work, output, "/work")
+	if err != nil {
+		return nil, err
+	}
+	coordinatorKey, err := pathWithin(signer.Trust, filepath.Join(online.Trust, "setup-coordinator.hex"), "/trust")
+	if err != nil {
+		return nil, err
+	}
+	return []string{"mpc-ceremony", "finalize", "rehearsal-evidence", "--keys-dir", keys, "--coordinator-public-key-file", coordinatorKey, "--ceremony-id", ceremonyID, "--out", out}, nil
 }
 
 func runWorkflowV4SealPhase1Lifecycle(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, online, signer guidedProfile) error {
