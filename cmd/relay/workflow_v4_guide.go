@@ -58,13 +58,13 @@ func workflowV4RouteHint(p guidedProfile) (bool, error) {
 }
 
 func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
-	if p.Role != "coordinator" && p.Role != "participant" && p.Role != "release-signer" {
+	if p.Role != "coordinator" && p.Role != "participant" && p.Role != "release-signer" && p.Role != "auditor" {
 		return errors.New("this V4 role journey is not connected yet; no legacy actions were opened")
 	}
 	var participant *access.RoleConfig
 	storagePath := filepath.Join(p.Work, "ceremony", "config", "relay-storage.json")
 	key := filepath.Join(p.Trust, "setup-coordinator.hex")
-	if p.Role == "release-signer" {
+	if p.Role == "release-signer" || p.Role == "auditor" {
 		key = filepath.Join(p.Trust, "coordinator-public-key.hex")
 	}
 	dockerCLI := "docker"
@@ -153,6 +153,8 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 		var progress workflowV4ParticipantProgress
 		var coordinatorProgress workflowV4CoordinatorProgress
 		var releaseProgress workflowV4ReleaseSignerProgress
+		var enrollmentExpected *transcript.ExpectedEnrollment
+		enrollmentAction := false
 		var recommendation storagefirst.TurnRecommendationV4
 		lifecycleAction := ""
 		actionLabel := ""
@@ -172,6 +174,38 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 			if c.Definition != binding.Definition {
 				return errors.New("backend definition differs from this role's authenticated definition")
 			}
+			if p.Role == "coordinator" {
+				enrollmentExpected, err = workflowV4NextRequiredEnrollment(snapshot, protocol)
+				if err != nil {
+					return err
+				}
+				if enrollmentExpected != nil {
+					enrollmentAction = true
+					coordinatorProgress, err = workflowV4CoordinatorEnrollmentProgressFor(snapshot, protocol, *enrollmentExpected, binding, config, time.Now().UTC())
+					if err != nil {
+						return err
+					}
+					switch {
+					case enrollmentExpected.Role == "coordinator":
+						actionLabel = "Verify and record your coordinator enrollment"
+					case coordinatorProgress.EnrollmentGrant == nil:
+						actionLabel = fmt.Sprintf("Create the %s enrollment upload grant", enrollmentExpected.Role)
+					case !regularPreparationFile(filepath.Join(coordinatorProgress.EnrollmentDir, "enrollment.json")):
+						actionLabel = fmt.Sprintf("Check the private inbox for the %s enrollment", enrollmentExpected.Role)
+					default:
+						actionLabel = fmt.Sprintf("Verify and record the %s enrollment", enrollmentExpected.Role)
+					}
+				}
+			} else {
+				committed, err := workflowV4EnrollmentCommitted(snapshot, identity.ID)
+				if err != nil {
+					return err
+				}
+				if !committed {
+					enrollmentAction = true
+					actionLabel = "Upload your signed public enrollment"
+				}
+			}
 			phase, who := "phase1", ""
 			if c.Progress.Phase2 != nil {
 				phase = "phase2"
@@ -181,14 +215,16 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 				phase = participant.Phase
 			}
 			scheduled := false
-			if p.Role != "release-signer" {
+			if p.Role != "release-signer" && p.Role != "auditor" {
 				scheduled, err = workflowV4ScheduledInPhase(protocol, phase, who)
 				if err != nil {
 					return err
 				}
 			}
 			turn = storagefirst.TurnViewV4{Stage: "not-scheduled-in-this-phase"}
-			if p.Role == "release-signer" {
+			if enrollmentAction {
+				turn.Stage = "required-enrollment-not-recorded"
+			} else if p.Role == "release-signer" {
 				turn.Stage = "waiting-for-coordinator-review"
 				if c.Progress.FinalRelease != nil {
 					turn.Stage = "release-recorded"
@@ -203,6 +239,8 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 						actionLabel = "Review and sign the exact coordinator-reviewed release package"
 					}
 				}
+			} else if p.Role == "auditor" {
+				turn.Stage = "waiting-for-final-candidate"
 			} else if scheduled || c.Progress.Terminal != nil {
 				// For an unscheduled participant, terminal status is global;
 				// never present another participant's active turn as theirs.
@@ -214,7 +252,10 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 					return err
 				}
 			}
-			if p.Role == "participant" && turn.Scope.ParticipantID != "" {
+			if enrollmentAction {
+				// Enrollment is a ceremony-wide prerequisite; do not offer later
+				// participant, audit, or release work until it is recorded.
+			} else if p.Role == "participant" && turn.Scope.ParticipantID != "" {
 				progress, err = j.participantProgressV4(turn.Scope, cli)
 				if err != nil {
 					ui.message(toneError, "Retained participant work could not be verified: %v\nNo operation was repeated.\n", err)
@@ -269,7 +310,22 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 				fmt.Fprintln(ui.output, "No role action is available for the authenticated state.")
 				continue
 			}
-			if p.Role == "participant" && participant != nil {
+			if enrollmentAction {
+				var actionErr error
+				if p.Role == "coordinator" {
+					if enrollmentExpected == nil {
+						actionErr = errors.New("no missing signed enrollment was selected")
+					} else {
+						actionErr = runWorkflowV4CoordinatorExpectedEnrollment(&ui, snapshot, protocol, config, p, signer, inspector, *enrollmentExpected, coordinatorProgress)
+					}
+				} else {
+					actionErr = runWorkflowV4OwnEnrollmentUpload(&ui, snapshot, protocol, p, config, inspector, identity)
+				}
+				if actionErr != nil {
+					ui.message(toneError, "Enrollment action stopped: %v\nSigned files and verified downloads were retained. No action is automatically repeated.\n", actionErr)
+					continue
+				}
+			} else if p.Role == "participant" && participant != nil {
 				if err := runWorkflowV4ParticipantAction(&ui, j, snapshot, protocol, *participant, config, inspector, cli, turn, progress); err != nil {
 					ui.message(toneError, "Participant action stopped: %v\nSaved state and verified public files were retained. No action is automatically repeated.\n", err)
 					continue

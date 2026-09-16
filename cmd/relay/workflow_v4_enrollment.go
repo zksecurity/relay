@@ -35,6 +35,133 @@ func workflowV4ExpectedEnrollment(protocol transcript.DefinitionProtocol, identi
 	return result, nil
 }
 
+func workflowV4NextRequiredEnrollment(snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol) (*transcript.ExpectedEnrollment, error) {
+	metadata, err := snapshot.Enrollments()
+	if err != nil {
+		return nil, err
+	}
+	committed := make(map[string]bool, len(metadata.Enrollments))
+	for _, item := range metadata.Enrollments {
+		committed[item.Enrollment.Identity.ID] = true
+	}
+	journey, err := protocol.Definition.RequireJourney()
+	if err != nil {
+		return nil, err
+	}
+	for _, expected := range journey.RequiredEnrollments {
+		if !committed[expected.Identity.ID] {
+			copy := expected
+			return &copy, nil
+		}
+	}
+	return nil, nil
+}
+
+func workflowV4EnrollmentCommitted(snapshot storagefirst.SnapshotV4, identity string) (bool, error) {
+	metadata, err := snapshot.Enrollments()
+	if err != nil {
+		return false, err
+	}
+	for _, item := range metadata.Enrollments {
+		if item.Enrollment.Identity.ID == identity {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func workflowV4GrantRoleForEnrollment(role string) (string, error) {
+	switch role {
+	case "participant":
+		return access.RoleParticipant, nil
+	case "release-signer":
+		return access.RoleRelease, nil
+	case "auditor":
+		return access.RoleAuditor, nil
+	case "public-witness":
+		return access.RoleWitness, nil
+	case "mirror-operator":
+		return access.RoleMirror, nil
+	default:
+		return "", fmt.Errorf("role %q cannot receive an enrollment upload grant", role)
+	}
+}
+
+func workflowV4LocalEnrollment(work, identity string, inspector transcript.Inspector, expected transcript.ExpectedEnrollment, ceremonyID string) (string, error) {
+	base := filepath.Join(work, "my-enrollment")
+	record := filepath.Join(base, "canonical.json")
+	signature := filepath.Join(base, "enrollment.sig")
+	disclosure := filepath.Join(base, "enrollments", identity, "disclosure.txt")
+	inspection, err := inspector.Enrollment(record, signature)
+	if err != nil {
+		return "", fmt.Errorf("authenticate retained enrollment: %w", err)
+	}
+	if inspection.CeremonyID != ceremonyID || inspection.Identity != expected.Identity || inspection.Role != expected.Role || inspection.RoleIndex != expected.RoleIndex {
+		return "", errors.New("retained enrollment differs from the signed assignment")
+	}
+	sha, size, err := transcript.DigestFile(disclosure)
+	if err != nil {
+		return "", err
+	}
+	if inspection.IndependenceDisclosure.Name != "enrollments/"+identity+"/disclosure.txt" || inspection.IndependenceDisclosure.Digest.SHA256 != sha || inspection.IndependenceDisclosure.Digest.Size != size {
+		return "", errors.New("retained disclosure differs from the signed enrollment")
+	}
+	return base, nil
+}
+
+func runWorkflowV4OwnEnrollmentUpload(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, profile guidedProfile, config access.StorageConfig, inspector transcript.Inspector, identity setupIdentity) error {
+	expected, err := workflowV4ExpectedEnrollment(protocol, identity.ID)
+	if err != nil {
+		return err
+	}
+	base, err := workflowV4LocalEnrollment(profile.Work, identity.ID, inspector, expected, protocol.Definition.CeremonyID)
+	if err != nil {
+		return err
+	}
+	grantPath, err := ui.required("Absolute path to the private enrollment upload grant received from the coordinator or Tessera", "")
+	if err != nil {
+		return err
+	}
+	if !filepath.IsAbs(grantPath) || filepath.Clean(grantPath) != grantPath {
+		return errors.New("private grant path must be absolute and clean")
+	}
+	grant, err := loadStorageFirstGrant(grantPath)
+	if err != nil {
+		return err
+	}
+	destination := storagefirst.GrantDestination{Provider: config.Provider, Endpoint: config.Endpoint, Region: config.Region, InboxBucket: config.InboxBucket}
+	if err := storagefirst.ValidateEnrollmentGrantV4At(snapshot, protocol, identity.ID, expected.Role, expected.RoleIndex, grant, destination, time.Now().UTC()); err != nil {
+		return err
+	}
+	paths := map[string]string{
+		"enrollment.json": filepath.Join(base, "canonical.json"),
+		"enrollment.sig":  filepath.Join(base, "enrollment.sig"),
+		"disclosure.txt":  filepath.Join(base, "enrollments", identity.ID, "disclosure.txt"),
+	}
+	sources := map[string]state.ContentRef{}
+	for name, path := range paths {
+		ref, err := workflowV4LocalRef(name, path)
+		if err != nil {
+			return err
+		}
+		sources[name] = state.ContentRef{Name: name, SHA256: ref.Digest.SHA256, Size: ref.Digest.Size}
+	}
+	temporary := filepath.Join(profile.Work, "workflow-v4", "temporary")
+	if err := ensureWorkflowV4Directory(profile.Work, temporary); err != nil {
+		return err
+	}
+	if err := ui.confirm("Upload only your signed public enrollment and disclosure; this does not upload your signing key", "UPLOAD ENROLLMENT"); err != nil {
+		return err
+	}
+	scope := storagefirst.DeliveryScope{CeremonyID: grant.CeremonyID, AttemptID: grant.AttemptID, Kind: access.SubmissionKindEnrollment}
+	inventory := storagefirst.DeliveryInventory{"enrollment.json": 16 << 20, "enrollment.sig": 4096, "disclosure.txt": 1 << 20}
+	if err := storagefirst.UploadDelivery(storageFirstGrantClient(grant), scope, inventory, sources, paths, temporary); err != nil {
+		return err
+	}
+	fmt.Fprintln(ui.output, "Enrollment upload completed. It remains pending until the coordinator verifies it and publishes a signed checkpoint that records it.")
+	return nil
+}
+
 func runWorkflowV4ParticipantEnrollment(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, participant access.RoleConfig, config access.StorageConfig, inspector transcript.Inspector) error {
 	expected, err := workflowV4ExpectedEnrollment(protocol, participant.IdentityID)
 	if err != nil {
@@ -107,8 +234,28 @@ func runWorkflowV4CoordinatorEnrollment(ui *coordinatorWizard, snapshot storagef
 	if progress.EnrollmentExpected == nil || progress.EnrollmentExpected.Identity.ID != view.Scope.ParticipantID {
 		return errors.New("signed participant enrollment assignment is missing")
 	}
-	expected := *progress.EnrollmentExpected
+	return runWorkflowV4CoordinatorExpectedEnrollment(ui, snapshot, protocol, config, online, signer, inspector, *progress.EnrollmentExpected, progress)
+}
+
+func runWorkflowV4CoordinatorExpectedEnrollment(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, config access.StorageConfig, online, signer guidedProfile, inspector transcript.Inspector, expected transcript.ExpectedEnrollment, progress workflowV4CoordinatorProgress) error {
+	if progress.EnrollmentExpected == nil || *progress.EnrollmentExpected != expected {
+		return errors.New("coordinator enrollment progress differs from the signed assignment")
+	}
+	if expected.Role == "coordinator" {
+		base, err := workflowV4LocalEnrollment(online.Work, expected.Identity.ID, inspector, expected, protocol.Definition.CeremonyID)
+		if err != nil {
+			return err
+		}
+		if err := ui.confirm("Verify and record your coordinator enrollment from this protected workspace", "RECORD COORDINATOR ENROLLMENT"); err != nil {
+			return err
+		}
+		return prepareAndCommitWorkflowV4Enrollment(snapshot, protocol, online, signer, expected, base)
+	}
 	if progress.EnrollmentGrant == nil {
+		grantRole, err := workflowV4GrantRoleForEnrollment(expected.Role)
+		if err != nil {
+			return err
+		}
 		attempt, err := randomID()
 		if err != nil {
 			return err
@@ -123,7 +270,7 @@ func runWorkflowV4CoordinatorEnrollment(ui *coordinatorWizard, snapshot storagef
 		}
 		storagePath, _ := pathWithin(online.Work, filepath.Join(online.Work, "ceremony", "config", "relay-storage.json"), "/work")
 		out, _ := pathWithin(online.Work, outPath, "/work")
-		command := []string{"relay", "coordinator", "grant", "--storage", storagePath, "--role", access.RoleParticipant, "--identity", expected.Identity.ID, "--credential-ttl", "1h", "--minimum-remaining", "15m", "--out", out, "--checkpoint-digest", snapshot.Head().Record.Digest.SHA256, "--submission-kind", access.SubmissionKindEnrollment, "--phase", "setup", "--index", strconv.Itoa(expected.RoleIndex), "--attempt-id", attempt}
+		command := []string{"relay", "coordinator", "grant", "--storage", storagePath, "--role", grantRole, "--identity", expected.Identity.ID, "--credential-ttl", "1h", "--minimum-remaining", "15m", "--out", out, "--checkpoint-digest", snapshot.Head().Record.Digest.SHA256, "--submission-kind", access.SubmissionKindEnrollment, "--phase", "setup", "--index", strconv.Itoa(expected.RoleIndex), "--attempt-id", attempt}
 		if err := runWorkflowV4ProfileCommand(online, command, true); err != nil {
 			return err
 		}

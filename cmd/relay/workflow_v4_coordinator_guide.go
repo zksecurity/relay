@@ -36,6 +36,45 @@ type workflowV4CoordinatorIntent struct {
 
 const workflowV4CoordinatorIntentSchema = "relay-workflow-v4-coordinator-intent-v1"
 
+func workflowV4CoordinatorEnrollmentProgressFor(snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, expected transcript.ExpectedEnrollment, binding workflowV4Binding, config access.StorageConfig, now time.Time) (workflowV4CoordinatorProgress, error) {
+	progress := workflowV4CoordinatorProgress{EnrollmentExpected: &expected}
+	base := filepath.Join(binding.Work, "workflow-v4", "coordinator", "enrollments", expected.Identity.ID)
+	grantDir := filepath.Join(base, "grants")
+	entries, err := os.ReadDir(grantDir)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return progress, err
+	}
+	destination := storagefirst.GrantDestination{Provider: config.Provider, Endpoint: config.Endpoint, Region: config.Region, InboxBucket: config.InboxBucket}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(grantDir, entry.Name())
+		grant, err := loadStorageFirstGrant(path)
+		if err != nil {
+			return progress, fmt.Errorf("read retained enrollment grant %s: %w", path, err)
+		}
+		if err := storagefirst.ValidateEnrollmentGrantV4At(snapshot, protocol, expected.Identity.ID, expected.Role, expected.RoleIndex, grant, destination, now); err != nil {
+			continue
+		}
+		expires, _ := time.Parse(time.RFC3339, grant.ExpiresAt)
+		if progress.EnrollmentGrant == nil {
+			copy := grant
+			progress.EnrollmentGrant, progress.EnrollmentGrantPath = &copy, path
+		} else {
+			current, _ := time.Parse(time.RFC3339, progress.EnrollmentGrant.ExpiresAt)
+			if expires.After(current) {
+				copy := grant
+				progress.EnrollmentGrant, progress.EnrollmentGrantPath = &copy, path
+			}
+		}
+	}
+	if progress.EnrollmentGrant != nil {
+		progress.EnrollmentDir = filepath.Join(base, "received", progress.EnrollmentGrant.AttemptID)
+	}
+	return progress, nil
+}
+
 func workflowV4CoordinatorProgressFor(snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, view storagefirst.TurnViewV4, binding workflowV4Binding, config access.StorageConfig, inspector transcript.Inspector, now time.Time) (workflowV4CoordinatorProgress, error) {
 	progress := workflowV4CoordinatorProgress{Local: storagefirst.LocalTurnV4{Scope: view.Scope}}
 	if view.Stage == storagefirst.TurnEnrollmentV4 {
@@ -43,42 +82,9 @@ func workflowV4CoordinatorProgressFor(snapshot storagefirst.SnapshotV4, protocol
 		if err != nil {
 			return progress, err
 		}
-		progress.EnrollmentExpected = &expected
-		base := filepath.Join(binding.Work, "workflow-v4", "coordinator", "enrollments", view.Scope.ParticipantID)
-		grantDir := filepath.Join(base, "grants")
-		entries, err := os.ReadDir(grantDir)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return progress, err
-		}
-		destination := storagefirst.GrantDestination{Provider: config.Provider, Endpoint: config.Endpoint, Region: config.Region, InboxBucket: config.InboxBucket}
-		for _, entry := range entries {
-			if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-				continue
-			}
-			path := filepath.Join(grantDir, entry.Name())
-			grant, err := loadStorageFirstGrant(path)
-			if err != nil {
-				return progress, fmt.Errorf("read retained enrollment grant %s: %w", path, err)
-			}
-			if err := storagefirst.ValidateEnrollmentGrantV4At(snapshot, protocol, expected.Identity.ID, expected.Role, expected.RoleIndex, grant, destination, now); err != nil {
-				continue
-			}
-			expires, _ := time.Parse(time.RFC3339, grant.ExpiresAt)
-			if progress.EnrollmentGrant == nil {
-				copy := grant
-				progress.EnrollmentGrant, progress.EnrollmentGrantPath = &copy, path
-			} else {
-				current, _ := time.Parse(time.RFC3339, progress.EnrollmentGrant.ExpiresAt)
-				if expires.After(current) {
-					copy := grant
-					progress.EnrollmentGrant, progress.EnrollmentGrantPath = &copy, path
-				}
-			}
-		}
-		if progress.EnrollmentGrant != nil {
-			progress.EnrollmentDir = filepath.Join(base, "received", progress.EnrollmentGrant.AttemptID)
-		}
-		return progress, nil
+		enrollment, err := workflowV4CoordinatorEnrollmentProgressFor(snapshot, protocol, expected, binding, config, now)
+		enrollment.Local = progress.Local
+		return enrollment, err
 	}
 	if view.CandidateAttempt == nil {
 		return progress, nil

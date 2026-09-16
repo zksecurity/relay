@@ -116,3 +116,21 @@ func TestWorkflowV4ReleaseSignerProfileBinding(t *testing.T) {
 		t.Fatalf("release signer binding = %#v", binding)
 	}
 }
+
+func TestWorkflowV4AuditorProfileBinding(t *testing.T) {
+	protocol, existing := workflowV4TestBinding(t)
+	r := existing.Runtimes["online"]
+	p := guidedProfile{Name: "auditor-test", Role: "auditor", Work: existing.Work, Trust: r.Mounts["/trust"], Keys: r.Mounts["/keys"], Image: r.Image, Platform: r.Platform}
+	signer := p
+	signer.Role, signer.Name = "decision-signer", offlineRoleAlias(p.Name, p.Role)
+	id := setupIdentity{ID: "auditor-test", DisplayName: "Auditor", KeyID: "auditor-key", PublicKey: strings.Repeat("02", 32), Fingerprint: fmt.Sprintf("sha256:%x", sha256.Sum256(bytes.Repeat([]byte{2}, 32)))}
+	protocol.Definition.Journey.MinimumPassingCeremonyAudits = 1
+	protocol.Definition.Journey.RequiredEnrollments = append(protocol.Definition.Journey.RequiredEnrollments, transcript.ExpectedEnrollment{Role: "auditor", RoleIndex: 1, Identity: transcript.PublicIdentity{ID: id.ID, DisplayName: id.DisplayName, KeyID: id.KeyID, Ed25519PublicKeyHex: id.PublicKey, PublicKeyFingerprint: id.Fingerprint}})
+	binding, err := workflowV4ProfileBinding(p, signer, protocol, id, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding.Role != "auditor" || binding.IdentityID != id.ID || len(binding.Runtimes) != 2 {
+		t.Fatalf("auditor binding = %#v", binding)
+	}
+}

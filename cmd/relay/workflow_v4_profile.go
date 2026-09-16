@@ -13,8 +13,8 @@ import (
 // legacy completion records or select a replacement runtime for interrupted work.
 func workflowV4ProfileBinding(p, signer guidedProfile, protocol transcript.DefinitionProtocol, identity setupIdentity, participant *access.RoleConfig) (workflowV4Binding, error) {
 	var zero workflowV4Binding
-	if !protocol.UsesV4() || (p.Role != "coordinator" && p.Role != "participant" && p.Role != "release-signer") || len(p.Command) != 0 {
-		return zero, errors.New("storage-first guide requires an authenticated V4 coordinator, participant or release-signer profile")
+	if !protocol.UsesV4() || (p.Role != "coordinator" && p.Role != "participant" && p.Role != "release-signer" && p.Role != "auditor") || len(p.Command) != 0 {
+		return zero, errors.New("storage-first guide requires an authenticated V4 coordinator, participant, auditor or release-signer profile")
 	}
 	if err := identity.check(); err != nil {
 		return zero, err
