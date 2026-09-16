@@ -8,6 +8,7 @@ import (
 
 	"github.com/zksecurity/relay/internal/state"
 	"github.com/zksecurity/relay/internal/store"
+	"github.com/zksecurity/relay/internal/transcript"
 )
 
 // RootWriter is the authenticated coordinator-storage surface used for the
@@ -26,6 +27,54 @@ type AuthenticatedRootChild struct {
 	checkpoint    Checkpoint
 	checkpointRef state.ContentRef
 	signatureRef  state.ContentRef
+}
+
+// PublicationVerifierV4 is the narrow proof-tool boundary used before a V4
+// checkpoint can become the discoverable storage head. Its implementation
+// must authenticate the signature and full ancestry and recheck the exact
+// transition evidence, including mathematical replay for candidate acceptance.
+type PublicationVerifierV4 interface {
+	AuthenticateCheckpointForPublicationV4(root, record, signature string) (transcript.CheckpointInspectionV4, error)
+}
+
+// AuthenticateRootChildV4 adapts proof-tool's V4 projection to the existing
+// provider-independent root commit primitive. No V4 checkpoint JSON is parsed
+// by Relay to manufacture the authorization.
+func AuthenticateRootChildV4(verifier PublicationVerifierV4, checkpointRef, signatureRef state.ContentRef, artifactRoot, checkpointPath, signaturePath string) (AuthenticatedRootChild, error) {
+	if verifier == nil {
+		return AuthenticatedRootChild{}, errors.New("V4 checkpoint verifier is required")
+	}
+	if err := verifyLocalRef(checkpointRef, checkpointPath); err != nil {
+		return AuthenticatedRootChild{}, fmt.Errorf("checkpoint bytes: %w", err)
+	}
+	if err := verifyLocalRef(signatureRef, signaturePath); err != nil {
+		return AuthenticatedRootChild{}, fmt.Errorf("checkpoint signature bytes: %w", err)
+	}
+	inspection, err := verifier.AuthenticateCheckpointForPublicationV4(artifactRoot, checkpointPath, signaturePath)
+	if err != nil {
+		return AuthenticatedRootChild{}, fmt.Errorf("authenticate V4 checkpoint for publication: %w", err)
+	}
+	c := inspection.Checkpoint
+	if contentRef(inspection.CheckpointRefs.Record) != checkpointRef || contentRef(inspection.CheckpointRefs.Signature) != signatureRef {
+		return AuthenticatedRootChild{}, errors.New("proof-tool V4 checkpoint references do not match the exact local bytes")
+	}
+	projected := Checkpoint{
+		CeremonyID: c.CeremonyID,
+		Position: state.CheckpointPosition{
+			Sequence: c.Sequence,
+			Digest:   checkpointRef.SHA256,
+		},
+		Transition: c.Transition.Kind,
+	}
+	if projected.Transition == "" {
+		return AuthenticatedRootChild{}, errors.New("proof-tool V4 checkpoint projection has no transition kind")
+	}
+	if c.PreviousCheckpoint != nil {
+		previous := SignedRef{Checkpoint: contentRef(c.PreviousCheckpoint.Record), Signature: contentRef(c.PreviousCheckpoint.Signature)}
+		projected.Previous = &previous
+		projected.Position.PreviousDigest = previous.Checkpoint.SHA256
+	}
+	return AuthenticatedRootChild{checkpoint: projected, checkpointRef: checkpointRef, signatureRef: signatureRef}, nil
 }
 
 // AuthenticateRootChild binds a proof-tool-authenticated checkpoint projection

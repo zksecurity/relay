@@ -1,9 +1,12 @@
 package transcript
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -21,6 +24,50 @@ type DefinitionProtocol struct {
 
 func (p DefinitionProtocol) UsesV4() bool {
 	return p.DefinitionSchema == "proof-tool-mpc-ceremony-definition-v4" && p.StorageWorkflow == "storage-first-v2" && p.ReleaseVerification == "coordinator-full-replay-v1"
+}
+
+// AuthenticateCheckpointForPublicationV4 verifies signed ancestry and asks
+// proof-tool to prepare the exact proposal again. prepare-v4 checks the
+// transition's evidence and replays contribution mathematics for acceptance
+// edges. Relay may publish only when the checked bytes are identical.
+func (i Inspector) AuthenticateCheckpointForPublicationV4(root, record, signature string) (CheckpointInspectionV4, error) {
+	inspection, err := i.StoredCheckpointV4(root, record, signature)
+	if err != nil {
+		return CheckpointInspectionV4{}, err
+	}
+	temp, err := os.MkdirTemp(root, ".relay-v4-publication-check-")
+	if err != nil {
+		return CheckpointInspectionV4{}, err
+	}
+	defer os.RemoveAll(temp)
+	checked := filepath.Join(temp, "checkpoint.json")
+	result, err := i.execute(
+		"checkpoint", "prepare-v4",
+		"--ceremony", i.CeremonyPath,
+		"--ceremony-signature", i.CeremonySignaturePath,
+		"--coordinator-public-key-file", i.CoordinatorPublicKeyPath,
+		"--artifact-root", root,
+		"--proposal", record,
+		"--out", checked,
+	)
+	if err != nil {
+		return CheckpointInspectionV4{}, err
+	}
+	if result.Command != "checkpoint prepare-v4" {
+		return CheckpointInspectionV4{}, errors.New("mpc-ceremony returned the wrong V4 checkpoint authentication result")
+	}
+	original, err := os.ReadFile(record)
+	if err != nil {
+		return CheckpointInspectionV4{}, err
+	}
+	prepared, err := os.ReadFile(checked)
+	if err != nil {
+		return CheckpointInspectionV4{}, err
+	}
+	if !bytes.Equal(original, prepared) {
+		return CheckpointInspectionV4{}, errors.New("proof-tool checked different V4 checkpoint bytes")
+	}
+	return inspection, nil
 }
 
 // DefinitionProtocol never falls back after a failed inspection. Older pinned
@@ -121,15 +168,18 @@ type CheckpointProgressV4 struct {
 // This projection is parsed only from successful approved-tool output, never
 // directly from a downloaded checkpoint. Fields not needed by Relay are omitted.
 type CheckpointStateV4 struct {
-	Schema              string               `json:"schema"`
-	Workflow            string               `json:"workflow"`
-	CeremonyID          string               `json:"ceremony_id"`
-	ReleaseVerification string               `json:"release_verification"`
-	Sequence            uint64               `json:"sequence"`
-	Definition          SignedArtifactRefs   `json:"definition"`
-	PreviousCheckpoint  *SignedArtifactRefs  `json:"previous_checkpoint,omitempty"`
-	Progress            CheckpointProgressV4 `json:"progress"`
-	Deliveries          []DeliverySlotV4     `json:"deliveries"`
+	Schema              string              `json:"schema"`
+	Workflow            string              `json:"workflow"`
+	CeremonyID          string              `json:"ceremony_id"`
+	ReleaseVerification string              `json:"release_verification"`
+	Sequence            uint64              `json:"sequence"`
+	Definition          SignedArtifactRefs  `json:"definition"`
+	PreviousCheckpoint  *SignedArtifactRefs `json:"previous_checkpoint,omitempty"`
+	Transition          struct {
+		Kind string `json:"kind"`
+	} `json:"transition"`
+	Progress   CheckpointProgressV4 `json:"progress"`
+	Deliveries []DeliverySlotV4     `json:"deliveries"`
 }
 
 type CheckpointInspectionV4 struct {

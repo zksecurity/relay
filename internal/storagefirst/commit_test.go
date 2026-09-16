@@ -9,7 +9,17 @@ import (
 
 	"github.com/zksecurity/relay/internal/state"
 	"github.com/zksecurity/relay/internal/store"
+	"github.com/zksecurity/relay/internal/transcript"
 )
+
+type publicationVerifierV4Fake struct {
+	inspection transcript.CheckpointInspectionV4
+	err        error
+}
+
+func (f publicationVerifierV4Fake) AuthenticateCheckpointForPublicationV4(_, _, _ string) (transcript.CheckpointInspectionV4, error) {
+	return f.inspection, f.err
+}
 
 type rootWriterFake struct {
 	current  []byte
@@ -300,6 +310,43 @@ func TestAuthenticateRootChildRejectsShallowCheckpointOnly(t *testing.T) {
 	}, rejectEvidence: true}
 	if _, err := AuthenticateRootChild(verifier, cpRef, sigRef, dir, cpPath, sigPath); err == nil || !strings.Contains(err.Error(), "bad stored evidence") {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestAuthenticateRootChildV4ProjectsOnlyFullyCheckedToolResult(t *testing.T) {
+	dir := t.TempDir()
+	cpBytes, sigBytes := []byte("checkpoint-v4"), []byte("signature-v4")
+	cpPath, sigPath := filepath.Join(dir, "checkpoint.json"), filepath.Join(dir, "checkpoint.sig")
+	if err := os.WriteFile(cpPath, cpBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sigPath, sigBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cpRef, sigRef := ref("checkpoints/4/checkpoint.json", cpBytes), ref("checkpoints/4/checkpoint.sig", sigBytes)
+	pair := transcript.SignedArtifactRefs{
+		Record:    transcript.ArtifactRef{Name: cpRef.Name, Digest: transcript.Digest{SHA256: cpRef.SHA256, Blake2b256: digestOfTest("a"), Size: cpRef.Size}},
+		Signature: transcript.ArtifactRef{Name: sigRef.Name, Digest: transcript.Digest{SHA256: sigRef.SHA256, Blake2b256: digestOfTest("b"), Size: sigRef.Size}},
+	}
+	inspection := transcript.CheckpointInspectionV4{CheckpointRefs: pair}
+	inspection.Checkpoint.CeremonyID = digestOfTest("1")
+	inspection.Checkpoint.Sequence = 4
+	inspection.Checkpoint.Transition.Kind = "phase1-candidate-accepted"
+	previous := pair
+	previous.Record.Name, previous.Record.Digest.SHA256 = "checkpoints/3/checkpoint.json", digestOfTest("c")
+	previous.Signature.Name, previous.Signature.Digest.SHA256 = "checkpoints/3/checkpoint.sig", digestOfTest("d")
+	inspection.Checkpoint.PreviousCheckpoint = &previous
+	child, err := AuthenticateRootChildV4(publicationVerifierV4Fake{inspection: inspection}, cpRef, sigRef, dir, cpPath, sigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.checkpoint.Position.Sequence != 4 || child.checkpoint.Previous == nil || child.checkpoint.Previous.Checkpoint.SHA256 != digestOfTest("c") || child.checkpoint.Transition != "phase1-candidate-accepted" {
+		t.Fatalf("bad V4 projection: %+v", child.checkpoint)
+	}
+	bad := inspection
+	bad.CheckpointRefs.Record.Digest.SHA256 = digestOfTest("e")
+	if _, err := AuthenticateRootChildV4(publicationVerifierV4Fake{inspection: bad}, cpRef, sigRef, dir, cpPath, sigPath); err == nil {
+		t.Fatal("mismatched V4 proof-tool projection accepted")
 	}
 }
 

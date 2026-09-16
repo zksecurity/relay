@@ -157,7 +157,7 @@ transported bytes against its authenticated artifact projection.
 
 func runCoordinator(args []string) error {
 	if len(args) == 0 {
-		return errors.New("coordinator requires prepare, configure-storage, grant, candidates, accept, evidence, or publish")
+		return errors.New("coordinator requires prepare, configure-storage, grant, candidates, accept, evidence, publish, fetch-candidate-v4, or commit-v4")
 	}
 	switch args[0] {
 	case "prepare-local":
@@ -183,6 +183,10 @@ func runCoordinator(args []string) error {
 		return runPublish(args[1:])
 	case "recover-initial-1828":
 		return runRecoverInitial1828(args[1:])
+	case "commit-v4":
+		return runCoordinatorCommitV4(args[1:])
+	case "fetch-candidate-v4":
+		return runCoordinatorFetchCandidateV4(args[1:])
 	default:
 		return fmt.Errorf("unknown coordinator command %q", args[0])
 	}

@@ -148,6 +148,7 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 		var snapshot storagefirst.SnapshotV4
 		var turn storagefirst.TurnViewV4
 		var progress workflowV4ParticipantProgress
+		var coordinatorProgress workflowV4CoordinatorProgress
 		var recommendation storagefirst.TurnRecommendationV4
 		actionLabel := ""
 		pending, err := j.pending()
@@ -201,6 +202,21 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 					}
 					actionLabel = workflowV4ParticipantActionLabel(recommendation, pending)
 				}
+			} else if p.Role == "coordinator" && turn.Scope.ParticipantID != "" {
+				coordinatorProgress, err = workflowV4CoordinatorProgressFor(snapshot, protocol, turn, binding, config, inspector, time.Now().UTC())
+				if err != nil {
+					ui.message(toneError, "Retained coordinator work could not be verified: %v\nNo operation was repeated.\n", err)
+				} else {
+					observed := ""
+					if coordinatorProgress.Local.CandidateReceivedAttemptID != "" {
+						observed = coordinatorProgress.Local.CandidateReceivedAttemptID
+					}
+					recommendation, err = snapshot.RecommendTurnV4(protocol, phase, storagefirst.Coordinator, "", coordinatorProgress.Local, observed, time.Now().UTC())
+					if err != nil {
+						return err
+					}
+					actionLabel = workflowV4CoordinatorActionLabel(recommendation, coordinatorProgress)
+				}
 			}
 			printWorkflowV4Status(ui.output, p.Role, c, turn, pending, time.Now().UTC())
 			if recommendation.Reason != "" {
@@ -217,13 +233,20 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 		}
 		switch strings.ToUpper(strings.TrimSpace(answer)) {
 		case "1":
-			if p.Role != "participant" || participant == nil || actionLabel == "" {
-				fmt.Fprintln(ui.output, "No participant action is available for the authenticated state.")
+			if actionLabel == "" {
+				fmt.Fprintln(ui.output, "No role action is available for the authenticated state.")
 				continue
 			}
-			if err := runWorkflowV4ParticipantAction(&ui, j, snapshot, protocol, *participant, config, cli, turn, progress); err != nil {
-				ui.message(toneError, "Participant action stopped: %v\nSaved state and verified public files were retained. No action is automatically repeated.\n", err)
-				continue
+			if p.Role == "participant" && participant != nil {
+				if err := runWorkflowV4ParticipantAction(&ui, j, snapshot, protocol, *participant, config, cli, turn, progress); err != nil {
+					ui.message(toneError, "Participant action stopped: %v\nSaved state and verified public files were retained. No action is automatically repeated.\n", err)
+					continue
+				}
+			} else if p.Role == "coordinator" {
+				if err := runWorkflowV4CoordinatorAction(&ui, snapshot, protocol, config, p, signer, inspector, recommendation, turn, coordinatorProgress); err != nil {
+					ui.message(toneError, "Coordinator action stopped: %v\nSigned files and verified downloads were retained. No action is automatically repeated.\n", err)
+					continue
+				}
 			}
 			fmt.Fprintln(ui.output, "Action finished locally. Relay will refresh signed storage state before recommending anything else.")
 		case "Q":
@@ -254,9 +277,6 @@ func printWorkflowV4Status(out io.Writer, role string, c transcript.CheckpointSt
 	printWorkflowV4Pending(out, pending)
 	fmt.Fprintln(out, "This is the newest update returned by the configured storage service, not proof that no newer state exists elsewhere.")
 	fmt.Fprintln(out, "Signatures and recorded progress checked; contribution mathematics were not replayed by this refresh.")
-	if role == "coordinator" {
-		fmt.Fprintln(out, "Coordinator allocation and acceptance actions are not connected in this development build.")
-	}
 }
 
 func printWorkflowV4Pending(out io.Writer, pending *workflowV4Operation) {
