@@ -31,7 +31,11 @@ func workflowV4CandidateInspector(p workflowV4OperationPlan, b workflowV4Binding
 		return zero, err
 	}
 	r := b.Runtimes["contributor"]
-	d := &dockerDriver{image: r.Image, platform: r.Platform, root: filepath.Join(b.Work, "workflow-v4", "inputs", p.ID), client: client}
+	inputRoot, err := workflowV4PredecessorInputRoot(p, b.Work)
+	if err != nil {
+		return zero, err
+	}
+	d := &dockerDriver{image: r.Image, platform: r.Platform, root: inputRoot, inspectionRoot: b.Work, client: client}
 	if daemon.Endpoint != "" {
 		if err := validateLocalDockerEndpoint(daemon.Endpoint); err != nil {
 			return zero, err
@@ -94,4 +98,23 @@ func workflowV4CandidateInspector(p workflowV4OperationPlan, b workflowV4Binding
 		return stdout, stderr, nil
 	}
 	return i, nil
+}
+
+func workflowV4PredecessorInputRoot(p workflowV4OperationPlan, work string) (string, error) {
+	inputRoot := filepath.Join(work, "workflow-v4", "inputs", p.ID)
+	for _, input := range p.Inputs {
+		if input.Ref != p.Predecessor.Record {
+			continue
+		}
+		root := filepath.Clean(input.Path)
+		for range strings.Split(input.Ref.Name, "/") {
+			root = filepath.Dir(root)
+		}
+		if filepath.Join(root, filepath.FromSlash(input.Ref.Name)) != filepath.Clean(input.Path) {
+			return "", errors.New("predecessor path does not match its authenticated name")
+		}
+		inputRoot = root
+		return inputRoot, nil
+	}
+	return "", errors.New("retained predecessor record is missing")
 }

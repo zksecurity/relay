@@ -418,6 +418,11 @@ func runWorkflowV4CommitCommand(online guidedProfile, outputDir string) error {
 	return runWorkflowV4ProfileCommand(online, command, true)
 }
 
+// workflowV4ChildExecutor is a test seam for live workflow tests. Production
+// uses the installed Relay executable so signals and terminal I/O retain the
+// same process boundary as every other guided action.
+var workflowV4ChildExecutor = executeGuidedChild
+
 func runWorkflowV4ProfileCommand(profile guidedProfile, command []string, credentials bool) error {
 	launch := []string{"role", "--role", profile.Role, "--image", profile.Image, "--platform", profile.Platform, "--work", profile.Work}
 	for _, pair := range [][2]string{{"--trust", profile.Trust}, {"--keys", profile.Keys}} {
@@ -434,5 +439,5 @@ func runWorkflowV4ProfileCommand(profile guidedProfile, command []string, creden
 	}
 	launch = append(launch, "--")
 	launch = append(launch, command...)
-	return executeGuidedChild(launch)
+	return workflowV4ChildExecutor(launch)
 }

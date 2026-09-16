@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/zksecurity/relay/internal/store"
@@ -34,6 +35,9 @@ func TestWorkflowV4SyncRejectsWrongLocalTrustBeforeExecution(t *testing.T) {
 	wrong.CoordinatorPublicKeyPath = filepath.Join(b.Work, "downloaded-key.hex")
 	if _, err := j.syncV4(forbiddenSyncStoreV4{t}, wrong, "/nonexistent/docker"); err == nil {
 		t.Fatal("accepted key outside trust folder")
+	}
+	if _, err := j.syncV4(forbiddenSyncStoreV4{t}, i, "/nonexistent/docker"); err == nil || strings.Contains(err.Error(), "outside retained public mounts") {
+		t.Fatalf("valid retained definition did not reach Docker authentication: %v", err)
 	}
 	if err := j.close(); err != nil {
 		t.Fatal(err)

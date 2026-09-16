@@ -201,9 +201,12 @@ type CheckpointInspectionV4 struct {
 // approved-tool inspection: callers must never manufacture it by parsing a
 // downloaded checkpoint themselves.
 //
-// Historical contribution payloads are deliberately excluded. A current
-// role needs the authenticated definition and current phase inputs, while the
-// signed checkpoint ancestry retains the history needed for state guidance.
+// Before release review, contribution-capable roles receive every accepted
+// replay artifact: Phase 2 computation must replay the closed Phase 1 rather
+// than trust a seal alone. After the coordinator has completed the mandatory
+// full replay and frozen release review, non-replaying release roles may omit
+// historical contribution payloads while still receiving the complete final
+// release inventory.
 func RequiredPublicArtifactsV4(p CheckpointInspectionV4) ([]ArtifactRef, error) {
 	if _, err := validateStoredInspectionV4(p); err != nil {
 		return nil, err
@@ -231,20 +234,20 @@ func RequiredPublicArtifactsV4(p CheckpointInspectionV4) ([]ArtifactRef, error) 
 	if err := addPair(&p.Checkpoint.Definition); err != nil {
 		return nil, err
 	}
-	if p.Checkpoint.Progress.ReleaseReview != nil {
-		// At review time the authenticated accepted-artifact inventory names
-		// every public dependency. Historical replay payloads are deliberately
-		// omitted because the release signer verifies the coordinator's bound
-		// replay claim instead of repeating contribution mathematics.
-		for _, ref := range p.Checkpoint.AcceptedArtifacts {
-			if historicalReplayPayloadV4(ref.Name) {
-				continue
-			}
-			if err := add(ref, 16<<30); err != nil {
-				return nil, err
-			}
+	// The authenticated accepted-artifact inventory also contains transition
+	// evidence such as enrollment records and disclosures. Publish those bytes
+	// before the checkpoint that first references them. Until release review is
+	// frozen, retain historical replay payloads too: later computation and the
+	// coordinator's mandatory replay depend on them.
+	for _, ref := range p.Checkpoint.AcceptedArtifacts {
+		if p.Checkpoint.Progress.ReleaseReview != nil && historicalReplayPayloadV4(ref.Name) {
+			continue
 		}
-	} else {
+		if err := add(ref, 16<<30); err != nil {
+			return nil, err
+		}
+	}
+	if p.Checkpoint.Progress.ReleaseReview == nil {
 		phases := []*CheckpointPhaseState{&p.Checkpoint.Progress.Phase1, p.Checkpoint.Progress.Phase2}
 		for _, phase := range phases {
 			if phase == nil {

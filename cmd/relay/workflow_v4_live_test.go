@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -45,6 +46,18 @@ func TestV4LiveInitialR2(t *testing.T) {
 		t.Fatalf("live test requires an existing valid R2 configuration: %v", err)
 	}
 	w := setupFixture(t)
+	// On macOS the live test authenticates the initialized Linux ceremony with
+	// a separately built native verifier. Include that exact companion in the
+	// signed rehearsal allowlist just as the coordinator setup does for mixed
+	// platforms. Linux runs use the image's primary binary and must not add a
+	// duplicate platform entry.
+	if runtime.GOOS != "linux" {
+		digest, err := setupFileHash(proofBinary)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.d.Binaries = []setupBinary{{Path: proofBinary, SHA256: digest}}
+	}
 	w.d.Policy.Assurance = &setupAssurance{}
 	w.d.Identities.Auditors = nil
 	w.input = bufio.NewReader(strings.NewReader("INITIALIZE REHEARSAL\n"))

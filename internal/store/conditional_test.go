@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func installConditionalAWS(t *testing.T, script string) string {
@@ -181,5 +182,25 @@ func TestPublicVersionedReadRefusesCrossOriginRedirect(t *testing.T) {
 	client := Client{PublicBaseURL: source.URL, httpClient: source.Client()}
 	if _, err := client.GetVersionedAtMost("state/id/root.json", filepath.Join(dir, "root.json"), 1024); err == nil || !strings.Contains(err.Error(), "redirect") {
 		t.Fatalf("cross-origin redirect error = %v", err)
+	}
+}
+
+func TestPublicVersionedReadCancelsStalledResponse(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	previous := publicReadTimeout
+	publicReadTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { publicReadTimeout = previous })
+
+	start := time.Now()
+	client := Client{PublicBaseURL: server.URL, httpClient: server.Client()}
+	_, err := client.GetVersionedAtMost("state/id/root.json", filepath.Join(t.TempDir(), "root.json"), 1024)
+	if err == nil {
+		t.Fatal("stalled public response was accepted")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("stalled public response was not cancelled promptly: %s", elapsed)
 	}
 }

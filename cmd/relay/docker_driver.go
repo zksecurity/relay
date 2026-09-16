@@ -111,6 +111,7 @@ type dockerDriver struct {
 	platform               string
 	ceremonyBinary         string
 	root                   string
+	inspectionRoot         string // optional V4 work root; only exact requested paths are mounted
 	definition             string
 	definitionSig          string
 	coordinatorKey         string
@@ -756,7 +757,20 @@ func (d *dockerDriver) rewriteArgs(args []string, writable map[string]string) ([
 		if filepath.IsAbs(arg) {
 			mapped, err := pathWithin(d.root, arg, "/relay/input")
 			if err != nil {
-				return nil, nil, fmt.Errorf("refuse unrecognized host path %q in Docker ceremony command", arg)
+				if d.inspectionRoot == "" || arg == d.inspectionRoot {
+					return nil, nil, fmt.Errorf("refuse unrecognized host path %q in Docker ceremony command", arg)
+				}
+				if _, scopeErr := pathWithin(d.inspectionRoot, arg, "/"); scopeErr != nil {
+					return nil, nil, fmt.Errorf("refuse unrecognized host path %q in Docker ceremony command", arg)
+				}
+				if mount, ok := mountBySource[arg]; ok {
+					rewritten[i] = mount.Destination
+					continue
+				}
+				mapped = fmt.Sprintf("/relay/extra/%d", i)
+				mountBySource[arg] = dockerMount{Source: arg, Destination: mapped, ReadOnly: true}
+				rewritten[i] = mapped
+				continue
 			}
 			rewritten[i] = mapped
 			mountBySource[d.root] = dockerMount{Source: d.root, Destination: "/relay/input", ReadOnly: true}
@@ -1242,7 +1256,7 @@ func signedCeremonyBinarySHA256(path, platform string) (string, error) {
 			)
 		}
 		digest = definition.Software.ToolBinary.SHA256
-	case "proof-tool-mpc-ceremony-definition-v2", "proof-tool-mpc-ceremony-definition-v3":
+	case "proof-tool-mpc-ceremony-definition-v2", "proof-tool-mpc-ceremony-definition-v3", "proof-tool-mpc-ceremony-definition-v4":
 		for _, binary := range definition.Software.Binaries {
 			if binary.GoOS+"/"+binary.GoArch != platform {
 				continue

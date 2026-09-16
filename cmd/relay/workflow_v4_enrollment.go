@@ -318,7 +318,7 @@ func prepareAndCommitWorkflowV4Enrollment(snapshot storagefirst.SnapshotV4, prot
 		seen[ref.Name] = true
 	}
 	for _, ref := range snapshot.Files() {
-		if (ref.Name == protocol.DefinitionRefs.Record.Name || ref.Name == protocol.DefinitionRefs.Signature.Name) && !seen[ref.Name] {
+		if !seen[ref.Name] {
 			refs = append(refs, ref)
 			seen[ref.Name] = true
 		}
@@ -328,10 +328,14 @@ func prepareAndCommitWorkflowV4Enrollment(snapshot storagefirst.SnapshotV4, prot
 		return err
 	}
 	enrollmentBase := filepath.Join("enrollments", expected.Identity.ID)
+	sources, err := workflowV4EnrollmentSourcePaths(received, expected.Identity.ID)
+	if err != nil {
+		return err
+	}
 	logical := map[string]string{
-		filepath.Join(enrollmentBase, "enrollment.json"): filepath.Join(received, "enrollment.json"),
-		filepath.Join(enrollmentBase, "enrollment.sig"):  filepath.Join(received, "enrollment.sig"),
-		filepath.Join(enrollmentBase, "disclosure.txt"):  filepath.Join(received, "disclosure.txt"),
+		filepath.Join(enrollmentBase, "enrollment.json"): sources["enrollment.json"],
+		filepath.Join(enrollmentBase, "enrollment.sig"):  sources["enrollment.sig"],
+		filepath.Join(enrollmentBase, "disclosure.txt"):  sources["disclosure.txt"],
 	}
 	for name, source := range logical {
 		limit := int64(16 << 20)
@@ -400,4 +404,33 @@ func prepareAndCommitWorkflowV4Enrollment(snapshot storagefirst.SnapshotV4, prot
 		}
 	}
 	return runWorkflowV4CommitCommand(online, filepath.Join(publicRoot, outputRelative))
+}
+
+// Local enrollment authoring uses proof-tool's canonical.json plus its nested
+// disclosure path. Storage transport deliberately normalizes those public
+// bytes to enrollment.json, enrollment.sig and disclosure.txt. Accept exactly
+// one complete layout and never infer one file from a mixture of both.
+func workflowV4EnrollmentSourcePaths(root, identity string) (map[string]string, error) {
+	localRecord := filepath.Join(root, "canonical.json")
+	transportRecord := filepath.Join(root, "enrollment.json")
+	local := regularPreparationFile(localRecord)
+	transport := regularPreparationFile(transportRecord)
+	if local == transport {
+		if local {
+			return nil, errors.New("enrollment directory ambiguously contains local and transport record names")
+		}
+		return nil, errors.New("enrollment directory has no canonical or transported record")
+	}
+	if local {
+		return map[string]string{
+			"enrollment.json": localRecord,
+			"enrollment.sig":  filepath.Join(root, "enrollment.sig"),
+			"disclosure.txt":  filepath.Join(root, "enrollments", identity, "disclosure.txt"),
+		}, nil
+	}
+	return map[string]string{
+		"enrollment.json": transportRecord,
+		"enrollment.sig":  filepath.Join(root, "enrollment.sig"),
+		"disclosure.txt":  filepath.Join(root, "disclosure.txt"),
+	}, nil
 }

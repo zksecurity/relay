@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,11 @@ import (
 // exact object version previously read. Callers must resynchronize; retrying
 // with a different version would be a different state transition.
 var ErrVersionConflict = errors.New("object version conflict")
+
+// publicReadTimeout bounds a single read from the unauthenticated public
+// distribution endpoint. The synchronizer can safely retry a failed read, but
+// must never let one stalled CDN connection hold a role workflow forever.
+var publicReadTimeout = 30 * time.Second
 
 // ObjectVersion is the storage-provider version returned with an object read
 // or write. ETag is the conditional-write token used by S3 and R2. VersionID is
@@ -161,14 +167,23 @@ func (c Client) getPublicVersionedAtMost(key, local string, maximum int64) (Obje
 		client = c.httpClient
 	}
 	boundedClient := *client
-	boundedClient.Timeout = 30 * time.Second
+	boundedClient.Timeout = publicReadTimeout
 	boundedClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 3 || req.URL.Scheme+"://"+req.URL.Host != origin {
 			return errors.New("public object redirect left the configured origin")
 		}
 		return nil
 	}
-	response, err := boundedClient.Get(base.String()) // #nosec G107 -- validated operator-configured HTTPS origin.
+	// Client.Timeout is a useful backstop, but make the deadline explicit on
+	// the request as well. That ensures custom transports and blocked response
+	// bodies receive cancellation rather than leaving a synchronizer stranded.
+	ctx, cancel := context.WithTimeout(context.Background(), publicReadTimeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base.String(), nil) // #nosec G107 -- validated operator-configured HTTPS origin.
+	if err != nil {
+		return ObjectVersion{}, err
+	}
+	response, err := boundedClient.Do(request)
 	if err != nil {
 		return ObjectVersion{}, err
 	}

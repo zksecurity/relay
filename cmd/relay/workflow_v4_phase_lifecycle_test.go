@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,6 +10,23 @@ import (
 
 	"github.com/zksecurity/relay/internal/transcript"
 )
+
+func TestPrepareWorkflowV4FreshOutputParentPreservesFreshLeaf(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "ceremony", "public")
+	output := filepath.Join(root, "checkpoints", "phase1", "lifecycle", "closed-test")
+	if err := prepareWorkflowV4FreshOutputParent(root, output); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(filepath.Dir(output)); err != nil || !info.IsDir() {
+		t.Fatalf("parent was not created: %v", err)
+	}
+	if _, err := os.Lstat(output); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("fresh leaf was created or replaced: %v", err)
+	}
+	if err := prepareWorkflowV4FreshOutputParent(root, filepath.Join(root, "..", "outside")); err == nil {
+		t.Fatal("accepted output outside public transcript")
+	}
+}
 
 func TestWorkflowV4BeaconDownloadUsesSecondEndpointOnlyAsFallback(t *testing.T) {
 	var tried []string
@@ -224,6 +242,25 @@ func TestWorkflowV4FinalizeCommandsUseCompleteAuthenticatedReplay(t *testing.T) 
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("finalize command %q lacks %q", joined, want)
+		}
+	}
+}
+
+func TestWorkflowV4FinalCandidateEvidenceMatchesClosedTree(t *testing.T) {
+	candidate := "/work/ceremony/public/final/candidate"
+	want := []string{
+		"ownership-destination.ccs", "ownership.pk", "ownership.vk",
+		"cardano-vk.bin", "cardano-vk.hex", "cardano-vk-format.txt",
+		"verification-report.json", "candidate-checksums.sha256",
+		"public-finalization-evidence.json", "phase2-seal.json", "phase2-seal.sig.json",
+	}
+	evidence := workflowV4FinalCandidateEvidence(candidate)
+	if len(evidence) != len(want) {
+		t.Fatalf("evidence count = %d, want %d: %#v", len(evidence), len(want), evidence)
+	}
+	for index, name := range want {
+		if evidence[index] != filepath.Join(candidate, name) {
+			t.Fatalf("evidence[%d] = %q, want %q", index, evidence[index], filepath.Join(candidate, name))
 		}
 	}
 }

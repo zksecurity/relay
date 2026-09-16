@@ -152,6 +152,9 @@ func runWorkflowV4CoordinatorLifecycle(ui *coordinatorWizard, action string, sna
 	}
 	basis := strings.TrimPrefix(snapshot.Head().Record.Digest.SHA256, "sha256:")[:16]
 	outputDir := filepath.Join(root, "checkpoints", phase, "lifecycle", "closed-"+basis)
+	if err := prepareWorkflowV4FreshOutputParent(root, outputDir); err != nil {
+		return err
+	}
 	if _, err := os.Lstat(filepath.Join(outputDir, "checkpoint.json")); errors.Is(err, os.ErrNotExist) {
 		command, err := workflowV4RecordCommand(snapshot, online, signer, phase+"-closed", closureRecord, closureSignature, nil, outputDir)
 		if err != nil {
@@ -212,6 +215,9 @@ func runWorkflowV4ReleaseReviewLifecycle(ui *coordinatorWizard, snapshot storage
 	}
 	basis := strings.TrimPrefix(snapshot.Head().Record.Digest.SHA256, "sha256:")[:16]
 	outputDir := filepath.Join(root, "checkpoints", "final", "review-"+basis)
+	if err := prepareWorkflowV4FreshOutputParent(root, outputDir); err != nil {
+		return err
+	}
 	if _, err := os.Lstat(filepath.Join(outputDir, "checkpoint.json")); errors.Is(err, os.ErrNotExist) {
 		command, err := workflowV4RecordCommand(snapshot, online, signer, "release-review-recorded", bundle, signature, nil, outputDir)
 		if err != nil {
@@ -313,12 +319,7 @@ func runWorkflowV4FinalizeLifecycle(ui *coordinatorWizard, snapshot storagefirst
 	}
 	record := filepath.Join(candidate, "candidate.json")
 	signature := filepath.Join(candidate, "candidate.sig.json")
-	evidence := []string{
-		filepath.Join(candidate, "ownership.pk"),
-		filepath.Join(candidate, "ownership.vk"),
-		filepath.Join(candidate, "candidate-checksums.sha256"),
-		filepath.Join(candidate, "public-finalization-evidence.json"),
-	}
+	evidence := workflowV4FinalCandidateEvidence(candidate)
 	for _, path := range append([]string{record, signature}, evidence...) {
 		if !regularPreparationFile(path) {
 			return errors.New("final candidate output is incomplete; preserve it for inspection")
@@ -326,6 +327,9 @@ func runWorkflowV4FinalizeLifecycle(ui *coordinatorWizard, snapshot storagefirst
 	}
 	basis := strings.TrimPrefix(snapshot.Head().Record.Digest.SHA256, "sha256:")[:16]
 	outputDir := filepath.Join(root, "checkpoints", "final", "candidate-"+basis)
+	if err := prepareWorkflowV4FreshOutputParent(root, outputDir); err != nil {
+		return err
+	}
 	if _, err := os.Lstat(filepath.Join(outputDir, "checkpoint.json")); errors.Is(err, os.ErrNotExist) {
 		command, err := workflowV4RecordCommand(snapshot, online, signer, "final-candidate-recorded", record, signature, evidence, outputDir)
 		if err != nil {
@@ -338,6 +342,20 @@ func runWorkflowV4FinalizeLifecycle(ui *coordinatorWizard, snapshot storagefirst
 		return err
 	}
 	return runWorkflowV4CommitCommand(online, outputDir)
+}
+
+func workflowV4FinalCandidateEvidence(candidate string) []string {
+	names := []string{
+		"ownership-destination.ccs", "ownership.pk", "ownership.vk",
+		"cardano-vk.bin", "cardano-vk.hex", "cardano-vk-format.txt",
+		"verification-report.json", "candidate-checksums.sha256",
+		"public-finalization-evidence.json", "phase2-seal.json", "phase2-seal.sig.json",
+	}
+	evidence := make([]string, len(names))
+	for index, name := range names {
+		evidence[index] = filepath.Join(candidate, name)
+	}
+	return evidence
 }
 
 func workflowV4FinalizeCommand(state transcript.CheckpointStateV4, online, signer guidedProfile, action, outputDir, publicEvidence string, at time.Time) ([]string, error) {
@@ -459,6 +477,9 @@ func runWorkflowV4SealPhase1Lifecycle(ui *coordinatorWizard, snapshot storagefir
 	}
 	basis := strings.TrimPrefix(snapshot.Head().Record.Digest.SHA256, "sha256:")[:16]
 	outputDir := filepath.Join(root, "checkpoints", "phase1", "lifecycle", "sealed-"+basis)
+	if err := prepareWorkflowV4FreshOutputParent(root, outputDir); err != nil {
+		return err
+	}
 	if _, err := os.Lstat(filepath.Join(outputDir, "checkpoint.json")); errors.Is(err, os.ErrNotExist) {
 		command, err := workflowV4RecordCommand(snapshot, online, signer, "phase1-sealed", sealRecord, sealSignature, []string{commons}, outputDir)
 		if err != nil {
@@ -530,6 +551,9 @@ func runWorkflowV4StartPhase2Lifecycle(ui *coordinatorWizard, snapshot storagefi
 	}
 	basis := strings.TrimPrefix(snapshot.Head().Record.Digest.SHA256, "sha256:")[:16]
 	outputDir := filepath.Join(root, "checkpoints", "phase2", "lifecycle", "initialized-"+basis)
+	if err := prepareWorkflowV4FreshOutputParent(root, outputDir); err != nil {
+		return err
+	}
 	if _, err := os.Lstat(filepath.Join(outputDir, "checkpoint.json")); errors.Is(err, os.ErrNotExist) {
 		command, err := workflowV4RecordCommand(snapshot, online, signer, "phase2-initialized", chain, chainSignature, []string{genesis}, outputDir)
 		if err != nil {
@@ -631,6 +655,9 @@ func runWorkflowV4BeaconLifecycle(ui *coordinatorWizard, phase string, snapshot 
 	rawResponse := filepath.Join(root, phase, "beacon", "raw-response.bin")
 	basis := strings.TrimPrefix(snapshot.Head().Record.Digest.SHA256, "sha256:")[:16]
 	outputDir := filepath.Join(root, "checkpoints", phase, "lifecycle", "beacon-"+basis)
+	if err := prepareWorkflowV4FreshOutputParent(root, outputDir); err != nil {
+		return err
+	}
 	if _, err := os.Lstat(filepath.Join(outputDir, "checkpoint.json")); errors.Is(err, os.ErrNotExist) {
 		command, err := workflowV4RecordCommand(snapshot, online, signer, phase+"-beacon-recorded", beaconRecord, beaconSignature, []string{rawResponse}, outputDir)
 		if err != nil {
@@ -740,6 +767,19 @@ func workflowV4CloseCommand(state transcript.CheckpointStateV4, online, signer g
 		command = append(command, "--phase1-seal", seal, "--phase1-seal-signature", sealSignature)
 	}
 	return command, nil
+}
+
+// prepareWorkflowV4FreshOutputParent creates only the public parent hierarchy.
+// Proof-tool remains responsible for atomically creating the fresh leaf so a
+// retry cannot silently replace a signed checkpoint.
+func prepareWorkflowV4FreshOutputParent(root, outputDir string) error {
+	if root == "" || outputDir == root {
+		return errors.New("lifecycle checkpoint needs a fresh child directory")
+	}
+	if _, err := pathWithin(root, outputDir, "/public"); err != nil {
+		return errors.New("lifecycle checkpoint output is outside the public transcript")
+	}
+	return os.MkdirAll(filepath.Dir(outputDir), 0o700)
 }
 
 func workflowV4RecordCommand(snapshot storagefirst.SnapshotV4, online, signer guidedProfile, transition, record, signature string, evidence []string, outputDir string) ([]string, error) {

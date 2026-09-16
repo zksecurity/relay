@@ -73,3 +73,17 @@ func TestWorkflowV4CandidateInspectionMountsNoSecrets(t *testing.T) {
 		t.Fatal("inspection followed another Docker context")
 	}
 }
+
+func TestWorkflowV4CleanupInspectionUsesContributionSnapshot(t *testing.T) {
+	_, b := workflowV4TestBinding(t)
+	p := workflowV4TestPlan(t, b)
+	contributionRoot := filepath.Join(b.Work, "workflow-v4", "inputs", p.ID)
+	p.ID = strings.Repeat("2", 32)
+	root, err := workflowV4PredecessorInputRoot(p, b.Work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root != contributionRoot {
+		t.Fatalf("transcript root = %q, want retained contribution root %q", root, contributionRoot)
+	}
+}

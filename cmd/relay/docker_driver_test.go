@@ -324,6 +324,43 @@ func TestDockerContributionRemovesContainerBeforePromotingPublicOutput(t *testin
 	}
 }
 
+func TestDockerInspectionMountsOnlyExactRequestedWorkFile(t *testing.T) {
+	work := t.TempDir()
+	root := filepath.Join(work, "ceremony", "public")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	record := filepath.Join(work, "my-enrollment", "canonical.json")
+	if err := os.MkdirAll(filepath.Dir(record), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(record, []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	driver := dockerDriver{root: root, inspectionRoot: work}
+	rewritten, mounts, err := driver.rewriteReadOnlyArgs([]string{"--enrollment", record, "--same", record})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedRecord, err := filepath.EvalSymlinks(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rewritten[1] != rewritten[3] || len(mounts) != 1 || mounts[0].Source != resolvedRecord || !mounts[0].ReadOnly {
+		t.Fatalf("inspection exposed more than the exact requested file: args=%v mounts=%+v", rewritten, mounts)
+	}
+	if _, _, err := driver.rewriteReadOnlyArgs([]string{"--bad", work}); err == nil {
+		t.Fatal("mounted the entire V4 work directory")
+	}
+	outside := filepath.Join(t.TempDir(), "outside.json")
+	if err := os.WriteFile(outside, []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := driver.rewriteReadOnlyArgs([]string{"--bad", outside}); err == nil {
+		t.Fatal("mounted a path outside the V4 work directory")
+	}
+}
+
 func TestDockerContributionAdoptsContainerAfterLostCreateResponse(t *testing.T) {
 	o, pos, driver, fake := dockerContributionFixture(t)
 	fake.createErrAfter = true
@@ -650,7 +687,7 @@ func TestDockerContributionReportsProvenCreateNoEffect(t *testing.T) {
 func TestSignedCeremonyBinarySHA256SelectsConfiguredPlatform(t *testing.T) {
 	amdDigest := "sha256:" + strings.Repeat("a", 64)
 	armDigest := "sha256:" + strings.Repeat("b", 64)
-	for _, schema := range []string{"proof-tool-mpc-ceremony-definition-v2", "proof-tool-mpc-ceremony-definition-v3"} {
+	for _, schema := range []string{"proof-tool-mpc-ceremony-definition-v2", "proof-tool-mpc-ceremony-definition-v3", "proof-tool-mpc-ceremony-definition-v4"} {
 		t.Run(schema, func(t *testing.T) {
 			definition := `{"schema":"` + schema + `","software":{"binaries":[` +
 				`{"goos":"linux","goarch":"amd64","goamd64":"v1","tool_binary":{"sha256":"` + amdDigest + `"}},` +

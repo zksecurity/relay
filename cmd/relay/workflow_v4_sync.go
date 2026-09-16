@@ -32,7 +32,7 @@ func (j *workflowV4Journal) syncV4(objects storagefirst.ObjectStore, trust trans
 	if _, err := pathWithin(r.Mounts["/trust"], trust.CoordinatorPublicKeyPath, "/trust"); err != nil {
 		return zero, err
 	}
-	if err := workflowV4InputsMatch(workflowV4OperationPlan{Inputs: []workflowV4Input{{Path: trust.CeremonyPath, Ref: b.Definition.Record}, {Path: trust.CeremonySignaturePath, Ref: b.Definition.Signature}}}); err != nil {
+	if err := workflowV4InputsMatch(workflowV4OperationPlan{Runtime: r, Inputs: []workflowV4Input{{Path: trust.CeremonyPath, Ref: b.Definition.Record}, {Path: trust.CeremonySignaturePath, Ref: b.Definition.Signature}}}); err != nil {
 		return zero, err
 	}
 	d := dockerDriver{image: r.Image, platform: r.Platform, definition: trust.CeremonyPath, definitionSig: trust.CeremonySignaturePath, coordinatorKey: trust.CoordinatorPublicKeyPath, client: osDockerCommandClient{binary: dockerCLI}}
