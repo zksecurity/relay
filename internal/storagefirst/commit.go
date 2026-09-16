@@ -278,7 +278,16 @@ func ReconcileRootCommit(objects RootWriter, commit RootCommit, intendedVersion 
 
 func sameRootVersion(observed, expected store.ObjectVersion) bool {
 	return observed.ETag == expected.ETag && observed.Size == expected.Size &&
-		(expected.VersionID == "" || observed.VersionID == expected.VersionID)
+		(!usableVersionID(observed.VersionID) || !usableVersionID(expected.VersionID) || observed.VersionID == expected.VersionID)
+}
+
+// Some S3-compatible providers return a write receipt in VersionId but do not
+// expose that value through HEAD/GET because bucket versioning is unavailable.
+// ETag plus exact bytes remain the conditional-write and authentication
+// boundary in that case. When both reads expose real version IDs, they must
+// still agree.
+func usableVersionID(value string) bool {
+	return value != "" && value != "null"
 }
 
 // RootStillNames returns nil only when a new pinned read yields the exact root
@@ -298,7 +307,7 @@ func RootStillNames(objects RootWriter, expected state.Root, expectedVersion sto
 	if err != nil {
 		return err
 	}
-	if version.ETag != expectedVersion.ETag || (expectedVersion.VersionID != "" && version.VersionID != expectedVersion.VersionID) {
+	if !sameRootVersion(version, expectedVersion) {
 		return store.ErrVersionConflict
 	}
 	raw, err := os.ReadFile(path)

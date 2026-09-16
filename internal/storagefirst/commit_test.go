@@ -33,6 +33,7 @@ type rootWriterFake struct {
 	// root unreadable, and "different" exposes unrelated bytes/version.
 	afterWrite       string
 	lastWriteVersion store.ObjectVersion
+	writeVersionID   string
 }
 
 func (f *rootWriterFake) GetVersionedAtMost(key string, local string, maximum int64) (store.ObjectVersion, error) {
@@ -69,6 +70,7 @@ func (f *rootWriterFake) PutIfAbsent(_ string, local string) (store.ObjectVersio
 	f.current, _ = os.ReadFile(local)
 	f.version = store.ObjectVersion{ETag: "created", Size: int64(len(f.current))}
 	committed := f.version
+	committed.VersionID = f.writeVersionID
 	f.lastWriteVersion = committed
 	f.applyAfterWrite(prior, priorVersion)
 	return committed, nil
@@ -82,6 +84,7 @@ func (f *rootWriterFake) PutIfMatch(_ string, local string, expected store.Objec
 	f.current, _ = os.ReadFile(local)
 	f.version = store.ObjectVersion{ETag: "replaced", Size: int64(len(f.current))}
 	committed := f.version
+	committed.VersionID = f.writeVersionID
 	f.lastWriteVersion = committed
 	f.applyAfterWrite(prior, priorVersion)
 	return committed, nil
@@ -118,6 +121,23 @@ func TestCommitRootCreatesThenConditionallyAdvances(t *testing.T) {
 	}
 	if w.replace != 1 {
 		t.Fatal("root was not conditionally replaced")
+	}
+}
+
+func TestCommitRootAcceptsWriteOnlyProviderVersionID(t *testing.T) {
+	ceremonyID := digestOfTest("1")
+	w := &rootWriterFake{objects: make(map[string][]byte), writeVersionID: "write-receipt-not-returned-by-head"}
+	verifier := &verifierFake{byDigest: make(map[string]Checkpoint)}
+	_, _, child := authenticatedCommitChild(t, w, verifier, ceremonyID, []byte("checkpoint"), []byte("signature"), nil, 0)
+	version, err := CommitRoot(w, RootCommit{CeremonyID: ceremonyID, Child: child}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version.VersionID != "" || version.ETag != "created" {
+		t.Fatalf("commit should retain the authenticated reread version: %+v", version)
+	}
+	if sameRootVersion(store.ObjectVersion{ETag: "same", VersionID: "one", Size: 1}, store.ObjectVersion{ETag: "same", VersionID: "two", Size: 1}) {
+		t.Fatal("two distinct readable provider versions were treated as equal")
 	}
 }
 
