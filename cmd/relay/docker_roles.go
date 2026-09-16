@@ -18,6 +18,7 @@ import (
 type dockerRoleOptions struct {
 	role, image, platform, work, trust, keys, credentials, config, docker string
 	r2Parent, r2Control                                                   string
+	recoveryContext                                                       string
 }
 
 var roleImagePattern = regexp.MustCompile(`^(sha256:[0-9a-f]{64}|[^\s@]+@sha256:[0-9a-f]{64})$`)
@@ -161,7 +162,7 @@ func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]stri
 		return nil, errors.New("upload stations must not receive signing keys")
 	}
 	var sources []string
-	for _, source := range []string{o.work, o.trust, o.keys, o.credentials, o.r2Parent, o.r2Control} {
+	for _, source := range []string{o.work, o.trust, o.keys, o.credentials, o.r2Parent, o.r2Control, o.recoveryContext} {
 		if source == "" {
 			continue
 		}
@@ -188,6 +189,7 @@ func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]stri
 	}{
 		{o.work, "/work", false, false}, {o.trust, "/trust", true, false}, {o.keys, "/keys", true, false}, {o.credentials, "/credentials/aws", true, true},
 		{o.r2Parent, "/credentials/r2-parent", true, true}, {o.r2Control, "/credentials/r2-control", true, true},
+		{o.recoveryContext, "/recovery", true, false},
 	} {
 		if mount.source == "" && mount.target != "/work" {
 			continue

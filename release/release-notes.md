@@ -8,6 +8,12 @@
   initial head, and resumes the original frozen workflow only after complete
   reconciliation. It refuses advanced, closed, conflicting, ambiguous or
   differently pinned workflows.
+  Ordinary `coordinator publish` has no recovery switch. The hotfix launcher
+  invokes a container-only compatibility command with the locked 1828 profile
+  and workflow mounted read-only, then revalidates the complete profile,
+  runtime, storage target and retained attempt after credential rotation.
+  A retry also recognizes a completion checkpoint that landed despite an
+  ambiguous local save result, without publishing again.
   In the original coordinator preparation, choose `6) Storage settings`, then
   AWS and the same existing resources to capture a fresh credential snapshot;
   do not change any storage value. Then run the hotfix launcher's

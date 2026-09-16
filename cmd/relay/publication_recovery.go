@@ -302,6 +302,10 @@ func validateRecoveryFile(file transcript.File, r1cs transcript.ArtifactRef, sum
 // recoverInitialPublication is intentionally narrower than ordinary publish.
 // It can only finish phase1 index zero and every write is create-only.
 func recoverInitialPublication(o roleOpts, chainPath, chainSignaturePath string) error {
+	return recoverInitialPublicationWithStore(o, o.client, chainPath, chainSignaturePath)
+}
+
+func recoverInitialPublicationWithStore(o roleOpts, client publicationStore, chainPath, chainSignaturePath string) error {
 	o, definition, chain, files, cleanup, err := snapshotInitialPublication(o, chainPath, chainSignaturePath)
 	if err != nil {
 		return err
@@ -354,17 +358,17 @@ func recoverInitialPublication(o roleOpts, chainPath, chainSignaturePath string)
 	}
 	pointer := state.Pointer{Schema: state.Schema, CeremonyID: definition.CeremonyID, Phase: "phase1", Index: 0, Chain: chainRef, ChainSignature: signatureRef, UpdatedAt: time.Now().UTC().Format(time.RFC3339), Files: refs}
 	key := state.Key(definition.CeremonyID, "phase1")
-	headPresent, err := o.client.Head(key)
+	headPresent, err := client.Head(key)
 	if err != nil {
 		return fmt.Errorf("inspect initial phase head: %w", err)
 	}
 	if headPresent {
-		if err := verifyExistingInitialPointer(o.client, key, pointer); err != nil {
+		if err := verifyExistingInitialPointer(client, key, pointer); err != nil {
 			return err
 		}
 	}
 	for _, object := range plan {
-		if err := reconcilePublicationObject(o.client, store.Key(object.sum), object.local, object.name); err != nil {
+		if err := reconcilePublicationObject(client, store.Key(object.sum), object.local, object.name); err != nil {
 			return err
 		}
 		fmt.Printf("  verified %s\n", object.name)
@@ -382,7 +386,7 @@ func recoverInitialPublication(o roleOpts, chainPath, chainSignaturePath string)
 	if err := os.WriteFile(pointerPath, encoded, 0o600); err != nil {
 		return err
 	}
-	if err := reconcileInitialPointer(o.client, key, pointerPath, pointer, headPresent); err != nil {
+	if err := reconcileInitialPointer(client, key, pointerPath, pointer, headPresent); err != nil {
 		return err
 	}
 	fmt.Println("reconciled the retained phase1 index-0 publication; no object was overwritten")

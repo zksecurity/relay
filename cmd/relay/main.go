@@ -177,6 +177,8 @@ func runCoordinator(args []string) error {
 		return runEvidenceInbox(args[1:])
 	case "publish":
 		return runPublish(args[1:])
+	case "recover-initial-1828":
+		return runRecoverInitial1828(args[1:])
 	default:
 		return fmt.Errorf("unknown coordinator command %q", args[0])
 	}
