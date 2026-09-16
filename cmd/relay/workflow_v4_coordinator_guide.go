@@ -15,9 +15,13 @@ import (
 )
 
 type workflowV4CoordinatorProgress struct {
-	Local        storagefirst.LocalTurnV4
-	GrantPath    string
-	CandidateDir string
+	Local               storagefirst.LocalTurnV4
+	GrantPath           string
+	CandidateDir        string
+	EnrollmentExpected  *transcript.ExpectedEnrollment
+	EnrollmentGrant     *access.StorageFirstGrant
+	EnrollmentGrantPath string
+	EnrollmentDir       string
 }
 
 type workflowV4CoordinatorIntent struct {
@@ -34,6 +38,48 @@ const workflowV4CoordinatorIntentSchema = "relay-workflow-v4-coordinator-intent-
 
 func workflowV4CoordinatorProgressFor(snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, view storagefirst.TurnViewV4, binding workflowV4Binding, config access.StorageConfig, inspector transcript.Inspector, now time.Time) (workflowV4CoordinatorProgress, error) {
 	progress := workflowV4CoordinatorProgress{Local: storagefirst.LocalTurnV4{Scope: view.Scope}}
+	if view.Stage == storagefirst.TurnEnrollmentV4 {
+		expected, err := workflowV4ExpectedEnrollment(protocol, view.Scope.ParticipantID)
+		if err != nil {
+			return progress, err
+		}
+		progress.EnrollmentExpected = &expected
+		base := filepath.Join(binding.Work, "workflow-v4", "coordinator", "enrollments", view.Scope.ParticipantID)
+		grantDir := filepath.Join(base, "grants")
+		entries, err := os.ReadDir(grantDir)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return progress, err
+		}
+		destination := storagefirst.GrantDestination{Provider: config.Provider, Endpoint: config.Endpoint, Region: config.Region, InboxBucket: config.InboxBucket}
+		for _, entry := range entries {
+			if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+				continue
+			}
+			path := filepath.Join(grantDir, entry.Name())
+			grant, err := loadStorageFirstGrant(path)
+			if err != nil {
+				return progress, fmt.Errorf("read retained enrollment grant %s: %w", path, err)
+			}
+			if err := storagefirst.ValidateEnrollmentGrantV4At(snapshot, protocol, expected.Identity.ID, expected.Role, expected.RoleIndex, grant, destination, now); err != nil {
+				continue
+			}
+			expires, _ := time.Parse(time.RFC3339, grant.ExpiresAt)
+			if progress.EnrollmentGrant == nil {
+				copy := grant
+				progress.EnrollmentGrant, progress.EnrollmentGrantPath = &copy, path
+			} else {
+				current, _ := time.Parse(time.RFC3339, progress.EnrollmentGrant.ExpiresAt)
+				if expires.After(current) {
+					copy := grant
+					progress.EnrollmentGrant, progress.EnrollmentGrantPath = &copy, path
+				}
+			}
+		}
+		if progress.EnrollmentGrant != nil {
+			progress.EnrollmentDir = filepath.Join(base, "received", progress.EnrollmentGrant.AttemptID)
+		}
+		return progress, nil
+	}
 	if view.CandidateAttempt == nil {
 		return progress, nil
 	}
@@ -110,8 +156,16 @@ func workflowV4CoordinatorProgressFor(snapshot storagefirst.SnapshotV4, protocol
 	return progress, nil
 }
 
-func workflowV4CoordinatorActionLabel(recommendation storagefirst.TurnRecommendationV4, _ workflowV4CoordinatorProgress) string {
+func workflowV4CoordinatorActionLabel(recommendation storagefirst.TurnRecommendationV4, progress workflowV4CoordinatorProgress) string {
 	switch recommendation.Action {
+	case "collect-participant-enrollment":
+		if progress.EnrollmentGrant == nil {
+			return "Create the participant's enrollment upload grant"
+		}
+		if !regularPreparationFile(filepath.Join(progress.EnrollmentDir, "enrollment.json")) {
+			return "Check the private inbox for the participant's enrollment"
+		}
+		return "Verify and record the participant's enrollment"
 	case "allocate-candidate-attempt", "allocate-replacement-attempt":
 		return "Allocate the next candidate upload attempt"
 	case "issue-candidate-grant":
@@ -126,8 +180,10 @@ func workflowV4CoordinatorActionLabel(recommendation storagefirst.TurnRecommenda
 	return ""
 }
 
-func runWorkflowV4CoordinatorAction(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, _ transcript.DefinitionProtocol, config access.StorageConfig, online, signer guidedProfile, _ transcript.Inspector, recommendation storagefirst.TurnRecommendationV4, view storagefirst.TurnViewV4, progress workflowV4CoordinatorProgress) error {
+func runWorkflowV4CoordinatorAction(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, config access.StorageConfig, online, signer guidedProfile, inspector transcript.Inspector, recommendation storagefirst.TurnRecommendationV4, view storagefirst.TurnViewV4, progress workflowV4CoordinatorProgress) error {
 	switch recommendation.Action {
+	case "collect-participant-enrollment":
+		return runWorkflowV4CoordinatorEnrollment(ui, snapshot, protocol, config, online, signer, inspector, view, progress)
 	case "allocate-candidate-attempt", "allocate-replacement-attempt":
 		return runWorkflowV4CoordinatorAllocation(ui, snapshot, online, signer, view)
 	case "issue-candidate-grant":
@@ -187,7 +243,7 @@ func runWorkflowV4CoordinatorGrant(ui *coordinatorWizard, config access.StorageC
 	}
 	storage, _ := pathWithin(online.Work, filepath.Join(online.Work, "ceremony", "config", "relay-storage.json"), "/work")
 	out, _ := pathWithin(online.Work, progress.GrantPath, "/work")
-	command := []string{"relay", "coordinator", "grant", "--storage", storage, "--role", access.RoleParticipant, "--identity", view.Scope.ParticipantID, "--credential-ttl", "2h", "--minimum-remaining", "30m", "--out", out, "--checkpoint-digest", checkpointDigest, "--submission-kind", access.SubmissionKindCandidate, "--phase", view.Scope.Phase, "--index", strconv.Itoa(int(view.Scope.Index)), "--attempt-id", view.CandidateAttempt.AttemptID}
+	command := []string{"relay", "coordinator", "grant", "--storage", storage, "--role", access.RoleParticipant, "--identity", view.Scope.ParticipantID, "--credential-ttl", "1h", "--minimum-remaining", "15m", "--out", out, "--checkpoint-digest", checkpointDigest, "--submission-kind", access.SubmissionKindCandidate, "--phase", view.Scope.Phase, "--index", strconv.Itoa(int(view.Scope.Index)), "--attempt-id", view.CandidateAttempt.AttemptID}
 	if err := runWorkflowV4ProfileCommand(online, command, true); err != nil {
 		return err
 	}

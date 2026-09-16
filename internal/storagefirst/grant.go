@@ -51,6 +51,46 @@ func ValidateGrantV4At(snapshot SnapshotV4, protocol transcript.DefinitionProtoc
 	return nil
 }
 
+// ValidateEnrollmentGrantV4At binds a bootstrap upload credential to an exact
+// role assignment in the signed definition and to a checkpoint in the current
+// authenticated ancestry. Enrollment bytes remain untrusted until proof-tool
+// verifies them and the coordinator records them in a descendant checkpoint.
+func ValidateEnrollmentGrantV4At(snapshot SnapshotV4, protocol transcript.DefinitionProtocol, identity, role string, roleIndex int, grant access.StorageFirstGrant, destination GrantDestination, now time.Time) error {
+	if err := grant.CheckUnexpired(now); err != nil {
+		return err
+	}
+	if grant.CeremonyID != protocol.Definition.CeremonyID || grant.IdentityID != identity || grant.SubmissionKind != access.SubmissionKindEnrollment || grant.Phase != "setup" || int(grant.Index) != roleIndex {
+		return errors.New("grant belongs to another ceremony, assignment or submission kind")
+	}
+	if grant.Provider != destination.Provider || grant.Endpoint != destination.Endpoint || grant.Region != destination.Region || grant.InboxBucket != destination.InboxBucket {
+		return errors.New("grant storage destination differs from the verified local storage setup")
+	}
+	journey, err := protocol.Definition.RequireJourney()
+	if err != nil {
+		return err
+	}
+	assigned := false
+	for _, expected := range journey.RequiredEnrollments {
+		if expected.Identity.ID == identity && expected.Role == role && expected.RoleIndex == roleIndex {
+			assigned = true
+		}
+	}
+	if !assigned {
+		return errors.New("enrollment grant does not match a signed role assignment")
+	}
+	if !snapshot.ContainsCheckpointDigest(grant.CheckpointDigest) {
+		return errors.New("enrollment grant checkpoint is not in the authenticated current ancestry")
+	}
+	prefix, err := (DeliveryScope{CeremonyID: grant.CeremonyID, AttemptID: grant.AttemptID, Kind: access.SubmissionKindEnrollment}).Prefix()
+	if err != nil {
+		return err
+	}
+	if grant.Prefix != prefix+"/" || grant.ManifestKey != prefix+"/manifest.json" {
+		return errors.New("grant object scope differs from the enrollment attempt")
+	}
+	return nil
+}
+
 type GrantDestination struct {
 	Provider    string
 	Endpoint    string

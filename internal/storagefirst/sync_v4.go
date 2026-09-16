@@ -31,16 +31,24 @@ type SnapshotV4 struct {
 	version     store.ObjectVersion
 	head        transcript.SignedArtifactRefs
 	files       []state.ContentRef
+	structural  []state.ContentRef
 	inspection  []byte
 	commitments []byte
 	enrollments []byte
 	checked     int
+	history     []string
 }
 
 func (s SnapshotV4) Root() (state.Root, store.ObjectVersion) { return s.root, s.version }
 func (s SnapshotV4) Head() transcript.SignedArtifactRefs     { return s.head }
 func (s SnapshotV4) Files() []state.ContentRef               { return append([]state.ContentRef(nil), s.files...) }
-func (s SnapshotV4) Checked() int                            { return s.checked }
+func (s SnapshotV4) StructuralFiles() []state.ContentRef {
+	return append([]state.ContentRef(nil), s.structural...)
+}
+func (s SnapshotV4) Checked() int { return s.checked }
+func (s SnapshotV4) ContainsCheckpointDigest(digest string) bool {
+	return slices.Contains(s.history, digest)
+}
 func (s SnapshotV4) State() (transcript.CheckpointStateV4, error) {
 	if len(s.inspection) == 0 {
 		return transcript.CheckpointStateV4{}, errors.New("no verified V4 snapshot")
@@ -226,6 +234,11 @@ func syncV4(objects ObjectStore, verifier VerifierV4, highWater HighWater, cerem
 	if verified.Schema != "proof-tool-mpc-checkpoint-inspection-v4" || verified.Depth != "checkpoint-structure" || verified.ArtifactsVerified || verified.MathematicsReplayed || verified.GlobalFreshnessVerified || c.CeremonyID != ceremonyID || c.Sequence != backwards[0].Sequence || contentRef(verified.CheckpointRefs.Record) != root.Checkpoint || contentRef(verified.CheckpointRefs.Signature) != root.CheckpointSignature {
 		return SnapshotV4{}, errors.New("verified history differs from discovered head")
 	}
+	structural := make([]state.ContentRef, 0, len(names))
+	for _, ref := range names {
+		structural = append(structural, ref)
+	}
+	slices.SortFunc(structural, func(a, b state.ContentRef) int { return strings.Compare(a.Name, b.Name) })
 	public, err := transcript.RequiredPublicArtifactsV4(verified)
 	if err != nil {
 		return SnapshotV4{}, fmt.Errorf("derive required public artifacts: %w", err)
@@ -288,7 +301,11 @@ func syncV4(objects ObjectStore, verifier VerifierV4, highWater HighWater, cerem
 		files = append(files, ref)
 	}
 	slices.SortFunc(files, func(a, b state.ContentRef) int { return strings.Compare(a.Name, b.Name) })
-	return SnapshotV4{root: root, version: version, head: verified.CheckpointRefs, files: files, inspection: encoded, commitments: commitments, enrollments: enrollments, checked: len(backwards)}, nil
+	history := make([]string, 0, len(backwards))
+	for _, position := range backwards {
+		history = append(history, position.Digest)
+	}
+	return SnapshotV4{root: root, version: version, head: verified.CheckpointRefs, files: files, structural: structural, inspection: encoded, commitments: commitments, enrollments: enrollments, checked: len(backwards), history: history}, nil
 }
 
 func retainVerifiedV4Artifacts(stage, destination string, names fetchedNames) error {

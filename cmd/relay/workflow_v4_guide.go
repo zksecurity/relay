@@ -238,7 +238,7 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 				continue
 			}
 			if p.Role == "participant" && participant != nil {
-				if err := runWorkflowV4ParticipantAction(&ui, j, snapshot, protocol, *participant, config, cli, turn, progress); err != nil {
+				if err := runWorkflowV4ParticipantAction(&ui, j, snapshot, protocol, *participant, config, inspector, cli, turn, progress); err != nil {
 					ui.message(toneError, "Participant action stopped: %v\nSaved state and verified public files were retained. No action is automatically repeated.\n", err)
 					continue
 				}

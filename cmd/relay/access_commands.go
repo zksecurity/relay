@@ -261,8 +261,11 @@ func runGrant(args []string) error {
 	}
 	var prefix string
 	if v4 {
-		if role != access.RoleParticipant || submissionKind != access.SubmissionKindCandidate {
-			return errors.New("V4 turn grants support only participant candidate uploads")
+		if submissionKind == access.SubmissionKindCandidate && role != access.RoleParticipant {
+			return errors.New("V4 candidate grants support only participants")
+		}
+		if submissionKind != access.SubmissionKindCandidate && submissionKind != access.SubmissionKindEnrollment {
+			return errors.New("V4 grants support candidate or enrollment uploads")
 		}
 		prefix, err = (storagefirst.DeliveryScope{CeremonyID: config.CeremonyID, AttemptID: attemptID, Kind: submissionKind}).Prefix()
 	} else {
@@ -271,8 +274,14 @@ func runGrant(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := authenticateGrantIdentity(config, role, identity, enrollment, enrollmentSignature); err != nil {
-		return err
+	if v4 && submissionKind == access.SubmissionKindEnrollment {
+		if err := authenticateEnrollmentGrantAssignment(config, role, identity, int(index)); err != nil {
+			return err
+		}
+	} else {
+		if err := authenticateGrantIdentity(config, role, identity, enrollment, enrollmentSignature); err != nil {
+			return err
+		}
 	}
 	now := time.Now().UTC().Truncate(time.Second)
 	requestID := ""
@@ -319,7 +328,7 @@ func runGrant(args []string) error {
 		if err := writeJSONNoReplace(out, grant, 0o600); err != nil {
 			return err
 		}
-		fmt.Printf("issued candidate upload grant for %s\nprefix:  %s\nexpires: %s\n", identity, grant.Prefix, grant.ExpiresAt)
+		fmt.Printf("issued %s upload grant for %s\nprefix:  %s\nexpires: %s\n", submissionKind, identity, grant.Prefix, grant.ExpiresAt)
 		return nil
 	}
 	grant := access.Grant{
@@ -337,6 +346,38 @@ func runGrant(args []string) error {
 	}
 	fmt.Printf("issued %s grant for %s\nprefix:  %s\nexpires: %s\n", role, identity, prefix, grant.ExpiresAt)
 	return nil
+}
+
+func authenticateEnrollmentGrantAssignment(config access.StorageConfig, role, identity string, index int) error {
+	inspector := transcript.Inspector{
+		Executable: config.CeremonyBinary, CeremonyPath: config.CeremonyPath,
+		CeremonySignaturePath: config.CeremonySignature, CoordinatorPublicKeyPath: config.CoordinatorPublicKey,
+	}
+	definition, err := inspector.Definition()
+	if err != nil {
+		return err
+	}
+	if definition.CeremonyID != config.CeremonyID {
+		return errors.New("authenticated definition does not match the storage ceremony")
+	}
+	want := "participant"
+	if role != access.RoleParticipant {
+		var ok bool
+		want, ok = ceremonyEnrollmentRole(role)
+		if !ok {
+			return errors.New("role cannot receive a formal enrollment grant")
+		}
+	}
+	journey, err := definition.RequireJourney()
+	if err != nil {
+		return err
+	}
+	for _, expected := range journey.RequiredEnrollments {
+		if expected.Identity.ID == identity && expected.Role == want && expected.RoleIndex == index {
+			return nil
+		}
+	}
+	return errors.New("identity, role and index are not an exact signed enrollment assignment")
 }
 
 func preflightFreshGrantOutput(path string) error {

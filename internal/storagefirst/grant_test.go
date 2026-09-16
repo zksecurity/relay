@@ -44,6 +44,35 @@ func TestValidateGrantV4BindsAuthenticatedAllocation(t *testing.T) {
 	}
 }
 
+func TestValidateEnrollmentGrantV4BindsAssignmentAndAncestry(t *testing.T) {
+	snapshot, protocol, _, _, _, view := enrolledTurnV4(t, "phase1")
+	checkpoint := digestOfTest("9")
+	snapshot.history = []string{checkpoint}
+	attempt := strings.Repeat("ab", 16)
+	prefix, err := (DeliveryScope{CeremonyID: protocol.Definition.CeremonyID, AttemptID: attempt, Kind: access.SubmissionKindEnrollment}).Prefix()
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant := access.StorageFirstGrant{Schema: access.GrantSchemaV2, Provider: "r2", CeremonyID: protocol.Definition.CeremonyID, GrantRequestID: strings.Repeat("e", 32), CheckpointDigest: checkpoint, SubmissionKind: access.SubmissionKindEnrollment, Phase: "setup", Index: 1, IdentityID: view.Scope.ParticipantID, AttemptID: attempt, Endpoint: "https://account.r2.cloudflarestorage.com", Region: "auto", InboxBucket: "inbox", Prefix: prefix + "/", ManifestKey: prefix + "/manifest.json", IssuedAt: "2026-09-16T00:00:00Z", ExpiresAt: "2026-09-16T01:00:00Z", Credentials: access.SessionCredentials{AccessKeyID: "id", SecretAccessKey: "secret", SessionToken: "token"}}
+	destination := GrantDestination{Provider: grant.Provider, Endpoint: grant.Endpoint, Region: grant.Region, InboxBucket: grant.InboxBucket}
+	now := time.Date(2026, 9, 16, 0, 30, 0, 0, time.UTC)
+	if err := ValidateEnrollmentGrantV4At(snapshot, protocol, view.Scope.ParticipantID, "participant", 1, grant, destination, now); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*access.StorageFirstGrant){
+		func(g *access.StorageFirstGrant) { g.CheckpointDigest = digestOfTest("8") },
+		func(g *access.StorageFirstGrant) { g.IdentityID = "another" },
+		func(g *access.StorageFirstGrant) { g.Index = 2 },
+		func(g *access.StorageFirstGrant) { g.SubmissionKind = access.SubmissionKindCandidate },
+	} {
+		changed := grant
+		mutate(&changed)
+		if err := ValidateEnrollmentGrantV4At(snapshot, protocol, view.Scope.ParticipantID, "participant", 1, changed, destination, now); err == nil {
+			t.Fatal("wrong enrollment grant accepted")
+		}
+	}
+}
+
 func storageFirstBoundGrant(cp Checkpoint, slot Slot) access.StorageFirstGrant {
 	prefix := strings.TrimSuffix(slot.ManifestKey, "manifest.json")
 	return access.StorageFirstGrant{

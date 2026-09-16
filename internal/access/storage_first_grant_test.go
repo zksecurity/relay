@@ -65,6 +65,26 @@ func TestStorageFirstGrantSupportsBothCeremonyPhases(t *testing.T) {
 	}
 }
 
+func TestStorageFirstGrantSupportsEnrollmentScope(t *testing.T) {
+	grant := validStorageFirstGrant()
+	grant.SubmissionKind = SubmissionKindEnrollment
+	grant.Phase = "setup"
+	grant.Index = 2
+	if err := grant.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*StorageFirstGrant){
+		func(g *StorageFirstGrant) { g.Phase = "phase1" },
+		func(g *StorageFirstGrant) { g.Index = 21 },
+	} {
+		changed := grant
+		mutate(&changed)
+		if err := changed.Validate(); err == nil {
+			t.Fatal("invalid enrollment scope accepted")
+		}
+	}
+}
+
 func TestStorageFirstGrantRenewalPreservesAttemptAndScope(t *testing.T) {
 	previous := validStorageFirstGrant()
 	renewed := previous

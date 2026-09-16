@@ -13,7 +13,8 @@ const (
 	// GrantSchema remain the supported v1 format for existing ceremonies.
 	GrantSchemaV2 = "relay-role-grant-v2"
 
-	SubmissionKindCandidate = "candidate"
+	SubmissionKindCandidate  = "candidate"
+	SubmissionKindEnrollment = "enrollment"
 
 	maxStorageFirstContributionIndex = 255
 	maxStorageFirstGrantLifetime     = time.Hour
@@ -68,14 +69,20 @@ func (g StorageFirstGrant) Validate() error {
 	if !validHashID(g.CheckpointDigest) {
 		return errors.New("checkpoint_digest is not a tagged SHA-256 digest")
 	}
-	if g.SubmissionKind != SubmissionKindCandidate {
-		return errors.New("submission_kind must be candidate")
-	}
-	if g.Phase != "phase1" && g.Phase != "phase2" {
-		return errors.New("storage-first grant phase must be phase1 or phase2")
-	}
-	if g.Index == 0 || g.Index > maxStorageFirstContributionIndex {
-		return fmt.Errorf("grant index must be between 1 and %d", maxStorageFirstContributionIndex)
+	switch g.SubmissionKind {
+	case SubmissionKindCandidate:
+		if g.Phase != "phase1" && g.Phase != "phase2" {
+			return errors.New("candidate grant phase must be phase1 or phase2")
+		}
+		if g.Index == 0 || g.Index > maxStorageFirstContributionIndex {
+			return fmt.Errorf("candidate grant index must be between 1 and %d", maxStorageFirstContributionIndex)
+		}
+	case SubmissionKindEnrollment:
+		if g.Phase != "setup" || g.Index == 0 || g.Index > 20 {
+			return errors.New("enrollment grant requires setup phase and a role index between 1 and 20")
+		}
+	default:
+		return errors.New("submission_kind must be candidate or enrollment")
 	}
 	if !validComponent(g.IdentityID) || !validComponent(g.InboxBucket) {
 		return errors.New("grant identity or inbox bucket is invalid")

@@ -101,6 +101,8 @@ func workflowV4ParticipantActionLabel(recommendation storagefirst.TurnRecommenda
 		return "Inspect the retained operation"
 	}
 	switch recommendation.Action {
+	case "submit-your-enrollment":
+		return "Upload your signed enrollment"
 	case "contribute":
 		return "Verify the signed allocation and contribute"
 	case "confirm-cleanup-and-sign-attestation":
@@ -111,7 +113,7 @@ func workflowV4ParticipantActionLabel(recommendation storagefirst.TurnRecommenda
 	return ""
 }
 
-func runWorkflowV4ParticipantAction(ui *coordinatorWizard, j *workflowV4Journal, snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, participant access.RoleConfig, config access.StorageConfig, dockerCLI string, view storagefirst.TurnViewV4, progress workflowV4ParticipantProgress) error {
+func runWorkflowV4ParticipantAction(ui *coordinatorWizard, j *workflowV4Journal, snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, participant access.RoleConfig, config access.StorageConfig, inspector transcript.Inspector, dockerCLI string, view storagefirst.TurnViewV4, progress workflowV4ParticipantProgress) error {
 	pending, err := j.pending()
 	if err != nil {
 		return err
@@ -151,6 +153,8 @@ func runWorkflowV4ParticipantAction(ui *coordinatorWizard, j *workflowV4Journal,
 		return err
 	}
 	switch recommendation.Action {
+	case "submit-your-enrollment":
+		return runWorkflowV4ParticipantEnrollment(ui, snapshot, protocol, participant, config, inspector)
 	case "contribute":
 		if err := ui.confirm("Proof-tool will verify this exact allocation and input snapshot before generating randomness", "CONTRIBUTE"); err != nil {
 			return err

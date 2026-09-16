@@ -160,6 +160,37 @@ func TestDeliveryRejectsChangedSourceBeforeAnyUpload(t *testing.T) {
 	}
 }
 
+func TestEnrollmentDeliveryUsesExactThreePublicFiles(t *testing.T) {
+	scope := DeliveryScope{CeremonyID: digestOfTest("0"), AttemptID: strings.Repeat("a", 32), Kind: "enrollment"}
+	inventory := DeliveryInventory{"enrollment.json": 1024, "enrollment.sig": 4096, "disclosure.txt": 1024}
+	dir := t.TempDir()
+	paths, refs := map[string]string{}, map[string]state.ContentRef{}
+	for name := range inventory {
+		path := filepath.Join(dir, name)
+		body := []byte("public " + name)
+		if err := os.WriteFile(path, body, 0600); err != nil {
+			t.Fatal(err)
+		}
+		paths[name] = path
+		refs[name] = state.ContentRef{Name: name, SHA256: digestBytes(body), Size: int64(len(body))}
+	}
+	objects := &deliveryStore{objects: make(map[string][]byte)}
+	if err := UploadDelivery(objects, scope, inventory, refs, paths, dir); err != nil {
+		t.Fatal(err)
+	}
+	received, err := FetchDelivery(objects, scope, inventory, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, source := range paths {
+		want, _ := os.ReadFile(source)
+		got, err := os.ReadFile(filepath.Join(received, name))
+		if err != nil || string(got) != string(want) {
+			t.Fatalf("%s differs after immutable delivery: %v", name, err)
+		}
+	}
+}
+
 func TestDeliveryRejectsManifestScopeAndInventoryChanges(t *testing.T) {
 	s, scope, inventory, refs, paths := deliveryFixture(t)
 	if err := UploadDelivery(s, scope, inventory, refs, paths, t.TempDir()); err != nil {

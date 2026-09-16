@@ -34,7 +34,7 @@ func (s DeliveryScope) validate() error {
 	if !validDigest(s.CeremonyID) || !validAttempt(s.AttemptID) {
 		return errors.New("delivery requires an exact ceremony and allocated attempt")
 	}
-	if s.Kind != "receipt" && s.Kind != "candidate" {
+	if s.Kind != "receipt" && s.Kind != "candidate" && s.Kind != "enrollment" {
 		return errors.New("unsupported delivery kind")
 	}
 	return nil
@@ -91,6 +91,8 @@ func (i DeliveryInventory) validateKind(kind string) error {
 	want := []string{"receipt.json", "receipt.sig"}
 	if kind == "candidate" {
 		want = []string{"attestation.json", "attestation.sig", "contribution.bin", "erasure.json", "erasure.sig"}
+	} else if kind == "enrollment" {
+		want = []string{"enrollment.json", "disclosure.txt", "enrollment.sig"}
 	} else if kind != "receipt" {
 		return errors.New("unsupported delivery kind")
 	}
