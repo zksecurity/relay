@@ -272,6 +272,11 @@ func RequiredPublicArtifactsV4(p CheckpointInspectionV4) ([]ArtifactRef, error) 
 			return nil, err
 		}
 	}
+	for _, ref := range p.Commitments.FinalReleaseArtifacts {
+		if err := add(ref, 16<<30); err != nil {
+			return nil, err
+		}
+	}
 	if terminal := p.Checkpoint.Progress.Terminal; terminal != nil {
 		if err := addPair(&terminal.Record); err != nil {
 			return nil, err

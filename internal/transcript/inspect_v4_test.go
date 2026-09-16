@@ -137,6 +137,39 @@ func TestRequiredPublicArtifactsV4ReleaseReviewOmitsHistoricalReplayPayloads(t *
 	}
 }
 
+func TestRequiredPublicArtifactsV4IncludesClosedFinalReleaseInventory(t *testing.T) {
+	pair := func(base string) SignedArtifactRefs {
+		return SignedArtifactRefs{Record: inspectionTestRef(base + ".json"), Signature: inspectionTestRef(base + ".sig")}
+	}
+	definition := pair("ceremony")
+	chain := pair("phase1/chain-0001")
+	finalRelease := pair("final/release/release")
+	checkpoint := pair("checkpoints/0013/checkpoint")
+	bundle := inspectionTestRef("final/release/key-bundle.json")
+	c := CheckpointStateV4{Schema: "proof-tool-mpc-checkpoint-v4", Workflow: "storage-first-v2", ReleaseVerification: "coordinator-full-replay-v1", CeremonyID: "sha256:" + hex64, Definition: definition, AcceptedArtifacts: []ArtifactRef{}, Deliveries: []DeliverySlotV4{}}
+	c.Progress.Phase1 = CheckpointPhaseState{Phase: "phase1", HeadRecordID: "sha256:" + hex64, HeadPayload: inspectionTestRef("phase1/genesis.bin"), Chain: chain}
+	c.Progress.FinalRelease = &finalRelease
+	p := CheckpointInspectionV4{Schema: "proof-tool-mpc-checkpoint-inspection-v4", Depth: "checkpoint-structure", Checkpoint: c, CheckpointRefs: checkpoint, Commitments: CheckpointCommitmentsV4{Enrollments: []SignedArtifactRefs{}, Turns: []TurnCommitmentV4{}, FinalReleaseArtifacts: []ArtifactRef{bundle, finalRelease.Record, finalRelease.Signature}}}
+	refs, err := RequiredPublicArtifactsV4(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, ref := range refs {
+		names[ref.Name] = true
+	}
+	for _, want := range []string{bundle.Name, finalRelease.Record.Name, finalRelease.Signature.Name} {
+		if !names[want] {
+			t.Fatalf("missing final release member %s", want)
+		}
+	}
+	bad := p
+	bad.Commitments.FinalReleaseArtifacts = []ArtifactRef{inspectionTestRef("outside-release.json")}
+	if _, err := RequiredPublicArtifactsV4(bad); err == nil {
+		t.Fatal("accepted final release inventory outside final/release")
+	}
+}
+
 func TestCheckpointV4DiscoveryProjectionBoundary(t *testing.T) {
 	p := CheckpointDiscoveryV4{Schema: "proof-tool-mpc-checkpoint-discovery-v4", Depth: "signed-checkpoint-discovery", CheckpointRefs: SignedArtifactRefs{Record: inspectionTestRef("checkpoint.json"), Signature: inspectionTestRef("checkpoint.sig")}}
 	p.Discovery.CeremonyID = "sha256:" + hex64

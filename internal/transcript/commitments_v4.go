@@ -3,14 +3,16 @@ package transcript
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
 // Commitments locate signed records in verified checkpoint ancestry. They do
 // not assert those record contents or their named payloads were verified.
 type CheckpointCommitmentsV4 struct {
-	Enrollments []SignedArtifactRefs `json:"enrollments"`
-	Turns       []TurnCommitmentV4   `json:"turns"`
+	Enrollments           []SignedArtifactRefs `json:"enrollments"`
+	Turns                 []TurnCommitmentV4   `json:"turns"`
+	FinalReleaseArtifacts []ArtifactRef        `json:"final_release_artifacts"`
 }
 
 type CandidateAllocationV4 struct {
@@ -52,8 +54,24 @@ type TurnCommitmentV4 struct {
 }
 
 func validateCommitmentsV4(c CheckpointStateV4, index CheckpointCommitmentsV4) error {
-	if index.Enrollments == nil || len(index.Enrollments) > 128 || index.Turns == nil || len(index.Turns) > 40 {
+	if index.Enrollments == nil || len(index.Enrollments) > 128 || index.Turns == nil || len(index.Turns) > 40 || len(index.FinalReleaseArtifacts) > 2053 {
 		return errors.New("missing or oversized commitment index")
+	}
+	if (c.Progress.FinalRelease != nil) != (len(index.FinalReleaseArtifacts) != 0) {
+		return errors.New("final release download inventory does not match ceremony progress")
+	}
+	lastArtifact := ""
+	for _, ref := range index.FinalReleaseArtifacts {
+		if !strings.HasPrefix(ref.Name, "final/release/") {
+			return errors.New("final release download inventory escapes its namespace")
+		}
+		if err := validateBoundedRefV4(ref, 16<<30); err != nil {
+			return err
+		}
+		if ref.Name <= lastArtifact {
+			return errors.New("final release download inventory must be sorted and unique")
+		}
+		lastArtifact = ref.Name
 	}
 	last := ""
 	for _, pair := range index.Enrollments {
