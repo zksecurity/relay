@@ -1326,6 +1326,11 @@ func runRoleFlow(args []string) (result error) {
 	if err := checkLauncherRelease(p.ReleaseCommit); err != nil {
 		return err
 	}
+	if v4, err := workflowV4RouteHint(p); err != nil {
+		return err
+	} else if v4 {
+		return runWorkflowV4Guide(p, root)
+	}
 	stages := roleFlowStages(*role)
 	if len(stages) == 0 {
 		return errors.New("no guided workflow for this role")

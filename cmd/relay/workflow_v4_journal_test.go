@@ -32,6 +32,7 @@ func workflowV4TestBinding(t *testing.T) (transcript.DefinitionProtocol, workflo
 	}
 	p := transcript.DefinitionProtocol{DefinitionSchema: "proof-tool-mpc-ceremony-definition-v4", StorageWorkflow: "storage-first-v2", ReleaseVerification: "coordinator-full-replay-v1"}
 	p.Definition.CeremonyID = b.CeremonyID
+	p.DefinitionRefs = b.Definition
 	p.Definition.Journey = &transcript.DefinitionJourney{Schema: "proof-tool-mpc-definition-journey-v2", ObserverRequirementSource: "signed-policy"}
 	for _, role := range []string{"coordinator", "release-signer", "participant"} {
 		p.Definition.Journey.RequiredEnrollments = append(p.Definition.Journey.RequiredEnrollments, transcript.ExpectedEnrollment{Role: role, RoleIndex: 1, Identity: transcript.PublicIdentity{ID: role + "-test", KeyID: "test-key-" + role, PublicKeyFingerprint: "test-fingerprint-" + role}})

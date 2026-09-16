@@ -90,7 +90,7 @@ type workflowV4Journal struct {
 }
 
 func openWorkflowV4Journal(protocol transcript.DefinitionProtocol, definition transcript.SignedArtifactRefs, binding workflowV4Binding) (*workflowV4Journal, error) {
-	if !protocol.UsesV4() || protocol.Definition.CeremonyID != binding.CeremonyID || definition != binding.Definition {
+	if !protocol.UsesV4() || protocol.Definition.CeremonyID != binding.CeremonyID || definition != binding.Definition || definition != protocol.DefinitionRefs {
 		return nil, errors.New("V4 recovery requires the authenticated V4 ceremony definition")
 	}
 	journey, err := protocol.Definition.RequireJourney()

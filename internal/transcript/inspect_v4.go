@@ -11,11 +11,12 @@ import (
 const MaxCheckpointSequenceV4 = 16384
 
 type DefinitionProtocol struct {
-	Schema              string     `json:"schema"`
-	DefinitionSchema    string     `json:"definition_schema"`
-	StorageWorkflow     string     `json:"storage_workflow"`
-	ReleaseVerification string     `json:"release_verification"`
-	Definition          Definition `json:"definition"`
+	Schema              string             `json:"schema"`
+	DefinitionSchema    string             `json:"definition_schema"`
+	StorageWorkflow     string             `json:"storage_workflow"`
+	ReleaseVerification string             `json:"release_verification"`
+	Definition          Definition         `json:"definition"`
+	DefinitionRefs      SignedArtifactRefs `json:"definition_refs"`
 }
 
 func (p DefinitionProtocol) UsesV4() bool {
@@ -40,6 +41,12 @@ func (i Inspector) DefinitionProtocol() (DefinitionProtocol, error) {
 	case "proof-tool-mpc-ceremony-definition-v4":
 		if !p.UsesV4() {
 			return DefinitionProtocol{}, errors.New("inconsistent V4 protocol selector")
+		}
+		if err := validatePairV4(p.DefinitionRefs); err != nil {
+			return DefinitionProtocol{}, fmt.Errorf("authenticated definition references: %w", err)
+		}
+		if p.DefinitionRefs.Record.Name != "ceremony.json" || p.DefinitionRefs.Signature.Name != "ceremony.sig" {
+			return DefinitionProtocol{}, errors.New("unexpected authenticated definition reference names")
 		}
 	case "proof-tool-mpc-ceremony-definition-v1", "proof-tool-mpc-ceremony-definition-v2", "proof-tool-mpc-ceremony-definition-v3":
 		if p.StorageWorkflow != "storage-first-v1" || p.ReleaseVerification != "" {

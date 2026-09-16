@@ -14,6 +14,12 @@ Ordinary failures, incorrect local files and concurrent processes remain in scop
 
 ## Implementation progress — September 16
 
+Normal V4 guide startup now authenticates and binds saved profiles, opens its
+separate journal, and refreshes backend stage/turn metadata. This read-only
+view does not execute turns; connecting those actions remains the next task.
+Independent review corrected phase-specific participant handling and kept
+pending local work visible when storage is unavailable. Legacy guides are unchanged.
+
 Current boundary: proof-tool's V4 library and explicit CLI now cover checkpoint
 authoring, checkpoint-bound bundle preparation/signing, final review, package
 signing/verification and Decision V3. These changes are pushed, not released.

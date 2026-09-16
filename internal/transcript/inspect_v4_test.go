@@ -20,6 +20,7 @@ func TestDefinitionProtocolV4ExactDispatch(t *testing.T) {
 		}
 		if version == 4 {
 			p.StorageWorkflow, p.ReleaseVerification = "storage-first-v2", "coordinator-full-replay-v1"
+			p.DefinitionRefs = SignedArtifactRefs{Record: inspectionTestRef("ceremony.json"), Signature: inspectionTestRef("ceremony.sig")}
 		}
 		check := func(p DefinitionProtocol) (DefinitionProtocol, error) {
 			i := testInspector()
@@ -29,6 +30,15 @@ func TestDefinitionProtocolV4ExactDispatch(t *testing.T) {
 		got, err := check(p)
 		if err != nil || !reflect.DeepEqual(got, p) || got.UsesV4() != (version == 4) {
 			t.Fatalf("version %d: %+v %v", version, got, err)
+		}
+		if version == 4 {
+			for _, refs := range []SignedArtifactRefs{{}, {Record: inspectionTestRef("other.json"), Signature: p.DefinitionRefs.Signature}} {
+				bad := p
+				bad.DefinitionRefs = refs
+				if _, err := check(bad); err == nil {
+					t.Fatal("invalid definition binding accepted")
+				}
+			}
 		}
 		bad := p
 		bad.ReleaseVerification = "skip-replay"
