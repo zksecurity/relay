@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/zksecurity/relay/internal/access"
+	"github.com/zksecurity/relay/internal/transcript"
 )
 
 func TestWorkflowV4ProfileBinding(t *testing.T) {
@@ -85,5 +87,32 @@ func TestWorkflowV4ParticipantProfileBinding(t *testing.T) {
 		if _, err := workflowV4ProfileBinding(p, signer, protocol, id, &bad); err == nil {
 			t.Fatal("mismatched participant profile accepted")
 		}
+	}
+}
+
+func TestWorkflowV4ReleaseSignerProfileBinding(t *testing.T) {
+	protocol, existing := workflowV4TestBinding(t)
+	r := existing.Runtimes["online"]
+	p := guidedProfile{Name: "release-test", Role: "release-signer", Work: existing.Work, Trust: r.Mounts["/trust"], Keys: r.Mounts["/keys"], Image: r.Image, Platform: r.Platform, ReleaseCommit: strings.Repeat("a", 40)}
+	signer := p
+	signer.Role, signer.Name = "decision-signer", offlineRoleAlias(p.Name, p.Role)
+	id := setupIdentity{ID: "release-signer-test", DisplayName: "Release signer", KeyID: "release-key", PublicKey: strings.Repeat("01", 32), Fingerprint: fmt.Sprintf("sha256:%x", sha256.Sum256(bytes.Repeat([]byte{1}, 32)))}
+	found := false
+	for n := range protocol.Definition.Journey.RequiredEnrollments {
+		e := &protocol.Definition.Journey.RequiredEnrollments[n]
+		if e.Role == "release-signer" {
+			e.Identity = transcript.PublicIdentity{ID: id.ID, DisplayName: id.DisplayName, KeyID: id.KeyID, Ed25519PublicKeyHex: id.PublicKey, PublicKeyFingerprint: id.Fingerprint}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("fixture lacks release signer")
+	}
+	binding, err := workflowV4ProfileBinding(p, signer, protocol, id, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding.Role != "release-signer" || binding.IdentityID != id.ID || len(binding.Runtimes) != 2 {
+		t.Fatalf("release signer binding = %#v", binding)
 	}
 }
