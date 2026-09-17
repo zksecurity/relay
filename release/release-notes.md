@@ -41,6 +41,10 @@
   production and warns before signing a shorter production value.
 - Retained setup v2, setup v2 revision 2, and their existing ceremony behavior
   for already pinned releases.
+- Corrected V4 replacement guidance: a grant may be renewed and an immutable
+  upload resumed only for its original signed allocation. Retiring an
+  allocation requires a separately computed candidate under the replacement;
+  Relay preserves the old files rather than rebinding them.
 
 The ordinary coordinator, participant, and required release-signer journeys
 now derive their next action from authenticated storage state. The coordinator

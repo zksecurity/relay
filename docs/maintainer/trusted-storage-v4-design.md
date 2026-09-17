@@ -163,11 +163,16 @@ semantic rejection bound to their complete result ID. Those exact bytes can
 never later be accepted. Producing new candidate bytes requires an explicit
 operator-approved fresh computation and is never an automatic retry.
 
-Transport failure is different. Candidate identity excludes the transport
-attempt ID, so an identical candidate can be re-uploaded under a replacement
-attempt after the old upload attempt is signed as retired. Grant expiry renews
-the same attempt and is not a rejection. Attempt history is append-only and
-bounded, and one turn has at most one active attempt.
+Transport retry stays within the same signed candidate attempt. Relay can
+renew its grant and resume an interrupted immutable upload after comparing all
+already-stored bytes. That does not create new contribution randomness.
+
+If the coordinator retires an attempt, its replacement is a new signed
+allocation. Proof-tool requires that allocation to predate the contribution,
+so a candidate made for the retired allocation cannot be moved to the
+replacement. Relay preserves the old files for investigation; a replacement
+requires an explicit fresh contribution and cleanup statement. Attempt history
+is append-only and bounded, and one turn has at most one active attempt.
 
 ## Recovery rules
 
@@ -254,9 +259,9 @@ the signed backend state determines the action.
 2. Proof-tool rechecks allocation and every input in the contributor invocation,
    before randomness exists.
 3. At most one active candidate attempt exists for a turn.
-4. Transport retirement may re-upload the same candidate; semantic rejection
-   permanently forbids accepting that result ID. New bytes require an explicit
-   fresh-computation decision.
+4. An interrupted upload resumes only under its original allocation. Retiring
+   that allocation permanently prevents its candidate from being accepted;
+   replacement bytes require an explicit fresh-computation decision.
 5. Upload success never means acceptance.
 6. Acceptance always includes full mathematical verification and advances from
    the exact signed predecessor.
