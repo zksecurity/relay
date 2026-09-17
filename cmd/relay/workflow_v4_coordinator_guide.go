@@ -23,6 +23,7 @@ type workflowV4CoordinatorProgress struct {
 	// It deliberately does not make rejection automatic: the coordinator must
 	// explicitly decide whether to publish a signed rejection checkpoint.
 	CandidateInspectionError string
+	CandidateTransportError  string
 	EnrollmentExpected       *transcript.ExpectedEnrollment
 	EnrollmentGrant          *access.StorageFirstGrant
 	EnrollmentGrantPath      string
@@ -138,6 +139,10 @@ func workflowV4CoordinatorProgressFor(snapshot storagefirst.SnapshotV4, protocol
 		if !info.IsDir() {
 			return progress, errors.New("retained candidate path is not a directory")
 		}
+		if err := validateWorkflowV4CandidateFetchReceipt(progress.CandidateDir, view.Scope, attempt); err != nil {
+			progress.CandidateTransportError = err.Error()
+			return progress, nil
+		}
 		scopePath := filepath.Join(base, "scope.json")
 		if err := writeWorkflowV4Scope(scopePath, view.Scope); err != nil {
 			return progress, err
@@ -183,7 +188,10 @@ func workflowV4CoordinatorInspectCandidate(inspector transcript.Inspector, phase
 	signature := filepath.Join(inspector.TranscriptRoot, filepath.FromSlash(phaseState.Chain.Signature.Name))
 	inventory, err := inspector.ContributionInventoryV4(chain, signature, scopePath, candidateDir, scope, phaseState.Chain)
 	if err != nil {
-		return nil, err.Error(), nil
+		if errors.Is(err, transcript.ErrCandidateInvalidV4) {
+			return nil, err.Error(), nil
+		}
+		return nil, "", err
 	}
 	return &inventory, "", nil
 }
@@ -337,7 +345,7 @@ func runWorkflowV4CoordinatorAcceptance(ui *coordinatorWizard, snapshot storagef
 }
 
 func runWorkflowV4CoordinatorRejection(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, online, signer guidedProfile, view storagefirst.TurnViewV4, progress workflowV4CoordinatorProgress) error {
-	if view.CandidateAttempt == nil || progress.CandidateDir == "" || progress.CandidateInspectionError == "" {
+	if view.CandidateAttempt == nil || progress.CandidateDir == "" || progress.CandidateTransportError != "" || progress.CandidateInspectionError == "" {
 		return errors.New("a transport-checked candidate that failed proof-tool inspection is required")
 	}
 	intentPath := filepath.Join(workflowV4CoordinatorTurnDir(online.Work, view.Scope), "rejection-"+view.CandidateAttempt.AttemptID+"-intent.json")

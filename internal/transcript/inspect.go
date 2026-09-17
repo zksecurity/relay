@@ -226,6 +226,18 @@ type inspectionCommandError struct {
 	Message string `json:"message"`
 }
 
+// inspectionExecutionError preserves a machine-readable failure code from an
+// approved proof-tool JSON result. Callers must opt in to a documented code;
+// matching diagnostic text is never a protocol decision boundary.
+type inspectionExecutionError struct {
+	code    string
+	message string
+}
+
+func (e *inspectionExecutionError) Error() string {
+	return "mpc-ceremony inspection failed: " + e.message
+}
+
 func (i Inspector) Definition() (Definition, error) {
 	result, err := i.execute(
 		"inspect", "definition",
@@ -517,7 +529,7 @@ func (i Inspector) execute(args ...string) (inspectionResult, error) {
 		if message == "" {
 			message = diagnostic(stderr, "inspection failed")
 		}
-		return inspectionResult{}, fmt.Errorf("mpc-ceremony inspection failed: %s", message)
+		return inspectionResult{}, &inspectionExecutionError{code: result.Error.Code, message: message}
 	}
 	return result, nil
 }

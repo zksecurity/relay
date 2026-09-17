@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zksecurity/relay/internal/state"
 	"github.com/zksecurity/relay/internal/storagefirst"
 	"github.com/zksecurity/relay/internal/transcript"
 )
@@ -112,7 +113,7 @@ func TestWorkflowV4CoordinatorInspectionFailureIsReviewable(t *testing.T) {
 		CoordinatorPublicKeyPath: filepath.Join(root, "coordinator.hex"),
 		TranscriptRoot:           root,
 		Runner: func(_ string, _ ...string) ([]byte, []byte, error) {
-			return nil, nil, errors.New("candidate signature is invalid")
+			return []byte(`{"schema":"proof-tool-mpc-command-result-v1","ok":false,"command":"inspect contribution-inventory-v4","error":{"code":"candidate_invalid","message":"candidate signature is invalid"}}`), nil, errors.New("exit status 6")
 		},
 	}
 	inventory, inspectionErr, err := workflowV4CoordinatorInspectCandidate(inspector, phase, filepath.Join(root, "scope.json"), candidate, scope)
@@ -126,6 +127,59 @@ func TestWorkflowV4CoordinatorInspectionFailureIsReviewable(t *testing.T) {
 	}
 	if _, ok := workflowV4CoordinatorCandidateRecommendation(turn, workflowV4CoordinatorProgress{CandidateDir: candidate}); ok {
 		t.Fatal("candidate without an inspection error became rejectable")
+	}
+	inspector.Runner = func(_ string, _ ...string) ([]byte, []byte, error) {
+		return []byte(`{"schema":"proof-tool-mpc-command-result-v1","ok":false,"command":"inspect contribution-inventory-v4","error":{"code":"internal_error","message":"candidate path is unavailable"}}`), nil, errors.New("exit status 6")
+	}
+	if _, candidateErr, err := workflowV4CoordinatorInspectCandidate(inspector, phase, filepath.Join(root, "scope.json"), candidate, scope); err == nil || candidateErr != "" {
+		t.Fatalf("operational inspection error was made rejectable: candidateErr=%q err=%v", candidateErr, err)
+	}
+}
+
+func TestWorkflowV4CandidateFetchReceiptRequiresExactRetainedFiles(t *testing.T) {
+	root := t.TempDir()
+	candidate := filepath.Join(root, "candidate")
+	if err := os.Mkdir(candidate, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	scope := transcript.ContributionScopeV4{CeremonyID: "sha256:" + strings.Repeat("1", 64), Phase: "phase1", Index: 1, ParticipantID: "p", ParentHeadID: "sha256:" + strings.Repeat("2", 64)}
+	attempt := strings.Repeat("a", 32)
+	files := map[string][]byte{
+		"attestation.json": []byte("attestation"),
+		"attestation.sig":  []byte("attestation signature"),
+		"contribution.bin": []byte("contribution"),
+		"erasure.json":     []byte("erasure"),
+		"erasure.sig":      []byte("erasure signature"),
+	}
+	receipt := workflowV4CandidateFetchReceipt{Schema: workflowV4CandidateFetchReceiptSchema, CeremonyID: scope.CeremonyID, AttemptID: attempt, Kind: "candidate", Manifest: state.ContentRef{Name: "manifest.json", SHA256: "sha256:" + strings.Repeat("b", 64), Size: 1}}
+	for name, raw := range files {
+		path := filepath.Join(candidate, name)
+		if err := os.WriteFile(path, raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		sha, size, err := transcript.DigestFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		receipt.Files = append(receipt.Files, state.ContentRef{Name: name, SHA256: sha, Size: size})
+	}
+	if err := writeJSONNoReplace(workflowV4CandidateFetchReceiptPath(candidate), receipt, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateWorkflowV4CandidateFetchReceipt(candidate, scope, attempt); err != nil {
+		t.Fatalf("valid fetched package rejected: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(candidate, "contribution.bin"), []byte("changed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateWorkflowV4CandidateFetchReceipt(candidate, scope, attempt); err == nil {
+		t.Fatal("changed retained candidate became rejectable")
+	}
+	if err := os.Remove(workflowV4CandidateFetchReceiptPath(candidate)); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateWorkflowV4CandidateFetchReceipt(candidate, scope, attempt); err == nil {
+		t.Fatal("candidate without a transport receipt became rejectable")
 	}
 }
 

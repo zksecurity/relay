@@ -67,6 +67,17 @@ type deliveryFile struct {
 // manifest's claimed size. This layer does not choose required ceremony records.
 type DeliveryInventory map[string]int64
 
+// FetchedDelivery is the exact transport package that FetchDeliveryVerified
+// placed in its fresh private directory. It is transport evidence only: a
+// caller must still ask proof-tool to authenticate the ceremony records.
+// Manifest and Files contain no credentials and are ordered as the verified
+// transport manifest was ordered.
+type FetchedDelivery struct {
+	Dir      string
+	Manifest state.ContentRef
+	Files    []state.ContentRef
+}
+
 func (i DeliveryInventory) validate() error {
 	if len(i) == 0 || len(i) > 2048 {
 		return errors.New("invalid delivery inventory count")
@@ -307,65 +318,80 @@ func stageDeliveryFile(source, destination string, expected deliveryFile) error 
 // byte has been checked. The caller owns cleanup and must ask proof-tool to
 // authenticate the records before importing or accepting them. No role folder
 // or completed-operation marker is modified here.
-func FetchDelivery(objects ObjectStore, scope DeliveryScope, inventory DeliveryInventory, tempParent string) (dir string, err error) {
+func FetchDelivery(objects ObjectStore, scope DeliveryScope, inventory DeliveryInventory, tempParent string) (string, error) {
+	fetched, err := FetchDeliveryVerified(objects, scope, inventory, tempParent)
+	if err != nil {
+		return "", err
+	}
+	return fetched.Dir, nil
+}
+
+// FetchDeliveryVerified returns both the fresh private staging directory and
+// the exact manifest/file references that were checked before it is returned.
+// This lets a caller retain a small private receipt and revalidate the bytes
+// before a later consequential decision without retaining transport framing in
+// a fixed protocol directory.
+func FetchDeliveryVerified(objects ObjectStore, scope DeliveryScope, inventory DeliveryInventory, tempParent string) (result FetchedDelivery, err error) {
 	if objects == nil {
-		return "", errors.New("delivery store required")
+		return result, errors.New("delivery store required")
 	}
 	prefix, err := scope.Prefix()
 	if err != nil {
-		return "", err
+		return result, err
 	}
 	if err := inventory.validateKind(scope.Kind); err != nil {
-		return "", err
+		return result, err
 	}
-	dir, err = os.MkdirTemp(tempParent, "relay-delivery-received-")
+	result.Dir, err = os.MkdirTemp(tempParent, "relay-delivery-received-")
 	if err != nil {
-		return "", err
+		return result, err
 	}
 	defer func() {
 		if err != nil {
-			os.RemoveAll(dir)
-			dir = ""
+			os.RemoveAll(result.Dir)
+			result.Dir = ""
 		}
 	}()
-	manifestPath := filepath.Join(dir, "manifest.json")
+	manifestPath := filepath.Join(result.Dir, "manifest.json")
 	if _, err = objects.GetVersionedAtMost(prefix+"/manifest.json", manifestPath, maxDeliveryManifestBytes); err != nil {
-		return dir, err
+		return result, err
 	}
 	manifest, err := os.Open(manifestPath)
 	if err != nil {
-		return dir, err
+		return result, err
 	}
 	raw, err := io.ReadAll(io.LimitReader(manifest, maxDeliveryManifestBytes+1))
 	manifest.Close()
 	if err != nil {
-		return dir, err
+		return result, err
 	}
 	m, err := decodeDelivery(raw, scope, inventory)
 	if err != nil {
-		return dir, err
+		return result, err
 	}
+	result.Manifest = state.ContentRef{Name: "manifest.json", SHA256: digestBytes(raw), Size: int64(len(raw))}
 	// Transport framing must not be forwarded as candidate/evidence content.
 	if err = os.Remove(manifestPath); err != nil {
-		return dir, err
+		return result, err
 	}
 	for _, file := range m.Files {
-		local := filepath.Join(dir, file.Name)
+		local := filepath.Join(result.Dir, file.Name)
 		if err = os.MkdirAll(filepath.Dir(local), 0700); err != nil {
-			return dir, err
+			return result, err
 		}
 		version, fetchErr := objects.GetVersionedAtMost(prefix+"/files/"+file.Name, local, file.Size)
 		if fetchErr != nil {
-			return dir, fetchErr
+			return result, fetchErr
 		}
 		if version.Size != file.Size {
-			return dir, errors.New("delivery download size differs")
+			return result, errors.New("delivery download size differs")
 		}
 		if err = verifyLocalRef(state.ContentRef{SHA256: file.SHA256, Size: file.Size}, local); err != nil {
-			return dir, fmt.Errorf("delivery payload: %w", err)
+			return result, fmt.Errorf("delivery payload: %w", err)
 		}
+		result.Files = append(result.Files, state.ContentRef{Name: file.Name, SHA256: file.SHA256, Size: file.Size})
 	}
-	return dir, nil
+	return result, nil
 }
 
 // FetchReleaseDelivery discovers a release package inventory from the trusted

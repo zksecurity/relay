@@ -1,15 +1,32 @@
 package main
 
 import (
+	"crypto/sha256"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
+	"github.com/zksecurity/relay/internal/state"
 	"github.com/zksecurity/relay/internal/storagefirst"
 	"github.com/zksecurity/relay/internal/transcript"
 )
+
+const workflowV4CandidateFetchReceiptSchema = "relay-workflow-v4-candidate-fetch-v1"
+
+// workflowV4CandidateFetchReceipt remains beside, never inside, the fixed
+// protocol candidate directory. The proof-tool rejection command requires
+// that directory to contain exactly its five protocol files.
+type workflowV4CandidateFetchReceipt struct {
+	Schema     string             `json:"schema"`
+	CeremonyID string             `json:"ceremony_id"`
+	AttemptID  string             `json:"attempt_id"`
+	Kind       string             `json:"kind"`
+	Manifest   state.ContentRef   `json:"manifest"`
+	Files      []state.ContentRef `json:"files"`
+}
 
 // runCoordinatorFetchCandidateV4 downloads one allocated transport attempt
 // through coordinator-authenticated inbox access. It does not accept the
@@ -75,17 +92,95 @@ func runCoordinatorFetchCandidateV4(args []string) error {
 		return err
 	}
 	objects := coordinatorClient(config, config.InboxBucket)
-	downloaded, err := storagefirst.FetchDelivery(objects, storagefirst.DeliveryScope{CeremonyID: config.CeremonyID, AttemptID: attempt, Kind: "candidate"}, workflowV4CandidateDeliveryInventory(), filepath.Dir(out))
+	fetched, err := storagefirst.FetchDeliveryVerified(objects, storagefirst.DeliveryScope{CeremonyID: config.CeremonyID, AttemptID: attempt, Kind: "candidate"}, workflowV4CandidateDeliveryInventory(), filepath.Dir(out))
 	if err != nil {
 		return err
 	}
-	if err := os.Rename(downloaded, out); err != nil {
-		_ = os.RemoveAll(downloaded)
+	if err := os.Rename(fetched.Dir, out); err != nil {
+		_ = os.RemoveAll(fetched.Dir)
 		return err
 	}
 	if err := syncDirectory(filepath.Dir(out)); err != nil {
 		return err
 	}
+	receipt := workflowV4CandidateFetchReceipt{Schema: workflowV4CandidateFetchReceiptSchema, CeremonyID: config.CeremonyID, AttemptID: attempt, Kind: "candidate", Manifest: fetched.Manifest, Files: fetched.Files}
+	if err := writeJSONNoReplace(workflowV4CandidateFetchReceiptPath(out), receipt, 0o600); err != nil {
+		return fmt.Errorf("record transport-checked candidate receipt: %w", err)
+	}
 	fmt.Printf("Downloaded and transport-checked the fixed five-file candidate to %s. It is not accepted; proof-tool must replay it.\n", out)
+	return nil
+}
+
+func workflowV4CandidateFetchReceiptPath(candidateDir string) string {
+	return candidateDir + ".fetch.json"
+}
+
+// validateWorkflowV4CandidateFetchReceipt proves that the retained directory
+// is still the exact five-file package previously returned by FetchDelivery.
+// It does not authenticate the contribution: proof-tool does that separately.
+func validateWorkflowV4CandidateFetchReceipt(candidateDir string, scope transcript.ContributionScopeV4, attempt string) error {
+	var receipt workflowV4CandidateFetchReceipt
+	if err := readWorkflowV4JSON(workflowV4CandidateFetchReceiptPath(candidateDir), &receipt); err != nil {
+		return fmt.Errorf("read candidate transport receipt: %w", err)
+	}
+	if receipt.Schema != workflowV4CandidateFetchReceiptSchema || receipt.CeremonyID != scope.CeremonyID || receipt.AttemptID != attempt || receipt.Kind != "candidate" || receipt.Manifest.Name != "manifest.json" || !validCoordinatorCommitDigest(receipt.Manifest.SHA256) || receipt.Manifest.Size <= 0 {
+		return errors.New("candidate transport receipt does not match the active signed allocation")
+	}
+	expected := workflowV4CandidateDeliveryInventory()
+	if len(receipt.Files) != len(expected) {
+		return errors.New("candidate transport receipt has an unexpected file set")
+	}
+	refs := make(map[string]state.ContentRef, len(receipt.Files))
+	for _, ref := range receipt.Files {
+		if ref.Name == "" || ref.Size <= 0 || ref.Size > expected[ref.Name] || !validCoordinatorCommitDigest(ref.SHA256) {
+			return errors.New("candidate transport receipt has an invalid file reference")
+		}
+		if _, duplicate := refs[ref.Name]; duplicate {
+			return errors.New("candidate transport receipt repeats a file")
+		}
+		refs[ref.Name] = ref
+	}
+	entries, err := os.ReadDir(candidateDir)
+	if err != nil {
+		return err
+	}
+	if len(entries) != len(expected) {
+		return errors.New("retained candidate directory has an unexpected file set")
+	}
+	for name := range expected {
+		ref, ok := refs[name]
+		if !ok {
+			return errors.New("candidate transport receipt omits a required file")
+		}
+		if err := verifyWorkflowV4CandidateReceiptFile(filepath.Join(candidateDir, name), ref); err != nil {
+			return fmt.Errorf("revalidate transport-checked candidate %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func verifyWorkflowV4CandidateReceiptFile(path string, ref state.ContentRef) error {
+	before, err := os.Lstat(path)
+	if err != nil || !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 || before.Size() != ref.Size {
+		return errors.New("candidate file is not the expected regular file")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(before, opened) || opened.Size() != before.Size() {
+		return errors.New("candidate file changed while opening")
+	}
+	hash := sha256.New()
+	n, err := io.Copy(hash, io.LimitReader(file, before.Size()+1))
+	if err != nil {
+		return err
+	}
+	after, err := file.Stat()
+	if err != nil || n != before.Size() || after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime()) || "sha256:"+fmt.Sprintf("%x", hash.Sum(nil)) != ref.SHA256 {
+		return errors.New("candidate file changed while hashing")
+	}
 	return nil
 }

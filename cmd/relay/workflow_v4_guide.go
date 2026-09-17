@@ -270,6 +270,9 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 				coordinatorProgress, err = workflowV4CoordinatorProgressFor(snapshot, protocol, turn, binding, config, inspector, time.Now().UTC())
 				if err != nil {
 					ui.message(toneError, "Retained coordinator work could not be verified: %v\nNo operation was repeated.\n", err)
+				} else if coordinatorProgress.CandidateTransportError != "" {
+					ui.message(toneError, "The retained candidate is not the exact package previously transport-checked: %s\nRelay will not accept or reject it. Preserve it for investigation, then use a fresh private candidate folder before checking the inbox again.\n", coordinatorProgress.CandidateTransportError)
+					recommendation = storagefirst.TurnRecommendationV4{Reason: "the retained candidate package needs transport recovery before it can be inspected or decided."}
 				} else if candidateRecommendation, reviewCandidate := workflowV4CoordinatorCandidateRecommendation(turn, coordinatorProgress); reviewCandidate {
 					// The candidate directory exists only after the coordinator's
 					// atomic transport fetch checked the fixed five-file package.
@@ -366,7 +369,7 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 }
 
 func workflowV4CoordinatorCandidateRecommendation(turn storagefirst.TurnViewV4, progress workflowV4CoordinatorProgress) (storagefirst.TurnRecommendationV4, bool) {
-	if turn.CandidateAttempt == nil || progress.CandidateDir == "" || progress.CandidateInspectionError == "" {
+	if turn.CandidateAttempt == nil || progress.CandidateDir == "" || progress.CandidateTransportError != "" || progress.CandidateInspectionError == "" {
 		return storagefirst.TurnRecommendationV4{}, false
 	}
 	return storagefirst.TurnRecommendationV4{

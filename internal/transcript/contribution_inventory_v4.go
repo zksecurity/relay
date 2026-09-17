@@ -2,8 +2,15 @@ package transcript
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 )
+
+// ErrCandidateInvalidV4 means the approved proof-tool authenticated the
+// definition, expected turn and predecessor, then determined that the
+// retained candidate's semantic records do not verify. It never represents a
+// runtime, trust-anchor, path, I/O, or malformed-command failure.
+var ErrCandidateInvalidV4 = errors.New("V4 candidate is invalid")
 
 type CandidateInventoryV4 struct {
 	Schema string              `json:"schema"`
@@ -37,6 +44,10 @@ type ContributionInventoryInspectionV4 struct {
 func (i Inspector) ContributionInventoryV4(chain, signature, scopeFile, candidateDir string, expected ContributionScopeV4, predecessor SignedArtifactRefs) (ContributionInventoryFactsV4, error) {
 	r, err := i.execute("inspect", "contribution-inventory-v4", "--ceremony", i.CeremonyPath, "--ceremony-signature", i.CeremonySignaturePath, "--coordinator-public-key-file", i.CoordinatorPublicKeyPath, "--transcript-root", i.TranscriptRoot, "--chain", chain, "--chain-signature", signature, "--scope", scopeFile, "--candidate-dir", candidateDir)
 	if err != nil {
+		var failure *inspectionExecutionError
+		if errors.As(err, &failure) && failure.code == "candidate_invalid" {
+			return ContributionInventoryFactsV4{}, fmt.Errorf("%w: %s", ErrCandidateInvalidV4, failure.message)
+		}
 		return ContributionInventoryFactsV4{}, err
 	}
 	if r.Command != "inspect contribution-inventory-v4" || r.ContributionInventoryV4 == nil {
