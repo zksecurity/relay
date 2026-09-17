@@ -49,6 +49,12 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 	if offlineImage == "" || onlineImage == "" || relayBinary == "" || configPath == "" || credentialsPath == "" || parentPath == "" || controlPath == "" || proofBinary == "" {
 		t.Skip("set the V4 live R2 images, config, three credential paths, and native Relay and proof-tool binaries")
 	}
+	// Live development runs may start from locally named images. Resolve those
+	// names once and pass only immutable image IDs to every ceremony command.
+	// This retains the production rejection of mutable tags while preventing a
+	// long rehearsal from depending on a tag that can move during the run.
+	offlineImage = workflowV4LiveImmutableImage(t, offlineImage)
+	onlineImage = workflowV4LiveImmutableImage(t, onlineImage)
 	for _, path := range []string{relayBinary, configPath, credentialsPath, parentPath, controlPath, proofBinary} {
 		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
 			t.Fatal("live test paths must be absolute and clean")
@@ -267,10 +273,7 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 		copyWorkflowV4LiveFile(t, filepath.Join(ceremonyRoot, name), filepath.Join(freshTranscript, name))
 	}
 	copyWorkflowV4LiveFile(t, filepath.Join(coordinator.profile.Trust, "setup-coordinator.hex"), filepath.Join(freshTrust, "coordinator-public-key.hex"))
-	freshInspector := transcript.Inspector{
-		Executable: proofBinary, CeremonyPath: filepath.Join(freshTranscript, "ceremony.json"), CeremonySignaturePath: filepath.Join(freshTranscript, "ceremony.sig"),
-		CoordinatorPublicKeyPath: filepath.Join(freshTrust, "coordinator-public-key.hex"), TranscriptRoot: freshTranscript,
-	}
+	freshInspector := workflowV4LiveFreshInspector(t, coordinator.profile, freshRoot, freshTranscript, freshTrust)
 	highWater, err := state.OpenWorkspaceHighWater(filepath.Join(freshRoot, "high-water"), protocol.Definition.CeremonyID)
 	if err != nil {
 		t.Fatal(err)
@@ -284,6 +287,64 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 		t.Fatalf("fresh verifier did not reconstruct the final release: %+v %v", stateView.Progress, err)
 	}
 	t.Logf("completed and freshly reconstructed live R2 V4 ceremony %s at signed update %d", protocol.Definition.CeremonyID, stateView.Sequence)
+}
+
+func workflowV4LiveImmutableImage(t *testing.T, image string) string {
+	t.Helper()
+	id, resolved, err := workflowV4LiveImmutableImageWithRunner(image, func(name string) ([]byte, error) {
+		return exec.Command("docker", "image", "inspect", "--format", "{{.Id}}", name).CombinedOutput()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved {
+		t.Logf("resolved local live-test image %q to immutable %s", image, id)
+	}
+	return id
+}
+
+func workflowV4LiveImmutableImageWithRunner(image string, inspect func(string) ([]byte, error)) (string, bool, error) {
+	valid := func(value string) bool {
+		if !strings.HasPrefix(value, "sha256:") || len(value) != len("sha256:")+64 {
+			return false
+		}
+		_, err := hex.DecodeString(strings.TrimPrefix(value, "sha256:"))
+		return err == nil
+	}
+	if valid(image) {
+		return image, false, nil
+	}
+	output, err := inspect(image)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve live-test image %q to its immutable local ID: %w: %s", image, err, output)
+	}
+	id := strings.TrimSpace(string(output))
+	if !valid(id) {
+		return "", false, fmt.Errorf("docker returned an invalid immutable image ID for %q", image)
+	}
+	return id, true, nil
+}
+
+func TestWorkflowV4LiveImageTagsResolveOnceToImmutableIDs(t *testing.T) {
+	id := "sha256:" + strings.Repeat("a", 64)
+	calls := 0
+	got, resolved, err := workflowV4LiveImmutableImageWithRunner("local-live:arm64", func(name string) ([]byte, error) {
+		calls++
+		if name != "local-live:arm64" {
+			t.Fatalf("inspected image %q", name)
+		}
+		return []byte(id + "\n"), nil
+	})
+	if err != nil || !resolved || got != id || calls != 1 {
+		t.Fatalf("tag resolution = (%q, %t, %v, calls=%d)", got, resolved, err, calls)
+	}
+	got, resolved, err = workflowV4LiveImmutableImageWithRunner(id, func(string) ([]byte, error) {
+		t.Fatal("immutable ID must not be resolved again")
+		return nil, nil
+	})
+	if err != nil || resolved || got != id {
+		t.Fatalf("immutable input = (%q, %t, %v)", got, resolved, err)
+	}
 }
 
 // TestV4LiveResumeR2Release is an opt-in recovery check for a live journey
@@ -361,27 +422,33 @@ func TestV4LiveResumeR2Release(t *testing.T) {
 		}
 	}
 	coordinatorSnapshot := syncWorkflowV4LiveRole(t, &coordinator, objects)
-	grant, grantPath, err := workflowV4CurrentReleaseGrant(coordinatorSnapshot, protocol, config, coordinator.profile.Work, releaseSigner.identity.ID, time.Now().UTC())
-	if err != nil || grant == nil || grantPath == "" {
-		t.Fatalf("retained release grant is unavailable: %v", err)
+	coordinatorState, err := coordinatorSnapshot.State()
+	if err != nil {
+		t.Fatal(err)
 	}
-	received := filepath.Join(coordinator.profile.Work, "workflow-v4", "coordinator", "release", "received", grant.AttemptID)
-	if _, err := os.Lstat(received); errors.Is(err, os.ErrNotExist) {
-		if err := runWorkflowV4ReleaseSignerAction(workflowV4LiveUI(grantPath+"\nUPLOAD RELEASE PACKAGE\n"), releaseSnapshot, protocol, config, releaseSigner.profile, releaseSigner.signer, releaseSigner.identity, progress); err != nil {
+	if coordinatorState.Progress.FinalRelease == nil {
+		grant, grantPath, err := workflowV4CurrentReleaseGrant(coordinatorSnapshot, protocol, config, coordinator.profile.Work, releaseSigner.identity.ID, time.Now().UTC())
+		if err != nil || grant == nil || grantPath == "" {
+			t.Fatalf("retained release grant is unavailable: %v", err)
+		}
+		received := filepath.Join(coordinator.profile.Work, "workflow-v4", "coordinator", "release", "received", grant.AttemptID)
+		if _, err := os.Lstat(received); errors.Is(err, os.ErrNotExist) {
+			if err := runWorkflowV4ReleaseSignerAction(workflowV4LiveUI(grantPath+"\nUPLOAD RELEASE PACKAGE\n"), releaseSnapshot, protocol, config, releaseSigner.profile, releaseSigner.signer, releaseSigner.identity, progress); err != nil {
+				t.Fatal(err)
+			}
+		} else if err != nil {
 			t.Fatal(err)
 		}
-	} else if err != nil {
-		t.Fatal(err)
-	}
-	coordinatorSnapshot = syncWorkflowV4LiveRole(t, &coordinator, objects)
-	input := "CHECK RELEASE INBOX\nVERIFY AND RECORD RELEASE\n"
-	if _, err := os.Lstat(received); err == nil {
-		input = "VERIFY AND RECORD RELEASE\n"
-	} else if !errors.Is(err, os.ErrNotExist) {
-		t.Fatal(err)
-	}
-	if err := runWorkflowV4CoordinatorLifecycle(workflowV4LiveUI(input), workflowV4Release, coordinatorSnapshot, protocol, coordinator.profile, coordinator.signer, coordinator.inspector); err != nil {
-		t.Fatal(err)
+		coordinatorSnapshot = syncWorkflowV4LiveRole(t, &coordinator, objects)
+		input := "CHECK RELEASE INBOX\nVERIFY AND RECORD RELEASE\n"
+		if _, err := os.Lstat(received); err == nil {
+			input = "VERIFY AND RECORD RELEASE\n"
+		} else if !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
+		}
+		if err := runWorkflowV4CoordinatorLifecycle(workflowV4LiveUI(input), workflowV4Release, coordinatorSnapshot, protocol, coordinator.profile, coordinator.signer, coordinator.inspector); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	freshRoot := t.TempDir()
@@ -391,7 +458,7 @@ func TestV4LiveResumeR2Release(t *testing.T) {
 		copyWorkflowV4LiveFile(t, filepath.Join(ceremonyRoot, name), filepath.Join(freshTranscript, name))
 	}
 	copyWorkflowV4LiveFile(t, filepath.Join(coordinator.profile.Trust, "setup-coordinator.hex"), filepath.Join(freshTrust, "coordinator-public-key.hex"))
-	freshInspector := transcript.Inspector{Executable: proofBinary, CeremonyPath: filepath.Join(freshTranscript, "ceremony.json"), CeremonySignaturePath: filepath.Join(freshTranscript, "ceremony.sig"), CoordinatorPublicKeyPath: filepath.Join(freshTrust, "coordinator-public-key.hex"), TranscriptRoot: freshTranscript}
+	freshInspector := workflowV4LiveFreshInspector(t, coordinator.profile, freshRoot, freshTranscript, freshTrust)
 	highWater, err := state.OpenWorkspaceHighWater(filepath.Join(freshRoot, "high-water"), protocol.Definition.CeremonyID)
 	if err != nil {
 		t.Fatal(err)
@@ -405,6 +472,18 @@ func TestV4LiveResumeR2Release(t *testing.T) {
 		t.Fatalf("fresh verifier did not reconstruct the resumed final release: %+v %v", stateView.Progress, err)
 	}
 	t.Logf("resumed and freshly reconstructed live R2 V4 ceremony %s at signed update %d", protocol.Definition.CeremonyID, stateView.Sequence)
+}
+
+func workflowV4LiveFreshInspector(t *testing.T, profile guidedProfile, freshRoot, transcriptRoot, trustRoot string) transcript.Inspector {
+	t.Helper()
+	driver := dockerDriver{
+		image: profile.Image, platform: profile.Platform, ceremonyBinary: "/usr/local/bin/mpc-ceremony",
+		root: transcriptRoot, inspectionRoot: freshRoot,
+		definition: filepath.Join(transcriptRoot, "ceremony.json"), definitionSig: filepath.Join(transcriptRoot, "ceremony.sig"),
+		coordinatorKey: filepath.Join(trustRoot, "coordinator-public-key.hex"),
+		client:         osDockerCommandClient{binary: workflowV4LiveDockerCLI(t)},
+	}
+	return driver.inspector()
 }
 
 func reopenWorkflowV4LiveRole(t *testing.T, root, role string, protocol transcript.DefinitionProtocol) workflowV4LiveRole {

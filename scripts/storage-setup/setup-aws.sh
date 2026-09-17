@@ -436,7 +436,7 @@ jq -n --arg bucket "$INBOX_BUCKET" '{
   Version: "2012-10-17",
   Statement: [{
     Effect: "Allow",
-    Action: ["s3:PutObject", "s3:GetObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
+    Action: ["s3:PutObject", "s3:GetObject", "s3:GetObjectVersion", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
     Resource: ("arn:aws:s3:::" + $bucket + "/*")
   }]
 }' >"$work_dir/grant-policy.json"

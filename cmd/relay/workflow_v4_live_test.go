@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -45,6 +46,36 @@ func TestV4LiveInitialR2(t *testing.T) {
 	if err != nil || base.Provider != "r2" {
 		t.Fatalf("live test requires an existing valid R2 configuration: %v", err)
 	}
+	runV4LiveInitialStorage(t, base, credentialsPath, proofBinary, image, onlineImage)
+}
+
+// TestV4LiveInitialAWS runs only the signed initial-state storage journey. It
+// does not repeat either contribution phase or claim a full AWS ceremony. The
+// isolated login must resolve to the explicitly named dedicated test identity.
+func TestV4LiveInitialAWS(t *testing.T) {
+	if os.Getenv("RELAY_AWS_LIVE_PROBES_APPROVED") != "1" {
+		t.Skip("requires explicit dedicated AWS test approval")
+	}
+	var settings coordinatorStorageSettings
+	if err := setupReadJSON(os.Getenv("RELAY_AWS_LIVE_SETTINGS_FILE"), &settings); err != nil {
+		t.Fatal(err)
+	}
+	base, err := settings.infrastructure()
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireAWSLiveConfiguration(t, base)
+	credentials := freshAWSLiveCredentials(t)
+	runV4LiveInitialStorage(t, base, credentials, os.Getenv("RELAY_V4_LIVE_PROOF_BINARY"), os.Getenv("RELAY_PREPARE_TEST_IMAGE"), os.Getenv("RELAY_V4_LIVE_ONLINE_IMAGE"))
+}
+
+func runV4LiveInitialStorage(t *testing.T, base access.StorageConfig, credentialsPath, proofBinary, image, onlineImage string) {
+	t.Helper()
+	if image == "" || onlineImage == "" || credentialsPath == "" || proofBinary == "" {
+		t.Fatal("live initial-state test requires both images, credentials and a native proof-tool companion")
+	}
+	image = workflowV4LiveImmutableImage(t, image)
+	onlineImage = workflowV4LiveImmutableImage(t, onlineImage)
 	w := setupFixture(t)
 	// On macOS the live test authenticates the initialized Linux ceremony with
 	// a separately built native verifier. Include that exact companion in the
@@ -96,6 +127,7 @@ func TestV4LiveInitialR2(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := base
+	config.Schema = access.StorageConfigSchema
 	config.CeremonyID = protocol.Definition.CeremonyID
 	config.CeremonyPath = "/work/ceremony/public/ceremony.json"
 	config.CeremonySignature = "/work/ceremony/public/ceremony.sig"
@@ -148,7 +180,37 @@ func TestV4LiveInitialR2(t *testing.T) {
 	if checkpoint.Sequence != 0 || checkpoint.Transition.Kind != "initial" || snapshot.Checked() != 1 {
 		t.Fatalf("unexpected authenticated live initial state: sequence=%d transition=%s history=%d", checkpoint.Sequence, checkpoint.Transition.Kind, snapshot.Checked())
 	}
-	t.Logf("authenticated live R2 initial V4 state for ceremony %s", protocol.Definition.CeremonyID)
+	if base.Provider == "aws" {
+		// Use the same dedicated coordinator snapshot to prove that a conflicting
+		// blob create and a stale root CAS cannot replace this signed state.
+		published := coordinatorClient(config, config.PublishedBucket)
+		conflictDir := t.TempDir()
+		conflict := filepath.Join(conflictDir, "conflict")
+		if err := os.WriteFile(conflict, []byte("different synthetic smoke-test bytes\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		root, _ := snapshot.Root()
+		if err := published.PutNoReplace(store.Key(root.Checkpoint.SHA256), conflict); !errors.Is(err, store.ErrExists) {
+			t.Fatalf("conflicting immutable write was not rejected: %v", err)
+		}
+		if _, err := published.PutIfMatch(state.RootKey(config.CeremonyID), conflict, store.ObjectVersion{ETag: "\"00000000000000000000000000000000\""}); !errors.Is(err, store.ErrVersionConflict) {
+			t.Fatalf("stale root replacement was not rejected: %v", err)
+		}
+		rootBytes, err := root.Encode()
+		if err != nil {
+			t.Fatal(err)
+		}
+		actual := filepath.Join(conflictDir, "root-after-conflicts")
+		if _, err := published.GetVersionedAtMost(state.RootKey(config.CeremonyID), actual, 1<<20); err != nil {
+			t.Fatal(err)
+		}
+		got, err := os.ReadFile(actual)
+		if err != nil || !bytes.Equal(got, rootBytes) {
+			t.Fatal("AWS root changed after rejected conflicting writes")
+		}
+		t.Log("AWS rejected a conflicting immutable blob and stale root update; exact signed root bytes remain current")
+	}
+	t.Logf("authenticated live %s initial V4 state for ceremony %s", base.Provider, protocol.Definition.CeremonyID)
 }
 
 // TestV4LiveReleaseR2 is an explicit live-provider check for the last private

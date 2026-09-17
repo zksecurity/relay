@@ -52,6 +52,15 @@ The script never creates access keys, edits the selected profile's permission
 set, or deletes cloud resources. It can incur AWS charges. Use a dedicated AWS
 account for a rehearsal when possible.
 
+The coordinator/issuer profile needs `s3:GetObjectVersion` as well as
+`s3:GetObject` for both ceremony buckets. Relay pins authenticated reads to
+the exact S3 version returned by its preceding HEAD request. The short-lived
+inbox role created by the setup script receives `s3:GetObjectVersion` only
+within its assigned upload prefix; administrator-managed existing grant roles
+must provide the same restricted permission. Ordinary storage probes may pass
+without this permission, so verify a signed V4 state publication before using
+an existing policy for a ceremony.
+
 For a role already prepared by an administrator, set `USE_EXISTING_GRANT_ROLE=yes`
 in the setup config. Setup checks its caller-only trust and session duration
 before cloud writes, and skips all IAM changes. This metadata check does not

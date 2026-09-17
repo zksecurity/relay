@@ -15,15 +15,16 @@ import (
 )
 
 type scopeProbeStore struct {
-	Bucket       string
-	PutNoReplace func(string, string) error
-	Get          func(string, string) error
-	Delete       func(string) error
-	Head         func(string) (bool, error)
+	Bucket             string
+	PutNoReplace       func(string, string) error
+	Get                func(string, string) error
+	GetVersionedAtMost func(string, string, int64) (store.ObjectVersion, error)
+	Delete             func(string) error
+	Head               func(string) (bool, error)
 }
 
 func newScopeProbeStore(c store.Client) scopeProbeStore {
-	return scopeProbeStore{Bucket: c.Bucket, PutNoReplace: c.PutNoReplace, Get: c.Get, Delete: c.Delete, Head: c.Head}
+	return scopeProbeStore{Bucket: c.Bucket, PutNoReplace: c.PutNoReplace, Get: c.Get, GetVersionedAtMost: c.GetVersionedAtMost, Delete: c.Delete, Head: c.Head}
 }
 
 // Only fresh random probe keys are touched, including denial tests. No listing

@@ -102,6 +102,39 @@ func TestStoredCheckpointV4RejectsMalformedProgress(t *testing.T) {
 	}
 }
 
+func TestCheckpointGuidanceV4UsesStrictReleasedFinalInventoryFallback(t *testing.T) {
+	pair := SignedArtifactRefs{Record: inspectionTestRef("checkpoints/final.json"), Signature: inspectionTestRef("checkpoints/final.sig")}
+	definition := SignedArtifactRefs{Record: inspectionTestRef("ceremony.json"), Signature: inspectionTestRef("ceremony.sig")}
+	release := SignedArtifactRefs{Record: inspectionTestRef("final/release/manifest.json"), Signature: inspectionTestRef("final/release/manifest.sig")}
+	c := CheckpointStateV4{Schema: "proof-tool-mpc-checkpoint-v4", Workflow: "storage-first-v2", ReleaseVerification: "coordinator-full-replay-v1", CeremonyID: "sha256:" + hex64, Definition: definition, AcceptedArtifacts: []ArtifactRef{}, Deliveries: []DeliverySlotV4{}}
+	c.Progress.Phase1 = CheckpointPhaseState{Phase: "phase1", HeadRecordID: "sha256:" + hex64, HeadPayload: inspectionTestRef("phase1/genesis.bin"), Chain: definition}
+	c.Progress.FinalRelease = &release
+	empty := CheckpointInspectionV4{Schema: "proof-tool-mpc-checkpoint-inspection-v4", Depth: "checkpoint-structure", Checkpoint: c, CheckpointRefs: pair, Commitments: CheckpointCommitmentsV4{Enrollments: []SignedArtifactRefs{}, Turns: []TurnCommitmentV4{}, FinalReleaseArtifacts: []ArtifactRef{}}}
+	full := empty
+	full.Commitments.FinalReleaseArtifacts = []ArtifactRef{inspectionTestRef("final/release/setup-transcript.json")}
+	metadata := EnrollmentMetadataInspectionV4{Schema: "proof-tool-mpc-enrollment-metadata-v4", Depth: "committed-enrollment-signatures", Metadata: EnrollmentMetadataV4{CeremonyID: c.CeremonyID, Checkpoint: pair, Enrollments: []CommittedEnrollmentMetadataV4{}}, EnrollmentSignaturesVerified: true}
+	i := testInspector()
+	calls := 0
+	i.run = func(executable string, args ...string) ([]byte, []byte, error) {
+		calls++
+		var result inspectionResult
+		if strings.Contains(strings.Join(args, " "), "inspect-enrollments-v4") {
+			result = inspectionResult{Schema: commandResultSchema, OK: true, Command: "checkpoint inspect-enrollments-v4", CheckpointInspectionV4: &empty, EnrollmentMetadataV4: &metadata}
+		} else {
+			result = inspectionResult{Schema: commandResultSchema, OK: true, Command: "checkpoint verify-stored-v4", CheckpointInspectionV4: &full}
+		}
+		raw, err := json.Marshal(result)
+		return raw, nil, err
+	}
+	got, _, err := i.CheckpointGuidanceV4("/stage", "/stage/final.json", "/stage/final.sig")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || !reflect.DeepEqual(got.Commitments.FinalReleaseArtifacts, full.Commitments.FinalReleaseArtifacts) {
+		t.Fatalf("released-runtime fallback calls=%d inventory=%+v", calls, got.Commitments.FinalReleaseArtifacts)
+	}
+}
+
 func TestRequiredPublicArtifactsV4ReleaseReviewOmitsHistoricalReplayPayloads(t *testing.T) {
 	pair := func(base string) SignedArtifactRefs {
 		return SignedArtifactRefs{Record: inspectionTestRef(base + ".json"), Signature: inspectionTestRef(base + ".sig")}

@@ -45,7 +45,7 @@ func TestAWSGrantRequestsOnlyIntendedInboxPrefix(t *testing.T) {
 			if len(policy.Statement) != 1 || policy.Statement[0].Effect != "Allow" || policy.Statement[0].Resource != "arn:aws:s3:::private-fixture/setup-probes/test/allowed/*" {
 				t.Fatal("session policy escaped intended prefix")
 			}
-			if strings.Join(policy.Statement[0].Action, ",") != "s3:PutObject,s3:GetObject,s3:AbortMultipartUpload,s3:ListMultipartUploadParts" {
+			if strings.Join(policy.Statement[0].Action, ",") != "s3:PutObject,s3:GetObject,s3:GetObjectVersion,s3:AbortMultipartUpload,s3:ListMultipartUploadParts" {
 				t.Fatal("unexpected session permissions")
 			}
 			return json.Marshal(map[string]any{"Credentials": map[string]string{"AccessKeyId": "test-access", "SecretAccessKey": "test-secret", "SessionToken": "test-session", "Expiration": expires.Format(time.RFC3339)}})
@@ -61,7 +61,7 @@ func TestAWSGrantRequestsOnlyIntendedInboxPrefix(t *testing.T) {
 }
 
 func TestAWSStoragePreflightAndFailureCleanup(t *testing.T) {
-	for _, fault := range []string{"", "public-inbox", "inbox-not-found", "inbox-network-error", "authenticated-corruption", "public-corruption", "public-unavailable", "inbox-write-denied", "delete-denied", "ambiguous-write", "collision"} {
+	for _, fault := range []string{"", "public-inbox", "inbox-not-found", "inbox-network-error", "authenticated-corruption", "public-corruption", "public-unavailable", "version-denied", "inbox-write-denied", "delete-denied", "ambiguous-write", "collision"} {
 		t.Run(fault, func(t *testing.T) {
 			config, err := storageSettingsFixture().infrastructure()
 			if err != nil {
@@ -106,6 +106,19 @@ func TestAWSStoragePreflightAndFailureCleanup(t *testing.T) {
 							raw = []byte("different bytes")
 						}
 						return os.WriteFile(file, raw, 0600)
+					},
+					GetVersionedAtMost: func(key, file string, maximum int64) (store.ObjectVersion, error) {
+						if fault == "version-denied" {
+							return store.ObjectVersion{}, errors.New("AccessDenied: s3:GetObjectVersion")
+						}
+						raw, ok := objects[bucket+"/"+key]
+						if !ok || int64(len(raw)) > maximum {
+							return store.ObjectVersion{}, errors.New("missing or oversized probe")
+						}
+						if err := os.WriteFile(file, raw, 0600); err != nil {
+							return store.ObjectVersion{}, err
+						}
+						return store.ObjectVersion{ETag: "probe", Size: int64(len(raw))}, nil
 					},
 					Head: func(key string) (bool, error) {
 						if !c.NoSign || bucket != config.InboxBucket {

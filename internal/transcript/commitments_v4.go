@@ -188,6 +188,14 @@ func (i Inspector) CheckpointGuidanceV4(root, record, signature string) (Checkpo
 		return CheckpointInspectionV4{}, EnrollmentMetadataInspectionV4{}, errors.New("missing combined checkpoint guidance inspection")
 	}
 	c, err := validateStoredInspectionV4(*r.CheckpointInspectionV4)
+	// The first released V4 proof-tool populated the final download inventory
+	// in verify-stored-v4 but omitted it from the combined enrollment guidance
+	// response. Preserve those frozen runtimes by asking that same approved
+	// binary for its stricter stored projection. Nothing is accepted from the
+	// empty projection, and current binaries do not take this fallback.
+	if err != nil && releasedFinalGuidanceInventoryMissingV4(*r.CheckpointInspectionV4) {
+		c, err = i.StoredCheckpointV4(root, record, signature)
+	}
 	if err != nil {
 		return CheckpointInspectionV4{}, EnrollmentMetadataInspectionV4{}, err
 	}
@@ -204,6 +212,10 @@ func (i Inspector) CheckpointGuidanceV4(root, record, signature string) (Checkpo
 		}
 	}
 	return c, e, nil
+}
+
+func releasedFinalGuidanceInventoryMissingV4(p CheckpointInspectionV4) bool {
+	return p.Checkpoint.Progress.FinalRelease != nil && len(p.Commitments.FinalReleaseArtifacts) == 0
 }
 
 func validateEnrollmentMetadataV4(p EnrollmentMetadataInspectionV4) (EnrollmentMetadataInspectionV4, error) {
