@@ -3,12 +3,12 @@
   "aws_cli_image": "public.ecr.aws/aws-cli/aws-cli@sha256:b6aeb95d19d7f5a8cae4eb814cb16739b6b2a4f2f46f427ada6a8c9a20d9881d",
   "mpc": {
     "linux_amd64": {
-      "url": "https://github.com/zksecurity/proof-tool/releases/download/mpc-ci-47bec5663d04a4f8ac330fc38f126e6e7c1140f1/mpc-ceremony",
-      "sha256": "8a391ab1fe828723aa49af4676b13a102423cd841844ce9d0a0ee2f7279b7807"
+      "url": "https://github.com/zksecurity/proof-tool/releases/download/mpc-ci-0a6ec7f39527df06b1aebf8c1a60ff3a75759e89/mpc-ceremony",
+      "sha256": "db23d1ff01b714b7f3724747cb00567bdedbf87cc6ad88bb0efcba28e715764f"
     },
     "linux_arm64": {
-      "url": "https://github.com/zksecurity/proof-tool/releases/download/mpc-ci-47bec5663d04a4f8ac330fc38f126e6e7c1140f1/mpc-ceremony-linux-arm64",
-      "sha256": "6a2cb763fb7ea7455596ac4b80fbbf87416fa893718e89cfa5275a7378fde971"
+      "url": "https://github.com/zksecurity/proof-tool/releases/download/mpc-ci-0a6ec7f39527df06b1aebf8c1a60ff3a75759e89/mpc-ceremony-linux-arm64",
+      "sha256": "af3a7ff5ccd04ad51917e676442de08bf5ace6d19c97295614e9c54f9fc12b11"
     }
   }
 }

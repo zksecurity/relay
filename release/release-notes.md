@@ -67,6 +67,30 @@ release signer verifies the exact reviewed files and signatures but does not
 repeat that replay. Existing frozen ceremonies remain on their original
 schema-dispatched workflow.
 
+## Validation status and current limits
+
+- Repository tests, vet, launcher tests, the unsigned rehearsal build, and the
+  existing full-ceremony/archive-replay CI passed before the final proof-tool
+  pin update. The pinned proof-tool release assets and GitHub provenance were
+  verified against its exact protected-main commit.
+- A live Cloudflare R2 rehearsal with one participant in each phase completed
+  enrollment, all of Phase 1, and entered Phase 2 before the merge decision.
+  An earlier run reached coordinator replay and creation of the final release
+  candidate, but the test process exceeded its 30-minute harness timeout while
+  publishing that checkpoint. A terminal live final-release reconstruction was
+  not yet recorded at merge time.
+- A complete live Amazon S3 rehearsal has not yet been run for this version.
+- The storage-first guided path in this release supports the minimal required
+  roles: coordinator, participant, and release signer. Enabled witness, mirror,
+  or auditor journeys are deferred; setup refuses those nonzero assurance
+  requirements instead of starting an unfinishable ceremony.
+- The live rehearsal uses the tiny rehearsal circuit. It does not establish
+  production K=21 performance, independent human operators, or physical
+  erasure of host or VM remnants.
+- Storage-first Tessera ceremonies remain disabled until Tessera's compatible
+  setup-v3 and attempt-bound grant/status contract is deployed. Existing
+  Tessera ceremonies keep their pinned releases and behavior.
+
 ## Tessera compatibility
 
 The recovery command does not change setup contracts, signed definitions,
