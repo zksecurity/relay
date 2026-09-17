@@ -687,7 +687,9 @@ func verifySBOM(path, commit string) error {
 var pinnedModules = []debug.Module{
 	{Path: "github.com/cyberphone/json-canonicalization", Version: "v0.0.0-20241213102144-19d51d7fe467", Sum: "h1:uX1JmpONuD549D73r6cgnxyUu18Zb7yHAy5AYU0Pm4Q="},
 	{Path: "github.com/santhosh-tekuri/jsonschema/v6", Version: "v6.0.3", Sum: "h1:1EYB5IzjZawrrnELUi78f9fPu57HuXjmddZPjrls/28="},
-	{Path: "golang.org/x/text", Version: "v0.14.0", Sum: "h1:ScX5w1eTa3QqT8oi6+ziP7dTV1S2+ALU0bI+0zXKWiQ="},
+	{Path: "golang.org/x/crypto", Version: "v0.41.0", Sum: "h1:WKYxWedPGCTVVl5+WHSSrOBT0O8lx32+zxmHxijgXp4="},
+	{Path: "golang.org/x/sys", Version: "v0.35.0", Sum: "h1:vz1N37gP5bs89s7He8XuIYXpyY0+QlsKmzipCbUtyxI="},
+	{Path: "golang.org/x/text", Version: "v0.28.0", Sum: "h1:rhazDwis8INMIwQ4tpjLDzUhx6RlXqZNPEM0huQojng="},
 }
 
 func validatePinnedModules(deps []*debug.Module) error {
