@@ -45,6 +45,11 @@
   upload resumed only for its original signed allocation. Retiring an
   allocation requires a separately computed candidate under the replacement;
   Relay preserves the old files rather than rebinding them.
+- When a coordinator has transport-checked a complete candidate but
+  proof-tool cannot verify it, the guided workflow now offers an explicit
+  reviewed rejection. It preserves the received files, publishes a signed
+  rejection only after confirmation, and requires a fresh contribution for a
+  later allocation. It never rejects or replaces a candidate automatically.
 - V4 retained-operation files now record and recheck both SHA-256 and
   BLAKE2b-256, matching the signed protocol reference boundary.
 

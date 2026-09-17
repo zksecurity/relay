@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/zksecurity/relay/internal/storagefirst"
 	"github.com/zksecurity/relay/internal/transcript"
 )
 
@@ -55,6 +57,75 @@ func TestWorkflowV4CoordinatorCheckpointCommandsUseMountedPaths(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("command %q lacks %q", joined, want)
 		}
+	}
+}
+
+func TestWorkflowV4CoordinatorRejectCommandUsesExactPrivateCandidate(t *testing.T) {
+	work, trust, keys := t.TempDir(), t.TempDir(), t.TempDir()
+	for _, dir := range []string{filepath.Join(work, "ceremony", "public"), filepath.Join(work, "workflow-v4", "candidate"), trust, keys} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	online := guidedProfile{Role: "coordinator", Work: work, Trust: trust, Keys: keys}
+	signer := guidedProfile{Role: "decision-signer", Work: work, Trust: trust, Keys: keys}
+	scope := transcript.ContributionScopeV4{CeremonyID: "sha256:" + strings.Repeat("1", 64), Phase: "phase1", Index: 1, ParticipantID: "p", ParentHeadID: "sha256:" + strings.Repeat("2", 64)}
+	head := pairV4Test("head")
+	candidate := filepath.Join(work, "workflow-v4", "candidate")
+	intent := workflowV4CoordinatorIntent{Action: "reject", Scope: scope, AttemptID: strings.Repeat("a", 32), OutputDir: workflowV4CoordinatorCheckpointDir(work, scope, "reject", strings.Repeat("a", 32))}
+	command, err := workflowV4CheckpointCommand(signer, online, head, intent, "reject-candidate-v4", candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(command, " ")
+	for _, want := range []string{"checkpoint reject-candidate-v4", "--rejected-candidate-dir /work/workflow-v4/candidate", "--attempt-id " + intent.AttemptID} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("command %q lacks %q", joined, want)
+		}
+	}
+	if strings.Contains(joined, "--accepted-at") || strings.Contains(joined, "--candidate-dir") {
+		t.Fatalf("rejection command incorrectly looks like acceptance: %q", joined)
+	}
+	if _, err := workflowV4CheckpointCommand(signer, online, head, intent, "reject-candidate-v4", ""); err == nil {
+		t.Fatal("rejection accepted an empty candidate directory")
+	}
+}
+
+func TestWorkflowV4CoordinatorRejectLabelIsExplicit(t *testing.T) {
+	got := workflowV4CoordinatorActionLabel(storagefirst.TurnRecommendationV4{Action: "review-and-reject-candidate"}, workflowV4CoordinatorProgress{CandidateInspectionError: "bad signature"})
+	if got != "Review the received candidate and reject it if appropriate" {
+		t.Fatalf("label = %q", got)
+	}
+}
+
+func TestWorkflowV4CoordinatorInspectionFailureIsReviewable(t *testing.T) {
+	root := t.TempDir()
+	candidate := filepath.Join(root, "received-candidate")
+	if err := os.Mkdir(candidate, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	scope := transcript.ContributionScopeV4{CeremonyID: "sha256:" + strings.Repeat("1", 64), Phase: "phase1", Index: 1, ParticipantID: "p", ParentHeadID: "sha256:" + strings.Repeat("2", 64)}
+	phase := transcript.CheckpointPhaseState{Chain: pairV4Test("head")}
+	inspector := transcript.Inspector{
+		CeremonyPath:             filepath.Join(root, "ceremony.json"),
+		CeremonySignaturePath:    filepath.Join(root, "ceremony.sig"),
+		CoordinatorPublicKeyPath: filepath.Join(root, "coordinator.hex"),
+		TranscriptRoot:           root,
+		Runner: func(_ string, _ ...string) ([]byte, []byte, error) {
+			return nil, nil, errors.New("candidate signature is invalid")
+		},
+	}
+	inventory, inspectionErr, err := workflowV4CoordinatorInspectCandidate(inspector, phase, filepath.Join(root, "scope.json"), candidate, scope)
+	if err != nil || inventory != nil || inspectionErr == "" {
+		t.Fatalf("inventory=%+v inspectionErr=%q err=%v", inventory, inspectionErr, err)
+	}
+	turn := storagefirst.TurnViewV4{Scope: scope, CandidateAttempt: &transcript.DeliverySlotV4{AttemptID: strings.Repeat("a", 32)}}
+	recommendation, ok := workflowV4CoordinatorCandidateRecommendation(turn, workflowV4CoordinatorProgress{CandidateDir: candidate, CandidateInspectionError: inspectionErr})
+	if !ok || recommendation.Action != "review-and-reject-candidate" || !recommendation.Ready || recommendation.Scope != scope || recommendation.AttemptID != turn.CandidateAttempt.AttemptID {
+		t.Fatalf("recommendation = %+v, ok=%v", recommendation, ok)
+	}
+	if _, ok := workflowV4CoordinatorCandidateRecommendation(turn, workflowV4CoordinatorProgress{CandidateDir: candidate}); ok {
+		t.Fatal("candidate without an inspection error became rejectable")
 	}
 }
 

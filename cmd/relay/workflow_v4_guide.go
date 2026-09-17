@@ -270,6 +270,14 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 				coordinatorProgress, err = workflowV4CoordinatorProgressFor(snapshot, protocol, turn, binding, config, inspector, time.Now().UTC())
 				if err != nil {
 					ui.message(toneError, "Retained coordinator work could not be verified: %v\nNo operation was repeated.\n", err)
+				} else if candidateRecommendation, reviewCandidate := workflowV4CoordinatorCandidateRecommendation(turn, coordinatorProgress); reviewCandidate {
+					// The candidate directory exists only after the coordinator's
+					// atomic transport fetch checked the fixed five-file package.
+					// Do not silently discard it or automatically reject it: expose
+					// the one signed recovery transition for an explicit review.
+					ui.message(toneError, "Proof-tool could not verify the transport-checked candidate: %s\nReview the retained files before deciding whether to reject this attempt.\n", coordinatorProgress.CandidateInspectionError)
+					recommendation = candidateRecommendation
+					actionLabel = workflowV4CoordinatorActionLabel(recommendation, coordinatorProgress)
 				} else {
 					observed := ""
 					if coordinatorProgress.Local.CandidateReceivedAttemptID != "" {
@@ -355,6 +363,19 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 			fmt.Fprintln(ui.output, "Choose a displayed action, R or Q.")
 		}
 	}
+}
+
+func workflowV4CoordinatorCandidateRecommendation(turn storagefirst.TurnViewV4, progress workflowV4CoordinatorProgress) (storagefirst.TurnRecommendationV4, bool) {
+	if turn.CandidateAttempt == nil || progress.CandidateDir == "" || progress.CandidateInspectionError == "" {
+		return storagefirst.TurnRecommendationV4{}, false
+	}
+	return storagefirst.TurnRecommendationV4{
+		Action:    "review-and-reject-candidate",
+		Ready:     true,
+		Reason:    "the transport-checked candidate failed proof-tool verification; review it and explicitly reject it before a fresh replacement contribution.",
+		Scope:     turn.Scope,
+		AttemptID: turn.CandidateAttempt.AttemptID,
+	}, true
 }
 
 func printWorkflowV4Status(out io.Writer, role string, c transcript.CheckpointStateV4, turn storagefirst.TurnViewV4, pending *workflowV4Operation, checked time.Time) {

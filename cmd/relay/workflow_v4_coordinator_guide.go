@@ -15,13 +15,18 @@ import (
 )
 
 type workflowV4CoordinatorProgress struct {
-	Local               storagefirst.LocalTurnV4
-	GrantPath           string
-	CandidateDir        string
-	EnrollmentExpected  *transcript.ExpectedEnrollment
-	EnrollmentGrant     *access.StorageFirstGrant
-	EnrollmentGrantPath string
-	EnrollmentDir       string
+	Local        storagefirst.LocalTurnV4
+	GrantPath    string
+	CandidateDir string
+	// CandidateInspectionError is set only after the coordinator has a
+	// transport-checked five-file candidate directory for the active attempt.
+	// It deliberately does not make rejection automatic: the coordinator must
+	// explicitly decide whether to publish a signed rejection checkpoint.
+	CandidateInspectionError string
+	EnrollmentExpected       *transcript.ExpectedEnrollment
+	EnrollmentGrant          *access.StorageFirstGrant
+	EnrollmentGrantPath      string
+	EnrollmentDir            string
 }
 
 type workflowV4CoordinatorIntent struct {
@@ -148,18 +153,39 @@ func workflowV4CoordinatorProgressFor(snapshot storagefirst.SnapshotV4, protocol
 			}
 			phaseState = *state.Progress.Phase2
 		}
-		chain := filepath.Join(inspector.TranscriptRoot, filepath.FromSlash(phaseState.Chain.Record.Name))
-		signature := filepath.Join(inspector.TranscriptRoot, filepath.FromSlash(phaseState.Chain.Signature.Name))
-		inventory, err := inspector.ContributionInventoryV4(chain, signature, scopePath, progress.CandidateDir, view.Scope, phaseState.Chain)
+		inventory, inspectionErr, err := workflowV4CoordinatorInspectCandidate(inspector, phaseState, scopePath, progress.CandidateDir, view.Scope)
 		if err != nil {
-			return progress, fmt.Errorf("verify retained five-file candidate: %w", err)
+			return progress, err
 		}
-		progress.Local.CandidateInventory = &inventory
+		if inspectionErr != "" {
+			// fetch-candidate-v4 creates this directory only after the delivery
+			// manifest and every fixed candidate byte have been checked. A failed
+			// proof-tool inspection is therefore a review decision, not a reason
+			// to discard the immutable downloaded package or to hide the recovery
+			// path behind a generic error.
+			progress.CandidateInspectionError = inspectionErr
+			return progress, nil
+		}
+		progress.Local.CandidateInventory = inventory
 		progress.Local.ComputedCandidateID = inventory.ComputedCandidateID
 		progress.Local.CandidateResultID = inventory.CandidateResultID
 		progress.Local.CandidateReceivedAttemptID = attempt
 	}
 	return progress, nil
+}
+
+// workflowV4CoordinatorInspectCandidate is deliberately narrow: only an
+// approved proof-tool candidate-inspection failure becomes a reviewable
+// rejected-candidate path. Errors resolving the authenticated state stay
+// fatal in workflowV4CoordinatorProgressFor.
+func workflowV4CoordinatorInspectCandidate(inspector transcript.Inspector, phaseState transcript.CheckpointPhaseState, scopePath, candidateDir string, scope transcript.ContributionScopeV4) (*transcript.ContributionInventoryFactsV4, string, error) {
+	chain := filepath.Join(inspector.TranscriptRoot, filepath.FromSlash(phaseState.Chain.Record.Name))
+	signature := filepath.Join(inspector.TranscriptRoot, filepath.FromSlash(phaseState.Chain.Signature.Name))
+	inventory, err := inspector.ContributionInventoryV4(chain, signature, scopePath, candidateDir, scope, phaseState.Chain)
+	if err != nil {
+		return nil, err.Error(), nil
+	}
+	return &inventory, "", nil
 }
 
 func workflowV4CoordinatorActionLabel(recommendation storagefirst.TurnRecommendationV4, progress workflowV4CoordinatorProgress) string {
@@ -182,6 +208,8 @@ func workflowV4CoordinatorActionLabel(recommendation storagefirst.TurnRecommenda
 		return "Download and verify the uploaded five-file candidate"
 	case "verify-and-accept-candidate":
 		return "Replay, verify and accept the exact candidate"
+	case "review-and-reject-candidate":
+		return "Review the received candidate and reject it if appropriate"
 	}
 	return ""
 }
@@ -198,6 +226,8 @@ func runWorkflowV4CoordinatorAction(ui *coordinatorWizard, snapshot storagefirst
 		return runWorkflowV4CoordinatorFetch(ui, config, online, snapshot, view, progress)
 	case "verify-and-accept-candidate":
 		return runWorkflowV4CoordinatorAcceptance(ui, snapshot, online, signer, view, progress)
+	case "review-and-reject-candidate":
+		return runWorkflowV4CoordinatorRejection(ui, snapshot, online, signer, view, progress)
 	default:
 		return fmt.Errorf("current signed state does not authorize a coordinator action: %s", recommendation.Reason)
 	}
@@ -306,6 +336,33 @@ func runWorkflowV4CoordinatorAcceptance(ui *coordinatorWizard, snapshot storagef
 	return runWorkflowV4CommitCommand(online, intent.OutputDir)
 }
 
+func runWorkflowV4CoordinatorRejection(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, online, signer guidedProfile, view storagefirst.TurnViewV4, progress workflowV4CoordinatorProgress) error {
+	if view.CandidateAttempt == nil || progress.CandidateDir == "" || progress.CandidateInspectionError == "" {
+		return errors.New("a transport-checked candidate that failed proof-tool inspection is required")
+	}
+	intentPath := filepath.Join(workflowV4CoordinatorTurnDir(online.Work, view.Scope), "rejection-"+view.CandidateAttempt.AttemptID+"-intent.json")
+	outputDir := workflowV4CoordinatorCheckpointDir(online.Work, view.Scope, "reject", view.CandidateAttempt.AttemptID)
+	intent, err := loadOrCreateWorkflowV4CoordinatorIntent(intentPath, "reject", snapshot.Head(), view.Scope, view.CandidateAttempt.AttemptID, outputDir)
+	if err != nil {
+		return err
+	}
+	if err := ui.confirm("Reject this exact transport-checked candidate. Its five private files stay retained for investigation; a later allocation requires a fresh contribution.", "REJECT CANDIDATE"); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(filepath.Join(intent.OutputDir, "checkpoint.json")); errors.Is(err, os.ErrNotExist) {
+		command, err := workflowV4CheckpointCommand(signer, online, snapshot.Head(), intent, "reject-candidate-v4", progress.CandidateDir)
+		if err != nil {
+			return err
+		}
+		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	return runWorkflowV4CommitCommand(online, intent.OutputDir)
+}
+
 func workflowV4CoordinatorTurnDir(work string, scope transcript.ContributionScopeV4) string {
 	return filepath.Join(work, "workflow-v4", "coordinator", scope.Phase+"-"+fmt.Sprintf("%02d", scope.Index)+"-"+scope.ParticipantID)
 }
@@ -368,10 +425,21 @@ func workflowV4CheckpointCommand(signer, online guidedProfile, head transcript.S
 	coordinatorKey, _ := pathWithin(signer.Trust, filepath.Join(online.Trust, "setup-coordinator.hex"), "/trust")
 	artifactRoot, _ := pathWithin(signer.Work, root, "/work")
 	command := []string{"mpc-ceremony", "checkpoint", action, "--ceremony", ceremony, "--ceremony-signature", ceremonySig, "--coordinator-public-key-file", coordinatorKey, "--artifact-root", artifactRoot, "--checkpoint", container[0], "--checkpoint-signature", container[1], "--attempt-id", intent.AttemptID, "--coordinator-signing-key", "/keys/signing.hex", "--out-dir", container[2]}
-	if action == "allocate-v4" {
+	switch action {
+	case "allocate-v4":
 		command = append(command, "--allocated-at", intent.At)
-	} else {
+	case "accept-candidate-v4":
+		if candidate == "" {
+			return nil, errors.New("candidate directory required for acceptance")
+		}
 		command = append(command, "--candidate-dir", container[3], "--accepted-at", intent.At)
+	case "reject-candidate-v4":
+		if candidate == "" {
+			return nil, errors.New("candidate directory required for rejection")
+		}
+		command = append(command, "--rejected-candidate-dir", container[3])
+	default:
+		return nil, fmt.Errorf("unsupported V4 checkpoint command %q", action)
 	}
 	return command, nil
 }
