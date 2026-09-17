@@ -210,6 +210,50 @@ func TestQuarantineWorkflowV4CandidateDownloadPreservesIncompleteAttempt(t *test
 	}
 }
 
+func TestQuarantineWorkflowV4CandidateDownloadRecoversRenameBeforeReceipt(t *testing.T) {
+	root := t.TempDir()
+	candidate := filepath.Join(root, "candidates", "attempt")
+	if err := os.MkdirAll(candidate, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(candidate, "contribution.bin"), []byte("downloaded before crash"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := quarantineWorkflowV4CandidateDownload(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(workflowV4CandidateFetchReceiptPath(candidate)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unexpected receipt after rename-before-receipt recovery: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(retained, "candidate", "contribution.bin")); err != nil {
+		t.Fatalf("candidate from rename-before-receipt crash was not preserved: %v", err)
+	}
+}
+
+func TestQuarantineWorkflowV4CandidateDownloadPreservesUnexpectedPathType(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "other")
+	if err := os.WriteFile(target, []byte("not a candidate directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	candidate := filepath.Join(root, "candidates", "attempt")
+	if err := os.MkdirAll(filepath.Dir(candidate), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, candidate); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := quarantineWorkflowV4CandidateDownload(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(filepath.Join(retained, "candidate"))
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("unexpected retained path after corrupt local candidate: info=%v err=%v", info, err)
+	}
+}
+
 func pairV4Test(seed string) transcript.SignedArtifactRefs {
 	digest := func(s string) transcript.Digest {
 		return transcript.Digest{SHA256: "sha256:" + strings.Repeat(s, 64), Blake2b256: "blake2b256:" + strings.Repeat(s, 64), Size: 10}

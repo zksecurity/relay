@@ -136,8 +136,9 @@ func workflowV4CoordinatorProgressFor(snapshot storagefirst.SnapshotV4, protocol
 	}
 	progress.CandidateDir = filepath.Join(base, "candidates", attempt)
 	if info, err := os.Lstat(progress.CandidateDir); err == nil {
-		if !info.IsDir() {
-			return progress, errors.New("retained candidate path is not a directory")
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			progress.CandidateTransportError = "retained candidate path is not a regular directory"
+			return progress, nil
 		}
 		if err := validateWorkflowV4CandidateFetchReceipt(progress.CandidateDir, view.Scope, attempt); err != nil {
 			progress.CandidateTransportError = err.Error()

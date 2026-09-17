@@ -48,10 +48,11 @@
 - When a coordinator has transport-checked a complete candidate and proof-tool
   classifies its authenticated candidate semantics as invalid, the guided
   workflow now offers an explicit reviewed rejection. Relay keeps a private
-  receipt and rechecks every retained transport byte before that option appears
-  and immediately before accepting or rejecting it. If an interrupted download
-  leaves no valid receipt, Relay preserves that local copy and fetches the same
-  signed attempt again into a fresh folder; it never overwrites the old files.
+  receipt and rechecks every retained candidate payload byte before that option
+  appears and immediately before accepting or rejecting it. If an interrupted
+  download leaves no valid receipt, Relay preserves that local copy and fetches
+  the same signed attempt again into a fresh folder; it never overwrites the old
+  files.
   Runtime, trust, path and I/O failures remain blocking rather than being
   labelled invalid. Rejection preserves the received files, publishes a signed
   rejection only after confirmation, and requires a fresh contribution for a

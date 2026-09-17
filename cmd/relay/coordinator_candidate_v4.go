@@ -116,31 +116,51 @@ func workflowV4CandidateFetchReceiptPath(candidateDir string) string {
 }
 
 // quarantineWorkflowV4CandidateDownload preserves an incomplete or changed
-// local download before a fresh fetch. It never overwrites evidence from the
-// interrupted attempt; the new fetch still has to pass the same authenticated
-// manifest and fixed-file checks.
+// local download before a fresh fetch. It creates a new retained directory and
+// syncs both sides of each move, so it never overwrites prior local evidence.
+// The new fetch still has to pass the same authenticated manifest and fixed
+// five-file payload checks.
 func quarantineWorkflowV4CandidateDownload(candidateDir string) (string, error) {
-	id, err := randomID()
+	parent := filepath.Dir(candidateDir)
+	retainedRoot := filepath.Join(parent, "retained")
+	if err := os.MkdirAll(retainedRoot, 0o700); err != nil {
+		return "", err
+	}
+	if err := syncDirectory(parent); err != nil {
+		return "", err
+	}
+	retained, err := os.MkdirTemp(retainedRoot, filepath.Base(candidateDir)+"-")
 	if err != nil {
 		return "", err
 	}
-	retained := filepath.Join(filepath.Dir(candidateDir), "retained", filepath.Base(candidateDir)+"-"+id)
-	if err := os.MkdirAll(retained, 0o700); err != nil {
+	if err := syncDirectory(retainedRoot); err != nil {
 		return "", err
+	}
+	move := func(source, destination string) error {
+		if _, err := os.Lstat(destination); !errors.Is(err, os.ErrNotExist) {
+			if err == nil {
+				return errors.New("retained recovery destination already exists")
+			}
+			return err
+		}
+		if err := os.Rename(source, destination); err != nil {
+			return err
+		}
+		if err := syncDirectory(filepath.Dir(source)); err != nil {
+			return err
+		}
+		return syncDirectory(filepath.Dir(destination))
 	}
 	receipt := workflowV4CandidateFetchReceiptPath(candidateDir)
 	if _, err := os.Lstat(receipt); err == nil {
-		if err := os.Rename(receipt, filepath.Join(retained, "transport-receipt.json")); err != nil {
+		if err := move(receipt, filepath.Join(retained, "transport-receipt.json")); err != nil {
 			return "", fmt.Errorf("preserve candidate transport receipt: %w", err)
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", err
 	}
-	if err := os.Rename(candidateDir, filepath.Join(retained, "candidate")); err != nil {
+	if err := move(candidateDir, filepath.Join(retained, "candidate")); err != nil {
 		return "", fmt.Errorf("preserve candidate download: %w", err)
-	}
-	if err := syncDirectory(filepath.Dir(candidateDir)); err != nil {
-		return "", err
 	}
 	return retained, nil
 }
