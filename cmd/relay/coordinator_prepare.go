@@ -211,6 +211,10 @@ func (d coordinatorDraft) validate() error {
 		if d.Mode == "rehearsal" && d.Policy.Assurance.ExternalSecurityAuditSignoffs != 0 {
 			return errors.New("rehearsals cannot require external security-audit signoffs")
 		}
+		if d.Policy.Assurance.PublicWitnessesPerPhase != 0 || d.Policy.Assurance.MirrorsPerAcceptedHead != 0 ||
+			d.Policy.Assurance.PassingCeremonyAudits != 0 || d.Policy.Assurance.ExternalSecurityAuditSignoffs != 0 {
+			return errors.New("this Relay release does not yet guide enabled witness, mirror, or audit journeys; disable all optional assurance controls")
+		}
 	}
 	return nil
 }
@@ -655,16 +659,16 @@ func (w *coordinatorWizard) policy() error {
 			return err
 		}
 	}
-	currentAssurance := setupAssurance{PublicWitnessesPerPhase: 1, MirrorsPerAcceptedHead: 1, PassingCeremonyAudits: 1}
+	currentAssurance := setupAssurance{}
 	if policy.Assurance != nil {
 		currentAssurance = *policy.Assurance
 	}
 	assuranceChoices := []setupChoice{
-		{"recommended", "Recommended defaults — witnesses, mirrors and ceremony audit enabled"},
-		{"none", "Minimal ceremony — disable witnesses, mirrors and both audit requirements"},
-		{"custom", "Choose each requirement"},
+		{"none", "Recommended for this release — disable optional witnesses, mirrors and audits"},
+		{"enabled", "Future workflow — enable witnesses, mirrors or audits (not available in this release)"},
+		{"custom", "Advanced — choose each requirement (nonzero values are not available in this release)"},
 	}
-	assuranceDefault := "recommended"
+	assuranceDefault := "none"
 	if policy.Assurance != nil {
 		assuranceChoices = append([]setupChoice{{"current", "Keep the saved assurance requirements"}}, assuranceChoices...)
 		assuranceDefault = "current"
@@ -675,7 +679,7 @@ func (w *coordinatorWizard) policy() error {
 	}
 	switch assuranceChoice {
 	case "current":
-	case "recommended":
+	case "enabled":
 		currentAssurance = setupAssurance{PublicWitnessesPerPhase: 1, MirrorsPerAcceptedHead: 1, PassingCeremonyAudits: 1}
 	case "none":
 		currentAssurance = setupAssurance{}
@@ -707,18 +711,26 @@ func (w *coordinatorWizard) policy() error {
 	if currentAssurance.PassingCeremonyAudits > uint8(len(w.d.Identities.Auditors)) {
 		return fmt.Errorf("%d ceremony audits require at least that many assigned auditors", currentAssurance.PassingCeremonyAudits)
 	}
-	if currentAssurance.PassingCeremonyAudits == 0 && len(w.d.Identities.Auditors) != 0 {
-		return errors.New("zero ceremony audits requires removing auditor assignments from this draft")
-	}
+	removeAuditors := currentAssurance.PassingCeremonyAudits == 0 && len(w.d.Identities.Auditors) != 0
 	if w.d.Mode == "rehearsal" && currentAssurance.ExternalSecurityAuditSignoffs != 0 {
 		return errors.New("rehearsals must set external security-audit signoffs to zero")
+	}
+	if currentAssurance.PublicWitnessesPerPhase != 0 || currentAssurance.MirrorsPerAcceptedHead != 0 ||
+		currentAssurance.PassingCeremonyAudits != 0 || currentAssurance.ExternalSecurityAuditSignoffs != 0 {
+		return errors.New("enabled witness, mirror, and audit journeys are not available in this Relay release; choose the recommended disabled option")
 	}
 	policy.Assurance = &currentAssurance
 	b = policy.Beacon
 	fmt.Fprintf(w.output, "Beacon: %s / %s. The selected future beacon round is at least %d seconds after closure. Future round required: %t.\nThe beacon provides public randomness after contributions close; Relay does not substitute another round.\nChain hash: %s\nPublic key: %s\n", b.Provider, b.Network, b.Lead, b.Future, b.ChainHash, b.PublicKey)
 	fmt.Fprintf(w.output, "Optional assurance: %d witness(es) per phase; %d mirror confirmation(s) per accepted contribution; %d passing ceremony audit(s); %d external security-audit signoff(s).\n", currentAssurance.PublicWitnessesPerPhase, currentAssurance.MirrorsPerAcceptedHead, currentAssurance.PassingCeremonyAudits, currentAssurance.ExternalSecurityAuditSignoffs)
+	if removeAuditors {
+		fmt.Fprintf(w.output, "Disabling ceremony audits will remove %d auditor assignment(s) from this unsigned draft. Their local keys and identity files are not deleted.\n", len(w.d.Identities.Auditors))
+	}
 	if err := w.confirm("Review these beacon settings and the participant orders/minimums you selected; proof-tool still validates the complete policy before signing", "REVIEWED"); err != nil {
 		return err
+	}
+	if removeAuditors {
+		w.d.Identities.Auditors = nil
 	}
 	w.d.Policy = policy
 	w.d.PolicyTemplate = path

@@ -289,7 +289,8 @@ func TestCoordinatorPolicyAllowsReviewedShortProductionBeaconWait(t *testing.T) 
 	w := setupFixture(t)
 	w.d.Mode = "production"
 	w.d.Circuit = "ownership-destination-v2"
-	w.d.Policy.Assurance = &setupAssurance{PassingCeremonyAudits: 1}
+	w.d.Identities.Auditors = nil
+	w.d.Policy.Assurance = &setupAssurance{}
 	w.input = bufio.NewReader(strings.NewReader("\n\n\n\n\n12\nUSE SHORTER PRODUCTION WAIT\n\nREVIEWED\n"))
 	if err := w.policy(); err != nil {
 		t.Fatal(err)
@@ -312,6 +313,15 @@ func TestCoordinatorDraftAllowsExplicitlyDisabledOptionalAssurance(t *testing.T)
 	w.d.Policy.Assurance = nil
 	if err := w.d.validate(); err == nil {
 		t.Fatal("legacy policy without its required auditor accepted")
+	}
+}
+
+func TestCoordinatorDraftRejectsOptionalAssuranceWithoutGuidedJourneys(t *testing.T) {
+	w := setupFixture(t)
+	w.d.Identities.Auditors = nil
+	w.d.Policy.Assurance = &setupAssurance{PublicWitnessesPerPhase: 1}
+	if err := w.d.validate(); err == nil || !strings.Contains(err.Error(), "does not yet guide enabled witness") {
+		t.Fatalf("unsupported enabled assurance validation = %v", err)
 	}
 }
 

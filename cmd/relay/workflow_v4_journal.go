@@ -243,8 +243,8 @@ func (j *workflowV4Journal) prepare(plan workflowV4OperationPlan) error {
 		return err
 	}
 	for _, earlier := range j.state.Operations {
-		if earlier.Status != "abandoned" && earlier.Status != "failed-no-effects" && plan.Kind == "contribute" && earlier.Plan.Kind == plan.Kind && earlier.Plan.Scope == plan.Scope {
-			return errors.New("this turn already has a computation operation; inspect its retained result instead of computing again")
+		if earlier.Status != "abandoned" && earlier.Status != "failed-no-effects" && plan.Kind == "contribute" && earlier.Plan.Kind == plan.Kind && earlier.Plan.Scope == plan.Scope && (earlier.Plan.AttemptID == plan.AttemptID || earlier.Plan.Allocation == plan.Allocation) {
+			return errors.New("this signed allocation already has a computation operation; inspect its retained result instead of computing again")
 		}
 	}
 	if err := workflowV4OutputsAbsent(plan); err != nil {
@@ -435,7 +435,16 @@ func validateWorkflowV4State(s workflowV4State, binding workflowV4Binding, path 
 		return errors.New("invalid or full V4 operation journal")
 	}
 	ids := make(map[string]bool)
-	computations := make(map[transcript.ContributionScopeV4]bool)
+	type computationAttemptKey struct {
+		Scope     transcript.ContributionScopeV4
+		AttemptID string
+	}
+	type computationAllocationKey struct {
+		Scope      transcript.ContributionScopeV4
+		Allocation transcript.SignedArtifactRefs
+	}
+	computationAttempts := make(map[computationAttemptKey]bool)
+	computationAllocations := make(map[computationAllocationKey]bool)
 	for n, op := range s.Operations {
 		if ids[op.Plan.ID] {
 			return errors.New("duplicate V4 operation ID")
@@ -445,10 +454,13 @@ func validateWorkflowV4State(s workflowV4State, binding workflowV4Binding, path 
 			return err
 		}
 		if op.Plan.Kind == "contribute" && op.Status != "abandoned" && op.Status != "failed-no-effects" {
-			if computations[op.Plan.Scope] {
-				return errors.New("V4 journal repeats a computation for the same turn")
+			attempt := computationAttemptKey{Scope: op.Plan.Scope, AttemptID: op.Plan.AttemptID}
+			allocation := computationAllocationKey{Scope: op.Plan.Scope, Allocation: op.Plan.Allocation}
+			if computationAttempts[attempt] || computationAllocations[allocation] {
+				return errors.New("V4 journal repeats a computation for the same signed allocation")
 			}
-			computations[op.Plan.Scope] = true
+			computationAttempts[attempt] = true
+			computationAllocations[allocation] = true
 		}
 		if op.Prepared.IsZero() {
 			return errors.New("missing V4 operation preparation time")

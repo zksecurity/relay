@@ -134,13 +134,6 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 			return answer("inspect-retained-operation", true, "A recorded upload has no matching retained artifact and exact delivery attempt. Inspect existing work before signing or computing again.")
 		}
 	}
-	if local.CandidateResultID != "" && view.Stage != TurnAcceptedV4 {
-		for _, prior := range c.Deliveries {
-			if prior.Scope == view.Scope && prior.Status == "rejected" && prior.ContributionResultID == local.CandidateResultID {
-				return answer("inspect-rejected-result", true, "This exact result was rejected. Do not upload it on a replacement attempt or recompute automatically.")
-			}
-		}
-	}
 	if role == Participant && local.GeneratedOutput != nil && local.ComputedCandidateID == "" && (view.Stage == TurnCandidateV4 || view.Stage == TurnReallocateV4) {
 		return answer("confirm-cleanup-and-sign-attestation", true, "Computation output is verified. Check container cleanup and confirm your precautions before signing the cleanup statement; do not contribute again.")
 	}
@@ -167,7 +160,7 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 		if role == Coordinator {
 			return answer("allocate-replacement-attempt", true, "No active upload attempt remains; review retained work before allocating a replacement.")
 		}
-		return answer("wait-for-replacement-attempt", false, "Keep any completed candidate; the coordinator must allocate a replacement transport attempt.")
+		return answer("wait-for-replacement-attempt", false, "Keep the rejected candidate as history. The coordinator must allocate a replacement before you make one fresh contribution.")
 	}
 	slot := view.CandidateAttempt
 	if slot == nil {

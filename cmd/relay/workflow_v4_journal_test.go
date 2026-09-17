@@ -294,6 +294,66 @@ func TestWorkflowV4JournalAllowsExplicitNewComputationAfterProvenNoEffect(t *tes
 	}
 }
 
+func TestWorkflowV4JournalAllowsFreshReplacementAllocationAfterRejection(t *testing.T) {
+	protocol, binding := workflowV4TestBinding(t)
+	j, err := openWorkflowV4Journal(protocol, binding.Definition, binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer j.close()
+	first := workflowV4TestPlan(t, binding)
+	if err := j.prepare(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.transition(first.ID, "running"); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.transition(first.ID, "reconciled"); err != nil {
+		t.Fatal(err)
+	}
+
+	second := retargetWorkflowV4TestPlan(t, first, strings.Repeat("2", 32))
+	oldAllocation := second.Allocation
+	second.AttemptID = strings.Repeat("b", 32)
+	second.Allocation = transcript.SignedArtifactRefs{
+		Record:    workflowV4TestRef("checkpoints/0002/checkpoint.json", "replacement-checkpoint"),
+		Signature: workflowV4TestRef("checkpoints/0002/checkpoint.sig", "replacement-checkpoint-signature"),
+	}
+	for n := range second.Inputs {
+		var contents string
+		switch second.Inputs[n].Ref {
+		case oldAllocation.Record:
+			second.Inputs[n].Ref = second.Allocation.Record
+			contents = "replacement-checkpoint"
+		case oldAllocation.Signature:
+			second.Inputs[n].Ref = second.Allocation.Signature
+			contents = "replacement-checkpoint-signature"
+		default:
+			continue
+		}
+		second.Inputs[n].Path = filepath.Join(binding.Work, "workflow-v4", "inputs", second.ID, filepath.FromSlash(second.Inputs[n].Ref.Name))
+		if err := os.MkdirAll(filepath.Dir(second.Inputs[n].Path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(second.Inputs[n].Path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for n := range second.Command {
+		switch second.Command[n] {
+		case first.AttemptID:
+			second.Command[n] = second.AttemptID
+		case "/work/workflow-v4/inputs/" + second.ID + "/" + oldAllocation.Record.Name:
+			second.Command[n] = "/work/workflow-v4/inputs/" + second.ID + "/" + second.Allocation.Record.Name
+		case "/work/workflow-v4/inputs/" + second.ID + "/" + oldAllocation.Signature.Name:
+			second.Command[n] = "/work/workflow-v4/inputs/" + second.ID + "/" + second.Allocation.Signature.Name
+		}
+	}
+	if err := j.prepare(second); err != nil {
+		t.Fatalf("fresh replacement allocation was blocked: %v", err)
+	}
+}
+
 func TestWorkflowV4JournalFailedSaveStopsSameProcess(t *testing.T) {
 	for _, afterRename := range []bool{false, true} {
 		t.Run(map[bool]string{false: "before-rename", true: "after-rename"}[afterRename], func(t *testing.T) {

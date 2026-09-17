@@ -60,7 +60,8 @@ func TestV4ParticipantTurnRecommendationsAndRetries(t *testing.T) {
 			local.UploadedArtifactID = local.CandidateResultID
 			c.Deliveries[0].ContributionResultID = local.CandidateResultID
 			check("wait-for-candidate-acceptance", false)
-			c.Deliveries[0].Status = "retired"
+			c.Deliveries[0].Status = "rejected"
+			c.Deliveries[0].ContributionResultID = local.CandidateResultID
 			check("wait-for-replacement-attempt", false)
 			replacement := strings.Repeat("cd", 16)
 			c.Deliveries = append(c.Deliveries, transcript.DeliverySlotV4{Scope: view.Scope, Kind: "candidate", AttemptID: replacement, Status: "allocated"})
@@ -68,16 +69,13 @@ func TestV4ParticipantTurnRecommendationsAndRetries(t *testing.T) {
 			local.Grant = &TurnGrantV4{AttemptID: replacement, ExpiresAt: now.Add(time.Hour)}
 			check("contribute", true)
 			// A fresh computation under the replacement allocation can now be
-			// uploaded and accepted; the retired candidate is never reused.
+			// uploaded and accepted; the rejected candidate is never reused.
 			local.CandidateAttemptID = replacement
+			local.ComputedCandidateID = sum([]byte("replacement-computed-five-files"))
+			local.CandidateResultID = sum([]byte("replacement-result-five-files"))
 			local.UploadedAttemptID = ""
 			local.UploadedArtifactID = ""
 			check("upload-candidate", true)
-			c.Deliveries[0].Status = "rejected"
-			c.Deliveries[0].ContributionResultID = local.CandidateResultID
-			check("inspect-rejected-result", true)
-			c.Deliveries[0].Status = "retired"
-			c.Deliveries[0].ContributionResultID = ""
 			c.Deliveries[1].Status = "accepted"
 			c.Deliveries[1].ContributionResultID = local.CandidateResultID
 			index.Turns[0].AcceptedChain = &transcript.AcceptedChainCommitmentV4{AttemptID: replacement, ContributionResultID: local.CandidateResultID}
