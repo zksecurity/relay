@@ -42,9 +42,12 @@
 - Retained setup v2, setup v2 revision 2, and their existing ceremony behavior
   for already pinned releases.
 
-This is still a draft protocol release. The ordinary coordinator and role
-menus are not yet connected to the storage-first execution path, so it must not
-be selected for a production ceremony.
+The ordinary coordinator, participant, and required release-signer journeys
+now derive their next action from authenticated storage state. The coordinator
+must complete the full mathematical replay before final release; the required
+release signer verifies the exact reviewed files and signatures but does not
+repeat that replay. Existing frozen ceremonies remain on their original
+schema-dispatched workflow.
 
 ## Tessera compatibility
 
@@ -65,5 +68,5 @@ The additive export menu key does not renumber existing actions. No proof-tool
 or website change is needed for local bug-report export. Existing role folders
 begin recording diagnostics when opened with a compatible updated launcher.
 Tessera needs its matching setup-v3 contract and policy-driven role/evidence
-handling before this workflow can be enabled. Existing Tessera ceremonies stay
-pinned to their prior setup contract and Relay release.
+handling before storage-first Tessera ceremonies can be enabled. Existing
+Tessera ceremonies stay pinned to their prior setup contract and Relay release.
