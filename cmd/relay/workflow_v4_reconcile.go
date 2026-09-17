@@ -105,6 +105,7 @@ func (j *workflowV4Journal) reconcileCandidateOperation(id, scopeFile, dockerCLI
 			return err
 		}
 		facts.Scope = p.Scope
+		facts.CandidateAttemptID = p.AttemptID
 		facts.GeneratedOutput = &generated
 		if p.Kind == "attest-erasure" {
 			inventory, err := i.ContributionInventoryV4(chain, signature, scopeFile, candidate, p.Scope, p.Predecessor)

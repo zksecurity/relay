@@ -241,7 +241,7 @@ func runWorkflowV4ParticipantUpload(ui *coordinatorWizard, j *workflowV4Journal,
 		}
 	}
 	if pending.Plan.AttemptID != view.CandidateAttempt.AttemptID {
-		return errors.New("retained upload belongs to a retired attempt; keep the candidate and prepare a replacement upload")
+		return errors.New("retained upload belongs to a retired attempt; preserve it and make a fresh contribution for the replacement allocation")
 	}
 	switch pending.Status {
 	case "prepared":

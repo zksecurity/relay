@@ -52,6 +52,7 @@ func TestV4ParticipantTurnRecommendationsAndRetries(t *testing.T) {
 			check("confirm-cleanup-and-sign-attestation", true)
 			local.ComputedCandidateID = sum([]byte("computed-five-files"))
 			local.CandidateResultID = sum([]byte("result-five-files"))
+			local.CandidateAttemptID = attempt
 			check("get-candidate-grant", false)
 			local.Grant = &TurnGrantV4{AttemptID: attempt, ExpiresAt: now.Add(time.Hour)}
 			check("upload-candidate", true)
@@ -65,6 +66,12 @@ func TestV4ParticipantTurnRecommendationsAndRetries(t *testing.T) {
 			c.Deliveries = append(c.Deliveries, transcript.DeliverySlotV4{Scope: view.Scope, Kind: "candidate", AttemptID: replacement, Status: "allocated"})
 			index.Turns[0].Allocations = append([]transcript.CandidateAllocationV4{{CheckpointSequence: 2, Checkpoint: allocationPairV4(2), AttemptID: replacement, AllocatedAt: now.Add(time.Minute).Format(time.RFC3339)}}, index.Turns[0].Allocations...)
 			local.Grant = &TurnGrantV4{AttemptID: replacement, ExpiresAt: now.Add(time.Hour)}
+			check("contribute", true)
+			// A fresh computation under the replacement allocation can now be
+			// uploaded and accepted; the retired candidate is never reused.
+			local.CandidateAttemptID = replacement
+			local.UploadedAttemptID = ""
+			local.UploadedArtifactID = ""
 			check("upload-candidate", true)
 			c.Deliveries[0].Status = "rejected"
 			c.Deliveries[0].ContributionResultID = local.CandidateResultID

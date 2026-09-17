@@ -112,26 +112,19 @@ func workflowV4UploadFixture(t *testing.T) (*workflowV4Journal, workflowV4Operat
 	return j, cleanup, inventory
 }
 
-func TestWorkflowV4UploadUsesActiveReplacementAttemptAndCanBePrepared(t *testing.T) {
+func TestWorkflowV4UploadRejectsReplacementAttemptForRetainedCandidate(t *testing.T) {
 	j, cleanup, inventory := workflowV4UploadFixture(t)
 	defer j.close()
 	replacement := strings.Repeat("b", 32)
-	plan, err := j.prepareWorkflowV4Upload(cleanup.ID, replacement, inventory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plan.AttemptID != replacement || plan.AttemptID == cleanup.AttemptID {
-		t.Fatalf("upload attempt = %q", plan.AttemptID)
-	}
-	if err := j.prepare(plan); err != nil {
-		t.Fatalf("prepared upload plan was not executable: %v", err)
+	if _, err := j.prepareWorkflowV4Upload(cleanup.ID, replacement, inventory); err == nil || !strings.Contains(err.Error(), "fresh contribution") {
+		t.Fatalf("replacement candidate upload = %v, want rejection", err)
 	}
 }
 
 func TestWorkflowV4UploadExactResumePublishesManifestLast(t *testing.T) {
 	j, cleanup, inventory := workflowV4UploadFixture(t)
 	defer j.close()
-	attempt := strings.Repeat("b", 32)
+	attempt := cleanup.AttemptID
 	plan, err := j.prepareWorkflowV4Upload(cleanup.ID, attempt, inventory)
 	if err != nil {
 		t.Fatal(err)

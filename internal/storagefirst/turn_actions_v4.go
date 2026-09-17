@@ -25,8 +25,12 @@ type LocalTurnV4 struct {
 	// GeneratedOutput is reconstructed by the three-file proof-tool inspection
 	// only after reconciling the original contributor container's absence.
 	// It does not establish cleanup confirmation or authorize uploading.
-	GeneratedOutput            *transcript.ComputationOutputFactsV4
-	CandidateInventory         *transcript.ContributionInventoryFactsV4
+	GeneratedOutput    *transcript.ComputationOutputFactsV4
+	CandidateInventory *transcript.ContributionInventoryFactsV4
+	// CandidateAttemptID is the signed allocation under which the retained
+	// candidate was computed. It cannot move to a later allocation: proof-tool
+	// verifies that allocation precedes its contribution.
+	CandidateAttemptID         string
 	ComputedCandidateID        string
 	CandidateResultID          string
 	CandidateReceivedAttemptID string
@@ -87,13 +91,13 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 			return TurnRecommendationV4{}, errors.New("invalid retained artifact identity")
 		}
 	}
-	if local.Scope == (transcript.ContributionScopeV4{}) && (local.GeneratedOutput != nil || local.CandidateInventory != nil || local.ComputedCandidateID != "" || local.CandidateResultID != "" || local.Grant != nil || local.UploadedAttemptID != "") {
+	if local.Scope == (transcript.ContributionScopeV4{}) && (local.GeneratedOutput != nil || local.CandidateInventory != nil || local.CandidateAttemptID != "" || local.ComputedCandidateID != "" || local.CandidateResultID != "" || local.Grant != nil || local.UploadedAttemptID != "") {
 		return TurnRecommendationV4{}, errors.New("retained work has no exact turn scope")
 	}
 	if local.GeneratedOutput != nil && local.GeneratedOutput.Scope != view.Scope {
 		return TurnRecommendationV4{}, errors.New("generated output belongs to another turn")
 	}
-	if local.CandidateInventory != nil && (local.CandidateInventory.Scope != view.Scope || local.CandidateInventory.ComputedCandidateID != local.ComputedCandidateID || local.CandidateInventory.CandidateResultID != local.CandidateResultID) {
+	if local.CandidateInventory != nil && (local.CandidateInventory.Scope != view.Scope || local.CandidateInventory.ComputedCandidateID != local.ComputedCandidateID || local.CandidateInventory.CandidateResultID != local.CandidateResultID || (role == Participant && !validAttempt(local.CandidateAttemptID))) {
 		return TurnRecommendationV4{}, errors.New("completed candidate inventory differs from retained turn facts")
 	}
 	if local.UploadedAttemptID != "" && !validAttempt(local.UploadedAttemptID) {
@@ -185,6 +189,9 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 	}
 	if local.ComputedCandidateID == "" {
 		return answer("contribute", true, "The signed allocation authorizes this exact turn. Proof-tool will recheck it and the complete input snapshot before generating randomness.")
+	}
+	if role == Participant && local.CandidateAttemptID != slot.AttemptID {
+		return answer("contribute", true, "Your retained candidate belongs to a retired allocation. Preserve it for investigation; this replacement allocation requires a fresh contribution and cleanup statement.")
 	}
 	if local.UploadedAttemptID == slot.AttemptID && local.UploadedArtifactID == local.CandidateResultID {
 		return answer("wait-for-candidate-acceptance", false, "Candidate manifest uploaded; wait for the coordinator's exact signed result.")

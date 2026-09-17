@@ -79,6 +79,9 @@ func (j *workflowV4Journal) prepareWorkflowV4Upload(cleanupID, activeAttemptID s
 	if !validFlowAttemptID(activeAttemptID) {
 		return zero, errors.New("active authenticated candidate attempt required")
 	}
+	if activeAttemptID != cleanup.Plan.AttemptID {
+		return zero, errors.New("retained candidate belongs to a retired allocation; make a fresh contribution for the replacement attempt")
+	}
 	candidateDir := filepath.Dir(cleanup.Plan.Outputs[0])
 	sources, paths, err := workflowV4CandidateFiles(candidateDir, inventory)
 	if err != nil {
@@ -99,9 +102,9 @@ func (j *workflowV4Journal) prepareWorkflowV4Upload(cleanupID, activeAttemptID s
 		return zero, err
 	}
 	marker := filepath.Join(j.state.Marker.Binding.Work, "workflow-v4", "results", id+".json")
-	// Candidate bytes are independent of their transport attempt. After an old
-	// attempt is signed as retired, the same verified five files may be uploaded
-	// under the freshly authenticated replacement without recomputation.
+	// The candidate was computed under this exact allocation. A replacement
+	// allocation must produce a fresh candidate because proof-tool verifies that
+	// allocation predates its contribution.
 	plan := workflowV4OperationPlan{ID: id, Kind: "upload-candidate", Scope: cleanup.Plan.Scope, Predecessor: cleanup.Plan.Predecessor, AttemptID: activeAttemptID, Runtime: j.state.Marker.Binding.Runtimes["online"], Command: []string{"relay-internal", "upload-candidate"}, Inputs: inputs, Outputs: []string{marker}}
 	if err := validateWorkflowV4Plan(plan, j.state.Marker.Binding); err != nil {
 		return zero, err
