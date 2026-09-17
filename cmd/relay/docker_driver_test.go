@@ -361,6 +361,60 @@ func TestDockerInspectionMountsOnlyExactRequestedWorkFile(t *testing.T) {
 	}
 }
 
+func TestDockerInspectionKeepsArtifactRootAndChildrenInOneMount(t *testing.T) {
+	work := t.TempDir()
+	root := filepath.Join(work, "ceremony", "public")
+	stage := filepath.Join(work, "sync", "artifacts")
+	checkpoint := filepath.Join(stage, "checkpoints", "final", "checkpoint.json")
+	if err := os.MkdirAll(filepath.Dir(checkpoint), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(checkpoint, []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	driver := dockerDriver{root: root, inspectionRoot: work}
+	// The checkpoint intentionally comes first: proof-tool command ordering must
+	// not decide whether it remains below the explicit artifact root.
+	rewritten, mounts, err := driver.rewriteReadOnlyArgs([]string{"--checkpoint", checkpoint, "--artifact-root", stage})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedStage, err := filepath.EvalSymlinks(stage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mounts) != 1 || mounts[0].Source != resolvedStage || !mounts[0].ReadOnly {
+		t.Fatalf("artifact root was not mounted once read-only: %+v", mounts)
+	}
+	if want := "/relay/artifacts"; rewritten[3] != want {
+		t.Fatalf("artifact root = %q, want %q", rewritten[3], want)
+	}
+	if want := "/relay/artifacts/checkpoints/final/checkpoint.json"; rewritten[1] != want {
+		t.Fatalf("checkpoint escaped its artifact-root mount: got %q, want %q", rewritten[3], want)
+	}
+}
+
+func TestDockerInspectionRejectsSymlinkUnderArtifactRoot(t *testing.T) {
+	work := t.TempDir()
+	root := filepath.Join(work, "ceremony", "public")
+	stage := filepath.Join(work, "sync", "artifacts")
+	if err := os.MkdirAll(stage, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "checkpoint.json")
+	if err := os.WriteFile(outside, []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(stage, "checkpoint.json")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	driver := dockerDriver{root: root, inspectionRoot: work}
+	if _, _, err := driver.rewriteReadOnlyArgs([]string{"--artifact-root", stage, "--checkpoint", link}); err == nil {
+		t.Fatal("accepted an artifact child symlink")
+	}
+}
+
 func TestDockerContributionAdoptsContainerAfterLostCreateResponse(t *testing.T) {
 	o, pos, driver, fake := dockerContributionFixture(t)
 	fake.createErrAfter = true

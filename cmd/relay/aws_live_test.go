@@ -29,7 +29,12 @@ func TestAWSLiveIsolatedStoragePreflight(t *testing.T) {
 	if _, err := settings.infrastructure(); err != nil {
 		t.Fatal(err)
 	}
-	credentials := require("RELAY_AWS_LIVE_CREDENTIALS_FILE")
+	credentials := os.Getenv("RELAY_AWS_LIVE_CREDENTIALS_FILE")
+	if credentials == "" {
+		// The isolated login wrapper can refresh a short-lived, protected test
+		// snapshot without exporting secret bytes through a shell or test log.
+		credentials = freshAWSLiveCredentials(t)
+	}
 	if _, err := readProtectedCredentialBytes(credentials, 1<<20); err != nil {
 		t.Fatal("dedicated AWS credentials file unavailable or unsafe")
 	}

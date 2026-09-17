@@ -77,9 +77,9 @@ func runWorkflowV4ReleaseSigning(ui *coordinatorWizard, snapshot storagefirst.Sn
 	if err != nil {
 		return err
 	}
-	head := stateView.Progress.ReleaseReview
-	if head == nil {
-		return errors.New("release review is not present")
+	checkpoint, err := workflowV4ReleaseReviewCheckpoint(snapshot.Head(), stateView.Progress.ReleaseReview)
+	if err != nil {
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(progress.ReviewReport), 0o700); err != nil {
 		return err
@@ -101,7 +101,7 @@ func runWorkflowV4ReleaseSigning(ui *coordinatorWizard, snapshot storagefirst.Sn
 			return errors.New("retained release review time is invalid; preserve it for inspection")
 		}
 	} else {
-		command, err := workflowV4ReleaseReviewCommand(online, signer, *head, progress.ReviewReport, releasedAt)
+		command, err := workflowV4ReleaseReviewCommand(online, signer, checkpoint, progress.ReviewReport, releasedAt)
 		if err != nil {
 			return err
 		}
@@ -112,7 +112,7 @@ func runWorkflowV4ReleaseSigning(ui *coordinatorWizard, snapshot storagefirst.Sn
 	if err := ui.confirm("The approved proof-tool verified the exact coordinator review checkpoint and its bound full replay. Sign only this exact package", "SIGN RELEASE PACKAGE"); err != nil {
 		return err
 	}
-	command, err := workflowV4ReleaseSignCommand(online, signer, *head, progress.PackageDir, expected.Identity.KeyID, releasedAt)
+	command, err := workflowV4ReleaseSignCommand(online, signer, checkpoint, progress.PackageDir, expected.Identity.KeyID, releasedAt)
 	if err != nil {
 		return err
 	}
@@ -121,6 +121,16 @@ func runWorkflowV4ReleaseSigning(ui *coordinatorWizard, snapshot storagefirst.Sn
 	}
 	fmt.Fprintf(ui.output, "Signed release package created and self-verified at %s. It is still private and has not been accepted or published.\n", progress.PackageDir)
 	return nil
+}
+
+func workflowV4ReleaseReviewCheckpoint(checkpoint transcript.SignedArtifactRefs, operationalBundle *transcript.SignedArtifactRefs) (transcript.SignedArtifactRefs, error) {
+	if operationalBundle == nil {
+		return transcript.SignedArtifactRefs{}, errors.New("release review is not present")
+	}
+	if checkpoint.Record.Name == operationalBundle.Record.Name || checkpoint.Signature.Name == operationalBundle.Signature.Name {
+		return transcript.SignedArtifactRefs{}, errors.New("current release-review checkpoint is not distinct from its operational evidence bundle")
+	}
+	return checkpoint, nil
 }
 
 func workflowV4ReleaseReviewCommand(online, signer guidedProfile, head transcript.SignedArtifactRefs, out string, releasedAt time.Time) ([]string, error) {

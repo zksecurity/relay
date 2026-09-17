@@ -26,6 +26,11 @@ func TestAWSLiveGrantScopeAndExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireAWSLiveConfiguration(t, config)
+	if os.Getenv("RELAY_AWS_LIVE_CREDENTIALS_FILE") == "" {
+		t.Setenv("AWS_SHARED_CREDENTIALS_FILE", freshAWSLiveCredentials(t))
+	} else {
+		t.Setenv("AWS_SHARED_CREDENTIALS_FILE", os.Getenv("RELAY_AWS_LIVE_CREDENTIALS_FILE"))
+	}
 	id, err := randomID()
 	if err != nil {
 		t.Fatal(err)
@@ -69,6 +74,9 @@ func TestAWSLiveGrantScopeAndExpiry(t *testing.T) {
 	if err := scoped.Get(base+"allowed/probe", allowed); err != nil {
 		t.Fatal("allowed read failed")
 	}
+	if _, err := scoped.GetVersionedAtMost(base+"allowed/probe", filepath.Join(dir, "allowed-versioned"), int64(len(data))); err != nil {
+		t.Fatalf("allowed version-pinned read failed: %v", err)
+	}
 	got, err := os.ReadFile(allowed)
 	if err != nil || !bytes.Equal(got, data) {
 		t.Fatal("allowed bytes differ")
@@ -89,6 +97,10 @@ func TestAWSLiveGrantScopeAndExpiry(t *testing.T) {
 		if !isAccessDenied(err) {
 			t.Fatalf("outside write inconclusive; inspect %s/%s", cleaner.Bucket, key)
 		}
+	}
+	if os.Getenv("RELAY_AWS_LIVE_SCOPE_ONLY") == "1" {
+		t.Log("scoped grant and version-pinned read passed; expiry was intentionally not tested")
+		return
 	}
 	t.Logf("Allowed read/write and outside-prefix/other-bucket denial passed; waiting until %s", expires.Add(5*time.Second).UTC().Format(time.RFC3339))
 	for time.Now().Before(expires.Add(5 * time.Second)) {

@@ -738,6 +738,10 @@ func (d *dockerDriver) rewriteReadOnlyArgs(args []string) ([]string, []dockerMou
 }
 
 func (d *dockerDriver) rewriteArgs(args []string, writable map[string]string) ([]string, []dockerMount, error) {
+	artifactRoot, err := d.artifactRootMount(args)
+	if err != nil {
+		return nil, nil, err
+	}
 	exact := map[string]string{
 		d.definition: "/relay/trust/ceremony.json", d.definitionSig: "/relay/trust/ceremony.sig",
 		d.coordinatorKey: "/relay/trust/coordinator.hex", d.signingKey: "/relay/key/participant.key",
@@ -748,6 +752,9 @@ func (d *dockerDriver) rewriteArgs(args []string, writable map[string]string) ([
 	}
 	rewritten := append([]string(nil), args...)
 	mountBySource := make(map[string]dockerMount)
+	if artifactRoot.source != "" {
+		mountBySource[artifactRoot.source] = dockerMount{Source: artifactRoot.source, Destination: artifactRoot.destination, ReadOnly: true}
+	}
 	for i, arg := range rewritten {
 		if mapped, ok := exact[arg]; ok && arg != "" {
 			rewritten[i] = mapped
@@ -755,6 +762,16 @@ func (d *dockerDriver) rewriteArgs(args []string, writable map[string]string) ([
 			continue
 		}
 		if filepath.IsAbs(arg) {
+			if artifactRoot.source != "" {
+				mapped, contained, pathErr := artifactRoot.child(arg)
+				if pathErr != nil {
+					return nil, nil, pathErr
+				}
+				if contained {
+					rewritten[i] = mapped
+					continue
+				}
+			}
 			mapped, err := pathWithin(d.root, arg, "/relay/input")
 			if err != nil {
 				if d.inspectionRoot == "" || arg == d.inspectionRoot {
@@ -785,6 +802,91 @@ func (d *dockerDriver) rewriteArgs(args []string, writable map[string]string) ([
 		return nil, nil, err
 	}
 	return rewritten, mounts, nil
+}
+
+type dockerArtifactRootMount struct {
+	root        string // caller spelling, used for lexical child containment
+	source      string
+	destination string
+}
+
+// artifactRootMount recognizes the proof-tool's explicit public artifact root.
+// Its contents must remain one real, read-only Docker mount so --checkpoint
+// children resolve beneath --artifact-root inside the container. No other
+// inspection-root directory receives this broader mounting behaviour.
+func (d *dockerDriver) artifactRootMount(args []string) (dockerArtifactRootMount, error) {
+	var root string
+	for i := 0; i < len(args); i++ {
+		if args[i] != "--artifact-root" {
+			continue
+		}
+		if i+1 == len(args) || root != "" {
+			return dockerArtifactRootMount{}, errors.New("Docker inspection requires one explicit artifact root")
+		}
+		root = args[i+1]
+		i++
+	}
+	if root == "" {
+		return dockerArtifactRootMount{}, nil
+	}
+	if !filepath.IsAbs(root) || filepath.Clean(root) != root {
+		return dockerArtifactRootMount{}, errors.New("Docker artifact root must be an absolute clean directory")
+	}
+	// The normal ceremony public root already has a dedicated input mount.
+	if _, err := pathWithin(d.root, root, "/relay/input"); err == nil {
+		return dockerArtifactRootMount{}, nil
+	}
+	if d.inspectionRoot == "" || root == d.inspectionRoot {
+		return dockerArtifactRootMount{}, errors.New("refuse unrecognized Docker artifact root")
+	}
+	if _, err := pathWithin(d.inspectionRoot, root, "/relay/extra"); err != nil {
+		return dockerArtifactRootMount{}, errors.New("refuse artifact root outside the inspection workspace")
+	}
+	info, err := os.Lstat(root)
+	if err != nil {
+		return dockerArtifactRootMount{}, err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return dockerArtifactRootMount{}, errors.New("Docker artifact root must be a real directory")
+	}
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return dockerArtifactRootMount{}, err
+	}
+	return dockerArtifactRootMount{root: root, source: filepath.Clean(resolved), destination: "/relay/artifacts"}, nil
+}
+
+// child maps an existing non-symlink child under the explicit artifact-root
+// mount. It rejects a symlink at any component, restoring the exact-path
+// containment checks that separate mounts previously provided.
+func (m dockerArtifactRootMount) child(path string) (string, bool, error) {
+	if m.source == "" {
+		return "", false, nil
+	}
+	mapped, err := pathWithin(m.root, path, m.destination)
+	if err != nil {
+		return "", false, nil
+	}
+	relative, err := filepath.Rel(m.root, path)
+	if err != nil {
+		return "", false, err
+	}
+	parts := strings.Split(relative, string(filepath.Separator))
+	current := m.root
+	for _, part := range parts {
+		if part == "." || part == "" {
+			continue
+		}
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		if err != nil {
+			return "", false, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return "", false, errors.New("Docker artifact arguments cannot traverse symbolic links")
+		}
+	}
+	return mapped, true, nil
 }
 
 func (d *dockerDriver) baseRunArgs(remove bool, mounts []dockerMount) []string {

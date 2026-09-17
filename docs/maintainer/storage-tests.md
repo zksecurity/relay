@@ -20,12 +20,18 @@ Obtain approval for temporary writes in two **existing test buckets**. Do not
 create buckets, change IAM policies or enable public access as part of this test.
 Provide a dedicated owner-only AWS credentials file containing only the test
 coordinator/issuer profiles, plus administrator-prepared non-secret settings.
-SSO/credential-process configurations are not handled by this file-only lane.
+Alternatively, use the isolated test AWS CLI wrapper after a fresh interactive
+login; the test obtains a short-lived protected snapshot without printing
+credentials. Never use the machine's default company AWS profile.
 
 Set these non-secret environment variables:
 
 - `RELAY_AWS_LIVE_SETTINGS_FILE`: absolute administrator settings JSON path.
 - `RELAY_AWS_LIVE_CREDENTIALS_FILE`: absolute dedicated protected file path.
+  Omit only when using the isolated wrapper below.
+- `RELAY_AWS_TEST_CLI`, `RELAY_AWS_LIVE_EXPECTED_ACCOUNT`, and
+  `RELAY_AWS_LIVE_EXPECTED_PRINCIPAL`: required together for the isolated
+  wrapper path; the test rejects any other logged-in identity.
 - `RELAY_ROLE_ONLINE_IMAGE`: exact test image digest containing these changes.
 - `RELAY_ROLE_PLATFORM`: `linux/amd64` or `linux/arm64`.
 - `RELAY_AWS_LIVE_PROBES_APPROVED=1`: explicit approval for isolated probe writes.
@@ -41,10 +47,21 @@ read-only credential mounts. It checks write/read/public-read/private-inbox
 behavior and deletion. Inspect exact reported keys after ambiguous writes or
 cleanup failures; never delete a whole bucket or ceremony prefix.
 
-This lane does **not** test STS grant scope or actual credential expiry.
-Those require separate live grant checks; AWS role sessions last at least
+This lane now tests version-pinned coordinator reads from both buckets. It does
+**not** test STS grant scope or actual credential expiry. Those require separate
+live grant checks; AWS role sessions last at least
 [15 minutes](https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html).
 Normal CI skips all live tests. Never put credentials in logs, arguments or PRs.
+
+For a short signed-state provider check, set the same isolated wrapper/account
+variables, `RELAY_PREPARE_TEST_IMAGE`, `RELAY_V4_LIVE_ONLINE_IMAGE`, and
+`RELAY_V4_LIVE_PROOF_BINARY` (the exact-source native companion), then run
+`go test ./cmd/relay -run '^TestV4LiveInitialAWS$' -count=1 -v`. This creates
+a fresh tiny signed definition, publishes its initial checkpoint and required
+public files to the dedicated AWS test bucket, verifies them from an empty
+workspace, and checks conflicting blob/root writes are rejected. It does not
+compute participant contributions. The signed synthetic test state remains in
+the dedicated versioned bucket for inspection; there is no broad cleanup.
 
 ## Dedicated-account follow-up lanes
 
@@ -53,6 +70,10 @@ scoped read/write denials on fresh synthetic keys. Its coordinator control login
 must remain valid through expiry and cleanup; an expired control makes the result
 inconclusive. Set `RELAY_AWS_LIVE_EXPECTED_ACCOUNT` explicitly; the fixture only
 accepts `relay-test-` bucket/role names in that account. Approval is still required.
+For a fast scope check without waiting for expiry, set
+`RELAY_AWS_LIVE_SCOPE_ONLY=1`; the test also requires the allowed prefix's
+version-pinned read and explicitly reports that expiry was skipped. The isolated
+test wrapper can refresh the protected coordinator snapshot in either mode.
 
 `TestRoleFlowDockerFullCeremony` with `RELAY_FLOW_AWS_APPROVED=1` sends the six
 candidate contributions through scoped AWS grants, then downloads, verifies,
@@ -69,6 +90,34 @@ The ceremony lane also requires `RELAY_AWS_TEST_CLI` (absolute isolated wrapper)
 `RELAY_AWS_TEST_BINARY` (Linux test executable containing the transport hook).
 
 ## Live R2 result
+
+The opt-in full V4 R2 journey accepts local image names for developer builds,
+but resolves each name to one immutable local `sha256:` image ID before ceremony
+setup. All subsequent commands use that ID; production commands continue to
+reject mutable tags. Its native inspection binary must be built from the exact
+Proof-tool release commit, with clean VCS metadata and the same Go version,
+CGO and trim-path settings as the Linux release binaries. A convenient local
+build that omits `vcs.revision` is not an authenticated companion binary and
+must fail before initialization.
+
+Keep these inputs distinct:
+
+- the approved Linux Proof-tool binary is inside each role image and performs
+  ceremony work;
+- `RELAY_V4_LIVE_PROOF_BINARY` is the exact-source native companion used only
+  by the macOS test controller and signed into the mixed-platform allowlist.
+
+Do not substitute one path for the other or rebuild the native companion from
+a dirty checkout.
+
+### Follow-up: bounded parallel immutable transfers
+
+The current full-release lane transfers immutable objects serially. That is
+safe but slow for a release package with many small files. After this release,
+add bounded parallel uploads/downloads while preserving create-only writes,
+manifest-last publication, exact byte/hash reconciliation, deterministic error
+reporting, and safe retry after an interrupted batch. Do not make this
+performance work a prerequisite for authenticating or resuming a ceremony.
 
 On 2026-09-08, `TestR2LiveIsolatedStoragePreflight` passed in 56.33 seconds
 using a local Linux/ARM64 development image. It checked public object bytes,

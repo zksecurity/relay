@@ -155,6 +155,13 @@ func checkStorageObjects(config access.StorageConfig, clientFor func(store.Clien
 	if got, err := os.ReadFile(authenticated); err != nil || !bytes.Equal(got, payload) {
 		return errors.New("authenticated published read returned different probe bytes")
 	}
+	versioned := filepath.Join(dir, "published-versioned")
+	if _, err := published.GetVersionedAtMost(key, versioned, int64(len(payload))); err != nil {
+		return fmt.Errorf("published bucket version-pinned read probe: %w", err)
+	}
+	if got, err := os.ReadFile(versioned); err != nil || !bytes.Equal(got, payload) {
+		return errors.New("version-pinned published read returned different probe bytes")
+	}
 	public := clientFor(store.Client{PublicBaseURL: config.PublishedBaseURL})
 	var publicErr error
 	for attemptNumber := 0; attemptNumber < 5; attemptNumber++ {
@@ -185,6 +192,13 @@ func checkStorageObjects(config access.StorageConfig, clientFor func(store.Clien
 			}
 		}
 	}()
+	versioned = filepath.Join(dir, "inbox-versioned")
+	if _, err := inbox.GetVersionedAtMost(key, versioned, int64(len(payload))); err != nil {
+		return fmt.Errorf("inbox bucket version-pinned read probe: %w", err)
+	}
+	if got, err := os.ReadFile(versioned); err != nil || !bytes.Equal(got, payload) {
+		return errors.New("version-pinned inbox read returned different probe bytes")
+	}
 	if config.Provider != "r2" {
 		unsigned := clientFor(store.Client{Endpoint: config.Endpoint, Region: config.Region, Bucket: config.InboxBucket, NoSign: true})
 		publiclyVisible, headErr := unsigned.Head(key)
@@ -624,7 +638,7 @@ func issueAWSWithRunner(config access.StorageConfig, identity, prefix string, tt
 		"Version": "2012-10-17",
 		"Statement": []map[string]any{{
 			"Effect":   "Allow",
-			"Action":   []string{"s3:PutObject", "s3:GetObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"},
+			"Action":   []string{"s3:PutObject", "s3:GetObject", "s3:GetObjectVersion", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"},
 			"Resource": objectARN,
 		}},
 	})

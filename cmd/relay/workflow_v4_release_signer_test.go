@@ -6,7 +6,27 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/zksecurity/relay/internal/transcript"
 )
+
+func TestWorkflowV4ReleaseSigningUsesCurrentCheckpointNotEvidenceBundle(t *testing.T) {
+	checkpoint := pairV4Test("checkpoints/final/review-1/checkpoint")
+	bundle := pairV4Test("operational/evidence-bundle")
+	got, err := workflowV4ReleaseReviewCheckpoint(checkpoint, &bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != checkpoint {
+		t.Fatalf("release checkpoint = %#v, want authenticated current head %#v", got, checkpoint)
+	}
+	if _, err := workflowV4ReleaseReviewCheckpoint(bundle, &bundle); err == nil {
+		t.Fatal("operational evidence bundle accepted as the release-review checkpoint")
+	}
+	if _, err := workflowV4ReleaseReviewCheckpoint(checkpoint, (*transcript.SignedArtifactRefs)(nil)); err == nil {
+		t.Fatal("missing operational evidence bundle accepted")
+	}
+}
 
 func TestWorkflowV4ReleaseCommandsBindFrozenReviewAndSeparateOutput(t *testing.T) {
 	work, trust, keys := t.TempDir(), t.TempDir(), t.TempDir()

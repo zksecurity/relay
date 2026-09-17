@@ -1,5 +1,15 @@
 ## What changed
 
+- Fixed storage-first final signing to pass Proof-tool the authenticated current
+  release-review checkpoint, rather than the separately signed operational
+  evidence bundle. Proof-tool correctly rejected the bundle when it was used as
+  a checkpoint, so affected ceremonies stopped safely before creating or
+  publishing a release package. The retained ceremony can resume from its
+  frozen review without repeating either contribution phase.
+- Pinned the corrected protected-main Proof-tool release so a new empty client
+  receives the signed final bootstrap, derives the complete closed release
+  inventory, and can reconstruct the published final ceremony without files
+  retained from an earlier role workspace.
 - Added a narrowly scoped recovery command for the affected 1828 coordinator
   release when its first Phase 1 publication was interrupted by expired AWS
   session credentials. The command accepts only the retained authenticated
@@ -69,17 +79,18 @@ schema-dispatched workflow.
 
 ## Validation status and current limits
 
-- Repository tests, vet, launcher tests, the unsigned rehearsal build, and the
-  existing full-ceremony/archive-replay CI passed before the final proof-tool
-  pin update. The pinned proof-tool release assets and GitHub provenance were
-  verified against its exact protected-main commit.
-- A live Cloudflare R2 rehearsal with one participant in each phase completed
-  enrollment, all of Phase 1, and entered Phase 2 before the merge decision.
-  An earlier run reached coordinator replay and creation of the final release
-  candidate, but the test process exceeded its 30-minute harness timeout while
-  publishing that checkpoint. A terminal live final-release reconstruction was
-  not yet recorded at merge time.
-- A complete live Amazon S3 rehearsal has not yet been run for this version.
+- Repository tests, vet, and launcher tests pass. The pinned Proof-tool release
+  assets and GitHub provenance were verified against its exact protected-main
+  commit.
+- A live Cloudflare R2 rehearsal with the minimal required roles completed both
+  contribution phases, future-beacon transitions, coordinator mathematical
+  replay, release signing, final checkpoint publication, and a second fresh
+  empty-workspace reconstruction from stored bytes. The recovery check was run
+  again after the Docker artifact-root containment fix.
+- Live Amazon S3 initial publication/reconstruction and scoped temporary-grant
+  tests pass, including version-pinned reads and rejection outside the granted
+  prefix. A complete S3 contribution-to-release rehearsal has not yet been run
+  for this version.
 - The storage-first guided path in this release supports the minimal required
   roles: coordinator, participant, and release signer. Enabled witness, mirror,
   or auditor journeys are deferred; setup refuses those nonzero assurance
@@ -92,6 +103,13 @@ schema-dispatched workflow.
   Tessera ceremonies keep their pinned releases and behavior.
 
 ## Tessera compatibility
+
+The release-signing fix changes no setup contract, ceremony format, storage
+object, or Tessera request. This release pins a corrected Proof-tool runtime
+for new storage-first ceremonies. Existing frozen storage-first ceremonies
+retain their exact runtime and signed state and can resume final signing with
+the compatibility path in this launcher. No Tessera change is required for
+this fix.
 
 The recovery command does not change setup contracts, signed definitions,
 ceremony data, proof-tool pins, Tessera fields or selected releases. It is an
