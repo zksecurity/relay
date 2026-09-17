@@ -35,13 +35,16 @@ type flowField struct {
 }
 type flowTask struct {
 	ID, Label, Help string
-	Command         []string
-	Fields          []flowField
-	ExtraFields     []flowField
-	ExtraLabel      string
-	Handoff         bool
-	Optional        bool
-	Offline         bool
+	// Assurance names a signed policy control that makes this task applicable.
+	// It affects guidance only; proof-tool still enforces the authenticated policy.
+	Assurance   string `json:"assurance,omitempty"`
+	Command     []string
+	Fields      []flowField
+	ExtraFields []flowField
+	ExtraLabel  string
+	Handoff     bool
+	Optional    bool
+	Offline     bool
 }
 type flowStage struct {
 	ID, Label string
@@ -291,12 +294,19 @@ func ensureOfflineSigningProfile(p guidedProfile, root string) error {
 }
 
 func saveJSONAtomic(path string, value any) error {
+	return saveJSONAtomicWithLimit(path, value, 1<<20)
+}
+
+func saveJSONAtomicWithLimit(path string, value any, maximum int) error {
 	// Private, fsynced replacement; callers hold the workflow lock.
+	if maximum <= 0 {
+		return errors.New("invalid workflow size limit")
+	}
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	if len(raw) > 1<<20 {
+	if len(raw) > maximum {
 		return errors.New("workflow history reached its size limit; preserve it and review archival/recovery with a maintainer before further actions")
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".flow-*")
@@ -662,6 +672,14 @@ func (f *roleFlow) execute(task flowTask) (result error) {
 		}
 		recordDiagnostic(c, outcome, result, f.ui.output)
 	}()
+	resolved, applicable, err := f.resolvePolicyTask(task)
+	if err != nil {
+		return err
+	}
+	if !applicable {
+		return errors.New("this action is disabled by the signed ceremony assurance policy")
+	}
+	task = resolved
 	if err := f.requireTaskPredecessors(task); err != nil {
 		return err
 	}
@@ -1308,6 +1326,11 @@ func runRoleFlow(args []string) (result error) {
 	if err := checkLauncherRelease(p.ReleaseCommit); err != nil {
 		return err
 	}
+	if v4, err := workflowV4RouteHint(p); err != nil {
+		return err
+	} else if v4 {
+		return runWorkflowV4Guide(p, root)
+	}
 	stages := roleFlowStages(*role)
 	if len(stages) == 0 {
 		return errors.New("no guided workflow for this role")
@@ -1446,6 +1469,9 @@ func runRoleFlow(args []string) (result error) {
 		// Retain the workflow lock until the child has handled cancellation and
 		// completed its cleanup. CommandContext would kill it before its defers.
 		return executeGuidedChild(open)
+	}
+	if err := f.requireEnabledRole(); err != nil {
+		return err
 	}
 	fmt.Fprintln(os.Stdout, "Saved progress is a local checklist, not authenticated ceremony state. Other people act on their own machines. Commands still verify exact signed inputs.\nUse /work for staged files, /trust for independently authenticated public keys, /keys for your own signing key. Never paste secret contents.")
 	fmt.Fprintf(os.Stdout, "Your folders: /work = %s; /trust = %s; /keys = %s\nYou may enter host paths inside these folders; the guide maps them into Docker.\n", p.Work, p.Trust, p.Keys)

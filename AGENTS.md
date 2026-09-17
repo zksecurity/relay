@@ -103,9 +103,11 @@ acceptable release pin.
 Before merging Relay, update `release/release-notes.md`, run the normal Go,
 shell, launcher, release, and ceremony checks, and report the exact PR head to
 Tessera's compatibility workflow. Relay pull requests use a 12-second,
-explicitly non-production witness window while still retrieving two real future
+explicitly non-production beacon lead while still retrieving two real future
 Quicknet rounds. Protected-main and daily scheduled checks use Tessera's
-180-second rehearsal window. Production's 24-hour minimum is unchanged. Keep
+180-second rehearsal lead. Production defaults to 24 hours, but the exact lead
+is signed ceremony policy; shorter production settings require a prominent
+warning and explicit coordinator review. Keep
 the real end-to-end path through contributions, cleanup, both beacons, audit,
 release signing, archive packing, and public replay; it detects incompatibilities
 that isolated repository tests can miss.

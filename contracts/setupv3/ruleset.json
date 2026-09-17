@@ -1,0 +1,28 @@
+{
+  "id": "two-phase-v3",
+  "version": 3,
+  "definition_schema": "proof-tool-mpc-ceremony-definition-v3",
+  "circuits": [
+    "rehearsal-tiny-v1",
+    "ownership-destination-v2"
+  ],
+  "roles": [
+    "coordinator",
+    "participant",
+    "auditor",
+    "release-signer"
+  ],
+  "default_assurance_policy": {
+    "public_witnesses_per_phase": 1,
+    "mirrors_per_accepted_head": 1,
+    "passing_ceremony_audits": 1,
+    "external_security_audit_signoffs_rehearsal": 0,
+    "external_security_audit_signoffs_production": 0
+  },
+  "minimum_production_participants": 2,
+  "default_rehearsal_beacon_lead_seconds": 180,
+  "default_production_beacon_lead_seconds": 86400,
+  "minimum_beacon_lead_seconds": 1,
+  "maximum_phase_participants": 20,
+  "maximum_assurance_requirement": 20
+}

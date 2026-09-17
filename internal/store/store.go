@@ -41,6 +41,7 @@ type Client struct {
 	PublicBaseURL string
 	Credentials   *Credentials
 	NoSign        bool
+	httpClient    *http.Client
 }
 
 // Key returns the content-addressed object key for a tagged sha256 digest.

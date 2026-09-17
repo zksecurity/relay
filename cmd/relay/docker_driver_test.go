@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"syscall"
@@ -323,6 +324,43 @@ func TestDockerContributionRemovesContainerBeforePromotingPublicOutput(t *testin
 	}
 }
 
+func TestDockerInspectionMountsOnlyExactRequestedWorkFile(t *testing.T) {
+	work := t.TempDir()
+	root := filepath.Join(work, "ceremony", "public")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	record := filepath.Join(work, "my-enrollment", "canonical.json")
+	if err := os.MkdirAll(filepath.Dir(record), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(record, []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	driver := dockerDriver{root: root, inspectionRoot: work}
+	rewritten, mounts, err := driver.rewriteReadOnlyArgs([]string{"--enrollment", record, "--same", record})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedRecord, err := filepath.EvalSymlinks(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rewritten[1] != rewritten[3] || len(mounts) != 1 || mounts[0].Source != resolvedRecord || !mounts[0].ReadOnly {
+		t.Fatalf("inspection exposed more than the exact requested file: args=%v mounts=%+v", rewritten, mounts)
+	}
+	if _, _, err := driver.rewriteReadOnlyArgs([]string{"--bad", work}); err == nil {
+		t.Fatal("mounted the entire V4 work directory")
+	}
+	outside := filepath.Join(t.TempDir(), "outside.json")
+	if err := os.WriteFile(outside, []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := driver.rewriteReadOnlyArgs([]string{"--bad", outside}); err == nil {
+		t.Fatal("mounted a path outside the V4 work directory")
+	}
+}
+
 func TestDockerContributionAdoptsContainerAfterLostCreateResponse(t *testing.T) {
 	o, pos, driver, fake := dockerContributionFixture(t)
 	fake.createErrAfter = true
@@ -569,30 +607,118 @@ func TestDockerContributionDoesNotReplaceConcurrentLifecycleState(t *testing.T) 
 	}
 }
 
+func TestDockerContributionPersistsActualCommandBeforeCreate(t *testing.T) {
+	o, pos, driver, fake := dockerContributionFixture(t)
+	checked := false
+	fake.onCreate = func() {
+		var state dockerActiveState
+		if err := setupReadJSON(driver.activeStatePath(), &state); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(state.CreateArgs, fake.createArgs) {
+			t.Fatal("saved intent differs from actual Docker invocation")
+		}
+		if !strings.Contains(strings.Join(state.CreateArgs, " "), "/relay/output/candidate") {
+			t.Fatal("missing rewritten candidate destination")
+		}
+		checked = true
+	}
+	if err := runNextAt(o, pos, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if !checked {
+		t.Fatal("create was not observed")
+	}
+}
+
+func TestDockerContributionLaunchBoundary(t *testing.T) {
+	for _, preflightFailure := range []bool{false, true} {
+		t.Run(map[bool]string{false: "intent-before-boundary", true: "preflight-before-boundary"}[preflightFailure], func(t *testing.T) {
+			o, pos, d, fake := dockerContributionFixture(t)
+			d.executionIntentPath = filepath.Join(t.TempDir(), "intent.json")
+			if preflightFailure {
+				d.hostSwapStatus = func() (string, error) { return "", errors.New("preflight failed") }
+			}
+			crossed := false
+			d.beforeCreate = func() error {
+				crossed = true
+				var intent dockerActiveState
+				if err := setupReadJSON(d.executionIntentPath, &intent); err != nil {
+					t.Fatal(err)
+				}
+				if len(intent.CreateArgs) == 0 {
+					t.Fatal("running boundary precedes durable invocation")
+				}
+				return errors.New("boundary persistence failed")
+			}
+			if err := runNextAt(o, pos, time.Now()); err == nil {
+				t.Fatal("ignored prelaunch failure")
+			}
+			if crossed == preflightFailure {
+				t.Fatal("incorrect launch boundary ordering")
+			}
+			if len(fake.createArgs) != 0 {
+				t.Fatal("created contributor after failed prelaunch boundary")
+			}
+		})
+	}
+}
+
+func TestDockerContributionReportsProvenCreateNoEffect(t *testing.T) {
+	o, pos, driver, fake := dockerContributionFixture(t)
+	driver.executionIntentPath = filepath.Join(t.TempDir(), "intent.json")
+	driver.replaceUnstartedIntent = true
+	fake.createErrAfter = true
+	fake.onCreate = func() { fake.removed = true }
+	err := runNextAt(o, pos, time.Now())
+	if !errors.Is(err, errContributorNotCreated) {
+		t.Fatalf("create failure = %v", err)
+	}
+	for _, path := range []string{driver.activeStatePath(), driver.executionIntentPath} {
+		if _, statErr := os.Lstat(path); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("retained uncertain intent %s: %v", path, statErr)
+		}
+	}
+	if _, statErr := os.Lstat(o.outDir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("candidate unexpectedly exists: %v", statErr)
+	}
+}
+
 func TestSignedCeremonyBinarySHA256SelectsConfiguredPlatform(t *testing.T) {
 	amdDigest := "sha256:" + strings.Repeat("a", 64)
 	armDigest := "sha256:" + strings.Repeat("b", 64)
-	definition := `{"schema":"proof-tool-mpc-ceremony-definition-v2","software":{"binaries":[` +
-		`{"goos":"linux","goarch":"amd64","goamd64":"v1","tool_binary":{"sha256":"` + amdDigest + `"}},` +
-		`{"goos":"linux","goarch":"arm64","goarm64":"v8.0","tool_binary":{"sha256":"` + armDigest + `"}}]}}`
-	path := filepath.Join(t.TempDir(), "ceremony.json")
-	if err := os.WriteFile(path, []byte(definition), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for platform, want := range map[string]string{
-		"linux/amd64": amdDigest,
-		"linux/arm64": armDigest,
-	} {
-		got, err := signedCeremonyBinarySHA256(path, platform)
-		if err != nil {
-			t.Fatalf("select %s: %v", platform, err)
-		}
-		if got != want {
-			t.Fatalf("select %s = %q, want %q", platform, got, want)
-		}
-	}
-	if _, err := signedCeremonyBinarySHA256(path, "linux/riscv64"); err == nil {
-		t.Fatal("unlisted platform was accepted")
+	for _, schema := range []string{"proof-tool-mpc-ceremony-definition-v2", "proof-tool-mpc-ceremony-definition-v3", "proof-tool-mpc-ceremony-definition-v4"} {
+		t.Run(schema, func(t *testing.T) {
+			definition := `{"schema":"` + schema + `","software":{"binaries":[` +
+				`{"goos":"linux","goarch":"amd64","goamd64":"v1","tool_binary":{"sha256":"` + amdDigest + `"}},` +
+				`{"goos":"linux","goarch":"arm64","goarm64":"v8.0","tool_binary":{"sha256":"` + armDigest + `"}}]}}`
+			path := filepath.Join(t.TempDir(), "ceremony.json")
+			if err := os.WriteFile(path, []byte(definition), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			for platform, want := range map[string]string{
+				"linux/amd64": amdDigest,
+				"linux/arm64": armDigest,
+			} {
+				got, err := signedCeremonyBinarySHA256(path, platform)
+				if err != nil {
+					t.Fatalf("select %s: %v", platform, err)
+				}
+				if got != want {
+					t.Fatalf("select %s = %q, want %q", platform, got, want)
+				}
+			}
+			if _, err := signedCeremonyBinarySHA256(path, "linux/riscv64"); err == nil {
+				t.Fatal("unlisted platform was accepted")
+			}
+			duplicate := strings.Replace(definition, `]}}`, `,{"goos":"linux","goarch":"arm64","tool_binary":{"sha256":"`+armDigest+`"}}]}}`, 1)
+			if err := os.WriteFile(path, []byte(duplicate), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := signedCeremonyBinarySHA256(path, "linux/arm64"); err == nil {
+				t.Fatal("duplicate platform was accepted")
+			}
+		})
 	}
 }
 

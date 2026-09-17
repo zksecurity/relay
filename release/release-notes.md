@@ -19,93 +19,77 @@
   do not change any storage value. Then run the hotfix launcher's
   `relay ceremony recover-publication CEREMONY_NAME`; on success, resume with
   the original release's start script.
+- The storage-first design makes the signed beacon lead configurable before
+  initialization in both rehearsal and production. Relay will default to 180
+  seconds for rehearsals and 24 hours for production, warn explicitly before a
+  shorter production choice is signed, and display the additional fixed
+  observation window when witnesses are enabled. Existing setup contracts and
+  ceremonies keep their original policy.
+- Added the authenticated storage-first protocol foundation: immutable signed
+  checkpoints, rollback/fork detection, exact submission attempts, conditional
+  root updates, crash-safe coordinator journals, and deterministic Phase 1
+  next-action evaluation.
+- Relay now consumes the proof-tool's authenticated Phase 2 and final-state
+  checkpoint projection as well as Phase 1; it does not parse signed checkpoint
+  JSON to infer those lifecycle facts itself.
+- Added setup v3 and signed assurance policy. Coordinators may explicitly set
+  witness, mirror, ceremony-audit, and external-audit minima to zero. Disabled
+  roles disappear from guidance and cannot submit evidence. Future drand beacon
+  verification remains mandatory.
+- Made the signed closure-to-beacon lead configurable for rehearsal and
+  production. Relay recommends 180 seconds for rehearsals and 24 hours for
+  production and warns before signing a shorter production value.
+- Retained setup v2, setup v2 revision 2, and their existing ceremony behavior
+  for already pinned releases.
+- Corrected V4 replacement guidance: a grant may be renewed and an immutable
+  upload resumed only for its original signed allocation. Retiring an
+  allocation requires a separately computed candidate under the replacement;
+  Relay preserves the old files rather than rebinding them.
+- When a coordinator has transport-checked a complete candidate and proof-tool
+  classifies its authenticated candidate semantics as invalid, the guided
+  workflow now offers an explicit reviewed rejection. Relay keeps a private
+  receipt and rechecks every retained candidate payload byte before that option
+  appears and immediately before accepting or rejecting it. If an interrupted
+  download leaves no valid receipt, Relay preserves that local copy and fetches
+  the same signed attempt again into a fresh folder; it never overwrites the old
+  files.
+  Runtime, trust, path and I/O failures remain blocking rather than being
+  labelled invalid. Rejection preserves the received files, publishes a signed
+  rejection only after confirmation, and requires a fresh contribution for a
+  later allocation. It never rejects or replaces a candidate automatically.
+- V4 retained-operation files now record and recheck both SHA-256 and
+  BLAKE2b-256, matching the signed protocol reference boundary.
 
-- Reworked the ceremony flow map into seven explicit lanes covering identity
-  collection, enrollment and storage distribution, participant custody turns,
-  per-head mirror evidence, closure and beacon timing, phase transition,
-  finalization, signed-release authorization, upload, and archival. The map now
-  distinguishes public handoffs, private access, cryptographic verification,
-  signing, and production authorization. This is documentation-only.
+The ordinary coordinator, participant, and required release-signer journeys
+now derive their next action from authenticated storage state. The coordinator
+must complete the full mathematical replay before final release; the required
+release signer verifies the exact reviewed files and signatures but does not
+repeat that replay. Existing frozen ceremonies remain on their original
+schema-dispatched workflow.
 
-- Public-file import defaults to storage settings when the ceremony set is
-  already present and storage is missing, instead of recommending it again.
-  Handoff actions show counterparts, public file locations and expected replies.
-  Custody delivery uses saved phase/turn packets and checks named payload hashes;
-  missing files cannot be reported as delivered. Human reports still do not
-  prove receipt or acceptance. No Tessera contract or proof-tool change.
+## Validation status and current limits
 
-- Coordinator enrollment guidance uses the latest collection check instead of
-  getting stuck on earlier incomplete checks. Rechecks after imports, archives
-  and before advancing retain validation; uncertain signing/upload recovery is
-  unchanged. Existing history is preserved. No proof-tool or Tessera contract
-  change is required.
-
-- Importing R2 storage settings now collects all three credential files and
-  saves protected copies together, avoiding the repeated-setup loop. Account
-  and bucket selections are retained; source files are never session-owned.
-  Cloud checks still require separate approval. No Tessera contract or proof-tool
-  change is required.
-- Fix guided enrollment collection rejecting valid one-witness, one-mirror and
-  one-auditor requirements from the authenticated proof-tool projection. Higher
-  reported requirements still apply; signatures and roster checks remain required.
-- Coordinators can issue recipient-bound witness/mirror setup files that assign
-  enrollment numbers. Observers import the file instead of typing a number.
-  These are unsigned instructions, not enrollments; existing signed records and
-  previously saved numbers remain resumable.
-- Role onboarding can import the definition, signature and coordinator public
-  key together from one folder. It retains independent fingerprint confirmation,
-  authenticates the staged set with proof-tool and never replaces different files.
-  Individual imports remain available with their existing menu numbers.
-- Standalone coordinator drafts keep optional identity import visible once the
-  required roster is present, without changing the recommended next step.
-  Beacon help explains rehearsal versus production witness lead times.
-- The Bash launcher installer now disables terminal focus reporting and filters
-  queued focus events at every prompt, matching the CLI's input handling.
-- Role setup explicitly guides public identity/enrollment delivery, requests the
-  coordinator's public storage file before profile creation, and prepares both
-  phase profiles. Participant Phase 2 preparation is recommended only when the
-  authenticated schedule includes them. Reports remain distinct from receipt
-  and verification.
-- Coordinator guidance includes private grant delivery, later evidence access
-  and collection, and canonical production-decision/signature exchanges.
-- Audit uploads stage only the exact successful report/signature pair, including
-  custom output paths. Receiving roles get explicit public-package instructions.
-- Added a bounded onboarding model and real-menu regression for missing storage;
-  this is not a claim of whole-CLI formal verification.
-
-- Signing-container output distinguishes the enclosing ceremony role from its
-  network-disabled execution environment; authorization and saved profiles are
-  unchanged.
-- Coordinator onboarding now orders inspection, sharing public ceremony files,
-  then enrollment collection. Sharing displays the last successfully inspected
-  file paths; existing task IDs and recorded progress are preserved.
-- Ceremony, signature, coordinator-key and transcript-folder prompts explicitly
-  explain that Enter uses the saved path; coordinator-key trust guidance remains.
-- Before initialization, the storage menu recommends setup when local inputs
-  are missing or invalid, and checks when they are present. Cloud checks and
-  signing still require explicit approval.
-- Interactive prompts disable terminal focus reporting and ignore queued focus
-  events, including during hidden credential entry, so switching windows does
-  not corrupt answers. Confirmation phrases remain required.
-- R2 setup explains why a separate inbox-only credential is required, names the
-  selected inbox bucket, and removes "parent" from the credential prompts.
-- Standalone AWS setup is now a first-class storage menu option: review the
-  selected account, use existing resources or approve dedicated provisioning,
-  and save a protected credential snapshot. Temporary snapshots do not renew
-  automatically. Existing storage checks still run with separate approval.
-- Installation now says "Choose your task or role" to include upload-only work.
-- The beacon selection menu previews the bundled settings before selection and
-  distinguishes the 180-second template from production's 24-hour minimum.
-- Guided onboarding and ceremony operations now retain up to 100 structured
-  diagnostic events per role work folder, including fixed error categories.
-- Choose **E — Export bug report** in the menus, or run
-  `relay diagnostics export --work ROLE_WORK --out FRESH_ZIP`.
-- Reports contain a short report ID, release/role/step context, operation outcomes,
-  OS/CPU and local Docker client versions, and expected public-file presence.
-  Raw terminal output, commands, environment, personal paths, keys, credentials,
-  profiles, and ceremony artifacts are excluded. Reports are never uploaded.
-- Diagnostic logging is separate from recovery state. Exporting a report cannot
-  retry a command, complete a task, or overwrite an existing report.
+- Repository tests, vet, launcher tests, the unsigned rehearsal build, and the
+  existing full-ceremony/archive-replay CI passed before the final proof-tool
+  pin update. The pinned proof-tool release assets and GitHub provenance were
+  verified against its exact protected-main commit.
+- A live Cloudflare R2 rehearsal with one participant in each phase completed
+  enrollment, all of Phase 1, and entered Phase 2 before the merge decision.
+  An earlier run reached coordinator replay and creation of the final release
+  candidate, but the test process exceeded its 30-minute harness timeout while
+  publishing that checkpoint. A terminal live final-release reconstruction was
+  not yet recorded at merge time.
+- A complete live Amazon S3 rehearsal has not yet been run for this version.
+- The storage-first guided path in this release supports the minimal required
+  roles: coordinator, participant, and release signer. Enabled witness, mirror,
+  or auditor journeys are deferred; setup refuses those nonzero assurance
+  requirements instead of starting an unfinishable ceremony.
+- The live rehearsal uses the tiny rehearsal circuit. It does not establish
+  production K=21 performance, independent human operators, or physical
+  erasure of host or VM remnants.
+- Storage-first Tessera ceremonies remain disabled until Tessera's compatible
+  setup-v3 and attempt-bound grant/status contract is deployed. Existing
+  Tessera ceremonies keep their pinned releases and behavior.
 
 ## Tessera compatibility
 
@@ -113,6 +97,10 @@ The recovery command does not change setup contracts, signed definitions,
 ceremony data, proof-tool pins, Tessera fields or selected releases. It is an
 explicit compatibility bridge for one frozen Relay release and does not make
 the hotfix release the ceremony runtime. No Tessera change is required.
+Tessera's current grant API does not bind credentials to storage-first
+checkpoint attempts. Relay must reject Tessera-backed storage-first ceremonies
+until a versioned compatible grant/status contract is deployed. Existing
+Tessera ceremonies and setup-v2/setup-v2r2 contracts are unchanged.
 
 Setup contracts, ceremony data, and Tessera request fields are unchanged.
 The ceremony-flow documentation does not change Tessera integration behavior.
@@ -121,3 +109,6 @@ IDs and command-field ordering. Existing selected releases stay pinned.
 The additive export menu key does not renumber existing actions. No proof-tool
 or website change is needed for local bug-report export. Existing role folders
 begin recording diagnostics when opened with a compatible updated launcher.
+Tessera needs its matching setup-v3 contract and policy-driven role/evidence
+handling before storage-first Tessera ceremonies can be enabled. Existing
+Tessera ceremonies stay pinned to their prior setup contract and Relay release.

@@ -12,6 +12,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/crypto/blake2b"
 )
 
 // Digest is the transport view emitted by mpc-ceremony inspect.
@@ -104,17 +106,29 @@ func Resolve(root, name string) (string, error) {
 
 // DigestFile returns the tagged SHA-256 and byte length of a local file.
 func DigestFile(path string) (string, int64, error) {
+	sha, _, size, err := DigestFileBoth(path)
+	return sha, size, err
+}
+
+// DigestFileBoth returns the tagged SHA-256 and BLAKE2b-256 digests and byte
+// length of a local file. V4 retained-operation journals use both digest
+// domains, matching authenticated protocol artifact references.
+func DigestFileBoth(path string) (string, string, int64, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return "", 0, err
+		return "", "", 0, err
 	}
 	defer file.Close()
-	hash := sha256.New()
-	size, err := io.Copy(hash, file)
+	shaHash := sha256.New()
+	blakeHash, err := blake2b.New256(nil)
 	if err != nil {
-		return "", 0, err
+		return "", "", 0, err
 	}
-	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), size, nil
+	size, err := io.Copy(io.MultiWriter(shaHash, blakeHash), file)
+	if err != nil {
+		return "", "", 0, err
+	}
+	return "sha256:" + hex.EncodeToString(shaHash.Sum(nil)), "blake2b256:" + hex.EncodeToString(blakeHash.Sum(nil)), size, nil
 }
 
 // AcceptedCount returns how many contributions the chain has accepted. This is

@@ -24,6 +24,9 @@ func localTestCommandAllowed(role string, command []string, credentials bool) bo
 	if role == "keygen" {
 		return command[1] == "identity" && command[2] == "generate"
 	}
+	if role == "decision-signer" {
+		return command[1] == "checkpoint" && (command[2] == "initialize-v4" || command[2] == "verify-stored-v4")
+	}
 	if role != "coordinator" {
 		return false
 	}
@@ -163,7 +166,7 @@ func runCoordinatorLocal(args []string) error {
 			return errors.New("operation disabled in local test harness")
 		}
 		image := images["online"]
-		if role == "keygen" {
+		if role == "keygen" || role == "decision-signer" {
 			image = images["offline"]
 		}
 		encoded := strings.Join(command, "\x00") + image

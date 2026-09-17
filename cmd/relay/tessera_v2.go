@@ -99,6 +99,7 @@ func (w *coordinatorWizard) importSetupV2(path string, raw []byte) error {
 	}
 	previous := w.d
 	w.d.Tessera = nil
+	w.d.TesseraSetupV3 = nil
 	w.d.TesseraSetup = s
 	w.d.Mode = s.Plan.Mode
 	w.d.Circuit = s.Plan.Circuit

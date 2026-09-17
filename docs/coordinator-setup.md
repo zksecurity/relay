@@ -20,7 +20,8 @@ cannot run the helper. Install a matching new release rather than mixing binarie
 
 If the ceremony was drafted in Tessera, start with **Open setup downloaded
 from Tessera**. After initialization and verification, use **Export setup
-for Tessera**. See the [website setup guide](tessera-setup-v2.md).
+for Tessera**. See the [current website setup guide](tessera-setup-v3.md).
+Relay still verifies existing [v2 setup files](tessera-setup-v2.md).
 
 Setup highlights **NEXT REQUIRED ACTION** with its reason. Use **Show other
 actions and requirements** for edits, optional checks, and offline preparation.

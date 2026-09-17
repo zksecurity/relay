@@ -152,21 +152,30 @@ func runTesseraStorageCredentials(args []string) error {
 	return json.NewEncoder(os.Stdout).Encode(result)
 }
 func (c tesseraStorageConnection) matchesDraft(d coordinatorDraft) error {
-	if d.TesseraSetup == nil {
+	var ceremonyID string
+	var expectedRegion, expectedPublished, expectedInbox, expectedURL string
+	if d.TesseraSetupV3 != nil {
+		ceremonyID = d.TesseraSetupV3.ID
+		expected := d.TesseraSetupV3.Plan.Storage
+		expectedRegion, expectedPublished, expectedInbox, expectedURL = expected.Region, expected.PublishedBucket, expected.InboxBucket, expected.PublicBaseURL
+	} else if d.TesseraSetup != nil {
+		ceremonyID = d.TesseraSetup.ID
+		expected := d.TesseraSetup.Plan.Storage
+		expectedRegion, expectedPublished, expectedInbox, expectedURL = expected.Region, expected.PublishedBucket, expected.InboxBucket, expected.PublicBaseURL
+	} else {
 		return errors.New("open the setup downloaded from Tessera first")
 	}
-	if c.CeremonyID != d.TesseraSetup.ID || c.CoordinatorFingerprint != d.Identities.Coordinator.Fingerprint {
+	if c.CeremonyID != ceremonyID || c.CoordinatorFingerprint != d.Identities.Coordinator.Fingerprint {
 		return errors.New("connection belongs to a different ceremony or coordinator key")
 	}
-	expected := d.TesseraSetup.Plan.Storage
 	s := c.Settings.Settings
-	if s["region"] != expected.Region || s["published-bucket"] != expected.PublishedBucket || s["inbox-bucket"] != expected.InboxBucket || s["published-base-url"] != expected.PublicBaseURL {
+	if s["region"] != expectedRegion || s["published-bucket"] != expectedPublished || s["inbox-bucket"] != expectedInbox || s["published-base-url"] != expectedURL {
 		return errors.New("connection storage differs from the imported setup")
 	}
 	return nil
 }
 func (w *coordinatorWizard) connectTesseraStorage() error {
-	if w.d.TesseraSetup == nil {
+	if w.d.TesseraSetup == nil && w.d.TesseraSetupV3 == nil {
 		return errors.New("open the setup downloaded from Tessera before connecting storage")
 	}
 	path, err := w.required("Private CLI connection JSON downloaded from Tessera, absolute path", "")

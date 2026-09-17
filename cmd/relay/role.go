@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
@@ -31,6 +32,10 @@ type roleOpts struct {
 	operationID    string
 	phase1Seal     string
 	phase1SealSig  string
+	artifactRoot   string
+	checkpoint     string
+	checkpointSig  string
+	attemptID      string
 	docker         *dockerDriver
 }
 
@@ -359,7 +364,14 @@ func runNextAt(o roleOpts, pos position, contributedAt time.Time) error {
 		if err != nil {
 			return err
 		}
-		return writeJSONAtomic(filepath.Join(o.outDir, dockerLifecycleLogName), receipt, 0o600)
+		var retained dockerLifecycleReceipt
+		if err := setupReadJSON(filepath.Join(o.outDir, dockerLifecycleLogName), &retained); err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(retained, *receipt) {
+			return errors.New("promoted lifecycle evidence differs from the completed contributor")
+		}
+		return nil
 	}
 	command := append([]string{o.ceremonyExecutable()}, contributionCommandArgs(o, pos, contributedAt)...)
 
@@ -414,6 +426,14 @@ func contributionCommandArgs(o roleOpts, pos position, contributedAt time.Time) 
 			sealSig = filepath.Join(o.root, "phase1", "sealed", "seal.sig")
 		}
 		command = append(command, "--phase1-seal", seal, "--phase1-seal-signature", sealSig)
+	}
+	if o.attemptID != "" {
+		command = append(command,
+			"--artifact-root", o.artifactRoot,
+			"--checkpoint", o.checkpoint,
+			"--checkpoint-signature", o.checkpointSig,
+			"--attempt-id", o.attemptID,
+		)
 	}
 	return command
 }

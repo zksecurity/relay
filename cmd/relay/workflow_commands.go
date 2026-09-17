@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -590,6 +591,13 @@ func confirmErasure(o roleOpts) error {
 }
 
 func confirmDockerNoCopies(o roleOpts) error {
+	return confirmDockerNoCopiesWithIO(o, bufio.NewReader(os.Stdin), os.Stdout)
+}
+
+func confirmDockerNoCopiesWithIO(o roleOpts, input *bufio.Reader, output io.Writer) error {
+	if input == nil || output == nil {
+		return errors.New("cleanup confirmation input and output are required")
+	}
 	path := filepath.Join(o.outDir, dockerLifecycleLogName)
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -602,7 +610,7 @@ func confirmDockerNoCopies(o roleOpts) error {
 		return errors.New("Docker lifecycle record does not contain the required cleanup checks")
 	}
 	shortID := shortContainerID(receipt.ContainerID)
-	fmt.Printf(`Contribution completed.
+	fmt.Fprintf(output, `Contribution completed.
 
 Relay verified:
   ✓ Docker daemon %s was reached through local endpoint %s
@@ -624,8 +632,8 @@ Confirm that you:
   • did not configure the disposable environment for backup.
 
 Type CLEANUP PRECAUTIONS CONFIRMED to acknowledge these limitations and continue: `, receipt.Daemon.ID, receipt.Daemon.Endpoint, shortID, shortID)
-	disableTerminalFocusReporting(os.Stdout)
-	line, readErr := bufio.NewReader(os.Stdin).ReadString('\n')
+	disableTerminalFocusReporting(output)
+	line, readErr := input.ReadString('\n')
 	if readErr != nil && len(line) == 0 {
 		return readErr
 	}

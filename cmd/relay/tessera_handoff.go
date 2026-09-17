@@ -11,7 +11,7 @@ import (
 
 // This receipt is local navigation state, never website acceptance evidence.
 func (w *coordinatorWizard) tesseraExportPresent() bool {
-	if w.d.Tessera == nil && w.d.TesseraSetup == nil {
+	if w.d.Tessera == nil && w.d.TesseraSetup == nil && w.d.TesseraSetupV3 == nil {
 		return false
 	}
 	if w.d.TesseraExportPath == "" || w.d.TesseraExportSHA256 == "" {

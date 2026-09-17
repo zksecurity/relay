@@ -38,6 +38,8 @@ const (
 	dockerMacSwapUnassessed   = "not-assessed-macos-host"
 )
 
+var errContributorNotCreated = errors.New("contributor container was not created")
+
 type dockerCommandClient interface {
 	Output(args ...string) ([]byte, []byte, error)
 	Attached(stdout, stderr io.Writer, args ...string) error
@@ -105,21 +107,25 @@ type dockerMount struct {
 }
 
 type dockerDriver struct {
-	image          string
-	platform       string
-	ceremonyBinary string
-	root           string
-	definition     string
-	definitionSig  string
-	coordinatorKey string
-	signingKey     string
-	environment    string
-	candidateRoot  string
-	client         dockerCommandClient
-	now            func() time.Time
-	hostSwapStatus func() (string, error)
-	interruptCtx   func() (context.Context, context.CancelFunc)
-	daemon         dockerDaemonFacts
+	image                  string
+	platform               string
+	ceremonyBinary         string
+	root                   string
+	inspectionRoot         string // optional V4 work root; only exact requested paths are mounted
+	definition             string
+	definitionSig          string
+	coordinatorKey         string
+	signingKey             string
+	environment            string
+	candidateRoot          string
+	executionIntentPath    string       // optional private V4 retained invocation
+	beforeCreate           func() error // V4 journal crosses running immediately before create
+	replaceUnstartedIntent bool
+	client                 dockerCommandClient
+	now                    func() time.Time
+	hostSwapStatus         func() (string, error)
+	interruptCtx           func() (context.Context, context.CancelFunc)
+	daemon                 dockerDaemonFacts
 }
 
 type dockerActiveState struct {
@@ -136,6 +142,7 @@ type dockerActiveState struct {
 	CreatedAt      string        `json:"created_at"`
 	MountDigest    string        `json:"mount_digest,omitempty"`
 	Mounts         []dockerMount `json:"mounts,omitempty"`
+	CreateArgs     []string      `json:"create_args,omitempty"`
 }
 
 type dockerDaemonFacts struct {
@@ -170,25 +177,29 @@ type dockerSecurityFacts struct {
 }
 
 type dockerLifecycleReceipt struct {
-	Schema                  string              `json:"schema"`
-	ExecutionMode           string              `json:"execution_mode"`
-	Image                   string              `json:"image"`
-	Platform                string              `json:"platform"`
-	CeremonyBinary          string              `json:"ceremony_binary"`
-	CeremonyBinarySHA256    string              `json:"ceremony_binary_sha256"`
-	Daemon                  dockerDaemonFacts   `json:"daemon"`
-	HostSwapStatus          string              `json:"host_swap_status"`
-	ContainerID             string              `json:"container_id"`
-	CreatedAt               string              `json:"created_at"`
-	StartedAt               string              `json:"started_at"`
-	ExitedAt                string              `json:"exited_at"`
-	ExitCode                int                 `json:"exit_code"`
-	RemovedAt               string              `json:"removed_at"`
-	RemovalVerified         bool                `json:"removal_verified"`
-	Security                dockerSecurityFacts `json:"security"`
-	ParticipantConfirmation string              `json:"participant_confirmation,omitempty"`
-	ConfirmedAt             string              `json:"confirmed_at,omitempty"`
-	ErasureDestroyedAt      string              `json:"erasure_destroyed_at,omitempty"`
+	Schema                   string              `json:"schema"`
+	OperationID              string              `json:"operation_id,omitempty"`
+	WorkspaceID              string              `json:"workspace_id,omitempty"`
+	CandidateDirectorySHA256 string              `json:"candidate_directory_sha256,omitempty"`
+	CreateArgsSHA256         string              `json:"create_args_sha256,omitempty"`
+	ExecutionMode            string              `json:"execution_mode"`
+	Image                    string              `json:"image"`
+	Platform                 string              `json:"platform"`
+	CeremonyBinary           string              `json:"ceremony_binary"`
+	CeremonyBinarySHA256     string              `json:"ceremony_binary_sha256"`
+	Daemon                   dockerDaemonFacts   `json:"daemon"`
+	HostSwapStatus           string              `json:"host_swap_status"`
+	ContainerID              string              `json:"container_id"`
+	CreatedAt                string              `json:"created_at"`
+	StartedAt                string              `json:"started_at"`
+	ExitedAt                 string              `json:"exited_at"`
+	ExitCode                 int                 `json:"exit_code"`
+	RemovedAt                string              `json:"removed_at"`
+	RemovalVerified          bool                `json:"removal_verified"`
+	Security                 dockerSecurityFacts `json:"security"`
+	ParticipantConfirmation  string              `json:"participant_confirmation,omitempty"`
+	ConfirmedAt              string              `json:"confirmed_at,omitempty"`
+	ErasureDestroyedAt       string              `json:"erasure_destroyed_at,omitempty"`
 }
 
 func dockerDriverForParticipant(config access.ParticipantConfig) *dockerDriver {
@@ -432,13 +443,6 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 		Image: d.image, Platform: d.platform, DaemonID: d.daemon.ID, DaemonEndpoint: d.daemon.Endpoint,
 		HandoffDir: handoff, CreatedAt: receipt.CreatedAt, MountDigest: fmt.Sprintf("sha256:%x", mountDigest), Mounts: append([]dockerMount(nil), mounts...),
 	}
-	// Save the intended unique name before Docker can create anything. If the
-	// create response is lost, cleanup resolves this exact labelled container
-	// by name instead of starting a second contributor.
-	if err := writeJSONNoReplace(d.activeStatePath(), state, 0o600); err != nil {
-		_ = os.RemoveAll(handoff)
-		return nil, fmt.Errorf("persist contributor intent: %w", err)
-	}
 	createArgs := d.baseCreateArgs(mounts)
 	createArgs = append(createArgs,
 		"--name", state.ContainerName,
@@ -449,6 +453,30 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 		d.image,
 	)
 	createArgs = append(createArgs, args...)
+	// Persist the actual rewritten Docker invocation, not only the outer /work
+	// command. This contains paths and public arguments, never signing-key bytes.
+	// Older lifecycle records without CreateArgs remain usable for cleanup.
+	state.CreateArgs = append([]string(nil), createArgs...)
+	// Save before Docker can create anything. Lost responses are reconciled by
+	// this exact unique name, never by starting a second contributor.
+	if err := writeJSONNoReplace(d.activeStatePath(), state, 0o600); err != nil {
+		_ = os.RemoveAll(handoff)
+		return nil, fmt.Errorf("persist contributor intent: %w", err)
+	}
+	if d.executionIntentPath != "" {
+		writeIntent := writeJSONNoReplace
+		if d.replaceUnstartedIntent {
+			writeIntent = writeJSONAtomic
+		}
+		if err := writeIntent(d.executionIntentPath, state, 0o600); err != nil {
+			return nil, fmt.Errorf("persist V4 contributor invocation: %w", err)
+		}
+	}
+	if d.beforeCreate != nil {
+		if err := d.beforeCreate(); err != nil {
+			return nil, err
+		}
+	}
 	stdout, stderr, err := d.client.Output(createArgs...)
 	if err != nil {
 		containerID, found, reconcileErr := d.resolveTrackedContainer(state)
@@ -456,10 +484,28 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 			return nil, fmt.Errorf("create contributor response was uncertain and reconciliation failed: %w", reconcileErr)
 		}
 		if !found {
-			_ = os.Remove(d.activeStatePath())
-			_ = syncDirectory(filepath.Dir(d.activeStatePath()))
-			_ = os.RemoveAll(handoff)
-			return nil, fmt.Errorf("create contributor container: %s", dockerDiagnostic(stderr, err))
+			if removeErr := os.Remove(d.activeStatePath()); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				return nil, fmt.Errorf("create contributor failed and its retained intent could not be removed: %w", removeErr)
+			}
+			if syncErr := syncDirectory(filepath.Dir(d.activeStatePath())); syncErr != nil {
+				return nil, fmt.Errorf("create contributor failed and intent removal could not be synced: %w", syncErr)
+			}
+			if d.executionIntentPath != "" {
+				var retained dockerActiveState
+				if readErr := setupReadJSON(d.executionIntentPath, &retained); readErr != nil || !reflect.DeepEqual(retained, state) {
+					return nil, errors.New("create contributor failed but its V4 invocation record changed; inspect before continuing")
+				}
+				if removeErr := os.Remove(d.executionIntentPath); removeErr != nil {
+					return nil, fmt.Errorf("create contributor failed and its V4 invocation could not be removed: %w", removeErr)
+				}
+				if syncErr := syncDirectory(filepath.Dir(d.executionIntentPath)); syncErr != nil {
+					return nil, fmt.Errorf("create contributor failed and V4 invocation removal could not be synced: %w", syncErr)
+				}
+			}
+			if removeErr := os.RemoveAll(handoff); removeErr != nil {
+				return nil, fmt.Errorf("create contributor failed and its empty handoff could not be removed: %w", removeErr)
+			}
+			return nil, fmt.Errorf("%w: %s", errContributorNotCreated, dockerDiagnostic(stderr, err))
 		}
 		stdout = []byte(containerID)
 	}
@@ -475,6 +521,13 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 		return nil, errors.New("persist contributor cleanup state: lifecycle state changed while Docker created the container")
 	}
 	receipt.ContainerID = containerID
+	receipt.OperationID = state.OperationID
+	receipt.WorkspaceID = state.WorkspaceID
+	destinationDigest := sha256.Sum256([]byte(filepath.Clean(o.outDir)))
+	receipt.CandidateDirectorySHA256 = fmt.Sprintf("sha256:%x", destinationDigest)
+	invocationBytes, _ := json.Marshal(state.CreateArgs)
+	invocationDigest := sha256.Sum256(invocationBytes)
+	receipt.CreateArgsSHA256 = fmt.Sprintf("sha256:%x", invocationDigest)
 	state.ContainerID = containerID
 	if err := writeJSONAtomic(d.activeStatePath(), state, 0o600); err != nil {
 		_ = d.removeAndVerify(containerID)
@@ -547,6 +600,13 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 		_ = os.RemoveAll(handoff)
 		return nil, err
 	}
+	// Publish the public contribution and its lifecycle evidence as one
+	// directory rename. A crash must not expose a candidate that cannot later
+	// prove which contributor container was removed.
+	if err := writeJSONNoReplace(filepath.Join(publicCandidate, dockerLifecycleLogName), receipt, 0o600); err != nil {
+		_ = os.RemoveAll(handoff)
+		return nil, fmt.Errorf("stage contributor lifecycle evidence: %w", err)
+	}
 	if _, err := os.Lstat(o.outDir); err == nil || !errors.Is(err, os.ErrNotExist) {
 		_ = os.RemoveAll(handoff)
 		if err == nil {
@@ -573,6 +633,16 @@ func (d *dockerDriver) contributionInterruptContext() (context.Context, context.
 }
 
 func (d *dockerDriver) attestErasure(o roleOpts, destroyedAt time.Time) error {
+	command, err := d.erasureCommand(o, destroyedAt)
+	if err != nil {
+		return err
+	}
+	return d.client.Attached(os.Stdout, os.Stderr, command...)
+}
+
+// erasureCommand is shared with saved-operation execution so it can persist
+// the exact rewritten invocation before starting the signing child.
+func (d *dockerDriver) erasureCommand(o roleOpts, destroyedAt time.Time) ([]string, error) {
 	args := []string{o.phase, "attest-erasure",
 		"--ceremony", d.definition,
 		"--ceremony-signature", d.definitionSig,
@@ -584,7 +654,7 @@ func (d *dockerDriver) attestErasure(o roleOpts, destroyedAt time.Time) error {
 	}
 	rewritten, mounts, err := d.rewriteArgs(args, map[string]string{o.outDir: "/relay/output/candidate"})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for i := range mounts {
 		if mounts[i].Source == o.outDir {
@@ -594,7 +664,7 @@ func (d *dockerDriver) attestErasure(o roleOpts, destroyedAt time.Time) error {
 	command := d.baseRunArgs(true, mounts)
 	command = append(command, d.image)
 	command = append(command, rewritten...)
-	return d.client.Attached(os.Stdout, os.Stderr, command...)
+	return command, nil
 }
 
 func (d *dockerDriver) contributionArgs(o roleOpts, pos position, contributedAt time.Time, handoff, output string) ([]string, []dockerMount, error) {
@@ -606,6 +676,22 @@ func (d *dockerDriver) contributionArgs(o roleOpts, pos position, contributedAt 
 	container.signingKey = "/relay/key/participant.key"
 	container.envPath = "/relay/config/environment.json"
 	container.outDir = output
+	if container.attemptID != "" {
+		container.artifactRoot = "/relay/input"
+		if o.checkpoint == "" || o.checkpointSig == "" || o.checkpoint == o.checkpointSig {
+			return nil, nil, errors.New("V4 contribution requires distinct allocation checkpoint and signature paths")
+		}
+		for _, item := range []struct {
+			source      string
+			destination *string
+		}{{o.checkpoint, &container.checkpoint}, {o.checkpointSig, &container.checkpointSig}} {
+			mapped, err := pathWithin(d.root, item.source, "/relay/input")
+			if err != nil {
+				return nil, nil, fmt.Errorf("allocation checkpoint path: %w", err)
+			}
+			*item.destination = mapped
+		}
+	}
 	// Explicit phase-1 seal paths use the same read-only transcript mount as
 	// default paths. Never pass a host path into the isolated contributor.
 	for _, sealPath := range []*string{&container.phase1Seal, &container.phase1SealSig} {
@@ -671,7 +757,20 @@ func (d *dockerDriver) rewriteArgs(args []string, writable map[string]string) ([
 		if filepath.IsAbs(arg) {
 			mapped, err := pathWithin(d.root, arg, "/relay/input")
 			if err != nil {
-				return nil, nil, fmt.Errorf("refuse unrecognized host path %q in Docker ceremony command", arg)
+				if d.inspectionRoot == "" || arg == d.inspectionRoot {
+					return nil, nil, fmt.Errorf("refuse unrecognized host path %q in Docker ceremony command", arg)
+				}
+				if _, scopeErr := pathWithin(d.inspectionRoot, arg, "/"); scopeErr != nil {
+					return nil, nil, fmt.Errorf("refuse unrecognized host path %q in Docker ceremony command", arg)
+				}
+				if mount, ok := mountBySource[arg]; ok {
+					rewritten[i] = mount.Destination
+					continue
+				}
+				mapped = fmt.Sprintf("/relay/extra/%d", i)
+				mountBySource[arg] = dockerMount{Source: arg, Destination: mapped, ReadOnly: true}
+				rewritten[i] = mapped
+				continue
 			}
 			rewritten[i] = mapped
 			mountBySource[d.root] = dockerMount{Source: d.root, Destination: "/relay/input", ReadOnly: true}
@@ -1157,7 +1256,7 @@ func signedCeremonyBinarySHA256(path, platform string) (string, error) {
 			)
 		}
 		digest = definition.Software.ToolBinary.SHA256
-	case "proof-tool-mpc-ceremony-definition-v2":
+	case "proof-tool-mpc-ceremony-definition-v2", "proof-tool-mpc-ceremony-definition-v3", "proof-tool-mpc-ceremony-definition-v4":
 		for _, binary := range definition.Software.Binaries {
 			if binary.GoOS+"/"+binary.GoArch != platform {
 				continue

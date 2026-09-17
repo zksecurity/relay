@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/zksecurity/relay/internal/access"
+	"github.com/zksecurity/relay/internal/storagefirst"
 	"github.com/zksecurity/relay/internal/store"
 	"github.com/zksecurity/relay/internal/transcript"
 )
@@ -214,6 +215,8 @@ func isAccessDenied(err error) bool {
 func runGrant(args []string) error {
 	set := flag.NewFlagSet("coordinator grant", flag.ContinueOnError)
 	var storagePath, role, identity, ttlText, minimumText, legacyMinimumText, enrollment, enrollmentSignature, out string
+	var checkpointDigest, submissionKind, phase, attemptID string
+	var index uint
 	set.StringVar(&storagePath, "storage", "", "storage configuration from configure-storage")
 	set.StringVar(&role, "role", "", "participant, witness, mirror, auditor, release, decision")
 	set.StringVar(&identity, "identity", "", "authenticated ceremony or enrollment identity")
@@ -223,6 +226,11 @@ func runGrant(args []string) error {
 	set.StringVar(&enrollment, "enrollment", "", "signed operational enrollment for roles other than participant")
 	set.StringVar(&enrollmentSignature, "enrollment-signature", "", "detached enrollment signature")
 	set.StringVar(&out, "out", "", "fresh secret grant file")
+	set.StringVar(&checkpointDigest, "checkpoint-digest", "", "authenticated V4 allocation checkpoint digest")
+	set.StringVar(&submissionKind, "submission-kind", "", "V4 submission kind")
+	set.StringVar(&phase, "phase", "", "V4 ceremony phase")
+	set.UintVar(&index, "index", 0, "V4 one-based contribution index")
+	set.StringVar(&attemptID, "attempt-id", "", "V4 allocated attempt ID")
 	if err := set.Parse(args); err != nil {
 		return err
 	}
@@ -234,6 +242,10 @@ func runGrant(args []string) error {
 	}
 	if storagePath == "" || role == "" || identity == "" || ttlText == "" || minimumText == "" || out == "" {
 		return errors.New("--storage, --role, --identity, --credential-ttl, --minimum-remaining and --out are required")
+	}
+	v4 := checkpointDigest != "" || submissionKind != "" || phase != "" || index != 0 || attemptID != ""
+	if v4 && (checkpointDigest == "" || submissionKind == "" || phase == "" || index == 0 || index > 255 || attemptID == "") {
+		return errors.New("V4 grants require --checkpoint-digest, --submission-kind, --phase, --index and --attempt-id together")
 	}
 	config, err := loadStorageConfig(storagePath)
 	if err != nil {
@@ -247,17 +259,80 @@ func runGrant(args []string) error {
 	if err != nil || minimum <= 0 || minimum > ttl {
 		return errors.New("--minimum-remaining must be positive and no greater than --credential-ttl")
 	}
-	prefix, err := access.Prefix(config.CeremonyID, role, identity)
+	var prefix string
+	if v4 {
+		if submissionKind == access.SubmissionKindCandidate && role != access.RoleParticipant {
+			return errors.New("V4 candidate grants support only participants")
+		}
+		if submissionKind == access.SubmissionKindRelease && role != access.RoleRelease {
+			return errors.New("V4 release grants support only the release signer")
+		}
+		if submissionKind != access.SubmissionKindCandidate && submissionKind != access.SubmissionKindEnrollment && submissionKind != access.SubmissionKindRelease {
+			return errors.New("V4 grants support candidate, enrollment or release uploads")
+		}
+		prefix, err = (storagefirst.DeliveryScope{CeremonyID: config.CeremonyID, AttemptID: attemptID, Kind: submissionKind}).Prefix()
+	} else {
+		prefix, err = access.Prefix(config.CeremonyID, role, identity)
+	}
 	if err != nil {
 		return err
 	}
-	if err := authenticateGrantIdentity(config, role, identity, enrollment, enrollmentSignature); err != nil {
-		return err
+	if v4 && submissionKind == access.SubmissionKindEnrollment {
+		if err := authenticateEnrollmentGrantAssignment(config, role, identity, int(index)); err != nil {
+			return err
+		}
+	} else {
+		if err := authenticateGrantIdentity(config, role, identity, enrollment, enrollmentSignature); err != nil {
+			return err
+		}
 	}
 	now := time.Now().UTC().Truncate(time.Second)
+	requestID := ""
+	if v4 {
+		requestID, err = randomID()
+		if err != nil {
+			return err
+		}
+		// Validate every non-secret field and prove the destination directory is
+		// writable before asking R2/AWS to mint a live credential. A failed
+		// local validation must never leave an unseen cloud grant behind.
+		preflight := access.StorageFirstGrant{
+			Schema: access.GrantSchemaV2, Provider: config.Provider, CeremonyID: config.CeremonyID,
+			GrantRequestID: requestID, CheckpointDigest: checkpointDigest, SubmissionKind: submissionKind,
+			Phase: phase, Index: uint8(index), IdentityID: identity, AttemptID: attemptID,
+			Endpoint: config.Endpoint, Region: config.Region, InboxBucket: config.InboxBucket,
+			Prefix: prefix + "/", ManifestKey: prefix + "/manifest.json",
+			IssuedAt: now.Format(time.RFC3339), ExpiresAt: now.Add(ttl).Format(time.RFC3339),
+			Credentials: access.SessionCredentials{AccessKeyID: "preflight", SecretAccessKey: "preflight", SessionToken: "preflight"},
+		}
+		if err := preflight.Validate(); err != nil {
+			return err
+		}
+		if err := preflightFreshGrantOutput(out); err != nil {
+			return err
+		}
+	}
 	credentials, expires, err := issueCredentials(config, identity, prefix, ttl, now)
 	if err != nil {
 		return err
+	}
+	if v4 {
+		grant := access.StorageFirstGrant{
+			Schema: access.GrantSchemaV2, Provider: config.Provider, CeremonyID: config.CeremonyID,
+			GrantRequestID: requestID, CheckpointDigest: checkpointDigest, SubmissionKind: submissionKind,
+			Phase: phase, Index: uint8(index), IdentityID: identity, AttemptID: attemptID,
+			Endpoint: config.Endpoint, Region: config.Region, InboxBucket: config.InboxBucket,
+			Prefix: prefix + "/", ManifestKey: prefix + "/manifest.json",
+			IssuedAt: now.Format(time.RFC3339), ExpiresAt: expires.UTC().Format(time.RFC3339), Credentials: credentials,
+		}
+		if err := grant.Validate(); err != nil {
+			return err
+		}
+		if err := writeJSONNoReplace(out, grant, 0o600); err != nil {
+			return err
+		}
+		fmt.Printf("issued %s upload grant for %s\nprefix:  %s\nexpires: %s\n", submissionKind, identity, grant.Prefix, grant.ExpiresAt)
+		return nil
 	}
 	grant := access.Grant{
 		Schema: access.GrantSchema, Provider: config.Provider, CeremonyID: config.CeremonyID,
@@ -274,6 +349,77 @@ func runGrant(args []string) error {
 	}
 	fmt.Printf("issued %s grant for %s\nprefix:  %s\nexpires: %s\n", role, identity, prefix, grant.ExpiresAt)
 	return nil
+}
+
+func authenticateEnrollmentGrantAssignment(config access.StorageConfig, role, identity string, index int) error {
+	inspector := transcript.Inspector{
+		Executable: config.CeremonyBinary, CeremonyPath: config.CeremonyPath,
+		CeremonySignaturePath: config.CeremonySignature, CoordinatorPublicKeyPath: config.CoordinatorPublicKey,
+	}
+	definition, err := inspector.Definition()
+	if err != nil {
+		return err
+	}
+	if definition.CeremonyID != config.CeremonyID {
+		return errors.New("authenticated definition does not match the storage ceremony")
+	}
+	want := "participant"
+	if role != access.RoleParticipant {
+		var ok bool
+		want, ok = ceremonyEnrollmentRole(role)
+		if !ok {
+			return errors.New("role cannot receive a formal enrollment grant")
+		}
+	}
+	journey, err := definition.RequireJourney()
+	if err != nil {
+		return err
+	}
+	for _, expected := range journey.RequiredEnrollments {
+		if expected.Identity.ID == identity && expected.Role == want && expected.RoleIndex == index {
+			return nil
+		}
+	}
+	return errors.New("identity, role and index are not an exact signed enrollment assignment")
+}
+
+func preflightFreshGrantOutput(path string) error {
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return errors.New("V4 grant output must be an absolute clean path")
+	}
+	if _, err := os.Lstat(path); err == nil {
+		return errors.New("V4 grant output already exists")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	parent := filepath.Dir(path)
+	if err := ensurePrivateDirectory(parent); err != nil {
+		return fmt.Errorf("prepare protected grant directory: %w", err)
+	}
+	probe, err := os.CreateTemp(parent, ".relay-grant-preflight-")
+	if err != nil {
+		return fmt.Errorf("test protected grant output: %w", err)
+	}
+	name := probe.Name()
+	if err := probe.Chmod(0600); err != nil {
+		_ = probe.Close()
+		_ = os.Remove(name)
+		return err
+	}
+	closeErr := probe.Close()
+	removeErr := os.Remove(name)
+	if closeErr != nil || removeErr != nil {
+		return errors.Join(closeErr, removeErr)
+	}
+	return syncDirectory(parent)
+}
+
+func loadStorageFirstGrant(path string) (access.StorageFirstGrant, error) {
+	raw, err := readProtectedCredentialBytes(path, 1<<20)
+	if err != nil {
+		return access.StorageFirstGrant{}, err
+	}
+	return access.Decode(raw, access.StorageFirstGrant.Validate)
 }
 
 func authenticateGrantIdentity(config access.StorageConfig, role, identity, enrollment, enrollmentSignature string) error {
@@ -526,6 +672,12 @@ func coordinatorClient(config access.StorageConfig, bucket string) store.Client 
 }
 
 func grantClient(grant access.Grant) store.Client {
+	credentials := store.Credentials{AccessKeyID: grant.Credentials.AccessKeyID,
+		SecretAccessKey: grant.Credentials.SecretAccessKey, SessionToken: grant.Credentials.SessionToken}
+	return store.Client{Endpoint: grant.Endpoint, Region: grant.Region, Bucket: grant.InboxBucket, Credentials: &credentials}
+}
+
+func storageFirstGrantClient(grant access.StorageFirstGrant) store.Client {
 	credentials := store.Credentials{AccessKeyID: grant.Credentials.AccessKeyID,
 		SecretAccessKey: grant.Credentials.SecretAccessKey, SessionToken: grant.Credentials.SessionToken}
 	return store.Client{Endpoint: grant.Endpoint, Region: grant.Region, Bucket: grant.InboxBucket, Credentials: &credentials}
