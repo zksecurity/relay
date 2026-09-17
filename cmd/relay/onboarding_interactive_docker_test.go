@@ -348,6 +348,9 @@ func TestAllRoleInteractiveDockerOnboarding(t *testing.T) {
 			if config.CeremonyID != definition.CeremonyID || config.IdentityID == "" {
 				t.Fatal("unbound profile")
 			}
+			if p.d.Role == "participant" && config.CeremonyBinary != dockerCeremonyBinary {
+				t.Fatalf("Docker participant profile retained a host measurement path as its runtime: %q", config.CeremonyBinary)
+			}
 		}
 	}
 	// Exercise the participant's real environment prompt and disposable

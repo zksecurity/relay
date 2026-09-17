@@ -1,5 +1,11 @@
 ## What changed
 
+- Fixed Docker participant profiles for the storage-first workflow. Setup now
+  measures the host proof-tool companion against the approved receipt but
+  records and executes only the image's fixed proof-tool path in Docker.
+  Existing profiles that retained a host measurement path remain usable without
+  editing, recreation, or changes to their ceremony files, grants, candidates,
+  or recovery state.
 - Fixed storage-first final signing to pass Proof-tool the authenticated current
   release-review checkpoint, rather than the separately signed operational
   evidence bundle. Proof-tool correctly rejected the bundle when it was used as
