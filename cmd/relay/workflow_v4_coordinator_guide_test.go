@@ -99,6 +99,21 @@ func TestWorkflowV4CoordinatorRejectLabelIsExplicit(t *testing.T) {
 	}
 }
 
+func TestWorkflowV4CoordinatorTransportRecoveryIsActionable(t *testing.T) {
+	scope := transcript.ContributionScopeV4{CeremonyID: "sha256:" + strings.Repeat("1", 64), Phase: "phase1", Index: 1, ParticipantID: "p", ParentHeadID: "sha256:" + strings.Repeat("2", 64)}
+	turn := storagefirst.TurnViewV4{Scope: scope, CandidateAttempt: &transcript.DeliverySlotV4{AttemptID: strings.Repeat("a", 32)}}
+	recommendation, ok := workflowV4CoordinatorTransportRecoveryRecommendation(turn, workflowV4CoordinatorProgress{CandidateDir: "/private/candidate", CandidateTransportError: "missing receipt"})
+	if !ok || recommendation.Action != "recover-candidate-download" || !recommendation.Ready || recommendation.Scope != scope || recommendation.AttemptID != turn.CandidateAttempt.AttemptID {
+		t.Fatalf("recovery recommendation = %+v, ok=%v", recommendation, ok)
+	}
+	if got := workflowV4CoordinatorActionLabel(recommendation, workflowV4CoordinatorProgress{}); got != "Preserve the unverifiable download and fetch this attempt again" {
+		t.Fatalf("recovery label = %q", got)
+	}
+	if _, ok := workflowV4CoordinatorTransportRecoveryRecommendation(turn, workflowV4CoordinatorProgress{CandidateDir: "/private/candidate"}); ok {
+		t.Fatal("candidate without transport failure became a recovery action")
+	}
+}
+
 func TestWorkflowV4CoordinatorInspectionFailureIsReviewable(t *testing.T) {
 	root := t.TempDir()
 	candidate := filepath.Join(root, "received-candidate")

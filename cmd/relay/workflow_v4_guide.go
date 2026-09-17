@@ -272,8 +272,10 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 					ui.message(toneError, "Retained coordinator work could not be verified: %v\nNo operation was repeated.\n", err)
 				} else if coordinatorProgress.CandidateTransportError != "" {
 					ui.message(toneError, "The retained candidate is not the exact package previously transport-checked: %s\nRelay will preserve it for investigation and fetch the same authenticated attempt into a fresh private folder.\n", coordinatorProgress.CandidateTransportError)
-					recommendation = storagefirst.TurnRecommendationV4{Action: "recover-candidate-download", Ready: true, Reason: "the retained candidate package needs transport recovery before it can be inspected or decided.", Scope: turn.Scope, AttemptID: turn.CandidateAttempt.AttemptID}
-					actionLabel = workflowV4CoordinatorActionLabel(recommendation, coordinatorProgress)
+					if recovery, ok := workflowV4CoordinatorTransportRecoveryRecommendation(turn, coordinatorProgress); ok {
+						recommendation = recovery
+						actionLabel = workflowV4CoordinatorActionLabel(recommendation, coordinatorProgress)
+					}
 				} else if candidateRecommendation, reviewCandidate := workflowV4CoordinatorCandidateRecommendation(turn, coordinatorProgress); reviewCandidate {
 					// The candidate directory exists only after the coordinator's
 					// atomic transport fetch checked the fixed five-file package.
@@ -377,6 +379,19 @@ func workflowV4CoordinatorCandidateRecommendation(turn storagefirst.TurnViewV4, 
 		Action:    "review-and-reject-candidate",
 		Ready:     true,
 		Reason:    "the transport-checked candidate failed proof-tool verification; review it and explicitly reject it before a fresh replacement contribution.",
+		Scope:     turn.Scope,
+		AttemptID: turn.CandidateAttempt.AttemptID,
+	}, true
+}
+
+func workflowV4CoordinatorTransportRecoveryRecommendation(turn storagefirst.TurnViewV4, progress workflowV4CoordinatorProgress) (storagefirst.TurnRecommendationV4, bool) {
+	if turn.CandidateAttempt == nil || progress.CandidateDir == "" || progress.CandidateTransportError == "" {
+		return storagefirst.TurnRecommendationV4{}, false
+	}
+	return storagefirst.TurnRecommendationV4{
+		Action:    "recover-candidate-download",
+		Ready:     true,
+		Reason:    "the retained candidate package needs transport recovery before it can be inspected or decided.",
 		Scope:     turn.Scope,
 		AttemptID: turn.CandidateAttempt.AttemptID,
 	}, true
