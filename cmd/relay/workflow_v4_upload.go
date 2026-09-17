@@ -37,7 +37,7 @@ func workflowV4CandidateFiles(candidateDir string, inventory transcript.Contribu
 	paths := make(map[string]string, len(limits))
 	for _, ref := range inventory.Complete.Files {
 		limit, ok := limits[ref.Name]
-		if !ok || ref.Digest.Size <= 0 || ref.Digest.Size > limit || ref.Digest.SHA256 == "" {
+		if !ok || ref.Digest.Size <= 0 || ref.Digest.Size > limit || ref.Digest.SHA256 == "" || ref.Digest.Blake2b256 == "" {
 			return nil, nil, errors.New("verified candidate inventory contains an unexpected file")
 		}
 		if _, duplicate := sources[ref.Name]; duplicate {
@@ -95,7 +95,10 @@ func (j *workflowV4Journal) prepareWorkflowV4Upload(cleanupID, activeAttemptID s
 	}
 	for _, ref := range inventory.Complete.Files {
 		content := sources[ref.Name]
-		inputs = append(inputs, workflowV4Input{Path: paths[ref.Name], Ref: transcript.ArtifactRef{Name: content.Name, Digest: transcript.Digest{SHA256: content.SHA256, Size: content.Size}}})
+		if ref.Digest.SHA256 != content.SHA256 || ref.Digest.Size != content.Size || ref.Digest.Blake2b256 == "" {
+			return zero, errors.New("verified candidate inventory digest differs from upload source")
+		}
+		inputs = append(inputs, workflowV4Input{Path: paths[ref.Name], Ref: ref})
 	}
 	id, err := randomID()
 	if err != nil {

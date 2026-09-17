@@ -208,11 +208,11 @@ func (j *workflowV4Journal) prepareWorkflowV4Erasure(contributionID, scopePath s
 }
 
 func workflowV4LocalRef(name, path string) (transcript.ArtifactRef, error) {
-	sha, size, err := transcript.DigestFile(path)
+	sha, blake, size, err := transcript.DigestFileBoth(path)
 	if err != nil {
 		return transcript.ArtifactRef{}, err
 	}
-	return transcript.ArtifactRef{Name: name, Digest: transcript.Digest{SHA256: sha, Size: size}}, nil
+	return transcript.ArtifactRef{Name: name, Digest: transcript.Digest{SHA256: sha, Blake2b256: blake, Size: size}}, nil
 }
 
 func writeWorkflowV4Scope(path string, scope transcript.ContributionScopeV4) error {

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/blake2b"
+
 	"github.com/zksecurity/relay/internal/transcript"
 )
 
@@ -416,7 +418,7 @@ func validateWorkflowV4Ref(ref transcript.ArtifactRef) error {
 	if !validCoordinatorCommitDigest(ref.Digest.SHA256) || ref.Digest.Size < 1 || ref.Digest.Size > 16<<30 {
 		return errors.New("invalid V4 retained file digest")
 	}
-	if ref.Digest.Blake2b256 != "" && (!validCoordinatorCommitDigest(strings.Replace(ref.Digest.Blake2b256, "blake2b256:", "sha256:", 1)) || !strings.HasPrefix(ref.Digest.Blake2b256, "blake2b256:")) {
+	if !validCoordinatorCommitDigest(strings.Replace(ref.Digest.Blake2b256, "blake2b256:", "sha256:", 1)) || !strings.HasPrefix(ref.Digest.Blake2b256, "blake2b256:") {
 		return errors.New("invalid V4 retained BLAKE2b-256 digest")
 	}
 	return nil
@@ -739,9 +741,13 @@ func workflowV4HashInput(input workflowV4Input, before os.FileInfo) error {
 		return errors.New("V4 retained input changed while opening")
 	}
 	sha := sha256.New()
-	// SHA-256 binds the retained bytes here; approved proof-tool verifies the
-	// complete signed reference before the plan is prepared/reconciled.
-	n, err := io.Copy(sha, io.LimitReader(f, before.Size()+1))
+	blake, err := blake2b.New256(nil)
+	if err != nil {
+		return err
+	}
+	// Both digest domains bind retained bytes before the approved proof-tool
+	// verifies the complete signed reference during execution/reconciliation.
+	n, err := io.Copy(io.MultiWriter(sha, blake), io.LimitReader(f, before.Size()+1))
 	if err != nil {
 		return err
 	}
@@ -749,7 +755,7 @@ func workflowV4HashInput(input workflowV4Input, before os.FileInfo) error {
 	if err != nil {
 		return err
 	}
-	if n != before.Size() || after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime()) || "sha256:"+hex.EncodeToString(sha.Sum(nil)) != input.Ref.Digest.SHA256 {
+	if n != before.Size() || after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime()) || "sha256:"+hex.EncodeToString(sha.Sum(nil)) != input.Ref.Digest.SHA256 || "blake2b256:"+hex.EncodeToString(blake.Sum(nil)) != input.Ref.Digest.Blake2b256 {
 		return fmt.Errorf("V4 retained input changed: %s", input.Ref.Name)
 	}
 	return nil

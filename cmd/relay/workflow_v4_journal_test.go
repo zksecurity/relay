@@ -11,11 +11,29 @@ import (
 	"testing"
 
 	"github.com/zksecurity/relay/internal/transcript"
+	"golang.org/x/crypto/blake2b"
 )
 
 func workflowV4TestRef(name, contents string) transcript.ArtifactRef {
 	hash := sha256.Sum256([]byte(contents))
-	return transcript.ArtifactRef{Name: name, Digest: transcript.Digest{SHA256: "sha256:" + hex.EncodeToString(hash[:]), Blake2b256: "blake2b256:" + strings.Repeat("b", 64), Size: int64(len(contents))}}
+	blake := blake2b.Sum256([]byte(contents))
+	return transcript.ArtifactRef{Name: name, Digest: transcript.Digest{SHA256: "sha256:" + hex.EncodeToString(hash[:]), Blake2b256: "blake2b256:" + hex.EncodeToString(blake[:]), Size: int64(len(contents))}}
+}
+
+func TestWorkflowV4LocalRefAndPlanRequireBothDigests(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "input.json")
+	if err := os.WriteFile(path, []byte("retained public input"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ref, err := workflowV4LocalRef("input.json", path)
+	if err != nil || ref.Digest.Blake2b256 == "" {
+		t.Fatalf("local reference = %+v, %v", ref, err)
+	}
+	withoutBlake := ref
+	withoutBlake.Digest.Blake2b256 = ""
+	if err := validateWorkflowV4Ref(withoutBlake); err == nil {
+		t.Fatal("missing BLAKE2b digest accepted")
+	}
 }
 
 func workflowV4TestBinding(t *testing.T) (transcript.DefinitionProtocol, workflowV4Binding) {

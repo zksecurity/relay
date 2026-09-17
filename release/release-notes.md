@@ -45,6 +45,8 @@
   upload resumed only for its original signed allocation. Retiring an
   allocation requires a separately computed candidate under the replacement;
   Relay preserves the old files rather than rebinding them.
+- V4 retained-operation files now record and recheck both SHA-256 and
+  BLAKE2b-256, matching the signed protocol reference boundary.
 
 The ordinary coordinator, participant, and required release-signer journeys
 now derive their next action from authenticated storage state. The coordinator
