@@ -27,8 +27,12 @@ import (
 )
 
 const (
-	dockerExecutionMode       = "docker"
-	nativeExecutionMode       = "native"
+	dockerExecutionMode = "docker"
+	nativeExecutionMode = "native"
+	// dockerCeremonyBinary is the sole executable target inside every
+	// participant container. Host-side proof-tool paths are measured during
+	// setup, but are never mounted or executed by Docker.
+	dockerCeremonyBinary      = "/usr/local/bin/mpc-ceremony"
 	dockerLifecycleSchema     = "relay-docker-lifecycle-v2"
 	dockerActiveStateSchemaV2 = "relay-docker-active-container-v2"
 	dockerActiveStateSchema   = "relay-docker-active-container-v3"
@@ -204,7 +208,7 @@ type dockerLifecycleReceipt struct {
 
 func dockerDriverForParticipant(config access.ParticipantConfig) *dockerDriver {
 	return &dockerDriver{
-		image: config.DockerImage, platform: config.DockerPlatform, ceremonyBinary: config.CeremonyBinary,
+		image: config.DockerImage, platform: config.DockerPlatform, ceremonyBinary: dockerCeremonyBinary,
 		root: config.Root, definition: config.Ceremony, definitionSig: config.CeremonySignature,
 		coordinatorKey: config.CoordinatorKey, signingKey: config.SigningKey, environment: config.Environment,
 		candidateRoot: config.CandidateParentDir,
@@ -905,7 +909,7 @@ func (d *dockerDriver) securityArgs(mounts []dockerMount) []string {
 	uid, gid := os.Getuid(), os.Getgid()
 	args := []string{
 		"--pull", "never", "--platform", d.platform,
-		"--entrypoint", "/usr/local/bin/mpc-ceremony",
+		"--entrypoint", dockerCeremonyBinary,
 		"--network", "none", "--read-only",
 		"--user", fmt.Sprintf("%d:%d", uid, gid),
 		"--cap-drop", "ALL", "--security-opt", "no-new-privileges=true",

@@ -43,8 +43,12 @@ func runInitRoleConfig(args []string) error {
 	if err := rejectDockerFlagsWithoutDockerMode(args, executionMode); err != nil {
 		return err
 	}
-	if executionMode == dockerExecutionMode && !hasNamedFlag(args, "ceremony-binary") {
-		ceremonyBinary = "/usr/local/bin/mpc-ceremony"
+	if executionMode == dockerExecutionMode {
+		var err error
+		ceremonyBinary, err = dockerSetupMeasurementBinary(args, toolIdentityReceiptPath, ceremonyBinary)
+		if err != nil {
+			return err
+		}
 	}
 	if executionMode == nativeExecutionMode {
 		dockerImage, dockerPlatform, dockerCLI = "", "", ""
@@ -115,6 +119,13 @@ func runInitRoleConfig(args []string) error {
 		StorageConfig: storagePath, PublishedBaseURL: storageConfig.PublishedBaseURL,
 		PublishedBucket: storageConfig.PublishedBucket, ExecutionMode: executionMode,
 		DockerImage: dockerImage, DockerPlatform: dockerPlatform, DockerCLI: dockerCLI,
+	}
+	if executionMode == dockerExecutionMode {
+		// The profile keeps the host companion only in the authenticated setup
+		// receipt. The persisted execution target is deliberately the fixed
+		// in-image binary. Older profiles that recorded a host path remain
+		// supported by dockerDriverForParticipant and the V4 binding.
+		config.CeremonyBinary = dockerCeremonyBinary
 	}
 	if err := config.ValidateExecution(); err != nil {
 		return fmt.Errorf("role config execution: %w", err)
@@ -197,12 +208,30 @@ func runInitRoleConfig(args []string) error {
 		return err
 	}
 	fmt.Print(formatToolIdentityVerification(verifiedTools))
+	if executionMode == dockerExecutionMode {
+		fmt.Printf("Docker participant runtime: %s (fixed in-image executable). The host companion above was measured only during setup and is never mounted or executed by Docker.\n", dockerCeremonyBinary)
+	}
 	if role == access.RoleParticipant {
 		fmt.Print(formatParticipantAssignment(definition, participantAssignment, phase, out))
 	} else {
 		fmt.Printf("configured %s %s for %s\nprofile: %s\n", config.Role, config.IdentityID, config.Phase, out)
 	}
 	return nil
+}
+
+// dockerSetupMeasurementBinary selects the host executable that setup measures
+// against its approved receipt. It is not a Docker execution target: Docker
+// always uses dockerCeremonyBinary. Keeping this selection separate avoids
+// trying to execute or hash the image-only Linux path on macOS hosts.
+func dockerSetupMeasurementBinary(args []string, receiptPath, supplied string) (string, error) {
+	if hasNamedFlag(args, "ceremony-binary") {
+		return supplied, nil
+	}
+	receipt, err := loadToolIdentityReceipt(receiptPath)
+	if err != nil {
+		return "", fmt.Errorf("load approved tool identity for Docker setup: %w", err)
+	}
+	return receipt.MPCCeremony.VerifiedPath, nil
 }
 
 func formatParticipantAssignment(

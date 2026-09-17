@@ -70,10 +70,17 @@ func TestWorkflowV4ParticipantProfileBinding(t *testing.T) {
 		}
 	}
 	root := filepath.Join(p.Work, "ceremony", "public")
-	c := access.RoleConfig{Schema: access.RoleConfigSchema, Role: "participant", IdentityID: id.ID, Phase: "phase1", CeremonyID: b.CeremonyID, CeremonyHome: filepath.Dir(root), Root: root, Ceremony: filepath.Join(root, "ceremony.json"), CeremonySignature: filepath.Join(root, "ceremony.sig"), CoordinatorKey: filepath.Join(p.Trust, "coordinator-public-key.hex"), CeremonyBinary: "/usr/local/bin/mpc-ceremony", SigningKey: filepath.Join(p.Keys, "signing.hex"), Environment: filepath.Join(p.Work, "environment.json"), RunRoot: filepath.Join(p.Work, "runs"), StorageConfig: filepath.Join(p.Work, "storage.json"), PublishedBaseURL: "https://public.example.test", PublishedBucket: "published", ExecutionMode: "docker", DockerImage: p.Image, DockerPlatform: p.Platform}
+	c := access.RoleConfig{Schema: access.RoleConfigSchema, Role: "participant", IdentityID: id.ID, Phase: "phase1", CeremonyID: b.CeremonyID, CeremonyHome: filepath.Dir(root), Root: root, Ceremony: filepath.Join(root, "ceremony.json"), CeremonySignature: filepath.Join(root, "ceremony.sig"), CoordinatorKey: filepath.Join(p.Trust, "coordinator-public-key.hex"), CeremonyBinary: dockerCeremonyBinary, SigningKey: filepath.Join(p.Keys, "signing.hex"), Environment: filepath.Join(p.Work, "environment.json"), RunRoot: filepath.Join(p.Work, "runs"), StorageConfig: filepath.Join(p.Work, "storage.json"), PublishedBaseURL: "https://public.example.test", PublishedBucket: "published", ExecutionMode: "docker", DockerImage: p.Image, DockerPlatform: p.Platform}
 	c.DockerCLI = "docker"
 	if _, err := workflowV4ProfileBinding(p, signer, protocol, id, &c); err != nil {
 		t.Fatal(err)
+	}
+	// Profiles created before #57 recorded the measured host companion here.
+	// Preserve them without rewriting or requiring that historical host file.
+	legacyHostPath := c
+	legacyHostPath.CeremonyBinary = "/opt/relay-kit/mpc-ceremony"
+	if _, err := workflowV4ProfileBinding(p, signer, protocol, id, &legacyHostPath); err != nil {
+		t.Fatalf("legacy Docker host measurement path rejected: %v", err)
 	}
 	for _, mutate := range []func(*access.RoleConfig){
 		func(c *access.RoleConfig) { c.IdentityID = "other" },

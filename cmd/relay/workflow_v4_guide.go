@@ -107,7 +107,7 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 	if err := prepareGuidedImage(p.Image, p.Platform, cli, false); err != nil {
 		return err
 	}
-	d := dockerDriver{image: p.Image, platform: p.Platform, ceremonyBinary: "/usr/local/bin/mpc-ceremony", root: root, inspectionRoot: p.Work, definition: filepath.Join(root, "ceremony.json"), definitionSig: filepath.Join(root, "ceremony.sig"), coordinatorKey: key, client: osDockerCommandClient{binary: cli}}
+	d := dockerDriver{image: p.Image, platform: p.Platform, ceremonyBinary: dockerCeremonyBinary, root: root, inspectionRoot: p.Work, definition: filepath.Join(root, "ceremony.json"), definitionSig: filepath.Join(root, "ceremony.sig"), coordinatorKey: key, client: osDockerCommandClient{binary: cli}}
 	if err := d.authenticateDaemon(); err != nil {
 		return err
 	}

@@ -46,8 +46,12 @@ func workflowV4ProfileBinding(p, signer guidedProfile, protocol transcript.Defin
 		if err := participant.Validate(); err != nil {
 			return zero, err
 		}
-		if participant.CeremonyBinary != "/usr/local/bin/mpc-ceremony" || participant.CeremonyHome != filepath.Join(p.Work, "ceremony") {
-			return zero, errors.New("participant profile must use the saved ceremony folder and the image's fixed proof-tool executable")
+		// New Docker profiles persist dockerCeremonyBinary. Older profiles may
+		// retain the absolute host companion path that setup measured. Neither
+		// value controls Docker execution: dockerDriverForParticipant and the
+		// V4 guide always use dockerCeremonyBinary as the container entrypoint.
+		if !filepath.IsAbs(participant.CeremonyBinary) || filepath.Clean(participant.CeremonyBinary) != participant.CeremonyBinary || participant.CeremonyHome != filepath.Join(p.Work, "ceremony") {
+			return zero, errors.New("participant profile must use the saved ceremony folder and a clean measured-tool reference")
 		}
 		if participant.Role != "participant" || participant.IdentityID != identity.ID || participant.CeremonyID != b.CeremonyID || participant.ExecutionMode != "docker" || participant.DockerImage != p.Image || participant.DockerPlatform != p.Platform || participant.Root != filepath.Join(p.Work, "ceremony", "public") || participant.Ceremony != filepath.Join(participant.Root, "ceremony.json") || participant.CeremonySignature != filepath.Join(participant.Root, "ceremony.sig") || participant.SigningKey != filepath.Join(p.Keys, "signing.hex") {
 			return zero, errors.New("participant phase profile does not match the saved ceremony, identity, folders and runtime")
