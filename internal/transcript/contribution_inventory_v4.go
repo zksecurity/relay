@@ -45,7 +45,7 @@ func (i Inspector) ContributionInventoryV4(chain, signature, scopeFile, candidat
 	r, err := i.execute("inspect", "contribution-inventory-v4", "--ceremony", i.CeremonyPath, "--ceremony-signature", i.CeremonySignaturePath, "--coordinator-public-key-file", i.CoordinatorPublicKeyPath, "--transcript-root", i.TranscriptRoot, "--chain", chain, "--chain-signature", signature, "--scope", scopeFile, "--candidate-dir", candidateDir)
 	if err != nil {
 		var failure *inspectionExecutionError
-		if errors.As(err, &failure) && failure.code == "candidate_invalid" {
+		if errors.As(err, &failure) && failure.command == "inspect contribution-inventory-v4" && failure.code == "candidate_invalid" {
 			return ContributionInventoryFactsV4{}, fmt.Errorf("%w: %s", ErrCandidateInvalidV4, failure.message)
 		}
 		return ContributionInventoryFactsV4{}, err

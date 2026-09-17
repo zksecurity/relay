@@ -230,6 +230,7 @@ type inspectionCommandError struct {
 // approved proof-tool JSON result. Callers must opt in to a documented code;
 // matching diagnostic text is never a protocol decision boundary.
 type inspectionExecutionError struct {
+	command string
 	code    string
 	message string
 }
@@ -529,7 +530,7 @@ func (i Inspector) execute(args ...string) (inspectionResult, error) {
 		if message == "" {
 			message = diagnostic(stderr, "inspection failed")
 		}
-		return inspectionResult{}, &inspectionExecutionError{code: result.Error.Code, message: message}
+		return inspectionResult{}, &inspectionExecutionError{command: result.Command, code: result.Error.Code, message: message}
 	}
 	return result, nil
 }

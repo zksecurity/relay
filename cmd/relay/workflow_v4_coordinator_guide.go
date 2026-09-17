@@ -214,6 +214,8 @@ func workflowV4CoordinatorActionLabel(recommendation storagefirst.TurnRecommenda
 		return "Check the private inbox for this candidate"
 	case "download-and-check-candidate":
 		return "Download and verify the uploaded five-file candidate"
+	case "recover-candidate-download":
+		return "Preserve the unverifiable download and fetch this attempt again"
 	case "verify-and-accept-candidate":
 		return "Replay, verify and accept the exact candidate"
 	case "review-and-reject-candidate":
@@ -230,7 +232,7 @@ func runWorkflowV4CoordinatorAction(ui *coordinatorWizard, snapshot storagefirst
 		return runWorkflowV4CoordinatorAllocation(ui, snapshot, online, signer, view)
 	case "issue-candidate-grant":
 		return runWorkflowV4CoordinatorGrant(ui, config, online, view, progress)
-	case "wait-for-candidate", "download-and-check-candidate":
+	case "wait-for-candidate", "download-and-check-candidate", "recover-candidate-download":
 		return runWorkflowV4CoordinatorFetch(ui, config, online, snapshot, view, progress)
 	case "verify-and-accept-candidate":
 		return runWorkflowV4CoordinatorAcceptance(ui, snapshot, online, signer, view, progress)
@@ -299,13 +301,30 @@ func runWorkflowV4CoordinatorFetch(ui *coordinatorWizard, _ access.StorageConfig
 	if view.CandidateAttempt == nil {
 		return errors.New("active candidate attempt required")
 	}
+	recovering := false
 	if _, err := os.Lstat(progress.CandidateDir); err == nil {
-		return nil
+		if progress.CandidateTransportError == "" {
+			return nil
+		}
+		recovering = true
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if err := ui.confirm("Check the private inbox and download this exact attempt if its manifest is present", "CHECK INBOX"); err != nil {
+	confirmation := "CHECK INBOX"
+	prompt := "Check the private inbox and download this exact attempt if its manifest is present"
+	if recovering {
+		confirmation = "PRESERVE AND REFRESH"
+		prompt = "Preserve the unverifiable local candidate and its receipt, then fetch this exact attempt again from the private inbox"
+	}
+	if err := ui.confirm(prompt, confirmation); err != nil {
 		return err
+	}
+	if recovering {
+		retained, err := quarantineWorkflowV4CandidateDownload(progress.CandidateDir)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(ui.output, "Preserved the unverifiable download at %s. Fetching the same authenticated attempt into a fresh folder.\n", retained)
 	}
 	command, err := workflowV4OnlineBaseCommand(online, snapshot, "fetch-candidate-v4")
 	if err != nil {
@@ -329,6 +348,9 @@ func runWorkflowV4CoordinatorAcceptance(ui *coordinatorWizard, snapshot storagef
 	}
 	if err := ui.confirm("Replay the contribution mathematics, verify the exact five files and publish acceptance", "VERIFY AND ACCEPT"); err != nil {
 		return err
+	}
+	if err := validateWorkflowV4CandidateFetchReceipt(progress.CandidateDir, view.Scope, view.CandidateAttempt.AttemptID); err != nil {
+		return fmt.Errorf("candidate changed after transport verification: %w", err)
 	}
 	if _, err := os.Lstat(filepath.Join(intent.OutputDir, "checkpoint.json")); errors.Is(err, os.ErrNotExist) {
 		command, err := workflowV4CheckpointCommand(signer, online, snapshot.Head(), intent, "accept-candidate-v4", progress.CandidateDir)
@@ -356,6 +378,9 @@ func runWorkflowV4CoordinatorRejection(ui *coordinatorWizard, snapshot storagefi
 	}
 	if err := ui.confirm("Reject this exact transport-checked candidate. Its five private files stay retained for investigation; a later allocation requires a fresh contribution.", "REJECT CANDIDATE"); err != nil {
 		return err
+	}
+	if err := validateWorkflowV4CandidateFetchReceipt(progress.CandidateDir, view.Scope, view.CandidateAttempt.AttemptID); err != nil {
+		return fmt.Errorf("candidate changed after transport verification: %w", err)
 	}
 	if _, err := os.Lstat(filepath.Join(intent.OutputDir, "checkpoint.json")); errors.Is(err, os.ErrNotExist) {
 		command, err := workflowV4CheckpointCommand(signer, online, snapshot.Head(), intent, "reject-candidate-v4", progress.CandidateDir)

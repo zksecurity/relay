@@ -183,6 +183,33 @@ func TestWorkflowV4CandidateFetchReceiptRequiresExactRetainedFiles(t *testing.T)
 	}
 }
 
+func TestQuarantineWorkflowV4CandidateDownloadPreservesIncompleteAttempt(t *testing.T) {
+	root := t.TempDir()
+	candidate := filepath.Join(root, "candidates", "attempt")
+	if err := os.MkdirAll(candidate, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(candidate, "contribution.bin"), []byte("incomplete"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(workflowV4CandidateFetchReceiptPath(candidate), []byte(`{"schema":"incomplete"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := quarantineWorkflowV4CandidateDownload(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(candidate); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("candidate remains in the fresh output location: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(retained, "candidate", "contribution.bin")); err != nil {
+		t.Fatalf("candidate was not preserved: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(retained, "transport-receipt.json")); err != nil {
+		t.Fatalf("receipt was not preserved: %v", err)
+	}
+}
+
 func pairV4Test(seed string) transcript.SignedArtifactRefs {
 	digest := func(s string) transcript.Digest {
 		return transcript.Digest{SHA256: "sha256:" + strings.Repeat(s, 64), Blake2b256: "blake2b256:" + strings.Repeat(s, 64), Size: 10}

@@ -271,8 +271,9 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 				if err != nil {
 					ui.message(toneError, "Retained coordinator work could not be verified: %v\nNo operation was repeated.\n", err)
 				} else if coordinatorProgress.CandidateTransportError != "" {
-					ui.message(toneError, "The retained candidate is not the exact package previously transport-checked: %s\nRelay will not accept or reject it. Preserve it for investigation, then use a fresh private candidate folder before checking the inbox again.\n", coordinatorProgress.CandidateTransportError)
-					recommendation = storagefirst.TurnRecommendationV4{Reason: "the retained candidate package needs transport recovery before it can be inspected or decided."}
+					ui.message(toneError, "The retained candidate is not the exact package previously transport-checked: %s\nRelay will preserve it for investigation and fetch the same authenticated attempt into a fresh private folder.\n", coordinatorProgress.CandidateTransportError)
+					recommendation = storagefirst.TurnRecommendationV4{Action: "recover-candidate-download", Ready: true, Reason: "the retained candidate package needs transport recovery before it can be inspected or decided.", Scope: turn.Scope, AttemptID: turn.CandidateAttempt.AttemptID}
+					actionLabel = workflowV4CoordinatorActionLabel(recommendation, coordinatorProgress)
 				} else if candidateRecommendation, reviewCandidate := workflowV4CoordinatorCandidateRecommendation(turn, coordinatorProgress); reviewCandidate {
 					// The candidate directory exists only after the coordinator's
 					// atomic transport fetch checked the fixed five-file package.

@@ -115,6 +115,36 @@ func workflowV4CandidateFetchReceiptPath(candidateDir string) string {
 	return candidateDir + ".fetch.json"
 }
 
+// quarantineWorkflowV4CandidateDownload preserves an incomplete or changed
+// local download before a fresh fetch. It never overwrites evidence from the
+// interrupted attempt; the new fetch still has to pass the same authenticated
+// manifest and fixed-file checks.
+func quarantineWorkflowV4CandidateDownload(candidateDir string) (string, error) {
+	id, err := randomID()
+	if err != nil {
+		return "", err
+	}
+	retained := filepath.Join(filepath.Dir(candidateDir), "retained", filepath.Base(candidateDir)+"-"+id)
+	if err := os.MkdirAll(retained, 0o700); err != nil {
+		return "", err
+	}
+	receipt := workflowV4CandidateFetchReceiptPath(candidateDir)
+	if _, err := os.Lstat(receipt); err == nil {
+		if err := os.Rename(receipt, filepath.Join(retained, "transport-receipt.json")); err != nil {
+			return "", fmt.Errorf("preserve candidate transport receipt: %w", err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	if err := os.Rename(candidateDir, filepath.Join(retained, "candidate")); err != nil {
+		return "", fmt.Errorf("preserve candidate download: %w", err)
+	}
+	if err := syncDirectory(filepath.Dir(candidateDir)); err != nil {
+		return "", err
+	}
+	return retained, nil
+}
+
 // validateWorkflowV4CandidateFetchReceipt proves that the retained directory
 // is still the exact five-file package previously returned by FetchDelivery.
 // It does not authenticate the contribution: proof-tool does that separately.

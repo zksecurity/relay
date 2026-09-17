@@ -2,6 +2,7 @@ package transcript
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -57,5 +58,21 @@ func TestContributionInventoryV4ProjectionBoundary(t *testing.T) {
 	p.Inventory.CandidateResultID = ""
 	if err := check(p); err != nil {
 		t.Fatal("computed-only inventory rejected", err)
+	}
+}
+
+func TestContributionInventoryV4DoesNotClassifyOtherCommandFailures(t *testing.T) {
+	scope := ContributionScopeV4{CeremonyID: "sha256:" + hex64, Phase: "phase1", Index: 1, ParticipantID: "participant", ParentHeadID: "sha256:" + hex64}
+	pair := SignedArtifactRefs{Record: inspectionTestRef("phase1/chain-0000.json"), Signature: inspectionTestRef("phase1/chain-0000.sig")}
+	i := testInspector()
+	i.run = func(_ string, _ ...string) ([]byte, []byte, error) {
+		return []byte(`{"schema":"proof-tool-mpc-command-result-v1","ok":false,"command":"inspect definition","error":{"code":"candidate_invalid","message":"unrelated command failure"}}`), nil, errors.New("exit status 6")
+	}
+	_, err := i.ContributionInventoryV4("/work/chain.json", "/work/chain.sig", "/work/scope.json", "/work/candidate", scope, pair)
+	if err == nil {
+		t.Fatal("accepted an unrelated command failure")
+	}
+	if errors.Is(err, ErrCandidateInvalidV4) {
+		t.Fatalf("wrong command became a candidate rejection decision: %v", err)
 	}
 }
