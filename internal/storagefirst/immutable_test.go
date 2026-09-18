@@ -104,7 +104,7 @@ func TestPublishImmutableStagesVerifiedBytesBeforeProviderReopensSource(t *testi
 	}
 	s := &replacingUploadStore{original: path}
 	ref := state.ContentRef{Name: "payload", SHA256: digestBytes(raw), Size: int64(len(raw))}
-	if err := PublishImmutable(s, ref, path, t.TempDir()); err != nil {
+	if err := PublishImmutable(s, ref, path, t.TempDir(), nil); err != nil {
 		t.Fatal(err)
 	}
 	if string(s.uploaded) != string(raw) {
@@ -134,11 +134,11 @@ func TestPublishImmutableVerifiesExistingBytesOnRetry(t *testing.T) {
 	}
 	ref := state.ContentRef{Name: "checkpoints/0.json", SHA256: digestBytes(raw), Size: int64(len(raw))}
 	storeFake := &immutableFake{existing: raw, putErr: store.ErrExists}
-	if err := PublishImmutable(storeFake, ref, path, t.TempDir()); err != nil {
+	if err := PublishImmutable(storeFake, ref, path, t.TempDir(), nil); err != nil {
 		t.Fatal(err)
 	}
 	storeFake.existing = []byte("other bytes")
-	if err := PublishImmutable(storeFake, ref, path, t.TempDir()); err == nil {
+	if err := PublishImmutable(storeFake, ref, path, t.TempDir(), nil); err == nil {
 		t.Fatal("pre-existing different bytes accepted")
 	}
 }
@@ -149,7 +149,7 @@ func TestPublishImmutableRejectsWrongLocalBytesBeforeUpload(t *testing.T) {
 		t.Fatal(err)
 	}
 	storeFake := &immutableFake{}
-	err := PublishImmutable(storeFake, state.ContentRef{Name: "x", SHA256: digestBytes([]byte("right")), Size: 5}, path, t.TempDir())
+	err := PublishImmutable(storeFake, state.ContentRef{Name: "x", SHA256: digestBytes([]byte("right")), Size: 5}, path, t.TempDir(), nil)
 	if err == nil || storeFake.puts != 0 {
 		t.Fatalf("err=%v puts=%d", err, storeFake.puts)
 	}

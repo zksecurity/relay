@@ -6,6 +6,8 @@ package storagefirst
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -298,7 +300,12 @@ func stageDeliveryFile(source, destination string, expected deliveryFile) error 
 	if err != nil {
 		return err
 	}
-	n, copyErr := io.Copy(output, io.LimitReader(input, expected.Size))
+	// Hash the bytes while they are copied so the source is read once. The
+	// staged copy is what the provider uploads, so its digest is the one that
+	// must match: a truncated copy, a swapped source, or wrong source bytes
+	// all fail this single comparison.
+	hash := sha256.New()
+	n, copyErr := io.Copy(io.MultiWriter(output, hash), io.LimitReader(input, expected.Size))
 	closeErr := output.Close()
 	if copyErr != nil {
 		return copyErr
@@ -311,7 +318,10 @@ func stageDeliveryFile(source, destination string, expected deliveryFile) error 
 	if n != expected.Size || more != 0 || readErr != io.EOF {
 		return errors.New("delivery source size changed during staging")
 	}
-	return verifyLocalRef(state.ContentRef{SHA256: expected.SHA256, Size: expected.Size}, destination)
+	if "sha256:"+hex.EncodeToString(hash.Sum(nil)) != expected.SHA256 {
+		return errors.New("staged delivery bytes do not match the expected digest")
+	}
+	return nil
 }
 
 // FetchDelivery returns a private staging directory only after every listed

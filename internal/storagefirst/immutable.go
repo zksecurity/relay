@@ -18,19 +18,30 @@ type ImmutableStore interface {
 	PutIfAbsent(key, localPath string) (store.ObjectVersion, error)
 }
 
+// PublishingStore is an ImmutableStore that can also report an object's
+// current version metadata without downloading it.
+type PublishingStore interface {
+	ImmutableStore
+	HeadVersion(key string) (store.ObjectVersion, error)
+}
+
 // PublishImmutable creates a content-addressed object. If the key already
-// exists, it downloads and hashes those bytes before treating the operation as
-// an idempotent retry. Mere existence is not proof of identical content.
-func PublishImmutable(objects ImmutableStore, ref state.ContentRef, localPath, tempParent string) error {
+// exists, the stored bytes are confirmed before the operation is treated as
+// an idempotent retry: with a memo, one metadata request shows the stored
+// version is the exact one this workspace digest-verified earlier; without
+// one, the object is downloaded and hashed. Mere existence is not proof of
+// identical content, and a nil memo keeps the always-fetch behavior.
+func PublishImmutable(objects ImmutableStore, ref state.ContentRef, localPath, tempParent string, memo *VerifiedObjects) error {
 	if objects == nil {
 		return errors.New("immutable object store is required")
 	}
-	if err := verifyLocalRef(ref, localPath); err != nil {
-		return err
+	if ref.Size <= 0 || !validDigest(ref.SHA256) {
+		return errors.New("immutable reference requires a positive size and valid SHA-256")
 	}
-	// The provider reopens its source path. Stage an independently verified
-	// private copy so a replacement of the caller's file cannot change what is
-	// uploaded after verification.
+	// The provider reopens its source path. Stage a private copy that is
+	// hashed while it is copied, so a replacement of the caller's file cannot
+	// change what is uploaded, and the digest covers exactly the uploaded
+	// bytes. One read of the source verifies both.
 	temp, err := os.MkdirTemp(tempParent, "relay-immutable-upload-")
 	if err != nil {
 		return err
@@ -40,14 +51,22 @@ func PublishImmutable(objects ImmutableStore, ref state.ContentRef, localPath, t
 	if err := stageDeliveryFile(localPath, staged, deliveryFile{SHA256: ref.SHA256, Size: ref.Size}); err != nil {
 		return err
 	}
-	_, err = objects.PutIfAbsent(store.Key(ref.SHA256), staged)
+	key := store.Key(ref.SHA256)
+	created, err := objects.PutIfAbsent(key, staged)
 	if err == nil {
+		memo.Record(key, created)
 		return nil
 	}
 	if !errors.Is(err, store.ErrExists) {
 		return err
 	}
-	return fetchExact(objects, ref, filepath.Join(temp, "object"))
+	if memo != nil {
+		if publishing, ok := objects.(PublishingStore); ok {
+			return memo.confirmExisting(publishing, key, ref, filepath.Join(temp, "object"))
+		}
+	}
+	_, err = fetchExactVersion(objects, ref, filepath.Join(temp, "object"))
+	return err
 }
 
 func verifyLocalRef(ref state.ContentRef, localPath string) error {
