@@ -1,5 +1,13 @@
 ## What changed
 
+- Storage-first upload grants now cap remaining lifetime at accept
+  (`expires_at` versus now, plus two minutes of provider-clock allowance),
+  not `expires_at − issued_at`. AWS STS `Expiration` is one hour from
+  AssumeRole completion, so a stamp taken before that call made honest 1h
+  sessions fail by a few seconds. `issued_at` stays an independent stamp
+  and is not derived from AWS expiry. Guided flow still requests a 1h
+  credential TTL. This check lives in the online image, so in-progress
+  ceremonies on an older image keep the previous rule.
 - Fixed Docker participant profiles for the storage-first workflow. Setup now
   measures the host proof-tool companion against the approved receipt but
   records and executes only the image's fixed proof-tool path in Docker.

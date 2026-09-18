@@ -148,3 +148,33 @@ func TestStorageFirstGrantStrictDecodeAndExpiry(t *testing.T) {
 		t.Fatalf("boundary clock skew rejected: %v", err)
 	}
 }
+
+func TestStorageFirstGrantRemainingLifetimeUsesNow(t *testing.T) {
+	now := time.Date(2026, 9, 15, 1, 0, 3, 0, time.UTC)
+	overshoot := validStorageFirstGrant()
+	// Coordinator stamped issued_at before AssumeRole; AWS Expiration is 1h from
+	// STS completion a few seconds later. Remaining time from now is still ~1h.
+	overshoot.IssuedAt = "2026-09-15T01:00:00Z"
+	overshoot.ExpiresAt = "2026-09-15T02:00:03Z"
+	if err := overshoot.Validate(); err != nil {
+		t.Fatalf("structurally valid overshoot grant: %v", err)
+	}
+	if err := overshoot.CheckUnexpired(now); err != nil {
+		t.Fatalf("AWS 1h session with a few seconds of round-trip rejected: %v", err)
+	}
+
+	long := validStorageFirstGrant()
+	long.IssuedAt = "2026-09-15T01:00:00Z"
+	long.ExpiresAt = "2026-09-15T13:00:00Z"
+	if err := long.CheckUnexpired(now); err == nil {
+		t.Fatal("12h remaining upload credentials accepted")
+	}
+
+	// Remaining-at-accept: a longer original window is allowed once ≤1h remains.
+	late := validStorageFirstGrant()
+	late.IssuedAt = "2026-09-15T00:00:00Z"
+	late.ExpiresAt = "2026-09-15T02:00:00Z"
+	if err := late.CheckUnexpired(time.Date(2026, 9, 15, 1, 30, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("grant with 30m remaining rejected: %v", err)
+	}
+}

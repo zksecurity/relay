@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zksecurity/relay/internal/access"
 	"github.com/zksecurity/relay/internal/store"
 )
 
@@ -119,4 +120,54 @@ func TestAWSLiveGrantScopeAndExpiry(t *testing.T) {
 		t.Fatal("AWS did not explicitly reject the expired token")
 	}
 	t.Log("AWS explicitly rejected the expired token; coordinator control read succeeded")
+}
+
+// Dedicated-account opt-in. Mints a real 1h STS session and checks the
+// storage-first remaining-time cap, which is the AWS overshoot that used to
+// fail expires_at − issued_at ≤ 1h.
+func TestAWSLiveOneHourRemainingTime(t *testing.T) {
+	if os.Getenv("RELAY_AWS_LIVE_GRANT_APPROVED") != "1" {
+		t.Skip("requires dedicated AWS test approval")
+	}
+	var settings coordinatorStorageSettings
+	if err := setupReadJSON(os.Getenv("RELAY_AWS_LIVE_SETTINGS_FILE"), &settings); err != nil {
+		t.Fatal(err)
+	}
+	config, err := settings.infrastructure()
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireAWSLiveConfiguration(t, config)
+	if os.Getenv("RELAY_AWS_LIVE_CREDENTIALS_FILE") == "" {
+		t.Setenv("AWS_SHARED_CREDENTIALS_FILE", freshAWSLiveCredentials(t))
+	} else {
+		t.Setenv("AWS_SHARED_CREDENTIALS_FILE", os.Getenv("RELAY_AWS_LIVE_CREDENTIALS_FILE"))
+	}
+	id, err := randomID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt := id
+	prefix := "submissions/" + strings.Repeat("a", 64) + "/" + attempt + "/"
+	issued := time.Now().UTC().Truncate(time.Second)
+	creds, expires, err := issueAWS(config, "one-hour-remaining-test", prefix, time.Hour)
+	if err != nil {
+		t.Fatal("could not issue 1h temporary grant")
+	}
+	if err := creds.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	grant := access.StorageFirstGrant{
+		Schema: access.GrantSchemaV2, Provider: "aws", CeremonyID: "sha256:" + strings.Repeat("a", 64),
+		GrantRequestID: strings.Repeat("c", 32), CheckpointDigest: "sha256:" + strings.Repeat("d", 64),
+		SubmissionKind: access.SubmissionKindCandidate, Phase: "phase1", Index: 1,
+		IdentityID: "participant-03", AttemptID: attempt, Region: config.Region, InboxBucket: config.InboxBucket,
+		Prefix: prefix, ManifestKey: prefix + "manifest.json",
+		IssuedAt: issued.Format(time.RFC3339), ExpiresAt: expires.UTC().Format(time.RFC3339),
+		Credentials: creds,
+	}
+	if err := grant.CheckUnexpired(time.Now().UTC()); err != nil {
+		t.Fatalf("honest AWS 1h session rejected: %v (issued=%s expires=%s span=%s)", err, grant.IssuedAt, grant.ExpiresAt, expires.Sub(issued))
+	}
+	t.Logf("AWS 1h session accepted: issued=%s expires=%s span=%s remaining=%s", grant.IssuedAt, grant.ExpiresAt, expires.Sub(issued), time.Until(expires).Truncate(time.Second))
 }

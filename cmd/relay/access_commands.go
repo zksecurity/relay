@@ -269,6 +269,9 @@ func runGrant(args []string) error {
 	if err != nil || ttl < time.Second || ttl%time.Second != 0 {
 		return errors.New("--credential-ttl must be a positive whole-second duration")
 	}
+	if v4 && ttl > access.MaxStorageFirstGrantLifetime {
+		return fmt.Errorf("storage-first --credential-ttl may be at most %s", access.MaxStorageFirstGrantLifetime)
+	}
 	minimum, err := time.ParseDuration(minimumText)
 	if err != nil || minimum <= 0 || minimum > ttl {
 		return errors.New("--minimum-remaining must be positive and no greater than --credential-ttl")
@@ -340,6 +343,9 @@ func runGrant(args []string) error {
 			IssuedAt: now.Format(time.RFC3339), ExpiresAt: expires.UTC().Format(time.RFC3339), Credentials: credentials,
 		}
 		if err := grant.Validate(); err != nil {
+			return err
+		}
+		if err := grant.CheckUnexpired(time.Now().UTC()); err != nil {
 			return err
 		}
 		if err := writeJSONNoReplace(out, grant, 0o600); err != nil {
