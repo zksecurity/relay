@@ -168,9 +168,18 @@ func TestValidateGrantBindsExactAuthenticatedSlot(t *testing.T) {
 
 func TestStorageFirstGrantRejectsExcessiveLifetime(t *testing.T) {
 	cp := actionCheckpoint(2, "phase1-receipt-accepted", "participant-1")
-	grant := storageFirstBoundGrant(cp, cp.Slots[0])
-	grant.ExpiresAt = time.Date(2026, 9, 15, 2, 0, 1, 0, time.UTC).Format(time.RFC3339)
-	if err := grant.Validate(); err == nil {
+	now := time.Date(2026, 9, 15, 1, 0, 1, 0, time.UTC)
+	overshoot := storageFirstBoundGrant(cp, cp.Slots[0])
+	overshoot.ExpiresAt = time.Date(2026, 9, 15, 2, 0, 1, 0, time.UTC).Format(time.RFC3339)
+	if err := overshoot.Validate(); err != nil {
+		t.Fatalf("1s provider-clock overshoot must remain structurally valid: %v", err)
+	}
+	if err := overshoot.CheckUnexpired(now); err != nil {
+		t.Fatalf("honest 1h session with 1s STS lag rejected: %v", err)
+	}
+	long := storageFirstBoundGrant(cp, cp.Slots[0])
+	long.ExpiresAt = time.Date(2026, 9, 15, 13, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	if err := long.CheckUnexpired(now); err == nil {
 		t.Fatal("overlong temporary credential accepted")
 	}
 }
