@@ -18,8 +18,13 @@ const (
 	SubmissionKindRelease    = "release"
 
 	maxStorageFirstContributionIndex = 255
-	maxStorageFirstGrantLifetime     = time.Hour
-	maxStorageFirstGrantClockSkew    = 5 * time.Minute
+	// MaxStorageFirstGrantLifetime is the intended upload-key window. Remaining
+	// validity is measured against now, not against a self-written issued_at.
+	MaxStorageFirstGrantLifetime  = time.Hour
+	maxStorageFirstGrantClockSkew = 5 * time.Minute
+	// Provider clocks and AssumeRole round-trip can place AWS Expiration a few
+	// seconds past a full-hour request. This is not extra requested duration.
+	maxStorageFirstGrantExpirySkew = 2 * time.Minute
 )
 
 // StorageFirstGrant is one temporary credential bound to one preallocated
@@ -109,9 +114,6 @@ func (g StorageFirstGrant) Validate() error {
 	if err != nil || !expires.After(issued) {
 		return errors.New("expires_at must be canonical RFC3339 UTC and after issued_at")
 	}
-	if expires.Sub(issued) > maxStorageFirstGrantLifetime {
-		return fmt.Errorf("storage-first upload credentials may last at most %s", maxStorageFirstGrantLifetime)
-	}
 	return g.Credentials.Validate()
 }
 
@@ -121,11 +123,19 @@ func (g StorageFirstGrant) CheckUnexpired(now time.Time) error {
 	}
 	issued, _ := time.Parse(time.RFC3339, g.IssuedAt)
 	expires, _ := time.Parse(time.RFC3339, g.ExpiresAt)
-	if issued.After(now.UTC().Add(maxStorageFirstGrantClockSkew)) {
+	now = now.UTC()
+	if issued.After(now.Add(maxStorageFirstGrantClockSkew)) {
 		return fmt.Errorf("upload credentials are future-dated beyond the allowed %s clock skew", maxStorageFirstGrantClockSkew)
 	}
-	if !expires.After(now.UTC()) {
+	if !expires.After(now) {
 		return fmt.Errorf("upload credentials expired at %s", g.ExpiresAt)
+	}
+	start := now
+	if issued.After(start) {
+		start = issued
+	}
+	if expires.Sub(start) > MaxStorageFirstGrantLifetime+maxStorageFirstGrantExpirySkew {
+		return fmt.Errorf("storage-first upload credentials may remain valid at most %s from now", MaxStorageFirstGrantLifetime)
 	}
 	return nil
 }
