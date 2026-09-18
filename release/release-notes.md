@@ -1,5 +1,8 @@
 ## What changed
 
+- Added an opt-in live AWS storage-first full journey that drives the same
+  guided grant handoff as the R2 rehearsal (`CREATE ENROLLMENT GRANT` and
+  contribution `CREATE GRANT`), using the dedicated test account.
 - Storage-first upload grants now cap remaining lifetime at accept
   (`expires_at` versus now, plus two minutes of provider-clock allowance),
   not `expires_at − issued_at`. AWS STS `Expiration` is one hour from

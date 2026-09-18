@@ -25,12 +25,32 @@ import (
 )
 
 type workflowV4LiveRole struct {
-	profile     guidedProfile
-	signer      guidedProfile
-	identity    setupIdentity
-	inspector   transcript.Inspector
-	journal     *workflowV4Journal
-	participant *access.RoleConfig
+	profile            guidedProfile
+	signer             guidedProfile
+	identity           setupIdentity
+	inspector          transcript.Inspector
+	journal            *workflowV4Journal
+	participant        *access.RoleConfig
+	refreshCredentials func() string
+}
+
+type v4LiveFullJourney struct {
+	OfflineImage       string
+	OnlineImage        string
+	RelayBinary        string
+	ProofBinary        string
+	Base               access.StorageConfig
+	Credentials        string
+	Parent             string
+	Control            string
+	RefreshCredentials func() string
+}
+
+func (r *workflowV4LiveRole) refreshCloudCredentials() {
+	if r == nil || r.refreshCredentials == nil {
+		return
+	}
+	r.profile.Credentials = r.refreshCredentials()
 }
 
 // TestV4LiveFullR2Journey is opt-in because it creates a uniquely identified
@@ -75,6 +95,61 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 	if err != nil || base.Provider != "r2" {
 		t.Fatalf("live test requires an existing valid R2 configuration: %v", err)
 	}
+	runV4LiveFullJourney(t, v4LiveFullJourney{
+		OfflineImage: offlineImage, OnlineImage: onlineImage, RelayBinary: relayBinary, ProofBinary: proofBinary,
+		Base: base, Credentials: credentialsPath, Parent: parentPath, Control: controlPath,
+	})
+}
+
+// TestV4LiveFullAWSJourney is the same storage-first guided journey as the R2
+// live test, including CREATE ENROLLMENT GRANT, grant-file handoff, and
+// CREATE GRANT for contribution turns. It uses the dedicated AWS test account.
+func TestV4LiveFullAWSJourney(t *testing.T) {
+	if os.Getenv("RELAY_V4_LIVE_AWS_APPROVED") != "1" {
+		t.Skip("requires explicit dedicated AWS full-journey approval")
+	}
+	offlineImage := os.Getenv("RELAY_PREPARE_TEST_IMAGE")
+	onlineImage := os.Getenv("RELAY_V4_LIVE_ONLINE_IMAGE")
+	relayBinary := os.Getenv("RELAY_V4_LIVE_RELAY_BINARY")
+	proofBinary := os.Getenv("RELAY_V4_LIVE_PROOF_BINARY")
+	if offlineImage == "" || onlineImage == "" || relayBinary == "" || proofBinary == "" {
+		t.Fatal("set RELAY_PREPARE_TEST_IMAGE, RELAY_V4_LIVE_ONLINE_IMAGE, RELAY_V4_LIVE_RELAY_BINARY and RELAY_V4_LIVE_PROOF_BINARY")
+	}
+	offlineImage = workflowV4LiveImmutableImage(t, offlineImage)
+	onlineImage = workflowV4LiveImmutableImage(t, onlineImage)
+	for _, path := range []string{relayBinary, proofBinary} {
+		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+			t.Fatal("live test paths must be absolute and clean")
+		}
+	}
+	previousExecutor := workflowV4ChildExecutor
+	workflowV4ChildExecutor = func(args []string) error {
+		command := exec.Command(relayBinary, args...)
+		command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
+		return command.Run()
+	}
+	t.Cleanup(func() { workflowV4ChildExecutor = previousExecutor })
+	var settings coordinatorStorageSettings
+	if err := setupReadJSON(os.Getenv("RELAY_AWS_LIVE_SETTINGS_FILE"), &settings); err != nil {
+		t.Fatal(err)
+	}
+	base, err := settings.infrastructure()
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireAWSLiveConfiguration(t, base)
+	runV4LiveFullJourney(t, v4LiveFullJourney{
+		OfflineImage: offlineImage, OnlineImage: onlineImage, RelayBinary: relayBinary, ProofBinary: proofBinary,
+		Base: base, Credentials: freshAWSLiveCredentials(t),
+		RefreshCredentials: func() string { return freshAWSLiveCredentials(t) },
+	})
+}
+
+func runV4LiveFullJourney(t *testing.T, in v4LiveFullJourney) {
+	t.Helper()
+	offlineImage, onlineImage, proofBinary := in.OfflineImage, in.OnlineImage, in.ProofBinary
+	credentialsPath, parentPath, controlPath := in.Credentials, in.Parent, in.Control
+	base := in.Base
 	platform, err := machineDockerPlatform()
 	if err != nil {
 		t.Fatal(err)
@@ -110,6 +185,7 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 	coordinator.profile.Credentials = credentialsPath
 	coordinator.profile.R2Parent = parentPath
 	coordinator.profile.R2Control = controlPath
+	coordinator.refreshCredentials = in.RefreshCredentials
 
 	w := setupFixture(t)
 	w.d.Name = coordinator.profile.Name
@@ -156,6 +232,7 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 	config.CoordinatorPublicKey = "/trust/setup-coordinator.hex"
 	config.CeremonyBinary = "/usr/local/bin/mpc-ceremony"
 	writeWorkflowV4LiveConfig(t, coordinator.profile.Work, config)
+	coordinator.refreshCloudCredentials()
 	if err := runWorkflowV4ProfileCommand(coordinator.profile, []string{
 		"relay", "coordinator", "commit-v4", "--storage", "/work/ceremony/config/relay-storage.json", "--artifact-root", "/work/ceremony/public",
 		"--checkpoint", "/work/ceremony/public/checkpoints/initial/checkpoint.json", "--checkpoint-signature", "/work/ceremony/public/checkpoints/initial/checkpoint.sig",
@@ -179,6 +256,7 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 		releaseSigner.identity.ID: &releaseSigner,
 	}
 	for {
+		coordinator.refreshCloudCredentials()
 		snapshot := syncWorkflowV4LiveRole(t, &coordinator, objects)
 		expected, err := workflowV4NextRequiredEnrollment(snapshot, protocol)
 		if err != nil {
@@ -238,6 +316,7 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 	runWorkflowV4LiveLifecycle(t, objects, protocol, &coordinator, workflowV4Finalize, "FINALIZE CANDIDATE\n")
 	runWorkflowV4LiveLifecycle(t, objects, protocol, &coordinator, workflowV4Review, "SIGN EVIDENCE BUNDLE\n")
 
+	coordinator.refreshCloudCredentials()
 	snapshot := syncWorkflowV4LiveRole(t, &coordinator, objects)
 	if err := runWorkflowV4CoordinatorLifecycle(workflowV4LiveUI("CREATE RELEASE GRANT\n"), workflowV4Release, snapshot, protocol, coordinator.profile, coordinator.signer, coordinator.inspector); err != nil {
 		t.Fatal(err)
@@ -261,6 +340,7 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 	if err := runWorkflowV4ReleaseSignerAction(workflowV4LiveUI(grantPath+"\nUPLOAD RELEASE PACKAGE\n"), releaseSnapshot, protocol, config, releaseSigner.profile, releaseSigner.signer, releaseSigner.identity, progress); err != nil {
 		t.Fatal(err)
 	}
+	coordinator.refreshCloudCredentials()
 	snapshot = syncWorkflowV4LiveRole(t, &coordinator, objects)
 	if err := runWorkflowV4CoordinatorLifecycle(workflowV4LiveUI("CHECK RELEASE INBOX\nVERIFY AND RECORD RELEASE\n"), workflowV4Release, snapshot, protocol, coordinator.profile, coordinator.signer, coordinator.inspector); err != nil {
 		t.Fatal(err)
@@ -286,7 +366,7 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 	if err != nil || stateView.Progress.FinalRelease == nil {
 		t.Fatalf("fresh verifier did not reconstruct the final release: %+v %v", stateView.Progress, err)
 	}
-	t.Logf("completed and freshly reconstructed live R2 V4 ceremony %s at signed update %d", protocol.Definition.CeremonyID, stateView.Sequence)
+	t.Logf("completed and freshly reconstructed live %s V4 ceremony %s at signed update %d", base.Provider, protocol.Definition.CeremonyID, stateView.Sequence)
 }
 
 func workflowV4LiveImmutableImage(t *testing.T, image string) string {
@@ -701,6 +781,7 @@ func workflowV4LiveUI(input string) *coordinatorWizard {
 
 func runWorkflowV4LiveTurn(t *testing.T, objects store.Client, protocol transcript.DefinitionProtocol, config access.StorageConfig, coordinator, participant *workflowV4LiveRole, phase string) {
 	t.Helper()
+	coordinator.refreshCloudCredentials()
 	snapshot := syncWorkflowV4LiveRole(t, coordinator, objects)
 	view, err := snapshot.TurnV4(protocol, phase, "")
 	if err != nil {
@@ -763,6 +844,7 @@ func runWorkflowV4LiveTurn(t *testing.T, objects store.Client, protocol transcri
 		t.Fatal(err)
 	}
 
+	coordinator.refreshCloudCredentials()
 	progress, err = workflowV4CoordinatorProgressFor(snapshot, protocol, view, coordinator.journal.state.Marker.Binding, config, coordinator.inspector, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
@@ -789,6 +871,7 @@ func runWorkflowV4LiveTurn(t *testing.T, objects store.Client, protocol transcri
 
 func runWorkflowV4LiveLifecycle(t *testing.T, objects store.Client, protocol transcript.DefinitionProtocol, coordinator *workflowV4LiveRole, expected, confirmation string) {
 	t.Helper()
+	coordinator.refreshCloudCredentials()
 	snapshot := syncWorkflowV4LiveRole(t, coordinator, objects)
 	stateView, err := snapshot.State()
 	if err != nil {
@@ -811,6 +894,7 @@ func runWorkflowV4LiveBeacon(t *testing.T, objects store.Client, protocol transc
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
 	for {
+		coordinator.refreshCloudCredentials()
 		snapshot := syncWorkflowV4LiveRole(t, coordinator, objects)
 		stateView, err := snapshot.State()
 		if err != nil {

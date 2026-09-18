@@ -89,6 +89,15 @@ The ceremony lane also requires `RELAY_AWS_TEST_CLI` (absolute isolated wrapper)
 `RELAY_AWS_LIVE_EXPECTED_PRINCIPAL` (exact IAM-user ARN), and
 `RELAY_AWS_TEST_BINARY` (Linux test executable containing the transport hook).
 
+The same guided journey on AWS is `TestV4LiveFullAWSJourney`. Set
+`RELAY_V4_LIVE_AWS_APPROVED=1`, the dedicated AWS settings/CLI/account
+variables used by `TestV4LiveInitialAWS`, `RELAY_PREPARE_TEST_IMAGE`,
+`RELAY_V4_LIVE_ONLINE_IMAGE`, `RELAY_V4_LIVE_RELAY_BINARY`, and
+`RELAY_V4_LIVE_PROOF_BINARY`. It types `CREATE ENROLLMENT GRANT`, hands the
+grant file to the enrolled identity, and later `CREATE GRANT` for contribution
+turns. Coordinator AWS snapshots are refreshed before cloud actions. This is
+not `TestRoleFlowDockerFullCeremony`.
+
 ## Live R2 result
 
 The opt-in full V4 R2 journey accepts local image names for developer builds,
