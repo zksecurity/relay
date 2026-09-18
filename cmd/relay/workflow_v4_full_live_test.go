@@ -226,6 +226,7 @@ func runV4LiveFullJourney(t *testing.T, in v4LiveFullJourney) {
 		t.Fatal(err)
 	}
 	config := base
+	config.Schema = access.StorageConfigSchema
 	config.CeremonyID = protocol.Definition.CeremonyID
 	config.CeremonyPath = "/work/ceremony/public/ceremony.json"
 	config.CeremonySignature = "/work/ceremony/public/ceremony.sig"
