@@ -1,5 +1,22 @@
 ## What changed
 
+- Storage-first checkpoint publication no longer re-downloads and re-hashes
+  every previously accepted artifact on each commit. Each checkpoint carries
+  the full cumulative artifact inventory, so every `coordinator commit-v4`
+  re-confirmed all earlier objects byte-for-byte, work that grew quadratically
+  over a ceremony. The coordinator now records, in workspace-private
+  `verified-objects.json` beside the public artifact root, the exact object
+  versions it has digest-verified; an already-present artifact is confirmed
+  with one object-metadata request, and only an unknown, changed, or
+  metadata-unavailable version falls back to a full download-and-hash. Trust
+  stays pinned to digest-verified versions — mere existence is still never
+  accepted. Staging also hashes the private copy while it is written, instead
+  of reading and hashing every artifact twice. The artifact batch is published
+  with bounded parallelism: a byte-weighted in-flight cap (default 2 GiB, so
+  staged copies never exceed it on coordinator disk) plus a worker cap,
+  deterministic first-artifact error reporting, and idempotent retries. The
+  signed checkpoint, its signature, and the root pointer are still published
+  strictly after the batch, so a partial batch never becomes discoverable.
 - Storage-first upload grants now cap remaining lifetime at accept
   (`expires_at` versus now, plus two minutes of provider-clock allowance),
   not `expires_at − issued_at`. AWS STS `Expiration` is one hour from
