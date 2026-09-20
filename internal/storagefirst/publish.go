@@ -30,8 +30,8 @@ func DefaultPublishLimits() PublishLimits {
 // PublishArtifacts publishes every referenced public artifact under root with
 // bounded parallelism. Errors are deterministic: artifacts are processed in
 // logical-name order and the first failure in that order is the one reported,
-// regardless of which worker failed first. A failure stops artifacts that have
-// not started, while running artifacts finish; because every key is
+// regardless of which worker failed first. A failure stops admission of new
+// artifacts, while already admitted artifacts finish; because every key is
 // content-addressed and created only if absent, retrying the whole batch is
 // idempotent. The signed checkpoint, its signature, and the root pointer are
 // published by the caller after this returns, so a partial batch never
@@ -50,41 +50,37 @@ func PublishArtifacts(objects ImmutableStore, refs []state.ContentRef, root, tem
 
 	errs := make([]error, len(ordered))
 	var failed atomic.Bool
-	work := make(chan int)
 	var group sync.WaitGroup
 	bytes := newByteSemaphore(limits.InFlightBytes)
-	workerCount := min(limits.Workers, len(ordered))
-	for worker := 0; worker < workerCount; worker++ {
-		group.Add(1)
-		go func() {
-			defer group.Done()
-			for index := range work {
-				if failed.Load() {
-					continue
-				}
-				ref := ordered[index]
-				weight := max(min(ref.Size, limits.InFlightBytes), 0)
-				bytes.acquire(weight)
-				if failed.Load() {
-					bytes.release(weight)
-					continue
-				}
-				err := publishImmutableAt(objects, ref, root, tempParent, memo)
-				bytes.release(weight)
-				if err != nil {
-					errs[index] = err
-					failed.Store(true)
-				}
-			}
-		}()
-	}
-	for index := range ordered {
+	slots := make(chan struct{}, min(limits.Workers, len(ordered)))
+	for index, ref := range ordered {
 		if failed.Load() {
 			break
 		}
-		work <- index
+		// Reserve both resources in logical-name order, so a small later
+		// artifact cannot overtake an earlier one waiting for disk space.
+		slots <- struct{}{}
+		weight := max(min(ref.Size, limits.InFlightBytes), 0)
+		bytes.acquire(weight)
+		if failed.Load() {
+			bytes.release(weight)
+			<-slots
+			break
+		}
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			// Every admitted artifact runs, even if a later one fails first.
+			// Otherwise an earlier error could disappear from the result.
+			if err := publishImmutableAt(objects, ref, root, tempParent, memo); err != nil {
+				errs[index] = err
+				failed.Store(true)
+			}
+			// Publish failure before waking the dispatcher.
+			bytes.release(weight)
+			<-slots
+		}()
 	}
-	close(work)
 	group.Wait()
 
 	for index, err := range errs {
@@ -100,9 +96,8 @@ func publishImmutableAt(objects ImmutableStore, ref state.ContentRef, root, temp
 }
 
 // byteSemaphore bounds a total quantity of in-flight work measured in bytes.
-// Acquiring more than the capacity is allowed and blocks all other
-// acquisitions, so a single oversized artifact runs alone instead of being
-// rejected.
+// The dispatcher clamps oversized artifacts to the full capacity so they
+// run alone instead of being rejected.
 type byteSemaphore struct {
 	mu   sync.Mutex
 	cond *sync.Cond

@@ -231,3 +231,70 @@ func BenchmarkPublishArtifactsRepublishMemo(b *testing.B) {
 		}
 	}
 }
+
+// orderedAdmissionStore holds the first small artifact in flight while a
+// capacity-sized artifact waits. A later small failure must not bypass it.
+type orderedAdmissionStore struct {
+	*publishingFake
+	firstKey     string
+	lastKey      string
+	firstStarted chan struct{}
+	lastStarted  chan struct{}
+	releaseFirst chan struct{}
+}
+
+func (s *orderedAdmissionStore) PutIfAbsent(key, local string) (store.ObjectVersion, error) {
+	if key == s.firstKey {
+		close(s.firstStarted)
+		<-s.releaseFirst
+	}
+	if key == s.lastKey {
+		close(s.lastStarted)
+	}
+	return s.publishingFake.PutIfAbsent(key, local)
+}
+
+func TestPublishArtifactsPreservesErrorOrderUnderByteContention(t *testing.T) {
+	for _, middleSize := range []int{100, 200} {
+		t.Run(fmt.Sprintf("middle-size-%d", middleSize), func(t *testing.T) {
+			dir := t.TempDir()
+			_, first := writeArtifact(t, dir, "a.bin", []byte("a"))
+			_, middle := writeArtifact(t, dir, "b.bin", make([]byte, middleSize))
+			_, last := writeArtifact(t, dir, "c.bin", []byte("c"))
+			fake := &orderedAdmissionStore{
+				publishingFake: newPublishingFake(),
+				firstKey:       store.Key(first.SHA256), lastKey: store.Key(last.SHA256),
+				firstStarted: make(chan struct{}), lastStarted: make(chan struct{}),
+				releaseFirst: make(chan struct{}),
+			}
+			fake.putFail[store.Key(middle.SHA256)] = errors.New("middle failure")
+			fake.putFail[store.Key(last.SHA256)] = errors.New("last failure")
+			done := make(chan error, 1)
+			go func() {
+				done <- PublishArtifacts(fake, []state.ContentRef{last, middle, first}, dir, dir, nil, PublishLimits{InFlightBytes: 100, Workers: 3})
+			}()
+			select {
+			case <-fake.firstStarted:
+			case <-time.After(5 * time.Second):
+				close(fake.releaseFirst)
+				t.Fatal("first artifact did not start")
+			}
+			// Give the old scheduler an opportunity to bypass b with c. The
+			// correct dispatcher waits for a to release b's reservation.
+			select {
+			case <-fake.lastStarted:
+				t.Error("later artifact bypassed an earlier capacity-sized artifact")
+			case <-time.After(50 * time.Millisecond):
+			}
+			close(fake.releaseFirst)
+			select {
+			case err := <-done:
+				if err == nil || !strings.Contains(err.Error(), `"b.bin"`) {
+					t.Fatalf("expected first error at b.bin, got %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("publication did not finish")
+			}
+		})
+	}
+}

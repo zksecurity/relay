@@ -1,5 +1,10 @@
 ## What changed
 
+- Publication frees each refused upload copy before downloading an existing
+  object for verification, and admits artifacts in name order so disk
+  contention cannot change which failure is reported. Tessera compatibility
+  is unchanged; no schema, signed bytes, or API changes are required.
+
 - Storage-first checkpoint publication no longer re-downloads and re-hashes
   every previously accepted artifact on each commit. Each checkpoint carries
   the full cumulative artifact inventory, so every `coordinator commit-v4`
@@ -13,8 +18,9 @@
   accepted. Staging also hashes the private copy while it is written, instead
   of reading and hashing every artifact twice. The artifact batch is published
   with bounded parallelism: a byte-weighted in-flight cap (default 2 GiB, so
-  staged copies never exceed it on coordinator disk) plus a worker cap,
-  deterministic first-artifact error reporting, and idempotent retries. The
+  temporary copies stay within it unless one oversized artifact runs alone)
+  plus a worker cap, deterministic first-artifact error reporting, and
+  idempotent retries. The
   signed checkpoint, its signature, and the root pointer are still published
   strictly after the batch, so a partial batch never becomes discoverable.
 - Storage-first upload grants now cap remaining lifetime at accept

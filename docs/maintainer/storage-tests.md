@@ -161,7 +161,7 @@ ordinary coordinator commands do not automatically renew credentials.
 
 `coordinator commit-v4` publishes the cumulative artifact inventory with
 bounded parallelism: a byte-weighted in-flight cap (default 2 GiB, so staged
-copies of up-to-16 GiB artifacts never exceed it on coordinator disk) and a
+copies stay within it unless one oversized artifact runs alone) and a
 worker cap (default 8), with deterministic first-artifact error reporting and
 idempotent retries. A workspace-local `verified-objects.json` beside the
 public artifact root records the object versions this coordinator has

@@ -60,6 +60,11 @@ func PublishImmutable(objects ImmutableStore, ref state.ContentRef, localPath, t
 	if !errors.Is(err, store.ErrExists) {
 		return err
 	}
+	// The upload is finished. Release its disk space before a fallback read
+	// creates another full copy of the artifact.
+	if err := os.Remove(staged); err != nil {
+		return fmt.Errorf("remove staged upload before verification: %w", err)
+	}
 	if memo != nil {
 		if publishing, ok := objects.(PublishingStore); ok {
 			return memo.confirmExisting(publishing, key, ref, filepath.Join(temp, "object"))
