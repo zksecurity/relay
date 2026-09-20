@@ -104,7 +104,7 @@ func TestPublishImmutableStagesVerifiedBytesBeforeProviderReopensSource(t *testi
 	}
 	s := &replacingUploadStore{original: path}
 	ref := state.ContentRef{Name: "payload", SHA256: digestBytes(raw), Size: int64(len(raw))}
-	if err := PublishImmutable(s, ref, path, t.TempDir()); err != nil {
+	if err := PublishImmutable(s, ref, path, t.TempDir(), nil); err != nil {
 		t.Fatal(err)
 	}
 	if string(s.uploaded) != string(raw) {
@@ -134,11 +134,11 @@ func TestPublishImmutableVerifiesExistingBytesOnRetry(t *testing.T) {
 	}
 	ref := state.ContentRef{Name: "checkpoints/0.json", SHA256: digestBytes(raw), Size: int64(len(raw))}
 	storeFake := &immutableFake{existing: raw, putErr: store.ErrExists}
-	if err := PublishImmutable(storeFake, ref, path, t.TempDir()); err != nil {
+	if err := PublishImmutable(storeFake, ref, path, t.TempDir(), nil); err != nil {
 		t.Fatal(err)
 	}
 	storeFake.existing = []byte("other bytes")
-	if err := PublishImmutable(storeFake, ref, path, t.TempDir()); err == nil {
+	if err := PublishImmutable(storeFake, ref, path, t.TempDir(), nil); err == nil {
 		t.Fatal("pre-existing different bytes accepted")
 	}
 }
@@ -149,8 +149,50 @@ func TestPublishImmutableRejectsWrongLocalBytesBeforeUpload(t *testing.T) {
 		t.Fatal(err)
 	}
 	storeFake := &immutableFake{}
-	err := PublishImmutable(storeFake, state.ContentRef{Name: "x", SHA256: digestBytes([]byte("right")), Size: 5}, path, t.TempDir())
+	err := PublishImmutable(storeFake, state.ContentRef{Name: "x", SHA256: digestBytes([]byte("right")), Size: 5}, path, t.TempDir(), nil)
 	if err == nil || storeFake.puts != 0 {
 		t.Fatalf("err=%v puts=%d", err, storeFake.puts)
+	}
+}
+
+// fallbackSpaceStore observes disk usage at the boundary between upload and
+// download, where retaining the upload would double the reservation.
+type fallbackSpaceStore struct {
+	*publishingFake
+	fetched bool
+}
+
+func (s *fallbackSpaceStore) GetVersionedAtMost(key, local string, maximum int64) (store.ObjectVersion, error) {
+	if _, err := os.Lstat(filepath.Join(filepath.Dir(local), "payload")); !errors.Is(err, os.ErrNotExist) {
+		return store.ObjectVersion{}, errors.New("upload copy still occupies disk space before fallback download")
+	}
+	s.fetched = true
+	return s.publishingFake.GetVersionedAtMost(key, local, maximum)
+}
+
+func TestPublishImmutableReleasesUploadSpaceBeforeFallback(t *testing.T) {
+	for _, useMemo := range []bool{false, true} {
+		name := "without-memo"
+		if useMemo {
+			name = "empty-memo"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path, ref := writeArtifact(t, dir, "artifact.bin", []byte("retained artifact"))
+			fake := &fallbackSpaceStore{publishingFake: newPublishingFake()}
+			if err := PublishImmutable(fake, ref, path, dir, nil); err != nil {
+				t.Fatal(err)
+			}
+			var memo *VerifiedObjects
+			if useMemo {
+				memo = LoadVerifiedObjects(filepath.Join(dir, "memo.json"))
+			}
+			if err := PublishImmutable(fake, ref, path, dir, memo); err != nil {
+				t.Fatal(err)
+			}
+			if !fake.fetched {
+				t.Fatal("expected fallback download")
+			}
+		})
 	}
 }

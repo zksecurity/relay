@@ -156,3 +156,22 @@ public signer anchor. Long downloads need credentials with sufficient remaining
 lifetime; an exported browser login can expire during the operation. This test
 can issue a one-hour session restricted to the selected test release prefix;
 ordinary coordinator commands do not automatically renew credentials.
+
+## Parallel artifact publication (2026-09-18)
+
+`coordinator commit-v4` publishes the cumulative artifact inventory with
+bounded parallelism: a byte-weighted in-flight cap (default 2 GiB, so staged
+copies stay within it unless one oversized artifact runs alone) and a
+worker cap (default 8), with deterministic first-artifact error reporting and
+idempotent retries. A workspace-local `verified-objects.json` beside the
+public artifact root records the object versions this coordinator has
+digest-verified. Already-present artifacts are confirmed by one
+object-metadata request and re-downloaded only when the stored version is
+unknown, changed, or metadata is unavailable; the file is private workspace
+state, is never published, and losing it only costs verification work.
+
+Unit tests cover partial failure, an already-present object, a conflicting
+remote object, cancellation, and retry (`internal/storagefirst/publish_test.go`
+and `verified_objects_test.go`). Benchmarks with a simulated 2 ms provider
+latency and 64 objects of 64 KiB on an Apple M1 Pro: sequential publication
+235 ms, parallel publication 34 ms, memo-confirmed re-publication 26 ms.

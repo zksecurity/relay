@@ -288,19 +288,26 @@ func fetchNamed(objects ObjectStore, root string, ref state.ContentRef, names fe
 }
 
 func fetchExact(objects ObjectStore, ref state.ContentRef, localPath string) error {
+	_, err := fetchExactVersion(objects, ref, localPath)
+	return err
+}
+
+// fetchExactVersion downloads the referenced immutable bytes, verifies them,
+// and returns the stored version the verification applies to.
+func fetchExactVersion(objects ObjectStore, ref state.ContentRef, localPath string) (store.ObjectVersion, error) {
 	if ref.Size <= 0 || !validDigest(ref.SHA256) {
-		return errors.New("immutable reference requires a positive size and valid SHA-256")
+		return store.ObjectVersion{}, errors.New("immutable reference requires a positive size and valid SHA-256")
 	}
 	version, err := objects.GetVersionedAtMost(store.Key(ref.SHA256), localPath, ref.Size)
 	if err != nil {
-		return err
+		return store.ObjectVersion{}, err
 	}
 	if version.Size != ref.Size {
-		return fmt.Errorf("downloaded size %d, want %d", version.Size, ref.Size)
+		return store.ObjectVersion{}, fmt.Errorf("downloaded size %d, want %d", version.Size, ref.Size)
 	}
 	if err := verifyLocalRef(ref, localPath); err != nil {
 		_ = os.Remove(localPath)
-		return fmt.Errorf("downloaded object does not match its immutable reference: %w", err)
+		return store.ObjectVersion{}, fmt.Errorf("downloaded object does not match its immutable reference: %w", err)
 	}
-	return nil
+	return version, nil
 }

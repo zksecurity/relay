@@ -71,17 +71,23 @@ func runCoordinatorCommitV4(args []string) error {
 		return err
 	}
 	objects := coordinatorClient(config, config.PublishedBucket)
-	for _, ref := range child.PublicationArtifacts() {
-		path := filepath.Join(root, filepath.FromSlash(ref.Name))
-		if err := storagefirst.PublishImmutable(objects, ref, path, filepath.Dir(root)); err != nil {
-			return fmt.Errorf("publish required public artifact %q: %w", ref.Name, err)
-		}
+	// The verified-objects memo is workspace-private state beside the public
+	// artifact root: it records which stored versions this coordinator already
+	// digest-verified, so the cumulative artifact inventory carried by every
+	// checkpoint is confirmed by a metadata request instead of re-downloading
+	// each earlier artifact on every commit.
+	memo := storagefirst.LoadVerifiedObjects(filepath.Join(filepath.Dir(root), "verified-objects.json"))
+	if err := storagefirst.PublishArtifacts(objects, child.PublicationArtifacts(), root, filepath.Dir(root), memo, storagefirst.DefaultPublishLimits()); err != nil {
+		return err
 	}
-	if err := storagefirst.PublishImmutable(objects, checkpointRef, checkpoint, filepath.Dir(root)); err != nil {
+	if err := storagefirst.PublishImmutable(objects, checkpointRef, checkpoint, filepath.Dir(root), memo); err != nil {
 		return fmt.Errorf("publish immutable checkpoint: %w", err)
 	}
-	if err := storagefirst.PublishImmutable(objects, signatureRef, signature, filepath.Dir(root)); err != nil {
+	if err := storagefirst.PublishImmutable(objects, signatureRef, signature, filepath.Dir(root), memo); err != nil {
 		return fmt.Errorf("publish immutable checkpoint signature: %w", err)
+	}
+	if err := memo.Save(); err != nil {
+		return fmt.Errorf("record verified objects: %w", err)
 	}
 
 	// Reread through authenticated provider access. A repeated command after a
