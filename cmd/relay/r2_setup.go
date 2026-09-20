@@ -22,7 +22,7 @@ func (w *coordinatorWizard) secret(label string) (string, error) {
 }
 
 func (w *coordinatorWizard) credential(label string) (string, error) {
-	choice, err := w.choose(label, "", []setupChoice{{"paste", "Paste from my password manager or saved copy (hidden)"}, {"file", "Read an existing protected credential file"}, {"instructions", "Show how to obtain this credential"}, {"cancel", "Cancel"}})
+	choice, err := w.choose(label, "", []setupChoice{{"paste", "Paste from my password manager or saved copy (hidden)"}, {"file", "Read one value from a protected file (not an AWS profile)"}, {"instructions", "Show how to obtain this credential"}, {"cancel", "Cancel"}})
 	if err != nil {
 		return "", err
 	}
@@ -102,11 +102,7 @@ func (w *coordinatorWizard) setupR2() (result error) {
 		return err
 	}
 	fmt.Fprintf(w.output, "\nWhy a second credential?\n\nYour coordinator credential can access both buckets.\nThis separate credential will let Relay issue temporary\nupload access to other roles.\n\nRestrict it to the inbox bucket so that, if it leaks,\nit cannot access the published ceremony files.\n\nThis separation is a Relay safety requirement.\n\nCreate a separate R2 credential with:\n  Permission: Object Read & Write\n  Bucket: %s only\n\nDo not reuse the coordinator credential.\n\n", v["inbox-bucket"])
-	parentID, err := w.credential("Inbox-only credential — Access Key ID")
-	if err != nil {
-		return err
-	}
-	parentSecret, err := w.credential("Inbox-only credential — Secret Access Key")
+	parentID, parentSecret, err := w.inboxR2Credential()
 	if err != nil {
 		return err
 	}

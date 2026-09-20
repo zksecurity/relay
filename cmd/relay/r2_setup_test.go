@@ -14,7 +14,7 @@ func r2WizardFixture(t *testing.T, mode string) *coordinatorWizard {
 	t.Helper()
 	w := setupFixture(t)
 	w.credentialRoot = filepath.Join(t.TempDir(), "credentials")
-	input := "2\n" + strings.Repeat("a", 32) + "\npublished-bucket\ninbox-bucket\nhttps://public.example.test\n" + mode + "\n2\n1\n1\n1\n1\n1\nSAVE SETTINGS\n"
+	input := "2\n" + strings.Repeat("a", 32) + "\npublished-bucket\ninbox-bucket\nhttps://public.example.test\n" + mode + "\n2\n1\n1\n2\n1\n1\n1\nSAVE SETTINGS\n"
 	w.input = bufio.NewReader(strings.NewReader(input))
 	values := []string{strings.Repeat("b", 32), strings.Repeat("c", 64), strings.Repeat("d", 32), strings.Repeat("e", 64), "test-only-control-token"}
 	w.readSecret = func(string) (string, error) {

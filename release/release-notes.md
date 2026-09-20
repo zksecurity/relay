@@ -1,5 +1,9 @@
 ## What changed
 
+- R2 setup now accepts the inbox-only credential as a named profile from a
+  protected AWS-format file, including the coordinator credential file. Hidden
+  paste and single-value files remain available; the two keys must differ.
+
 - Publication frees each refused upload copy before downloading an existing
   object for verification, and admits artifacts in name order so disk
   contention cannot change which failure is reported. Tessera compatibility
@@ -140,6 +144,9 @@ schema-dispatched workflow.
   Tessera ceremonies keep their pinned releases and behavior.
 
 ## Tessera compatibility
+
+The R2 profile-selection change affects only local credential entry. No Tessera
+contract, signed ceremony data, saved credential format, or API changes.
 
 The release-signing fix changes no setup contract, ceremony format, storage
 object, or Tessera request. This release pins a corrected Proof-tool runtime

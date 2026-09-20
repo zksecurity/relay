@@ -59,12 +59,6 @@ func parseR2CoordinatorProfiles(raw []byte) (map[string][2]string, error) {
 }
 
 func (w *coordinatorWizard) coordinatorR2Credential() (string, string, error) {
-	path := w.d.Credentials
-	if path == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			path = filepath.Join(home, ".aws", "credentials")
-		}
-	}
 	choice, err := w.choose("Coordinator object-storage access", "", []setupChoice{{"existing", "Use one profile from my existing protected credentials file"}, {"new", "Enter coordinator access key and secret"}})
 	if err != nil {
 		return "", "", err
@@ -77,7 +71,43 @@ func (w *coordinatorWizard) coordinatorR2Credential() (string, string, error) {
 		secret, err := w.credential("Coordinator Secret Access Key")
 		return id, secret, err
 	}
-	path, err = w.required("Protected AWS-format credentials file", path)
+	return w.existingR2Credential()
+}
+
+func (w *coordinatorWizard) inboxR2Credential() (string, string, error) {
+	choice, err := w.choose("Inbox-only object-storage access", "", []setupChoice{
+		{"existing", "Use one named profile from a protected AWS-format credentials file"},
+		{"new", "Enter Access Key ID and Secret Access Key separately (hidden paste or single-value files)"},
+		{"cancel", "Cancel"},
+	})
+	if err != nil {
+		return "", "", err
+	}
+	switch choice {
+	case "existing":
+		return w.existingR2Credential()
+	case "new":
+		id, err := w.credential("Inbox-only credential — Access Key ID")
+		if err != nil {
+			return "", "", err
+		}
+		secret, err := w.credential("Inbox-only credential — Secret Access Key")
+		return id, secret, err
+	default:
+		return "", "", errors.New("cancelled; no credentials saved")
+	}
+}
+
+// Both roles select a single key pair without retaining the source file or
+// changing the draft. Dedicated copies are staged only after confirmation.
+func (w *coordinatorWizard) existingR2Credential() (string, string, error) {
+	path := w.d.Credentials
+	if path == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			path = filepath.Join(home, ".aws", "credentials")
+		}
+	}
+	path, err := w.required("Protected AWS-format credentials file", path)
 	if err != nil {
 		return "", "", err
 	}

@@ -55,8 +55,11 @@ Action numbers stay stable. Choosing another action never bypasses its checks.
    supplying a reviewed custom binary is available under **Supported computers**.
 6. Choose **Storage settings**. For Cloudflare, choose **Set up Cloudflare R2
    and credentials** and follow the numbered prompts. Select existing buckets,
-   then enter credentials only at the hidden prompt or select protected files.
-   Any password manager works. Administrator-file import and individual
+   then select named profiles for the coordinator and inbox-only credentials
+   from the same protected AWS-format file or separate files. The two profiles
+   must use different Access Key IDs. You can also enter each value at a hidden
+   prompt or read it from a protected single-value file. Any password manager
+   works. Administrator-file import and individual
    infrastructure settings remain available. Saving settings alone does not
    prove permissions; approve **Check storage** to test actual access.
 
