@@ -81,7 +81,10 @@ required reviews and do not bypass release protections. Website activation also
 requires its separate trusted-release provisioning and deployment smoke check.
 Every PR must update `release/release-notes.md` with a short human-readable summary
 and an explicit Tessera compatibility statement; the protected-main release uses
-that reviewed text instead of a generated commit list.
+that reviewed text instead of a generated commit list. This file describes only
+the changes since the preceding release: replace the previous release summary
+rather than appending to it. Keep validation and compatibility statements scoped
+to the current changes; published GitHub releases retain the historical notes.
 For documentation-only edits, verify referenced paths and content; a full test
 run is unnecessary.
 
