@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -132,6 +133,102 @@ func TestUpgradeV2ProducerRequiresExactQualification(t *testing.T) {
 	}
 	if _, err := generateUpgradeV2(d, d.TargetApp, s.OriginalMap, s.TargetMap, []byte(`{}`), binary); err == nil {
 		t.Fatal("missing test evidence promoted")
+	}
+}
+
+func TestUpgradeV2NativeOnlyRetainsOriginalOnlineImage(t *testing.T) {
+	s, d := testUpgradeV2(t, "coordinator")
+	d.OnlineImage = d.OriginalImage
+	testUpgradeV2Report(t, &s, &d)
+	binary, err := os.ReadFile(s.Launcher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := generateUpgradeV2(d, d.TargetApp, s.OriginalMap, s.TargetMap, s.Qualification, binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	produced, err := upgrade.DecodeV2(files[d.AssetName()])
+	if err != nil || produced.OnlineImage != d.OriginalImage {
+		t.Fatal("native-only generation changed Docker", err)
+	}
+	if err := upgradeV2Activate(s, ""); err != nil {
+		t.Fatal(err)
+	}
+	old := releaseCommit
+	releaseCommit = d.TargetApp
+	t.Cleanup(func() { releaseCommit = old })
+	_, got, selected, err := upgradeV2Selected(s.Profile, s.SettingsRoot, true)
+	if err != nil || !selected || got.OnlineImage != d.OriginalImage {
+		t.Fatal("native-only selection failed", err)
+	}
+	// The target map intentionally names a different image. It cannot replace
+	// the original image covered by the native-only qualification report.
+	changed := d
+	changed.OnlineImage, _ = selectReleaseImage(s.TargetMap, d.TargetApp, "coordinator", d.Platform)
+	if _, err := generateUpgradeV2(changed, d.TargetApp, s.OriginalMap, s.TargetMap, s.Qualification, binary); err == nil {
+		t.Fatal("native-only report authorized replacement Docker image")
+	}
+	if _, err := generateUpgradeV2(d, d.TargetApp, upgradeTestReleaseMap(d.OriginalRelease, strings.Repeat("f", 64)), s.TargetMap, s.Qualification, binary); err == nil {
+		t.Fatal("changed original map accepted")
+	}
+}
+
+func TestUpgradeV2ActivityHistoryContinuity(t *testing.T) {
+	s, d := testUpgradeV2(t, "coordinator")
+	inv, err := upgradeV2Inventory(s.Profile, d)
+	if err != nil || !slices.Contains(inv.HistoryGaps, "activity-log-missing") {
+		t.Fatal("missing history lost", err)
+	}
+	c := diagnosticContext{Work: s.Profile.Work, Role: "coordinator", Stage: "workflow-v4", Action: "coordinator-lifecycle"}
+	if err := appendAuditActivity(c, "started", nil, strings.Repeat("a", 32)); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(s.Profile.Work, diagnosticDirectory, auditActivityFile)
+	before, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv, err = upgradeV2Inventory(s.Profile, d)
+	if err != nil || !slices.Contains(inv.HistoryGaps, "actions-without-recorded-completion") {
+		t.Fatal("unfinished history lost", err)
+	}
+	after, _ := os.ReadFile(log)
+	if !bytes.Equal(before, after) {
+		t.Fatal("inventory rewrote activity")
+	}
+	found := false
+	for _, f := range inv.Files {
+		if f.Name == diagnosticDirectory+"/"+auditActivityFile {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("activity bytes omitted from inventory")
+	}
+	if err := appendAuditActivity(c, "completed", nil, strings.Repeat("a", 32)); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := upgradeV2Inventory(s.Profile, d)
+	if err != nil || slices.Contains(updated.HistoryGaps, "actions-without-recorded-completion") || updated.digest() == inv.digest() {
+		t.Fatal("activity completion did not change inventory", err)
+	}
+	complete, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(log, append(complete, []byte("partial")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	partial, err := upgradeV2Inventory(s.Profile, d)
+	if err != nil || !slices.Contains(partial.HistoryGaps, "partial-final-record") {
+		t.Fatal("partial activity treated as complete", err)
+	}
+	if err := os.WriteFile(log, []byte("{}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := upgradeV2Inventory(s.Profile, d); err == nil {
+		t.Fatal("corrupt activity accepted")
 	}
 }
 func testUpgradeV2Report(t *testing.T, s *upgradeSelectionV2, d *upgrade.DeclarationV2) {

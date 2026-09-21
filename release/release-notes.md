@@ -1,5 +1,11 @@
 ## What changed
 
+- Compatible native-only updates retain the original online Docker image and
+  verify it against the original release map. Qualification for that choice
+  cannot authorize replacement Docker images. Upgrade inventory also preserves
+  durable activity history and surfaces gaps without claiming clean execution.
+  No upgrade pair is enabled; Tessera contracts and deployment are unchanged.
+
 - Added `relay audit export` and `relay audit combine` to produce sanitized JSON
   and Markdown activity reports with source provenance and explicit history gaps.
 - Guided actions now retain a durable activity journal beyond the existing

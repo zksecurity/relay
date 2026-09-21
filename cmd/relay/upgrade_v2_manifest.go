@@ -20,6 +20,15 @@ type upgradePolicyV2 struct {
 	Pairs  []upgrade.DeclarationV2 `json:"pairs"`
 }
 
+// Equal immutable digests explicitly request a native-only update. Authenticate
+// that runtime through the original map, not a fabricated target release map.
+func upgradeV2DeclaredOnlineImage(original, target []byte, d upgrade.DeclarationV2) (string, error) {
+	if d.OnlineImage != "" && d.OnlineImage == d.OriginalImage {
+		return selectReleaseImage(original, d.OriginalRelease, "coordinator", d.Platform)
+	}
+	return selectReleaseImage(target, d.TargetApp, "coordinator", d.Platform)
+}
+
 func generateUpgradeV2(d upgrade.DeclarationV2, target string, originalMap, targetMap, report, launcher []byte) (map[string][]byte, error) {
 	if d.TargetApp != "" && d.TargetApp != target {
 		return nil, errors.New("policy targets another commit")
@@ -36,7 +45,7 @@ func generateUpgradeV2(d upgrade.DeclarationV2, target string, originalMap, targ
 	if d.OriginalImage != image || d.SigningImage != signer {
 		return nil, errors.New("policy differs from original runtime map")
 	}
-	if d.Role != "participant" && d.Role != "release-signer" {
+	if d.Role != "participant" && d.Role != "release-signer" && d.OnlineImage != d.OriginalImage {
 		d.OnlineImage, err = selectReleaseImage(targetMap, target, "coordinator", d.Platform)
 		if err != nil {
 			return nil, err

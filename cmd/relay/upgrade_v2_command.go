@@ -179,7 +179,7 @@ func runCeremonyUpgradeV2(args []string) error {
 		return errors.New("declaration differs from original authenticated images")
 	}
 	if d.OnlineImage != "" {
-		image, err := selectReleaseImage(targetMap, targetCommit, "coordinator", p.Platform)
+		image, err := upgradeV2DeclaredOnlineImage(originalMap, targetMap, d)
 		if err != nil {
 			return err
 		}
@@ -337,6 +337,9 @@ func runCeremonyUpgradeV2(args []string) error {
 	fmt.Fprintf(os.Stdout, "Update %s application: %s → %s\nOriginal ceremony release: %s (unchanged)\nOriginal contribution and signing images remain pinned.\nInventoried %d files and %d retained operations. No ceremony command will be replayed by this update.\n", p.Role, source, targetCommit, p.ReleaseCommit, len(inv.Files), len(inv.Pending))
 	for _, pending := range inv.Pending {
 		fmt.Fprintln(os.Stdout, "  "+pending)
+	}
+	for _, gap := range inv.HistoryGaps {
+		fmt.Fprintln(os.Stdout, "  Local activity limitation: "+gap)
 	}
 	if err := confirmGuided(os.Stdin, os.Stdout); err != nil {
 		return err

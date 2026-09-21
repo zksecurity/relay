@@ -43,6 +43,12 @@ cleanup records, review/signature outputs and provider publication records.
 An empty generic journal or an existing file alone proves neither success nor
 absence of side effects. Unrecognized retained state blocks activation.
 
+Inventory also reads the durable local activity log and fingerprints its bytes.
+Missing history, an incomplete final record and actions without recorded
+completion are displayed as limitations, never rewritten as successful actions.
+Corrupt records stop inventory. This unauthenticated history does not replace
+protocol reconciliation or establish that an old child process has stopped.
+
 Adapters are narrowly enumerated code paths, not arbitrary commands from release
 JSON. They authenticate local bytes and the exact remote attempt/version where
 relevant. Store original operation ID, input digests, runtime, adapter and outcome;

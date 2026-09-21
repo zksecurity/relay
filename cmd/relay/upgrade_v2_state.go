@@ -187,7 +187,7 @@ func upgradeV2Selected(p guidedProfile, settingsRoot string, checkExecutable boo
 		}
 	}
 	if d.OnlineImage != "" {
-		image, err := selectReleaseImage(s.TargetMap, d.TargetApp, "coordinator", d.Platform)
+		image, err := upgradeV2DeclaredOnlineImage(s.OriginalMap, s.TargetMap, d)
 		if err != nil || image != d.OnlineImage {
 			return zero, zd, false, errors.New("cached target release map changed")
 		}
@@ -265,7 +265,7 @@ func upgradeV2Activate(s upgradeSelectionV2, expected string) error {
 		}
 	}
 	if d.OnlineImage != "" {
-		image, err := selectReleaseImage(s.TargetMap, d.TargetApp, "coordinator", d.Platform)
+		image, err := upgradeV2DeclaredOnlineImage(s.OriginalMap, s.TargetMap, d)
 		if err != nil || image != d.OnlineImage {
 			return errors.New("activation target map mismatch")
 		}

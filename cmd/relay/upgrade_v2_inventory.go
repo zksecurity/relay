@@ -22,9 +22,10 @@ type upgradeInventoryFile struct {
 	Size   int64  `json:"size"`
 }
 type upgradeInventory struct {
-	Files   []upgradeInventoryFile `json:"files"`
-	Kinds   []string               `json:"kinds"`
-	Pending []string               `json:"pending"`
+	Files       []upgradeInventoryFile `json:"files"`
+	Kinds       []string               `json:"kinds"`
+	Pending     []string               `json:"pending"`
+	HistoryGaps []string               `json:"history_gaps,omitempty"`
 }
 
 // Inventory records fingerprints, never credential/key contents. It neither
@@ -35,6 +36,13 @@ func upgradeV2Inventory(p guidedProfile, d upgrade.DeclarationV2) (upgradeInvent
 	if inv.Kinds == nil {
 		return inv, errors.New("unsupported role inventory")
 	}
+	// Activity is not protocol evidence or proof of a clean exit. Preserve its
+	// bytes and surface missing/incomplete history without inventing completion.
+	_, gaps, err := readAuditActivity(p.Work)
+	if err != nil {
+		return inv, fmt.Errorf("read retained activity: %w", err)
+	}
+	inv.HistoryGaps = gaps
 	var journal workflowV4State
 	journalPath := filepath.Join(p.Work, "workflow-v4/state.json")
 	if err := readWorkflowV4JSON(journalPath, &journal); err == nil {
@@ -70,7 +78,7 @@ func upgradeV2Inventory(p guidedProfile, d upgrade.DeclarationV2) (upgradeInvent
 	// must be reviewed rather than hidden behind an empty state.Operations.
 	allowed := map[string]bool{"ceremony": true, "workflow-v4": true, "coordinator-setup": true, "role-preparation": true, "my-enrollment": true, "custody": true, "runs": true, "approved-tools": true, "enrollment.json": true, "enrollment.sig": true, "enrollment-disclosure.txt": true, "environment.json": true, ".relay-workspace-v4.json": true}
 	allowed[".relay"] = true // retained rollback/fork high-water records
-	err := filepath.WalkDir(p.Work, func(path string, e fs.DirEntry, err error) error {
+	err = filepath.WalkDir(p.Work, func(path string, e fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -83,13 +91,24 @@ func upgradeV2Inventory(p guidedProfile, d upgrade.DeclarationV2) (upgradeInvent
 		}
 		rel = filepath.ToSlash(rel)
 		first := strings.Split(rel, "/")[0]
+		if first == diagnosticDirectory {
+			if rel == diagnosticDirectory {
+				return nil
+			}
+			if rel != diagnosticDirectory+"/"+auditActivityFile {
+				if e.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+		}
 		if first == ".relay-upgrades" || first == "diagnostics" || first == ".relay-workspace.lock" || first == "relay-upgrade.json" {
 			if e.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if !allowed[first] {
+		if !allowed[first] && first != diagnosticDirectory {
 			return fmt.Errorf("unrecognized retained workspace entry %q; preserve it for review", first)
 		}
 		if first == "workflow-v4" {

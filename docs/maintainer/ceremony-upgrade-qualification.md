@@ -24,6 +24,14 @@ release only after the candidate matrix passes; verify published assets afterwar
 
 ## Required matrix
 
+Initial intended release scope: coordinator, macOS ARM64, native application
+only, retaining original online/signing/contribution images. This scope is not
+enabled. The seven real qualification entry points and protected-main job still
+need implementation. The repository currently has no registered dedicated Mac
+runner; choosing/provisioning a Docker-capable qualification runner is a release
+prerequisite, not something satisfied by ordinary hosted macOS unit tests.
+Do not register a developer's machine as a CI runner without explicit approval.
+
 For each advertised source/target, host OS, Docker architecture and enabled role:
 
 1. Use an actual source release and real signed tiny ceremony, not handcrafted

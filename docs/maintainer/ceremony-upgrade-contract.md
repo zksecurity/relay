@@ -27,6 +27,12 @@ An independently authenticated original definition must approve that binary.
 Retain verified metadata/provenance material locally for offline operation.
 Local records remember that verification, but are not a new trust authority.
 
+For a native-only online-role update, the declaration explicitly sets
+`online_image` equal to `original_image`. That digest is checked against the
+original attested map; a different digest must belong to the target map.
+Qualification binds the exact choice, so a native-only report cannot approve
+a replacement Docker image. No version-number inference is involved.
+
 Before initialization, bind the saved draft and original setup/software manifest
 instead of a nonexistent signed definition. Record absent identity/definition
 explicitly; ordinary verified setup transitions bind them when first created.

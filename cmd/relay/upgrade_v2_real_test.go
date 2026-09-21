@@ -72,7 +72,7 @@ func realUpgradeFixture(t *testing.T) upgradeRealFixture {
 	if err != nil || image != d.OriginalImage {
 		t.Fatal("original image mismatch", err)
 	}
-	image, err = selectReleaseImage(f.target, d.TargetApp, d.Role, d.Platform)
+	image, err = upgradeV2DeclaredOnlineImage(f.original, f.target, d)
 	if err != nil || image != d.OnlineImage {
 		t.Fatal("candidate image mismatch", err)
 	}
