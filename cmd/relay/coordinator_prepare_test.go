@@ -288,7 +288,7 @@ func TestCoordinatorPolicyRetainsSavedBeaconWithoutSourceFile(t *testing.T) {
 func TestCoordinatorPolicyAllowsReviewedShortProductionBeaconWait(t *testing.T) {
 	w := setupFixture(t)
 	w.d.Mode = "production"
-	w.d.Circuit = "ownership-destination-v2"
+	w.d.Circuit = "ownership-destination-v3"
 	w.d.Identities.Auditors = nil
 	w.d.Policy.Assurance = &setupAssurance{}
 	w.input = bufio.NewReader(strings.NewReader("\n\n\n\n\n12\nUSE SHORTER PRODUCTION WAIT\n\nREVIEWED\n"))

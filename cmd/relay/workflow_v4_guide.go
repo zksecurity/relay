@@ -443,8 +443,16 @@ func runWorkflowV4GuideLoop(p, signer guidedProfile, identity setupIdentity, pro
 				fmt.Fprintln(ui.output, "A verified coordinator snapshot is required.")
 				continue
 			}
-			if err := runWorkflowV4OfflineHandoff(ui, strings.ToUpper(strings.TrimSpace(answer)), snapshot, protocol, p, signer, inspector, config, enrollmentExpected); err != nil {
-				ui.message(toneError, "Public handoff stopped: %v\nRetained work was preserved.\n", err)
+			action := map[string]string{"E": "export-public-snapshot", "I": "import-signer-enrollment", "U": "upload-signer-package"}[strings.ToUpper(strings.TrimSpace(answer))]
+			finishActivity, activityErr := beginAuditActivity(diagnosticContext{Work: p.Work, Role: p.Role, Release: launcherCommit(), Stage: "workflow-v4", Action: action})
+			if activityErr != nil {
+				ui.message(toneError, "Activity recording failed; no action was started: %v\n", activityErr)
+				continue
+			}
+			actionErr := runWorkflowV4OfflineHandoff(ui, strings.ToUpper(strings.TrimSpace(answer)), snapshot, protocol, p, signer, inspector, config, enrollmentExpected)
+			finishActivity(actionErr, ui.output)
+			if actionErr != nil {
+				ui.message(toneError, "Public handoff stopped: %v\nRetained work was preserved.\n", actionErr)
 			}
 		case "Q":
 			return nil

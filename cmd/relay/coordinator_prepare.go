@@ -154,8 +154,8 @@ func (d coordinatorDraft) validate() error {
 	if d.Mode != "rehearsal" && d.Mode != "production" {
 		return errors.New("choose rehearsal or production explicitly")
 	}
-	if d.Circuit != "ownership-destination-v2" && !(d.Mode == "rehearsal" && d.Circuit == "rehearsal-tiny-v1") {
-		return errors.New("choose the supported production circuit, or the tiny circuit in rehearsal mode only")
+	if d.Circuit != "ownership-destination-v3" && !(d.Mode == "rehearsal" && d.Circuit == "rehearsal-tiny-v1") {
+		return errors.New("this release supports ownership-destination-v3, or rehearsal-tiny-v1 in rehearsal mode only; preserve older drafts and use their original release for interrupted or initialized ceremonies")
 	}
 	seenID, seenKey, seenPub := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	identities := []setupIdentity{d.Identities.Coordinator, d.Identities.ReleaseSigner}
@@ -508,14 +508,14 @@ func (w *coordinatorWizard) basics() error {
 	if err != nil {
 		return err
 	}
-	circuit, err := w.choose("Circuit", w.d.Circuit, []setupChoice{{"ownership-destination-v2", "Ownership destination v2 — production circuit"}, {"rehearsal-tiny-v1", "Tiny test circuit — rehearsal only"}})
+	circuit, err := w.choose("Circuit", w.d.Circuit, []setupChoice{{"ownership-destination-v3", "Ownership destination v3 — production circuit"}, {"rehearsal-tiny-v1", "Tiny test circuit — rehearsal only"}})
 	if err != nil {
 		return err
 	}
 	if mode != "rehearsal" && mode != "production" {
 		return errors.New("invalid mode")
 	}
-	if circuit != "ownership-destination-v2" && !(mode == "rehearsal" && circuit == "rehearsal-tiny-v1") {
+	if circuit != "ownership-destination-v3" && !(mode == "rehearsal" && circuit == "rehearsal-tiny-v1") {
 		return errors.New("tiny circuit is rehearsal-only")
 	}
 	if w.localAction != nil && (mode != "rehearsal" || circuit != "rehearsal-tiny-v1") {
@@ -963,6 +963,9 @@ func (w *coordinatorWizard) generateIdentity() error {
 
 func (w *coordinatorWizard) initialize() error {
 	resume := w.d.Status == "initialization-attempted"
+	if w.d.TesseraSetup != nil || w.d.TesseraSetupV3 != nil {
+		return errors.New("this release supports standalone initialization only; Tessera setup imports require a compatible contract and release. Preserve this setup and use its original pinned release")
+	}
 	if w.d.Tessera != nil || w.d.TesseraSetup != nil || w.d.TesseraSetupV3 != nil {
 		if err := checkTesseraDraft(w.d); err != nil {
 			return err

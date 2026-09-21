@@ -20,8 +20,8 @@ func TestLocalCoordinatorBoundaries(t *testing.T) {
 	}
 	for _, command := range [][]string{
 		{"relay", "coordinator", "configure-storage"},
-		{"mpc-ceremony", "init", "--mode", "production", "--key-version", "ownership-destination-v2"},
-		{"mpc-ceremony", "init", "--mode", "rehearsal", "--key-version", "ownership-destination-v2"},
+		{"mpc-ceremony", "init", "--mode", "production", "--key-version", "ownership-destination-v3"},
+		{"mpc-ceremony", "init", "--mode", "rehearsal", "--key-version", "ownership-destination-v3"},
 		append(append([]string(nil), allowed...), "--allowed-binary", "extra"),
 		{"mpc-ceremony", "phase1", "contribute"},
 	} {
@@ -42,7 +42,7 @@ func TestLocalCoordinatorBoundaries(t *testing.T) {
 		t.Fatal("cloud action accepted")
 	}
 	w.d.Mode = "production"
-	w.d.Circuit = "ownership-destination-v2"
+	w.d.Circuit = "ownership-destination-v3"
 	if err := w.initialize(); err == nil {
 		t.Fatal("production init accepted")
 	}

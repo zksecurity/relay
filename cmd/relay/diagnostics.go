@@ -105,7 +105,7 @@ func cleanDiagnosticEvent(e diagnosticEvent) diagnosticEvent {
 	valid := false
 	if e.Stage == "workflow-v4" {
 		switch e.Action {
-		case "enrollment", "participant-action", "coordinator-action", "coordinator-lifecycle", "release-signer-action":
+		case "enrollment", "participant-action", "coordinator-action", "coordinator-lifecycle", "release-signer-action", "export-public-snapshot", "import-signer-enrollment", "upload-signer-package":
 			valid = true
 		}
 	} else if e.Stage == "launcher" {

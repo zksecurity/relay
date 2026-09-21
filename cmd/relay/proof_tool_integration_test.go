@@ -318,7 +318,7 @@ func testProofToolContributionCommands(t *testing.T, ceremonyBinary, fixtureRoot
 	runProofCommand(t, root, ceremonyBinary,
 		"init", "--mode", "rehearsal", "--created-at", "2026-08-18T12:00:00Z",
 		"--session-nonce-hex", strings.Repeat("cd", 32),
-		"--key-version", "ownership-destination-v2", "--participants", participantsPath,
+		"--key-version", "ownership-destination-v3", "--participants", participantsPath,
 		"--policy", policyPath, "--coordinator-key-id", coordinator.KeyID,
 		"--coordinator-signing-key", coordinatorSigningKey, "--out-dir", ceremonyRoot)
 

@@ -6,5 +6,6 @@ There are no setup toggles for these removed gates. Historical signed ceremonies
 retain their original validation. Other release and production checks still apply.
 Multiple identities controlled by one operator do not establish independence.
 
-This draft needs the compatible proof-tool release before activation in Relay.
+Relay pins the compatible proof-tool release at commit
+`80f1692778e2d34813f0c9b20d3b7ddb3fec392b`.
 Tessera setup contracts remain unchanged.
