@@ -1323,13 +1323,17 @@ func runRoleFlow(args []string) (result error) {
 	if len(p.Command) != 0 {
 		return errors.New("guide requires shared settings saved without a command; keep existing named actions for recovery")
 	}
-	if err := checkLauncherRelease(p.ReleaseCommit); err != nil {
+	p, err = applyCeremonyUpgrade(p, root)
+	if err != nil {
 		return err
 	}
 	if v4, err := workflowV4RouteHint(p); err != nil {
 		return err
 	} else if v4 {
 		return runWorkflowV4Guide(p, root)
+	}
+	if p.UpgradeOnlineImage != "" {
+		return errors.New("compatible upgrades require an authenticated V4 workflow")
 	}
 	stages := roleFlowStages(*role)
 	if len(stages) == 0 {

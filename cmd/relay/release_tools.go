@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"strings"
 
 	releaseassets "github.com/zksecurity/relay/release"
 )
@@ -22,11 +21,14 @@ type proofReleaseAsset struct {
 var proofReleaseURL = regexp.MustCompile(`^https://github.com/zksecurity/proof-tool/releases/download/mpc-ci-([0-9a-f]{40})/(mpc-ceremony|mpc-ceremony-linux-arm64)$`)
 
 func pinnedProofAsset(arch string) (proofReleaseAsset, string, string, error) {
+	return pinnedProofAssetFrom(releaseassets.RoleImageInputs(), arch)
+}
+func pinnedProofAssetFrom(raw []byte, arch string) (proofReleaseAsset, string, string, error) {
 	var inputs struct {
 		Schema string                       `json:"schema"`
 		MPC    map[string]proofReleaseAsset `json:"mpc"`
 	}
-	if err := json.Unmarshal(releaseassets.RoleImageInputs(), &inputs); err != nil {
+	if err := json.Unmarshal(raw, &inputs); err != nil {
 		return proofReleaseAsset{}, "", "", err
 	}
 	a, ok := inputs.MPC["linux_"+arch]
@@ -44,6 +46,9 @@ func pinnedProofAsset(arch string) (proofReleaseAsset, string, string, error) {
 // Downloads happen during explicit online preparation, never during a turn.
 func prepareProofAsset(root, arch string) (setupBinary, error) {
 	a, commit, name, err := pinnedProofAsset(arch)
+	return prepareProofAssetPinned(root, a, commit, name, arch, err)
+}
+func prepareProofAssetPinned(root string, a proofReleaseAsset, commit, name, arch string, err error) (setupBinary, error) {
 	if err != nil {
 		return setupBinary{}, err
 	}
@@ -102,7 +107,7 @@ func (w *coordinatorWizard) prepareApprovedArchitectures() error {
 	if w.d.ArchitecturePolicy == "single" || w.d.ArchitecturePolicy == "custom" || (w.d.ArchitecturePolicy == "" && len(w.d.Binaries) > 0) {
 		return nil
 	}
-	if err := checkLauncherRelease(strings.TrimPrefix(w.d.Release, "role-images-")); err != nil {
+	if err := checkPreparationRelease(w.d.Name, "coordinator", w.d.Release, w.d.Work, w.d.Trust, w.d.Keys); err != nil {
 		return err
 	}
 	other := "arm64"
@@ -112,7 +117,7 @@ func (w *coordinatorWizard) prepareApprovedArchitectures() error {
 		return errors.New("unsupported coordinator architecture")
 	}
 	fmt.Fprintln(w.output, "Preparing the authenticated companion build so Intel/AMD and ARM64 computers can participate. This does not execute the downloaded binary on the host.")
-	b, err := prepareProofAsset(filepath.Join(w.d.Work, "approved-tools"), other)
+	b, err := prepareWorkspaceProofAsset(w.d.Work, other)
 	if err != nil {
 		return err
 	}

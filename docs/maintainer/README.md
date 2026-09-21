@@ -6,6 +6,7 @@ These references support release engineering, profile preparation, and recovery.
 | Task | Reference |
 | --- | --- |
 | Publish launchers and images | [Software releases](releases.md) |
+| Design compatible updates during an ongoing ceremony | [Upgrade design](ceremony-contract-compatibility-design.md) |
 | Build and test Docker images locally | [Role images](role-images.md) |
 | Try the coordinator setup UI locally | [Local coordinator test](local-coordinator.md) |
 | Review/test the guided role workflows | [Workflow review](role-workflow-review.md) |

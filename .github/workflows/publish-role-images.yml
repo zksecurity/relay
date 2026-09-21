@@ -277,6 +277,29 @@ jobs:
         with:
           subject-path: |
             ceremony-software-manifest-v3.json
+      - name: Generate reviewed upgrade declarations
+        id: upgrades
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          launchers/relay-linux-amd64 ceremony upgrade-manifests --sources release/upgrade-sources.json --role-images relay-role-images.release.json --proof-inputs release/role-images.json --out upgrades
+          # Approve exact earlier binaries using protected-main-reviewed local
+          # reports. This workflow authenticates them; it does not run Mac tests
+          # or rebuild/replace the qualified binaries.
+          launchers/relay-linux-amd64 ceremony upgrade-manifests-v2 --reviewed-published --policy release/upgrade-policy-v2.json --reports release/upgrade-qualification --out upgrades-v2
+          if compgen -G 'upgrades-v2/*.json' > /dev/null; then
+            cp upgrades-v2/*.json upgrades/
+          fi
+          if compgen -G 'upgrades/*.json' > /dev/null; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Attest upgrade compatibility declarations
+        if: steps.upgrades.outputs.present == 'true'
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: upgrades/*.json
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
@@ -287,3 +310,4 @@ jobs:
             relay-role-images.release.json
             ceremony-software-manifest-v3.json
             launchers/*
+            upgrades/*.json

@@ -75,6 +75,9 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 		}
 		participant, storagePath, key, dockerCLI = &c, c.StorageConfig, c.CoordinatorKey, c.DockerCLI
 	}
+	if err := upgradeV2CheckSetupInputPaths(p, storagePath, key); err != nil {
+		return err
+	}
 	cli, err := exec.LookPath(dockerCLI)
 	if err != nil {
 		return err
@@ -92,6 +95,10 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 		return fmt.Errorf("prepare this role's network-disabled signing image in onboarding: %w", err)
 	}
 	var identity setupIdentity
+	identityFiles, err := upgradeV2CaptureSetup(p.Work, "identity")
+	if err != nil {
+		return err
+	}
 	if err := setupReadJSON(filepath.Join(p.Keys, "identity.json"), &identity); err != nil {
 		return err
 	}
@@ -112,6 +119,10 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 		return err
 	}
 	inspector := d.inspector()
+	captured, captureErr := upgradeV2CaptureSetup(p.Work, "definition")
+	if captureErr != nil {
+		return captureErr
+	}
 	protocol, err := inspector.DefinitionProtocol()
 	if err != nil {
 		return fmt.Errorf("authenticate V4 ceremony; legacy fallback is disabled: %w", err)
@@ -120,11 +131,67 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 	if err != nil {
 		return err
 	}
+	if captured != nil {
+		if err := upgradeV2RecordSetupGroup(p.Work, "identity", identityFiles); err != nil {
+			return err
+		}
+		if err := upgradeV2RecordSetupGroup(p.Work, "definition", captured); err != nil {
+			return err
+		}
+		files, err := upgradeV2CaptureSetup(p.Work, "storage")
+		if err != nil {
+			return err
+		}
+		raw, err := readTesseraRegularFile(storagePath, 1<<20, false)
+		if err != nil {
+			return err
+		}
+		config, err := access.Decode(raw, access.StorageConfig.Validate)
+		if err != nil {
+			return err
+		}
+		if config.CeremonyID != binding.CeremonyID {
+			return errors.New("storage belongs to another ceremony")
+		}
+		if err := upgradeV2RecordSetupGroup(p.Work, "storage", files); err != nil {
+			return err
+		}
+	}
 	j, err := openWorkflowV4Journal(protocol, protocol.DefinitionRefs, binding)
 	if err != nil {
 		return err
 	}
 	defer j.close()
+	// Participants/signers have no replacement online image, but their app
+	// selection must still be revalidated after acquiring the workspace lock.
+	if _, _, _, err := upgradeV2Selected(p, settingsRoot, true); err != nil {
+		return err
+	}
+	if p.UpgradeOnlineImage != "" {
+		_, v2, found, err := upgradeV2Selected(p, settingsRoot, true)
+		if err != nil {
+			return err
+		}
+		if found {
+			if v2.OnlineImage != p.UpgradeOnlineImage {
+				return errors.New("application selection changed while opening workspace")
+			}
+		} else {
+			// Revalidate the selection under the same workspace lock used by the
+			// original guide. Keep the journal's original runtime binding intact.
+			selected, err := readUpgradeSelection(p, settingsRoot)
+			if err != nil {
+				return err
+			}
+			if selected.Declaration.TargetOnlineImage != p.UpgradeOnlineImage {
+				return errors.New("upgrade selection changed while opening the workspace")
+			}
+		}
+		if err := prepareGuidedImage(p.UpgradeOnlineImage, p.Platform, cli, false); err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stdout, "Compatible Relay update active; cryptographic and signing runtimes retain their original identities.")
+	}
 	ui := coordinatorWizard{input: bufio.NewReader(os.Stdin), output: os.Stdout}
 	if p.Role == "release-signer" {
 		if p.Credentials != "" || p.R2Parent != "" || p.R2Control != "" {

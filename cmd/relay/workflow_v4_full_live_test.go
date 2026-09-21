@@ -44,7 +44,25 @@ func TestV4LiveFullAWSJourney(t *testing.T) {
 	}
 	runLiveFullProviderJourney(t, true)
 }
+
+// Tests may switch the actual native application at an explicit completed-turn
+// boundary. This hook is compiled only into tests, never into released Relay.
+type workflowV4LiveUpgradeHook struct {
+	LocalStorage       bool
+	Source             string
+	Candidate          string
+	TargetWork         string
+	AfterPhase1        func(*workflowV4LiveRole)
+	OldCalls, NewCalls int
+}
+
+func runV4LiveFullR2Journey(t *testing.T, upgradeHook *workflowV4LiveUpgradeHook) {
+	runLiveFullProviderJourneyWithUpgrade(t, false, upgradeHook)
+}
 func runLiveFullProviderJourney(t *testing.T, awsLive bool) {
+	runLiveFullProviderJourneyWithUpgrade(t, awsLive, nil)
+}
+func runLiveFullProviderJourneyWithUpgrade(t *testing.T, awsLive bool, upgradeHook *workflowV4LiveUpgradeHook) {
 	offlineImage := os.Getenv("RELAY_PREPARE_TEST_IMAGE")
 	onlineImage := os.Getenv("RELAY_V4_LIVE_ONLINE_IMAGE")
 	relayBinary := os.Getenv("RELAY_V4_LIVE_RELAY_BINARY")
@@ -52,12 +70,21 @@ func runLiveFullProviderJourney(t *testing.T, awsLive bool) {
 	credentialsPath := os.Getenv("RELAY_V4_LIVE_R2_CREDENTIALS")
 	parentPath := os.Getenv("RELAY_V4_LIVE_R2_PARENT")
 	controlPath := os.Getenv("RELAY_V4_LIVE_R2_CONTROL")
+	awsLane := os.Getenv("RELAY_UPGRADE_LIVE_PROVIDER") == "aws"
+	if awsLane {
+		if upgradeHook == nil || os.Getenv("RELAY_AWS_LIVE_PROBES_APPROVED") != "1" {
+			t.Fatal("AWS upgrade lane requires explicit test approval and an upgrade hook")
+		}
+		configPath = os.Getenv("RELAY_V4_LIVE_AWS_CONFIG")
+		credentialsPath = os.Getenv("RELAY_AWS_LIVE_CREDENTIALS_FILE")
+		parentPath, controlPath = "", ""
+	}
 	proofBinary := os.Getenv("RELAY_V4_LIVE_PROOF_BINARY")
 	if awsLive {
 		configPath = os.Getenv("RELAY_AWS_LIVE_SETTINGS_FILE")
 		parentPath, controlPath = "", ""
 	}
-	if offlineImage == "" || onlineImage == "" || relayBinary == "" || configPath == "" || (!awsLive && (credentialsPath == "" || parentPath == "" || controlPath == "")) || proofBinary == "" {
+	if offlineImage == "" || onlineImage == "" || relayBinary == "" || configPath == "" || (!awsLive && credentialsPath == "") || (!awsLive && !awsLane && (parentPath == "" || controlPath == "")) || proofBinary == "" {
 		t.Skip("set the V4 live images, provider settings and credentials, and native Relay and proof-tool binaries")
 	}
 	if awsLive {
@@ -70,7 +97,7 @@ func runLiveFullProviderJourney(t *testing.T, awsLive bool) {
 	offlineImage = workflowV4LiveImmutableImage(t, offlineImage)
 	onlineImage = workflowV4LiveImmutableImage(t, onlineImage)
 	for _, path := range []string{relayBinary, configPath, credentialsPath, parentPath, controlPath, proofBinary} {
-		if awsLive && path == "" {
+		if (awsLive || awsLane) && path == "" {
 			continue
 		}
 		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
@@ -87,7 +114,21 @@ func runLiveFullProviderJourney(t *testing.T, awsLive bool) {
 				}
 			}
 		}
-		command := exec.Command(relayBinary, args...)
+		binary := relayBinary
+		if upgradeHook != nil {
+			binary = upgradeHook.Source
+			for n, arg := range args {
+				if arg == "--work" && n+1 < len(args) && upgradeHook.TargetWork != "" && args[n+1] == upgradeHook.TargetWork {
+					binary = upgradeHook.Candidate
+				}
+			}
+			if binary == upgradeHook.Source {
+				upgradeHook.OldCalls++
+			} else {
+				upgradeHook.NewCalls++
+			}
+		}
+		command := exec.Command(binary, args...)
 		command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
 		return command.Run()
 	}
@@ -110,8 +151,11 @@ func runLiveFullProviderJourney(t *testing.T, awsLive bool) {
 			t.Fatal(e)
 		}
 		base, err = access.Decode(rawConfig, access.StorageConfig.Validate)
-		if err != nil || base.Provider != "r2" {
+		if err != nil || (!awsLane && base.Provider != "r2") {
 			t.Fatalf("valid R2 config required: %v", err)
+		}
+		if awsLane {
+			requireAWSLiveConfiguration(t, base)
 		}
 	}
 	platform, err := machineDockerPlatform()
@@ -167,6 +211,12 @@ func runLiveFullProviderJourney(t *testing.T, awsLive bool) {
 		t.Fatal(err)
 	}
 	w.d.Binaries = []setupBinary{{Path: proofBinary, SHA256: digest}}
+	if upgradeHook != nil {
+		// Upgrade lanes authenticate the running Linux binary itself. Do not
+		// add that same platform twice as a supposed host-inspector companion.
+		w.d.Binaries = nil
+		w.d.ArchitecturePolicy = "single"
+	}
 	w.draftPath = filepath.Join(w.d.Work, "coordinator-setup", "draft.json")
 	if err := os.MkdirAll(filepath.Dir(w.draftPath), 0o700); err != nil {
 		t.Fatal(err)
@@ -183,6 +233,10 @@ func runLiveFullProviderJourney(t *testing.T, awsLive bool) {
 	hostInspector := transcript.Inspector{
 		Executable: proofBinary, CeremonyPath: filepath.Join(ceremonyRoot, "ceremony.json"), CeremonySignaturePath: filepath.Join(ceremonyRoot, "ceremony.sig"),
 		CoordinatorPublicKeyPath: filepath.Join(coordinator.profile.Trust, "setup-coordinator.hex"), TranscriptRoot: ceremonyRoot,
+	}
+	if upgradeHook != nil {
+		driver := dockerDriver{image: offlineImage, platform: platform, ceremonyBinary: dockerCeremonyBinary, root: ceremonyRoot, inspectionRoot: coordinator.profile.Work, definition: hostInspector.CeremonyPath, definitionSig: hostInspector.CeremonySignaturePath, coordinatorKey: hostInspector.CoordinatorPublicKeyPath, client: osDockerCommandClient{binary: workflowV4LiveDockerCLI(t)}}
+		hostInspector = driver.inspector()
 	}
 	protocol, err := hostInspector.DefinitionProtocol()
 	if err != nil {
@@ -283,6 +337,12 @@ func runLiveFullProviderJourney(t *testing.T, awsLive bool) {
 	}
 
 	runWorkflowV4LiveTurn(t, objects, protocol, config, &coordinator, &participant, "phase1")
+	if upgradeHook != nil {
+		// A normal reopened CLI refreshes its accepted-state anchor before exit.
+		// Local TLS fixtures skip that terminal, so perform the same verified sync.
+		syncWorkflowV4LiveRole(t, &coordinator, objects)
+		upgradeHook.AfterPhase1(&coordinator)
+	}
 	runWorkflowV4LiveLifecycle(t, objects, protocol, &coordinator, workflowV4ClosePhase1, "CLOSE PHASE1\n")
 	runWorkflowV4LiveBeacon(t, objects, protocol, &coordinator, workflowV4BeaconPhase1, "RECORD PHASE1 BEACON\n")
 	runWorkflowV4LiveLifecycle(t, objects, protocol, &coordinator, workflowV4SealPhase1, "SEAL PHASE1\n")
@@ -302,6 +362,9 @@ func runLiveFullProviderJourney(t *testing.T, awsLive bool) {
 		t.Fatalf("missing release grant: %v", err)
 	}
 	completeWorkflowV4LiveRelease(t, objects, protocol, config, root, &coordinator, &releaseSigner, grantPath)
+	if upgradeHook != nil && (upgradeHook.OldCalls == 0 || upgradeHook.NewCalls == 0) {
+		t.Fatal("both actual application versions must execute ceremony commands")
+	}
 }
 
 func completeWorkflowV4LiveRelease(t *testing.T, objects store.Client, protocol transcript.DefinitionProtocol, config access.StorageConfig, root string, coordinator, releaseSigner *workflowV4LiveRole, grantPath string) {
@@ -363,7 +426,7 @@ func completeWorkflowV4LiveRelease(t *testing.T, objects store.Client, protocol 
 	if err != nil || stateView.Progress.FinalRelease == nil {
 		t.Fatalf("fresh verifier did not reconstruct the final release: %+v %v", stateView.Progress, err)
 	}
-	t.Logf("completed and freshly reconstructed live %s V4 ceremony %s at signed update %d", config.Provider, protocol.Definition.CeremonyID, stateView.Sequence)
+	t.Logf("completed and freshly reconstructed V4 ceremony %s at signed update %d; configured provider %s (local adapter tests are not provider validation)", protocol.Definition.CeremonyID, stateView.Sequence, config.Provider)
 }
 
 func workflowV4LiveImmutableImage(t *testing.T, image string) string {
@@ -391,6 +454,7 @@ func workflowV4LiveImmutableImageWithRunner(image string, inspect func(string) (
 	if valid(image) {
 		return image, false, nil
 	}
+	pinned := roleImagePattern.MatchString(image) && strings.Contains(image, "@sha256:")
 	output, err := inspect(image)
 	if err != nil {
 		return "", false, fmt.Errorf("resolve live-test image %q to its immutable local ID: %w: %s", image, err, output)
@@ -398,6 +462,9 @@ func workflowV4LiveImmutableImageWithRunner(image string, inspect func(string) (
 	id := strings.TrimSpace(string(output))
 	if !valid(id) {
 		return "", false, fmt.Errorf("docker returned an invalid immutable image ID for %q", image)
+	}
+	if pinned {
+		return image, false, nil
 	}
 	return id, true, nil
 }
@@ -826,6 +893,21 @@ func runWorkflowV4LiveTurn(t *testing.T, objects store.Client, protocol transcri
 	}
 	if participant.participant.Phase != "phase1" {
 		t.Fatal("participant guide changed the saved phase profile")
+	}
+	participantProgress, err := participant.journal.participantProgressV4(view.Scope, dockerCLI)
+	if err != nil || participantProgress.Upload == nil {
+		// A menu may safely return after failed synchronization or an action.
+		// Do not misreport the later missing-inbox lookup as the first failure.
+		logPath := filepath.Join(participant.profile.Work, "diagnostics", "live-"+phase+"-menu.txt")
+		if e := os.MkdirAll(filepath.Dir(logPath), 0700); e != nil {
+			t.Fatal(e)
+		}
+		if output, ok := ui.output.(*bytes.Buffer); ok {
+			if e := os.WriteFile(logPath, output.Bytes(), 0600); e != nil {
+				t.Fatal(e)
+			}
+		}
+		t.Fatalf("participant did not complete its upload; inspect private menu log %s (progress error: %v)", logPath, err)
 	}
 
 	progress, err = workflowV4CoordinatorProgressFor(snapshot, protocol, view, coordinator.journal.state.Marker.Binding, config, coordinator.inspector, time.Now().UTC())

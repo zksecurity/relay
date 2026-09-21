@@ -202,7 +202,7 @@ func (p *rolePreparer) images() error {
 		if err != nil {
 			return err
 		}
-		image, _, err := verifiedReleaseImage(p.d.Release, "participant", platform)
+		image, _, err := verifiedWorkspaceReleaseImage(p.d.Release, "participant", platform, p.d.Work, p.d.Trust, p.d.Keys)
 		if err != nil {
 			return err
 		}
@@ -231,7 +231,14 @@ func (p *rolePreparer) identity() error {
 			return err
 		}
 		fmt.Fprintf(p.ui.output, "Existing public identity: %s (%s). If you joined through Tessera, upload ONLY %s on your invitation page and wait for coordinator approval. Otherwise send that public file to the coordinator. No key was generated.\n", id.DisplayName, id.ID, public)
-		return nil
+		files, err := upgradeV2CaptureSetup(p.d.Work, "identity")
+		if err != nil || files == nil {
+			return err
+		}
+		if err := p.ui.confirm("Review this existing identity against your retained public copy. This records continuity, not proof of signing-key possession", "REVIEWED"); err != nil {
+			return err
+		}
+		return upgradeV2RecordSetupGroup(p.d.Work, "identity", files)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -261,6 +268,9 @@ func (p *rolePreparer) identity() error {
 	}
 	err = p.open("keygen", "identity", []string{"mpc-ceremony", "identity", "generate", "--identity-id", id, "--display-name", display, "--private-key-out", "/work/signing.hex", "--public-identity-out", "/work/identity.json"})
 	if err == nil {
+		if err := upgradeV2RetainSetup(p.d.Work, "identity"); err != nil {
+			return err
+		}
 		fmt.Fprintf(p.ui.output, "If you joined through Tessera, upload ONLY %s on your invitation page and wait for coordinator approval. Otherwise send that public file to the coordinator through your agreed channel. Keep signing.hex private.\n", public)
 	}
 	return err
@@ -650,7 +660,9 @@ func onboardingNotApplicable(role, choice string) string {
 
 func runRolePrepare(args []string) error {
 	d := rolePreparation{Schema: "relay-role-preparation-v1", Values: map[string]string{}}
+	var settingsRoot string
 	f := flag.NewFlagSet("ceremony prepare", flag.ContinueOnError)
+	f.StringVar(&settingsRoot, "settings-root", "", "private saved-settings directory")
 	f.StringVar(&d.Name, "name", "", "local ceremony name")
 	f.StringVar(&d.Role, "role", "", "ceremony role")
 	f.StringVar(&d.Release, "release", "", "exact approved release")
@@ -663,7 +675,7 @@ func runRolePrepare(args []string) error {
 	if len(f.Args()) != 0 || !guidedName.MatchString(d.Name) || !launcherReleaseTag.MatchString(d.Release) || d.Role == "coordinator" || len(roleFlowStages(d.Role)) == 0 {
 		return errors.New("supply a valid name, exact release and non-coordinator role; coordinators use coordinator prepare")
 	}
-	if err := checkLauncherRelease(strings.TrimPrefix(d.Release, "role-images-")); err != nil {
+	if err := checkPreparationRelease(d.Name, d.Role, d.Release, d.Work, d.Trust, d.Keys); err != nil {
 		return err
 	}
 	for _, dir := range []string{d.Work, d.Trust, d.Keys} {
@@ -682,7 +694,7 @@ func runRolePrepare(args []string) error {
 	if st.Mode()&os.ModeCharDevice == 0 {
 		return errors.New("role preparation requires an interactive terminal")
 	}
-	root, err := guidedRoot()
+	root, err := preparationSettingsRoot(d.Work, settingsRoot)
 	if err != nil {
 		return err
 	}
@@ -698,6 +710,9 @@ func runRolePrepare(args []string) error {
 		return err
 	}
 	defer lock.release()
+	if err := checkPreparationRelease(d.Name, d.Role, d.Release, d.Work, d.Trust, d.Keys); err != nil {
+		return err
+	}
 	if st, err := os.Lstat(path); err == nil {
 		if !st.Mode().IsRegular() || st.Mode().Perm()&0077 != 0 {
 			return errors.New("preparation state must be a private regular file")

@@ -526,6 +526,14 @@ func runWorkflowV4CommitCommand(online guidedProfile, outputDir string) error {
 var workflowV4ChildExecutor = executeGuidedChild
 
 func runWorkflowV4ProfileCommand(profile guidedProfile, command []string, credentials bool) error {
+	// Only online Relay changes. Proof-tool and signing commands retain their
+	// original image, including during recovery of previously signed work.
+	if profile.UpgradeOnlineImage != "" && len(command) > 0 && command[0] == "relay" {
+		if profile.Role != "coordinator" && profile.Role != "auditor" && profile.Role != "witness" && profile.Role != "mirror" && profile.Role != "upload-station" {
+			return errors.New("this role cannot replace its signing/contribution image")
+		}
+		profile.Image = profile.UpgradeOnlineImage
+	}
 	launch := []string{"role", "--role", profile.Role, "--image", profile.Image, "--platform", profile.Platform, "--work", profile.Work}
 	for _, pair := range [][2]string{{"--trust", profile.Trust}, {"--keys", profile.Keys}} {
 		if pair[1] != "" {

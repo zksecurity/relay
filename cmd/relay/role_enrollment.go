@@ -16,7 +16,7 @@ func offlineRoleAlias(name, role string) string {
 }
 
 func (w *coordinatorWizard) enrollCoordinator() error {
-	root, err := guidedRoot()
+	root, err := preparationSettingsRoot(w.d.Work, w.settingsRoot)
 	if err != nil {
 		return err
 	}

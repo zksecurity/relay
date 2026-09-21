@@ -34,6 +34,10 @@ func (p *rolePreparer) needsPhase2Profile() (bool, error) {
 
 func (p *rolePreparer) authenticatedSetupDefinition() (transcript.Definition, error) {
 	var definition transcript.Definition
+	captured, captureErr := upgradeV2CaptureSetup(p.d.Work, "definition")
+	if captureErr != nil {
+		return definition, captureErr
+	}
 	var err error
 	if p.inspectDefinition != nil {
 		definition, err = p.inspectDefinition()
@@ -56,6 +60,9 @@ func (p *rolePreparer) authenticatedSetupDefinition() (transcript.Definition, er
 		root := filepath.Join(p.d.Work, "ceremony/public")
 		driver := dockerDriver{image: profile.Image, platform: profile.Platform, ceremonyBinary: "/usr/local/bin/mpc-ceremony", root: root, definition: filepath.Join(root, "ceremony.json"), definitionSig: filepath.Join(root, "ceremony.sig"), coordinatorKey: filepath.Join(p.d.Trust, "coordinator-public-key.hex"), client: client.BindHost(endpoint)}
 		definition, err = driver.inspector().Definition()
+	}
+	if err == nil && captured != nil {
+		err = upgradeV2RecordSetupGroup(p.d.Work, "definition", captured)
 	}
 	return definition, err
 }
