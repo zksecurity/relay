@@ -3,6 +3,9 @@
 - Clarify the storage-first role menu prompt: “Choose an action [Enter = save
   and exit]”. Pressing Enter still exits; type the displayed action number to
   continue. This avoids presenting Q as a suggested next ceremony action.
+- Show start, one-minute elapsed-time heartbeats, and completion or failure while
+  Relay waits for Phase 1 and Phase 2 contribution computation. The heartbeat
+  indicates elapsed waiting time, not a percentage or proof of forward progress.
 - Release this fix as `v0.2.1` and require an explicit version check in the
   maintainer guidance for future user-facing changes.
 

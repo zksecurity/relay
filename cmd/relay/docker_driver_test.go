@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -36,6 +37,7 @@ type dockerClientFake struct {
 	usernsMode        string
 	securityOptions   []string
 	onAttachedContext func(context.Context) error
+	attachDelay       time.Duration
 }
 
 func (f *dockerClientFake) Output(args ...string) ([]byte, []byte, error) {
@@ -124,6 +126,13 @@ func (f *dockerClientFake) AttachedContext(ctx context.Context, _ io.Writer, _ i
 	}
 	if f.onAttachedContext != nil {
 		return f.onAttachedContext(ctx)
+	}
+	if f.attachDelay > 0 {
+		select {
+		case <-time.After(f.attachDelay):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	candidate := filepath.Join(f.handoff, "candidate")
 	if err := os.Mkdir(candidate, 0o700); err != nil {
@@ -290,8 +299,26 @@ func dockerContributionFixture(t *testing.T) (roleOpts, position, *dockerDriver,
 func TestDockerContributionRemovesContainerBeforePromotingPublicOutput(t *testing.T) {
 	o, pos, _, fake := dockerContributionFixture(t)
 	o.operationID = strings.Repeat("d", 32)
+	originalInterval, originalOutput := progressHeartbeatInterval, progressOutput
+	t.Cleanup(func() {
+		progressHeartbeatInterval = originalInterval
+		progressOutput = originalOutput
+	})
+	progressHeartbeatInterval = time.Millisecond
+	var progress bytes.Buffer
+	progressOutput = &progress
+	fake.attachDelay = 5 * time.Millisecond
 	if err := runNextAt(o, pos, time.Now()); err != nil {
 		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"phase1 contribution computation: started",
+		"phase1 contribution computation: still running",
+		"phase1 contribution computation: completed",
+	} {
+		if !strings.Contains(progress.String(), want) {
+			t.Fatalf("contribution progress missing %q:\n%s", want, progress.String())
+		}
 	}
 	if !fake.removed {
 		t.Fatal("contributor container was not removed")

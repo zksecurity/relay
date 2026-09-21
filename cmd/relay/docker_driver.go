@@ -567,7 +567,9 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 	}
 	receipt.Security = facts
 	receipt.StartedAt = d.now().UTC().Format(time.RFC3339)
-	startErr := d.client.AttachedContext(interruptCtx, os.Stdout, os.Stderr, "start", "--attach", containerID)
+	startErr := runWithProgress(o.phase+" contribution computation", func() error {
+		return d.client.AttachedContext(interruptCtx, os.Stdout, os.Stderr, "start", "--attach", containerID)
+	})
 	receipt.ExitedAt = d.now().UTC().Format(time.RFC3339)
 	if interruptCtx.Err() != nil {
 		return nil, cleanupInterrupted()
