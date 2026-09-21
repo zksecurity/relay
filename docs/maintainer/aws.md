@@ -13,18 +13,37 @@ reviewed setup helper.
    HTTPS address and grant-role ARN without changing infrastructure. Or choose
    **Create or repair dedicated ceremony resources** to review the exact resource
    names, charges and policy changes before typing `CREATE RESOURCES`.
-3. Approve saving the settings and a protected snapshot of that login's current
-   credentials. Secret contents are never displayed. The snapshot has the same
-   permissions as the selected login; this does not create a restricted identity.
+3. Review and approve the credential configuration. Temporary logins save a
+   protected host binding to the selected profile, AWS CLI executable, source
+   files, login cache, account, and principal. Static access keys still save a
+   protected snapshot. Neither option reduces the login's permissions.
 4. Follow **Check storage** before initialization. Provisioning alone does not
    prove access, public delivery, or inbox privacy. These checks ask before writing
    and removing temporary probe objects.
 
-Temporary credentials do not renew automatically in this standalone flow.
-The helper shows their expiry and rejects snapshots with under 15 minutes left.
-Refresh your AWS login and repeat setup using **existing resources** when needed.
-Old credential files are left untouched. Tessera-managed renewal is a separate
-menu option. See AWS's [credential export documentation](https://docs.aws.amazon.com/cli/latest/reference/configure/export-credentials.html).
+For temporary logins, Relay refreshes credentials on the coordinator host during
+an action. Docker receives only verified temporary credentials through a
+read-only directory and an expiring `credential_process` provider. The host login
+cache never enters the container. This also supports refresh during a single
+long-running upload. Transient renewal failures are retried while the previous
+credentials remain safely valid; identity changes stop the action immediately.
+Failure to renew stops the action before the credentials expire. Review the
+retained action using the normal recovery workflow before retrying.
+
+Automatic renewal cannot extend the overall AWS login session. `aws login`
+credentials normally last 15 minutes and can refresh within a session lasting up
+to 12 hours. When the session ends, log in again **on the coordinator host** with
+the same profile and identity; no MacBook is needed for renewal while that host
+session remains valid. AWS CLI upgrades require repeating setup to review and
+rebind the executable. See AWS's [login credential documentation](https://docs.aws.amazon.com/sdkref/latest/guide/feature-login-credentials.html).
+
+Existing snapshots are unchanged. To opt into renewal, repeat setup with a
+currently logged-in temporary profile, choose **existing resources**, then update
+saved workflow credential references if already initialized. The pinned role
+image must support renewal; older frozen images and legacy publication recovery
+retain their existing credential workflow. Do not change a frozen ceremony's
+release to enable this feature. Tessera-managed renewal remains a separate menu
+option.
 
 Creation can incur charges and reapplies policies on matching named resources;
 never select a prefix used for unrelated infrastructure. Interrupted provisioning

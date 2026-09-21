@@ -30,6 +30,8 @@ func main() {
 	case "version", "--version":
 		fmt.Printf("relay source commit: %s\n", launcherCommit())
 		return
+	case "aws-login-credentials":
+		err = runAWSLoginCredentials(os.Args[2:])
 	case "pack-ceremony":
 		err = runPackCeremony(os.Args[2:])
 	case "audit":

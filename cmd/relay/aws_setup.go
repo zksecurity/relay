@@ -36,7 +36,7 @@ func awsSetupEnvironment() []string {
 	var env []string
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
-		if strings.HasPrefix(key, "AWS_") && key != "AWS_CONFIG_FILE" && key != "AWS_SHARED_CREDENTIALS_FILE" {
+		if strings.HasPrefix(key, "AWS_") && key != "AWS_CONFIG_FILE" && key != "AWS_SHARED_CREDENTIALS_FILE" && key != "AWS_LOGIN_CACHE_DIRECTORY" {
 			continue
 		}
 		if key == "BASH_ENV" || key == "ENV" || strings.HasPrefix(key, "BASH_FUNC_") || key == "SHELLOPTS" || key == "BASHOPTS" {
@@ -107,11 +107,23 @@ func (w *coordinatorWizard) setupAWS() error {
 	if err != nil {
 		return err
 	}
-	raw, err = w.awsSetupCommand("aws", []string{"--profile", profile, "sts", "get-caller-identity", "--output", "json"}, nil)
+	regionRaw, _ := w.awsSetupCommand("aws", []string{"--profile", profile, "configure", "get", "region"}, nil)
+	loginRegion := strings.TrimSpace(string(regionRaw))
+	promptedRegion := loginRegion == ""
+	if promptedRegion {
+		loginRegion, err = w.required("AWS region for this login", "")
+		if err != nil {
+			return err
+		}
+	}
+	if !regexp.MustCompile(`^[a-z]{2}(-[a-z0-9]+)+-[0-9]+$`).MatchString(loginRegion) {
+		return errors.New("invalid AWS region")
+	}
+	raw, err = w.awsSetupCommand("aws", []string{"--profile", profile, "--region", loginRegion, "sts", "get-caller-identity", "--output", "json"}, nil)
 	if err != nil {
 		return err
 	}
-	var identity struct{ Account, Arn string }
+	var identity awsLoginIdentity
 	if json.Unmarshal(raw, &identity) != nil || !regexp.MustCompile(`^[0-9]{12}$`).MatchString(identity.Account) || !regexp.MustCompile(`^arn:aws:(iam|sts)::[0-9]{12}:(user|role|assumed-role)/[A-Za-z0-9+=,.@_/-]+$`).MatchString(identity.Arn) || !strings.Contains(identity.Arn, "::"+identity.Account+":") {
 		return errors.New("expected an AWS IAM user or role; root credentials are not supported")
 	}
@@ -123,10 +135,12 @@ func (w *coordinatorWizard) setupAWS() error {
 	if err != nil {
 		return err
 	}
-	regionRaw, _ := w.awsSetupCommand("aws", []string{"--profile", profile, "configure", "get", "region"}, nil)
-	region, err := w.required("AWS region", strings.TrimSpace(string(regionRaw)))
-	if err != nil {
-		return err
+	region := loginRegion
+	if !promptedRegion {
+		region, err = w.required("AWS region", loginRegion)
+		if err != nil {
+			return err
+		}
 	}
 	if !regexp.MustCompile(`^[a-z]{2}(-[a-z0-9]+)+-[0-9]+$`).MatchString(region) {
 		return errors.New("invalid AWS region")
@@ -166,17 +180,49 @@ func (w *coordinatorWizard) setupAWS() error {
 		return errors.New("this assumed-role login requires a 1h grant maximum")
 	}
 	fmt.Fprintf(w.output, "Public transcript: %s\nPublished bucket: %s\nPrivate inbox: %s\n", v["published-base-url"], v["published-bucket"], v["inbox-bucket"])
-	fmt.Fprintln(w.output, "Relay will copy the selected login's current credentials into a new protected local file for Docker. This does not reduce their permissions or renew them automatically. Temporary credentials expire; repeat this setup with a refreshed login when needed. Use a dedicated, least-privilege ceremony login. Existing credential files stay untouched.")
-	raw, err = w.awsSetupCommand("aws", []string{"configure", "export-credentials", "--profile", profile, "--format", "process"}, nil)
+	raw, err = w.awsSetupCommand("aws", []string{"configure", "export-credentials", "--profile", profile, "--region", region, "--format", "process"}, nil)
 	if err != nil {
 		return err
 	}
-	credentials, expiry, err := awsSnapshot(raw)
+	exported, err := parseAWSProcess(raw, time.Now(), awsLoginReserve)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(w.output, "Credential expiry: %s. No automatic renewal.\n", expiry)
-	if err := w.confirm("Save these settings and a protected credential snapshot", "SAVE SETTINGS"); err != nil {
+	var credentials string
+	if exported.Expiration != "" {
+		binding, err := newAWSLoginBinding(profile, region, identity)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			select {
+			case <-w.interrupted:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+		_, err = refreshAWSLogin(ctx, binding)
+		cancel()
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(w.output, "Renewable AWS login: %s\nAWS CLI: %s\nHost config: %s\nHost credential source: %s\nHost login cache: %s\n", profile, binding.Binary, binding.Config, binding.Credentials, binding.Cache)
+		fmt.Fprintln(w.output, "Relay will renew temporary credentials on this coordinator while an action runs. Only verified temporary credentials enter Docker; the login cache stays on this host. Renewal ends when the overall login session expires. Log in again on this host when requested. Updating the AWS CLI requires repeating this setup. Use a dedicated, least-privilege ceremony login.")
+		encoded, err := json.Marshal(binding)
+		if err != nil {
+			return err
+		}
+		credentials = string(encoded)
+	} else {
+		var expiry string
+		credentials, expiry, err = awsSnapshot(raw)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(w.output, "A protected static credential snapshot will be saved. Credential expiry: %s. No automatic rotation.\n", expiry)
+	}
+	if err := w.confirm("Save these settings and the displayed credential configuration", "SAVE SETTINGS"); err != nil {
 		return err
 	}
 	root := w.credentialRoot

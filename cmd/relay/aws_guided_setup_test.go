@@ -32,11 +32,11 @@ func awsSetupFixture(t *testing.T, input string) *coordinatorWizard {
 		switch strings.Join(args, " ") {
 		case "configure list-profiles":
 			return []byte("test-account\n"), nil
-		case "--profile test-account sts get-caller-identity --output json":
+		case "--profile test-account --region us-east-1 sts get-caller-identity --output json":
 			return []byte(awsSetupIdentity), nil
 		case "--profile test-account configure get region":
 			return []byte("us-east-1\n"), nil
-		case "configure export-credentials --profile test-account --format process":
+		case "configure export-credentials --profile test-account --region us-east-1 --format process":
 			return []byte(`{"Version":1,"AccessKeyId":"TESTACCESS","SecretAccessKey":"` + awsSetupSecret + `"}`), nil
 		default:
 			t.Fatal("unexpected AWS command", args)
