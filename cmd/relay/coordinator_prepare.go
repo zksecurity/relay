@@ -65,6 +65,9 @@ type setupAssurance struct {
 	PassingCeremonyAudits         uint8 `json:"passing_ceremony_audits"`
 	ExternalSecurityAuditSignoffs uint8 `json:"external_security_audit_signoffs"`
 }
+
+const defaultProductionBeaconLeadSeconds uint32 = 30 * 60
+
 type setupPolicy struct {
 	Phase1    setupPhase      `json:"phase1_policy"`
 	Phase2    setupPhase      `json:"phase2_policy"`
@@ -573,7 +576,7 @@ func (w *coordinatorWizard) policy() error {
 		return fmt.Errorf("invalid built-in policy: %w", err)
 	}
 	b := standard.Beacon
-	standardLabel := fmt.Sprintf("Use the standard beacon source included with this Relay release\n   Source: %s / %s; a round every %d seconds\n   Future round required: %t; minimum challenge: %d bytes\n   Default closure-to-beacon wait: 180 seconds for rehearsal, 86400 seconds for production.\n   You can review and change the wait before initialization.\n   Network identity and verification key are pinned in this release.", b.Provider, b.Network, b.Period, b.Future, b.Challenge)
+	standardLabel := fmt.Sprintf("Use the standard beacon source included with this Relay release\n   Source: %s / %s; a round every %d seconds\n   Future round required: %t; minimum challenge: %d bytes\n   Default closure-to-beacon wait: 180 seconds for rehearsal, 1800 seconds for production.\n   You can review and change the wait before initialization.\n   Network identity and verification key are pinned in this release.", b.Provider, b.Network, b.Period, b.Future, b.Challenge)
 	choices := []setupChoice{{"standard", standardLabel}, {"custom", "Advanced: load a custom policy file"}}
 	defaultChoice := "standard"
 	if w.d.Policy.Beacon.Provider != "" {
@@ -636,7 +639,7 @@ func (w *coordinatorWizard) policy() error {
 	}
 	defaultLead := uint32(180)
 	if w.d.Mode == "production" {
-		defaultLead = 24 * 60 * 60
+		defaultLead = defaultProductionBeaconLeadSeconds
 	}
 	if selection == "current" || selection == "custom" {
 		defaultLead = policy.Beacon.Lead
@@ -653,8 +656,8 @@ func (w *coordinatorWizard) policy() error {
 		}
 		fmt.Fprintln(w.output, "Enter a positive whole number of seconds.")
 	}
-	if w.d.Mode == "production" && policy.Beacon.Lead < 24*60*60 {
-		fmt.Fprintf(w.output, "WARNING: production defaults to 86400 seconds (24 hours). You selected %d seconds. This leaves less time to detect a premature or incorrect closure before the beacon becomes known.\n", policy.Beacon.Lead)
+	if w.d.Mode == "production" && policy.Beacon.Lead < defaultProductionBeaconLeadSeconds {
+		fmt.Fprintf(w.output, "WARNING: production defaults to 1800 seconds (30 minutes). You selected %d seconds. This leaves less time to detect a premature or incorrect closure before the beacon becomes known.\n", policy.Beacon.Lead)
 		if err := w.confirm("Sign this shorter production beacon wait into the immutable ceremony definition", "USE SHORTER PRODUCTION WAIT"); err != nil {
 			return err
 		}
@@ -965,8 +968,8 @@ func (w *coordinatorWizard) initialize() error {
 			return err
 		}
 	}
-	if w.d.TesseraSetupV3 != nil && w.d.Mode == "production" && w.d.Policy.Beacon.Lead < 24*60*60 {
-		fmt.Fprintf(w.output, "WARNING: this imported production setup selects a %d-second closure-to-beacon wait; the recommended default is 86400 seconds (24 hours).\n", w.d.Policy.Beacon.Lead)
+	if w.d.TesseraSetupV3 != nil && w.d.Mode == "production" && w.d.Policy.Beacon.Lead < defaultProductionBeaconLeadSeconds {
+		fmt.Fprintf(w.output, "WARNING: this imported production setup selects a %d-second closure-to-beacon wait; the recommended default is 1800 seconds (30 minutes).\n", w.d.Policy.Beacon.Lead)
 		if err := w.confirm("Approve the exact shorter wait imported from Tessera before signing the definition", "USE SHORTER PRODUCTION WAIT"); err != nil {
 			return err
 		}
@@ -1109,7 +1112,7 @@ func (w *coordinatorWizard) initializeCheckpointV4(root string) error {
 	if err := json.Unmarshal(raw, &hint); err != nil {
 		return err
 	}
-	if hint.Schema != "proof-tool-mpc-ceremony-definition-v4" {
+	if hint.Schema != "proof-tool-mpc-ceremony-definition-v4" && hint.Schema != "proof-tool-mpc-ceremony-definition-v5" {
 		// Existing V1-V3 ceremonies retain their released workflow and never gain
 		// V4 state merely because Relay was upgraded.
 		return nil

@@ -255,7 +255,7 @@ func TestCoordinatorPolicyBuiltInNeedsNoFile(t *testing.T) {
 	if menuEnd < 0 {
 		t.Fatal("missing beacon choice prompt")
 	}
-	for _, want := range []string{"Source: drand / quicknet-mainnet; a round every 3 seconds", "Future round required: true; minimum challenge: 32 bytes", "Default closure-to-beacon wait: 180 seconds for rehearsal, 86400 seconds for production", "You can review and change the wait before initialization", "Network identity and verification key are pinned"} {
+	for _, want := range []string{"Source: drand / quicknet-mainnet; a round every 3 seconds", "Future round required: true; minimum challenge: 32 bytes", "Default closure-to-beacon wait: 180 seconds for rehearsal, 1800 seconds for production", "You can review and change the wait before initialization", "Network identity and verification key are pinned"} {
 		if !strings.Contains(output[:menuEnd], want) {
 			t.Fatalf("beacon menu missing %q before selection", want)
 		}
@@ -298,7 +298,7 @@ func TestCoordinatorPolicyAllowsReviewedShortProductionBeaconWait(t *testing.T) 
 	if w.d.Policy.Beacon.Lead != 12 {
 		t.Fatalf("beacon lead = %d, want 12", w.d.Policy.Beacon.Lead)
 	}
-	if output := w.output.(*bytes.Buffer).String(); !strings.Contains(output, "WARNING: production defaults to 86400 seconds") || !strings.Contains(output, "USE SHORTER PRODUCTION WAIT") {
+	if output := w.output.(*bytes.Buffer).String(); !strings.Contains(output, "WARNING: production defaults to 1800 seconds") || !strings.Contains(output, "USE SHORTER PRODUCTION WAIT") {
 		t.Fatalf("missing short-production warning: %s", output)
 	}
 }
@@ -588,5 +588,22 @@ func TestCoordinatorPrepareDocker(t *testing.T) {
 	}
 	if w.d.Status != "initialization-attempted" {
 		t.Fatal("kept verified status after corrupted signature")
+	}
+}
+
+func TestCoordinatorPolicyProductionDefaultThirtyMinutes(t *testing.T) {
+	w := setupFixture(t)
+	w.d.Mode = "production"
+	w.d.Identities.Auditors = nil
+	w.d.Policy.Beacon = setupBeacon{}
+	w.input = bufio.NewReader(strings.NewReader("\n\n\n\n\n\n\nREVIEWED\n"))
+	if err := w.policy(); err != nil {
+		t.Fatal(err)
+	}
+	if w.d.Policy.Beacon.Lead != 1800 {
+		t.Fatalf("lead = %d, want 1800", w.d.Policy.Beacon.Lead)
+	}
+	if strings.Contains(w.output.(*bytes.Buffer).String(), "USE SHORTER PRODUCTION WAIT") {
+		t.Fatal("default incorrectly requires shorter-wait approval")
 	}
 }

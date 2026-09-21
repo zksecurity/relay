@@ -48,7 +48,7 @@ func workflowV4RouteHint(p guidedProfile) (bool, error) {
 		return false, err
 	}
 	switch hint.Schema {
-	case "proof-tool-mpc-ceremony-definition-v4":
+	case "proof-tool-mpc-ceremony-definition-v4", "proof-tool-mpc-ceremony-definition-v5":
 		return true, nil
 	case "proof-tool-mpc-ceremony-definition-v1", "proof-tool-mpc-ceremony-definition-v2", "proof-tool-mpc-ceremony-definition-v3":
 		return false, nil
@@ -125,6 +125,22 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 		return err
 	}
 	defer j.close()
+	ui := coordinatorWizard{input: bufio.NewReader(os.Stdin), output: os.Stdout}
+	if p.Role == "release-signer" {
+		if p.Credentials != "" || p.R2Parent != "" || p.R2Control != "" {
+			return errors.New("offline signer must not have storage credentials")
+		}
+		directory, err := ui.required("Absolute path to the coordinator's public snapshot directory (transfer public files only; coordinator key must already be independently authenticated)", "")
+		if err != nil {
+			return err
+		}
+		objects, err := openWorkflowV4OfflineStore(directory)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(ui.output, "OFFLINE REVIEW: this imported snapshot does not prove current online freshness. Keep this host disconnected. No storage credentials or upload are needed.")
+		return runWorkflowV4GuideLoop(p, signer, identity, protocol, j, access.StorageConfig{}, inspector, cli, nil, &ui, func() (storagefirst.SnapshotV4, error) { return j.syncV4(objects, inspector, cli) })
+	}
 	if _, err := pathWithin(p.Work, storagePath, "/work"); err != nil {
 		return err
 	}
@@ -146,7 +162,6 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 		return err
 	}
 	objects := store.Client{PublicBaseURL: config.PublishedBaseURL}
-	ui := coordinatorWizard{input: bufio.NewReader(os.Stdin), output: os.Stdout}
 	return runWorkflowV4GuideLoop(p, signer, identity, protocol, j, config, inspector, cli, participant, &ui, func() (storagefirst.SnapshotV4, error) {
 		return j.syncV4(objects, inspector, cli)
 	})
@@ -220,6 +235,10 @@ func runWorkflowV4GuideLoop(p, signer guidedProfile, identity setupIdentity, pro
 				if !committed {
 					enrollmentAction = true
 					actionLabel = "Upload your signed public enrollment"
+					if p.Role == "release-signer" {
+						actionLabel = ""
+						fmt.Fprintln(ui.output, "Transfer only your signed enrollment and disclosure to the coordinator using the onboarding handoff. Import a new public snapshot after it is recorded.")
+					}
 				}
 			}
 			phase, who := "phase1", ""
@@ -250,7 +269,8 @@ func runWorkflowV4GuideLoop(p, signer guidedProfile, identity setupIdentity, pro
 					if err != nil {
 						ui.message(toneError, "Retained release-signer work could not be verified: %v\nNo operation was repeated.\n", err)
 					} else if releaseProgress.PackageReady {
-						actionLabel = "Upload the exact signed release package using the private release grant"
+						actionLabel = ""
+						fmt.Fprintf(ui.output, "Transfer only the signed public package directory to the coordinator's online upload workspace: %s\nKeep your signing key offline.\n", releaseProgress.PackageDir)
 					} else {
 						actionLabel = "Review and sign the exact coordinator-reviewed release package"
 					}
@@ -332,7 +352,20 @@ func runWorkflowV4GuideLoop(p, signer guidedProfile, identity setupIdentity, pro
 				fmt.Fprintf(ui.output, "1) %s\n", actionLabel)
 			}
 		}
-		fmt.Fprintln(ui.output, "[R] Refresh from storage\n[Q] Save and exit")
+		if p.Role == "coordinator" && snapshot.Checked() > 0 {
+			fmt.Fprintln(ui.output, "[E] Export authenticated public snapshot for the offline signer")
+			if enrollmentExpected != nil && enrollmentExpected.Role == "release-signer" {
+				fmt.Fprintln(ui.output, "[I] Import the offline signer's public enrollment")
+			}
+			if c, e := snapshot.State(); e == nil && c.Progress.ReleaseReview != nil && c.Progress.FinalRelease == nil {
+				fmt.Fprintln(ui.output, "[U] Upload the offline signer's returned public release package")
+			}
+		}
+		if p.Role == "release-signer" {
+			fmt.Fprintln(ui.output, "[R] Re-verify imported public snapshot\n[Q] Save and exit")
+		} else {
+			fmt.Fprintln(ui.output, "[R] Refresh from storage\n[Q] Save and exit")
+		}
 		answer, err := ui.ask("Choose", "Q")
 		if err != nil {
 			return err
@@ -381,6 +414,14 @@ func runWorkflowV4GuideLoop(p, signer guidedProfile, identity setupIdentity, pro
 				}
 			}
 			fmt.Fprintln(ui.output, "Action finished locally. Relay will refresh signed storage state before recommending anything else.")
+		case "E", "I", "U":
+			if p.Role != "coordinator" || snapshot.Checked() == 0 {
+				fmt.Fprintln(ui.output, "A verified coordinator snapshot is required.")
+				continue
+			}
+			if err := runWorkflowV4OfflineHandoff(ui, strings.ToUpper(strings.TrimSpace(answer)), snapshot, protocol, p, signer, inspector, config, enrollmentExpected); err != nil {
+				ui.message(toneError, "Public handoff stopped: %v\nRetained work was preserved.\n", err)
+			}
 		case "Q":
 			return nil
 		case "R":
@@ -417,7 +458,11 @@ func workflowV4CoordinatorTransportRecoveryRecommendation(turn storagefirst.Turn
 }
 
 func printWorkflowV4Status(out io.Writer, role string, c transcript.CheckpointStateV4, turn storagefirst.TurnViewV4, pending *workflowV4Operation, checked time.Time) {
-	fmt.Fprintf(out, "\nRELAY | %s | STORAGE-FIRST\n------------------------------------------------------------\nChecked storage at %s; signed update %d.\nPhase 1: %d accepted contributions.\n", strings.ToUpper(role), checked.Format(time.RFC3339), c.Sequence, c.Progress.Phase1.AcceptedCount)
+	label := "Checked storage"
+	if role == "release-signer" {
+		label = "Verified imported public snapshot"
+	}
+	fmt.Fprintf(out, "\nRELAY | %s | STORAGE-FIRST\n------------------------------------------------------------\n%s at %s; signed update %d.\nPhase 1: %d accepted contributions.\n", strings.ToUpper(role), label, checked.Format(time.RFC3339), c.Sequence, c.Progress.Phase1.AcceptedCount)
 	if c.Progress.Phase2 != nil {
 		fmt.Fprintf(out, "Phase 2: %d accepted contributions.\n", c.Progress.Phase2.AcceptedCount)
 	}

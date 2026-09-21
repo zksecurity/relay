@@ -187,3 +187,7 @@ begin recording diagnostics when opened with a compatible updated launcher.
 Tessera needs its matching setup-v3 contract and policy-driven role/evidence
 handling before storage-first Tessera ceremonies can be enabled. Existing
 Tessera ceremonies stay pinned to their prior setup contract and Relay release.
+
+New ceremony definitions remove participant independence and live twenty-party evidence as production approval gates. Historical signed definitions retain their original validation. Tessera setup contracts remain unchanged.
+
+Standalone production setup now defaults to a 30-minute (1800-second) beacon wait in both phases. Shorter selections still require explicit review. Saved and signed policies retain their selected wait. Tessera setup contracts and their historical defaults remain unchanged.

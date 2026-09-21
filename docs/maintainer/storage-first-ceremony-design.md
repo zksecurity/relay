@@ -816,10 +816,10 @@ verifies that exact value. It cannot be changed after initialization.
 Relay offers mode-specific defaults rather than hard-coded validity rules:
 
 - rehearsal default: 180 seconds; automated tests may use 12 seconds;
-- production default: 24 hours.
+- production default: 30 minutes.
 
 A shorter production value is allowed, but the CLI must show the chosen value,
-the recommended 24-hour value and the lost review/observation time immediately
+the recommended 30-minute value and the lost review/observation time immediately
 before the coordinator signs the definition. It must never silently substitute
 a shorter value. If public witnesses are enabled, the existing production
 witness-observation window is reserved in addition to the configured beacon
@@ -1331,7 +1331,7 @@ Such a fixture can test a verifier, but it cannot validate the user journey.
   block rather than publish another child.
 - One offline final-signer ZIP round trip.
 - One production-shaped run with a signed shortened beacon lead, plus separate
-  tests of the recommended 24-hour production setting and final
+  tests of the recommended 30-minute production setting and final
   approval/rejection behavior.
 - One clean released-version run; development images do not establish release
   compatibility.
