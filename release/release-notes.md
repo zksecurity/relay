@@ -1,5 +1,11 @@
 ## What changed
 
+- The storage-first participant guide now follows the authenticated transition
+  from Phase 1 to Phase 2 when refreshed or reopened, using the same saved
+  profile. Earlier-phase unfinished work is retained and blocks new actions.
+  Tessera compatibility is unchanged: no setup contract, signed bytes, or API
+  changes are required; existing released ceremonies remain on their pinned CLI.
+
 - R2 setup now accepts the inbox-only credential as a named profile from a
   protected AWS-format file, including the coordinator credential file. Hidden
   paste and single-value files remain available; the two keys must differ.

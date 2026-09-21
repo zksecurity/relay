@@ -231,7 +231,6 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 	runWorkflowV4LiveBeacon(t, objects, protocol, &coordinator, workflowV4BeaconPhase1, "RECORD PHASE1 BEACON\n")
 	runWorkflowV4LiveLifecycle(t, objects, protocol, &coordinator, workflowV4SealPhase1, "SEAL PHASE1\n")
 	runWorkflowV4LiveLifecycle(t, objects, protocol, &coordinator, workflowV4StartPhase2, "START PHASE2\n")
-	participant.participant.Phase = "phase2"
 	runWorkflowV4LiveTurn(t, objects, protocol, config, &coordinator, &participant, "phase2")
 	runWorkflowV4LiveLifecycle(t, objects, protocol, &coordinator, workflowV4ClosePhase2, "CLOSE PHASE2\n")
 	runWorkflowV4LiveBeacon(t, objects, protocol, &coordinator, workflowV4BeaconPhase2, "RECORD PHASE2 BEACON\n")
@@ -735,32 +734,17 @@ func runWorkflowV4LiveTurn(t *testing.T, objects store.Client, protocol transcri
 	}
 	grantPath := progress.GrantPath
 
-	participantSnapshot := syncWorkflowV4LiveRole(t, participant, objects)
-	participantView, err := participantSnapshot.TurnV4(protocol, phase, participant.identity.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Drive the same refresh/action loop as the normal participant launcher.
+	// Its saved Phase 1 profile must work for both phases without test mutation.
 	dockerCLI := workflowV4LiveDockerCLI(t)
-	participantProgress, err := participant.journal.participantProgressV4(participantView.Scope, dockerCLI)
-	if err != nil {
+	ui := workflowV4LiveUI("1\nCONTRIBUTE\n1\nCLEANUP PRECAUTIONS CONFIRMED\n1\n" + grantPath + "\nUPLOAD CANDIDATE\nQ\n")
+	if err := runWorkflowV4GuideLoop(participant.profile, participant.signer, participant.identity, protocol, participant.journal, config, participant.inspector, dockerCLI, participant.participant, ui, func() (storagefirst.SnapshotV4, error) {
+		return participant.journal.syncV4(objects, participant.inspector, dockerCLI)
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := runWorkflowV4ParticipantAction(workflowV4LiveUI("CONTRIBUTE\n"), participant.journal, participantSnapshot, protocol, *participant.participant, config, participant.inspector, dockerCLI, participantView, participantProgress); err != nil {
-		t.Fatal(err)
-	}
-	participantProgress, err = participant.journal.participantProgressV4(participantView.Scope, dockerCLI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := runWorkflowV4ParticipantAction(workflowV4LiveUI("CLEANUP PRECAUTIONS CONFIRMED\n"), participant.journal, participantSnapshot, protocol, *participant.participant, config, participant.inspector, dockerCLI, participantView, participantProgress); err != nil {
-		t.Fatal(err)
-	}
-	participantProgress, err = participant.journal.participantProgressV4(participantView.Scope, dockerCLI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := runWorkflowV4ParticipantAction(workflowV4LiveUI(grantPath+"\nUPLOAD CANDIDATE\n"), participant.journal, participantSnapshot, protocol, *participant.participant, config, participant.inspector, dockerCLI, participantView, participantProgress); err != nil {
-		t.Fatal(err)
+	if participant.participant.Phase != "phase1" {
+		t.Fatal("participant guide changed the saved phase profile")
 	}
 
 	progress, err = workflowV4CoordinatorProgressFor(snapshot, protocol, view, coordinator.journal.state.Marker.Binding, config, coordinator.inspector, time.Now().UTC())
