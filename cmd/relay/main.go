@@ -92,6 +92,8 @@ func usage() {
   relay ceremony open NAME --role ROLE [--grant FILE] [--resume-candidate DIR]
   relay ceremony open NAME --role ROLE --action ACTION [-- TOOL ARGS...]
   relay ceremony guide NAME --role ROLE
+  relay ceremony upgrade NAME --role ROLE --release role-images-COMMIT [--bundle DIR --trusted-root FILE]
+  relay ceremony upgrade-bundle --original-release TAG --source-release TAG --release TAG --role ROLE --host OS/ARCH --platform linux/ARCH --out FRESH_DIR
   relay ceremony recover-publication NAME [--settings-root DIR]
   relay ceremony prepare --name NAME --role ROLE --release RELEASE --work DIR --trust DIR --keys DIR
   relay role --role ROLE --image DIGEST --work DIR [mount flags] -- TOOL ARGS...
@@ -274,6 +276,16 @@ func runCeremony(args []string) error {
 		return runRolePrepare(args[1:])
 	case "guide":
 		return runRoleFlow(args[1:])
+	case "upgrade":
+		return runCeremonyUpgradeV2(args[1:])
+	case "upgrade-v1":
+		return runCeremonyUpgrade(args[1:])
+	case "upgrade-bundle":
+		return runUpgradeBundle(args[1:])
+	case "upgrade-manifests":
+		return runUpgradeManifests(args[1:])
+	case "upgrade-manifests-v2":
+		return runUpgradeManifestsV2(args[1:])
 	case "recover-publication":
 		return runLegacyPublicationRecovery(args[1:])
 	case "setup":

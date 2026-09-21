@@ -312,6 +312,7 @@ func setupWriteBytesNewOrExact(path string, expected []byte, mode os.FileMode) e
 }
 
 type coordinatorWizard struct {
+	settingsRoot          string
 	d                     coordinatorDraft
 	input                 *bufio.Reader
 	output                io.Writer
@@ -468,7 +469,21 @@ func (w *coordinatorWizard) confirm(label, exact string) error {
 	}
 	return nil
 }
-func (w *coordinatorWizard) save() error { return saveCoordinatorDraft(w.draftPath, w.d) }
+func (w *coordinatorWizard) save() error {
+	history, _, err := upgradeV2ReadHistory(w.d.Work)
+	if err != nil {
+		return err
+	}
+	if len(history) > 0 {
+		if w.d.Tessera != nil || w.d.TesseraSetup != nil || w.d.TesseraSetupV3 != nil || w.d.TesseraExportPath != "" {
+			return errors.New("Tessera-linked setup updates are not qualified")
+		}
+		if err := checkActivePreparation(w.d.Name, "coordinator", w.d.Release, w.d.Work, w.d.Trust, w.d.Keys); err != nil {
+			return err
+		}
+	}
+	return saveCoordinatorDraft(w.draftPath, w.d)
+}
 func (w *coordinatorWizard) summary() {
 	fmt.Fprintf(w.output, "\nStatus: %s\nCeremony: %s\nMode: %s\nCircuit: %s\nRelease: %s\n", w.d.Status, w.d.Name, w.d.Mode, w.d.Circuit, w.d.Release)
 	show := func(role string, i setupIdentity) {
@@ -534,6 +549,16 @@ func (w *coordinatorWizard) identity() error {
 		return err
 	}
 	var i setupIdentity
+	var retainedIdentity map[string]string
+	if role == "coordinator" {
+		retainedIdentity, err = upgradeV2CaptureSetup(w.d.Work, "identity")
+		if err != nil {
+			return err
+		}
+		if retainedIdentity != nil && path != filepath.Join(w.d.Keys, "identity.json") {
+			return errors.New("review your retained coordinator identity.json in this installation's keys folder")
+		}
+	}
 	if err := setupReadJSON(path, &i); err != nil {
 		return err
 	}
@@ -546,6 +571,11 @@ func (w *coordinatorWizard) identity() error {
 	}
 	switch role {
 	case "coordinator":
+		if retainedIdentity != nil {
+			if err := upgradeV2RecordSetupGroup(w.d.Work, "identity", retainedIdentity); err != nil {
+				return err
+			}
+		}
 		w.d.Identities.Coordinator = i
 	case "release-signer":
 		w.d.Identities.ReleaseSigner = i
@@ -802,6 +832,9 @@ func (w *coordinatorWizard) action(name, role string, command []string, credenti
 	if w.localAction != nil {
 		return w.localAction(name, role, command, credentials)
 	}
+	if err := checkActivePreparation(w.d.Name, "coordinator", w.d.Release, w.d.Work, w.d.Trust, w.d.Keys); err != nil {
+		return err
+	}
 	// Each action gets a content-derived alias; existing launcher activity records
 	// remain authoritative for replay/uncertain-attempt handling.
 	raw, _ := json.Marshal(struct {
@@ -825,10 +858,12 @@ func (w *coordinatorWizard) action(name, role string, command []string, credenti
 	args = append(args, "--")
 	args = append(args, command...)
 	openArgs := []string{"ceremony", "open", alias, "--role", role}
-	root, err := guidedRoot()
+	root, err := preparationSettingsRoot(w.d.Work, w.settingsRoot)
 	if err != nil {
 		return err
 	}
+	args = append(args[:len(args)-len(command)-1], append([]string{"--settings-root", root, "--"}, command...)...)
+	openArgs = append(openArgs, "--settings-root", root)
 	dir, err := guidedDirectory(root, alias, role)
 	if err != nil {
 		return err
@@ -949,6 +984,9 @@ func (w *coordinatorWizard) generateIdentity() error {
 	}
 	if generated.ID != id || generated.DisplayName != display {
 		return errors.New("generated identity differs from the requested identity")
+	}
+	if err := upgradeV2RetainSetup(w.d.Work, "identity"); err != nil {
+		return err
 	}
 	choice, err := w.choose("Assign this new identity to your coordinator role?", "assign", []setupChoice{{"assign", "Yes — use my new coordinator identity"}, {"later", "Not yet — keep the files without assigning"}})
 	if err != nil {
@@ -1091,6 +1129,9 @@ func (w *coordinatorWizard) initialize() error {
 		}
 		command = append(command, "--allowed-binary", fmt.Sprintf("/work/coordinator-setup/frozen/allowed-%d", n))
 	}
+	if err := upgradeV2RetainSetup(w.d.Work, "initialization"); err != nil {
+		return err
+	}
 	if err := w.action("initialize", "coordinator", command, false, resume); err != nil {
 		return err
 	}
@@ -1147,8 +1188,17 @@ func (w *coordinatorWizard) verify() error {
 	if err := w.save(); err != nil {
 		return err
 	}
+	captured, err := upgradeV2CaptureSetup(w.d.Work, "definition")
+	if err != nil {
+		return err
+	}
 	if err := w.action("verify", "coordinator", []string{"mpc-ceremony", "inspect", "definition", "--ceremony", "/work/ceremony/public/ceremony.json", "--ceremony-signature", "/work/ceremony/public/ceremony.sig", "--coordinator-public-key-file", "/trust/setup-coordinator.hex"}, false); err != nil {
 		return err
+	}
+	if captured != nil {
+		if err := upgradeV2RecordSetupGroup(w.d.Work, "definition", captured); err != nil {
+			return err
+		}
 	}
 	w.d.Status = "definition-verified"
 	if err := w.save(); err != nil {
@@ -1231,6 +1281,9 @@ func (w *coordinatorWizard) configureStorage() error {
 		}
 	}
 	if err := w.action("storage", "coordinator", args, true); err != nil {
+		return err
+	}
+	if err := upgradeV2RetainSetup(w.d.Work, "storage"); err != nil {
 		return err
 	}
 	initial := filepath.Join(w.d.Work, "ceremony", "public", "checkpoints", "initial")
@@ -1429,7 +1482,9 @@ func (w *coordinatorWizard) menu() (result error) {
 
 func runCoordinatorPrepare(args []string) error {
 	var d coordinatorDraft
+	var settingsRoot string
 	flags := flag.NewFlagSet("coordinator prepare", flag.ContinueOnError)
+	flags.StringVar(&settingsRoot, "settings-root", "", "private saved-settings directory")
 	flags.StringVar(&d.Name, "name", "", "local ceremony name")
 	flags.StringVar(&d.Release, "release", "", "exact approved role-images release")
 	flags.StringVar(&d.Work, "work", "", "existing private work directory")
@@ -1442,7 +1497,7 @@ func runCoordinatorPrepare(args []string) error {
 	if len(flags.Args()) != 0 || !guidedName.MatchString(d.Name) || !launcherReleaseTag.MatchString(d.Release) {
 		return errors.New("valid --name and exact --release are required")
 	}
-	if err := checkLauncherRelease(strings.TrimPrefix(d.Release, "role-images-")); err != nil {
+	if err := checkPreparationRelease(d.Name, "coordinator", d.Release, d.Work, d.Trust, d.Keys); err != nil {
 		return err
 	}
 	for _, path := range []string{d.Work, d.Trust, d.Keys} {
@@ -1477,6 +1532,9 @@ func runCoordinatorPrepare(args []string) error {
 		return err
 	}
 	defer lock.release()
+	if err := checkPreparationRelease(d.Name, "coordinator", d.Release, d.Work, d.Trust, d.Keys); err != nil {
+		return err
+	}
 	if info, err := os.Lstat(path); err == nil {
 		if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
 			return errors.New("saved draft must be a private regular file")
@@ -1502,7 +1560,11 @@ func runCoordinatorPrepare(args []string) error {
 			return err
 		}
 	}
-	w := coordinatorWizard{d: d, input: bufio.NewReader(os.Stdin), output: os.Stdout, draftPath: path, run: executeGuidedChild}
+	settingsRoot, err = preparationSettingsRoot(d.Work, settingsRoot)
+	if err != nil {
+		return err
+	}
+	w := coordinatorWizard{d: d, input: bufio.NewReader(os.Stdin), output: os.Stdout, draftPath: path, run: executeGuidedChild, settingsRoot: settingsRoot}
 	w.prepareBinaries = w.prepareApprovedArchitectures
 	return w.menu()
 }

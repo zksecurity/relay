@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zksecurity/relay/internal/access"
 )
@@ -43,10 +44,15 @@ func freshAWSLiveCredentials(t *testing.T) string {
 	if err != nil {
 		t.Fatal("test credential refresh failed")
 	}
-	var c struct{ AccessKeyId, SecretAccessKey, SessionToken string }
+	var c struct{ AccessKeyId, SecretAccessKey, SessionToken, Expiration string }
 	if json.Unmarshal(raw, &c) != nil || c.AccessKeyId == "" || c.SecretAccessKey == "" || c.SessionToken == "" {
 		t.Fatal("invalid temporary credentials")
 	}
+	expiry, err := time.Parse(time.RFC3339, c.Expiration)
+	if err != nil || !expiry.After(time.Now().UTC()) {
+		t.Fatal("temporary test session has missing or expired expiration")
+	}
+	t.Logf("temporary AWS test session expires at %s", expiry.UTC().Format(time.RFC3339))
 	file := filepath.Join(privateRoleTestDir(t), "aws")
 	if err := os.WriteFile(file, []byte(fmt.Sprintf("[relay-aws-test]\naws_access_key_id=%s\naws_secret_access_key=%s\naws_session_token=%s\n", c.AccessKeyId, c.SecretAccessKey, c.SessionToken)), 0600); err != nil {
 		t.Fatal("could not stage temporary test session")

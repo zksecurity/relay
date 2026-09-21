@@ -26,20 +26,22 @@ var guidedName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 // Saved commands contain public identifiers and file paths, not file contents.
 // They are operator-selected actions, never inferred from untrusted web status.
 type guidedProfile struct {
-	ReleaseCommit string   `json:"release_commit,omitempty"`
-	Schema        string   `json:"schema"`
-	Name          string   `json:"name"`
-	Role          string   `json:"role"`
-	Image         string   `json:"image,omitempty"`
-	Platform      string   `json:"platform,omitempty"`
-	Work          string   `json:"work,omitempty"`
-	Trust         string   `json:"trust,omitempty"`
-	Keys          string   `json:"keys,omitempty"`
-	Credentials   string   `json:"aws_credentials,omitempty"`
-	Config        string   `json:"participant_config,omitempty"`
-	Command       []string `json:"command,omitempty"`
-	R2Parent      string   `json:"r2_parent_credential,omitempty"`
-	R2Control     string   `json:"r2_control_credential,omitempty"`
+	// Applied only in memory after authenticating an explicit upgrade selection.
+	UpgradeOnlineImage string   `json:"-"`
+	ReleaseCommit      string   `json:"release_commit,omitempty"`
+	Schema             string   `json:"schema"`
+	Name               string   `json:"name"`
+	Role               string   `json:"role"`
+	Image              string   `json:"image,omitempty"`
+	Platform           string   `json:"platform,omitempty"`
+	Work               string   `json:"work,omitempty"`
+	Trust              string   `json:"trust,omitempty"`
+	Keys               string   `json:"keys,omitempty"`
+	Credentials        string   `json:"aws_credentials,omitempty"`
+	Config             string   `json:"participant_config,omitempty"`
+	Command            []string `json:"command,omitempty"`
+	R2Parent           string   `json:"r2_parent_credential,omitempty"`
+	R2Control          string   `json:"r2_control_credential,omitempty"`
 }
 
 func (p guidedProfile) options() dockerRoleOptions {
@@ -112,7 +114,7 @@ func runGuidedSetup(args []string) error {
 		if err != nil {
 			return err
 		}
-		releaseImage, p.ReleaseCommit, err = verifiedReleaseImage(releaseTag, p.Role, platform)
+		releaseImage, p.ReleaseCommit, err = verifiedWorkspaceReleaseImage(releaseTag, p.Role, platform, p.Work, p.Trust, p.Keys)
 		if err != nil {
 			return err
 		}
@@ -348,7 +350,7 @@ type guidedAttempt struct {
 
 // Caller holds the shared profile lock. Action commands are immutable so retry
 // history cannot accidentally refer to a different signing or upload operation.
-func prepareGuidedAction(dir, action string, command []string) ([]string, string, error) {
+func prepareGuidedAction(dir, action string, command []string, execution ...guidedProfile) ([]string, string, error) {
 	if !guidedName.MatchString(action) {
 		return nil, "", errors.New("action must be a short lowercase name, not a path")
 	}
@@ -366,6 +368,9 @@ func prepareGuidedAction(dir, action string, command []string) ([]string, string
 	saved, err := readGuidedProfile(path, action, "action")
 	if errors.Is(err, os.ErrNotExist) && len(command) != 0 {
 		saved = guidedProfile{Schema: guidedSchema, Name: action, Role: "action", Command: command}
+		if len(execution) == 1 {
+			saved.Image, saved.Platform = upgradeV2NewActionImage(execution[0], command), execution[0].Platform
+		}
 		err = writeJSONNoReplace(path, saved, 0o600)
 	}
 	if err != nil {
@@ -431,7 +436,7 @@ func runGuidedOpen(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := checkLauncherRelease(p.ReleaseCommit); err != nil {
+	if _, err := applyCeremonyUpgrade(p, root); err != nil {
 		return err
 	}
 	lock, err := acquireParticipantRunLock(filepath.Join(dir, "profile.json"), filepath.Join(dir, "activity"))
@@ -442,6 +447,10 @@ func runGuidedOpen(args []string) error {
 	// Credential-reference refresh takes this same lock. Do not execute a
 	// profile read just before a completed refresh.
 	p, err = readGuidedProfile(filepath.Join(dir, "profile.json"), args[0], role)
+	if err != nil {
+		return err
+	}
+	p, err = applyCeremonyUpgrade(p, root)
 	if err != nil {
 		return err
 	}
@@ -461,7 +470,11 @@ func runGuidedOpen(args []string) error {
 				return err
 			}
 		}
-		p.Command, activity, err = prepareGuidedAction(dir, action, set.Args())
+		p.Command, activity, err = prepareGuidedAction(dir, action, set.Args(), p)
+		if err != nil {
+			return err
+		}
+		p.Image, err = upgradeV2SavedActionImage(p, filepath.Join(dir, "actions", action, "profile.json"), action)
 		if err != nil {
 			return err
 		}

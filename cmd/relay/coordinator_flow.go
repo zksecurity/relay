@@ -10,7 +10,7 @@ import (
 )
 
 func (w *coordinatorWizard) openCoordinatorFlow() error {
-	root, err := guidedRoot()
+	root, err := preparationSettingsRoot(w.d.Work, w.settingsRoot)
 	if err != nil {
 		return err
 	}
@@ -27,7 +27,7 @@ func (w *coordinatorWizard) openCoordinatorFlow() error {
 		return err
 	}
 	if _, err := os.Lstat(filepath.Join(dir, "profile.json")); errors.Is(err, os.ErrNotExist) {
-		args := []string{"ceremony", "setup", name, "--role", "coordinator", "--release", w.d.Release, "--work", w.d.Work, "--trust", w.d.Trust, "--keys", w.d.Keys}
+		args := []string{"ceremony", "setup", name, "--settings-root", root, "--role", "coordinator", "--release", w.d.Release, "--work", w.d.Work, "--trust", w.d.Trust, "--keys", w.d.Keys}
 		if w.d.Credentials != "" {
 			args = append(args, "--aws-credentials", w.d.Credentials)
 		}
