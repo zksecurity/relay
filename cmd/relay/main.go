@@ -21,6 +21,12 @@ import (
 )
 
 func main() {
+	args, normalizeErr := normalizeReleaseVersions(os.Args[1:], resolveReleaseVersion)
+	if normalizeErr != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", normalizeErr)
+		os.Exit(1)
+	}
+	os.Args = append([]string{os.Args[0]}, args...)
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(2)

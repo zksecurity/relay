@@ -23,6 +23,14 @@ If your prerequisites are already ready, continue to **Download and verify**.
 
 ## Guided installation
 
+New numbered releases start at `v0.2.0`. Use that exact tag or its GitHub release
+URL in the installer. The installer verifies the attested version-to-commit
+mapping and pins setup to the corresponding `role-images-<commit>` release.
+Existing ceremony settings keep their original pins and continue to work.
+Use the installer from the selected new release; old installers cannot resolve
+semantic versions. The CLI also accepts `--release v0.2.0` and resolves it before
+setup. Exact commits and image digests remain the software identities.
+
 From the authenticated source checkout used for computer setup, run:
 
 ```bash
@@ -50,7 +58,7 @@ Run in Bash or Zsh, replacing the placeholder with the coordinator's release com
 ```bash
 set -euo pipefail
 RELAY_COMMIT=REPLACE_WITH_FULL_40_CHARACTER_RELEASE_COMMIT
-RELAY_RELEASE="role-images-$RELAY_COMMIT"
+RELAY_RELEASE=v0.2.0
 RELAY_DOWNLOAD=$(mktemp -d)
 gh release download "$RELAY_RELEASE" --repo zksecurity/relay \
   --pattern install-launcher.sh --dir "$RELAY_DOWNLOAD"

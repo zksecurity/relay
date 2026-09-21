@@ -233,6 +233,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
@@ -300,14 +301,36 @@ jobs:
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
           subject-path: upgrades/*.json
+      - name: Prepare semantic version mapping when requested
+        id: version
+        env:
+          BEFORE_COMMIT: ${{ github.event.before }}
+        run: bash scripts/publish-version.sh prepare "$BEFORE_COMMIT" "$RELAY_COMMIT"
+      - name: Attest semantic version mapping
+        if: steps.version.outputs.version != ''
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-path: relay-release-version.txt
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           target_commitish: ${{ env.RELAY_COMMIT }}
           name: Role images ${{ env.RELEASE_TAG }}
+          make_latest: false
           body_path: release/release-notes.md
           files: |
             relay-role-images.release.json
             ceremony-software-manifest-v3.json
             launchers/*
             upgrades/*.json
+      - name: Publish semantic version after canonical release
+        if: steps.version.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          bash scripts/publish-version.sh publish "$VERSION" "$RELAY_COMMIT" \
+            relay-release-version.txt relay-role-images.release.json \
+            ceremony-software-manifest-v3.json launchers/* upgrades/*.json
