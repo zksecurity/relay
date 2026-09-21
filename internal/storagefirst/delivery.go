@@ -6,6 +6,7 @@ package storagefirst
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -280,6 +281,13 @@ func putExactDelivery(objects ImmutableStore, key, local string, file deliveryFi
 }
 
 func stageDeliveryFile(source, destination string, expected deliveryFile) error {
+	return stageDeliveryFileContext(context.Background(), source, destination, expected)
+}
+
+func stageDeliveryFileContext(ctx context.Context, source, destination string, expected deliveryFile) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	info, err := os.Lstat(source)
 	if err != nil || !info.Mode().IsRegular() || info.Size() != expected.Size {
 		return errors.New("delivery source must be a regular file of the expected size")
@@ -305,13 +313,16 @@ func stageDeliveryFile(source, destination string, expected deliveryFile) error 
 	// must match: a truncated copy, a swapped source, or wrong source bytes
 	// all fail this single comparison.
 	hash := sha256.New()
-	n, copyErr := io.Copy(io.MultiWriter(output, hash), io.LimitReader(input, expected.Size))
+	n, copyErr := io.Copy(io.MultiWriter(output, hash), io.LimitReader(contextReader{ctx: ctx, reader: input}, expected.Size))
 	closeErr := output.Close()
 	if copyErr != nil {
 		return copyErr
 	}
 	if closeErr != nil {
 		return closeErr
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	var extra [1]byte
 	more, readErr := input.Read(extra[:])
@@ -321,7 +332,7 @@ func stageDeliveryFile(source, destination string, expected deliveryFile) error 
 	if "sha256:"+hex.EncodeToString(hash.Sum(nil)) != expected.SHA256 {
 		return errors.New("staged delivery bytes do not match the expected digest")
 	}
-	return nil
+	return ctx.Err()
 }
 
 // FetchDelivery returns a private staging directory only after every listed

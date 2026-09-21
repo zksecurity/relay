@@ -1,6 +1,7 @@
 package storagefirst
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -37,6 +38,14 @@ func DefaultPublishLimits() PublishLimits {
 // published by the caller after this returns, so a partial batch never
 // becomes discoverable.
 func PublishArtifacts(objects ImmutableStore, refs []state.ContentRef, root, tempParent string, memo *VerifiedObjects, limits PublishLimits) error {
+	return PublishArtifactsContext(context.Background(), objects, refs, root, tempParent, memo, limits)
+}
+
+// PublishArtifactsContext stops admitting artifacts on cancellation and drains
+// all admitted workers before returning, allowing their staging cleanup to run.
+// The store must honor the same context to interrupt active provider calls.
+// Ordinary upload errors retain deterministic name-order reporting.
+func PublishArtifactsContext(ctx context.Context, objects ImmutableStore, refs []state.ContentRef, root, tempParent string, memo *VerifiedObjects, limits PublishLimits) error {
 	if objects == nil {
 		return errors.New("immutable object store is required")
 	}
@@ -53,16 +62,24 @@ func PublishArtifacts(objects ImmutableStore, refs []state.ContentRef, root, tem
 	var group sync.WaitGroup
 	bytes := newByteSemaphore(limits.InFlightBytes)
 	slots := make(chan struct{}, min(limits.Workers, len(ordered)))
+admit:
 	for index, ref := range ordered {
-		if failed.Load() {
+		if failed.Load() || ctx.Err() != nil {
 			break
 		}
 		// Reserve both resources in logical-name order, so a small later
 		// artifact cannot overtake an earlier one waiting for disk space.
-		slots <- struct{}{}
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+			break admit
+		}
 		weight := max(min(ref.Size, limits.InFlightBytes), 0)
-		bytes.acquire(weight)
-		if failed.Load() {
+		if err := bytes.acquire(ctx, weight); err != nil {
+			<-slots
+			break
+		}
+		if failed.Load() || ctx.Err() != nil {
 			bytes.release(weight)
 			<-slots
 			break
@@ -72,7 +89,7 @@ func PublishArtifacts(objects ImmutableStore, refs []state.ContentRef, root, tem
 			defer group.Done()
 			// Every admitted artifact runs, even if a later one fails first.
 			// Otherwise an earlier error could disappear from the result.
-			if err := publishImmutableAt(objects, ref, root, tempParent, memo); err != nil {
+			if err := PublishImmutableContext(ctx, objects, ref, filepath.Join(root, ref.Name), tempParent, memo); err != nil {
 				errs[index] = err
 				failed.Store(true)
 			}
@@ -82,17 +99,12 @@ func PublishArtifacts(objects ImmutableStore, refs []state.ContentRef, root, tem
 		}()
 	}
 	group.Wait()
-
 	for index, err := range errs {
 		if err != nil {
-			return fmt.Errorf("publish required public artifact %q: %w", ordered[index].Name, err)
+			return errors.Join(ctx.Err(), fmt.Errorf("publish required public artifact %q: %w", ordered[index].Name, err))
 		}
 	}
-	return nil
-}
-
-func publishImmutableAt(objects ImmutableStore, ref state.ContentRef, root, tempParent string, memo *VerifiedObjects) error {
-	return PublishImmutable(objects, ref, filepath.Join(root, filepath.FromSlash(ref.Name)), tempParent, memo)
+	return ctx.Err()
 }
 
 // byteSemaphore bounds a total quantity of in-flight work measured in bytes.
@@ -110,16 +122,28 @@ func newByteSemaphore(capacity int64) *byteSemaphore {
 	return s
 }
 
-func (s *byteSemaphore) acquire(weight int64) {
+func (s *byteSemaphore) acquire(ctx context.Context, weight int64) error {
 	if weight <= 0 {
-		return
+		return ctx.Err()
 	}
+	// The callback and waiter use the same mutex so cancellation cannot be
+	// lost between the condition check and Wait releasing the lock.
+	stop := context.AfterFunc(ctx, func() {
+		s.mu.Lock()
+		s.cond.Broadcast()
+		s.mu.Unlock()
+	})
+	defer stop()
 	s.mu.Lock()
-	for s.free < weight {
+	defer s.mu.Unlock()
+	for s.free < weight && ctx.Err() == nil {
 		s.cond.Wait()
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	s.free -= weight
-	s.mu.Unlock()
+	return nil
 }
 
 func (s *byteSemaphore) release(weight int64) {

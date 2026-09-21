@@ -235,3 +235,21 @@ claim.
 
 Two mirrors operated in one account are still one administrative failure
 domain. Evidentiary mirrors should have independent operators.
+
+## Cancelling checkpoint publication
+
+During `coordinator commit-v4` publication, Ctrl-C, SIGTERM, and SIGHUP cancel
+new work and active direct AWS CLI calls. Relay waits for admitted workers to
+finish returning and remove their own temporary upload/download copies. The
+batch must succeed before checkpoint publication and the conditional root update.
+An existing uploaded object is retained; retry verifies its exact bytes or its
+previously digest-verified version before reusing it.
+
+Cancellation racing the final root update can leave a complete remote checkpoint
+with an unconfirmed local result. Rerun the same operation: Relay retains its
+exact-head reconciliation rather than assuming cancellation means no remote effect.
+
+SIGKILL, power loss, or forced container removal cannot run this cleanup. The
+command does not scan or delete old staging directories, other invocations' files,
+ceremony inputs, or remote objects. Arbitrary wrappers that spawn other processes
+or containers are outside the direct AWS executable cancellation guarantee.

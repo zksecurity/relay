@@ -5,6 +5,7 @@
 package storagefirst
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -295,6 +296,13 @@ func fetchExact(objects ObjectStore, ref state.ContentRef, localPath string) err
 // fetchExactVersion downloads the referenced immutable bytes, verifies them,
 // and returns the stored version the verification applies to.
 func fetchExactVersion(objects ObjectStore, ref state.ContentRef, localPath string) (store.ObjectVersion, error) {
+	return fetchExactVersionContext(context.Background(), objects, ref, localPath)
+}
+
+func fetchExactVersionContext(ctx context.Context, objects ObjectStore, ref state.ContentRef, localPath string) (store.ObjectVersion, error) {
+	if err := ctx.Err(); err != nil {
+		return store.ObjectVersion{}, err
+	}
 	if ref.Size <= 0 || !validDigest(ref.SHA256) {
 		return store.ObjectVersion{}, errors.New("immutable reference requires a positive size and valid SHA-256")
 	}
@@ -305,9 +313,12 @@ func fetchExactVersion(objects ObjectStore, ref state.ContentRef, localPath stri
 	if version.Size != ref.Size {
 		return store.ObjectVersion{}, fmt.Errorf("downloaded size %d, want %d", version.Size, ref.Size)
 	}
-	if err := verifyLocalRef(ref, localPath); err != nil {
+	if err := verifyLocalRefContext(ctx, ref, localPath); err != nil {
 		_ = os.Remove(localPath)
 		return store.ObjectVersion{}, fmt.Errorf("downloaded object does not match its immutable reference: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return store.ObjectVersion{}, err
 	}
 	return version, nil
 }

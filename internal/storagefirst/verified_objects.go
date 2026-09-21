@@ -1,6 +1,7 @@
 package storagefirst
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -113,17 +114,24 @@ func (v *VerifiedObjects) Save() error {
 // metadata unavailable — falls back to a full download-and-hash, which is the
 // corruption check the always-fetch path performs.
 func (v *VerifiedObjects) confirmExisting(objects PublishingStore, key string, ref state.ContentRef, fetchPath string) error {
+	return v.confirmExistingContext(context.Background(), objects, key, ref, fetchPath)
+}
+
+func (v *VerifiedObjects) confirmExistingContext(ctx context.Context, objects PublishingStore, key string, ref state.ContentRef, fetchPath string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if current, err := objects.HeadVersion(key); err == nil {
 		if remembered, ok := v.Verified(key); ok && sameVersion(remembered, current) {
-			return nil
+			return ctx.Err()
 		}
 	}
-	observed, err := fetchExactVersion(objects, ref, fetchPath)
+	observed, err := fetchExactVersionContext(ctx, objects, ref, fetchPath)
 	if err != nil {
 		return err
 	}
 	v.Record(key, observed)
-	return nil
+	return ctx.Err()
 }
 
 // pinnedVersion reports whether a version identifies exact bytes strongly
