@@ -147,7 +147,23 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 	}
 	objects := store.Client{PublicBaseURL: config.PublishedBaseURL}
 	ui := coordinatorWizard{input: bufio.NewReader(os.Stdin), output: os.Stdout}
+	return runWorkflowV4GuideLoop(p, signer, identity, protocol, j, config, inspector, cli, participant, &ui, func() (storagefirst.SnapshotV4, error) {
+		return j.syncV4(objects, inspector, cli)
+	})
+}
+
+// The normal guide and its scripted regression tests share this refresh/action
+// loop. Only the caller's authenticated synchronizer can provide a snapshot.
+func runWorkflowV4GuideLoop(p, signer guidedProfile, identity setupIdentity, protocol transcript.DefinitionProtocol, j *workflowV4Journal, config access.StorageConfig, inspector transcript.Inspector, cli string, savedParticipant *access.RoleConfig, ui *coordinatorWizard, sync func() (storagefirst.SnapshotV4, error)) error {
+	binding := j.state.Marker.Binding
 	for {
+		// Phase selection is per authenticated refresh; never rewrite onboarding
+		// profiles or carry a previous snapshot's authority across a failed sync.
+		var participant *access.RoleConfig
+		if savedParticipant != nil {
+			copy := *savedParticipant
+			participant = &copy
+		}
 		var snapshot storagefirst.SnapshotV4
 		var turn storagefirst.TurnViewV4
 		var progress workflowV4ParticipantProgress
@@ -162,7 +178,7 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 		if err != nil {
 			return err
 		}
-		snapshot, err = j.syncV4(objects, inspector, cli)
+		snapshot, err = sync()
 		if err != nil {
 			ui.message(toneError, "Storage synchronization failed: %v\nNo new ceremony action is authorized. Retained work is unchanged.\n", err)
 			printWorkflowV4Pending(ui.output, pending)
@@ -212,7 +228,7 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 			}
 			if p.Role == "participant" {
 				who = identity.ID
-				phase = participant.Phase
+				participant.Phase = phase
 			}
 			scheduled := false
 			if p.Role != "release-signer" && p.Role != "auditor" {
@@ -252,7 +268,10 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 					return err
 				}
 			}
-			if enrollmentAction {
+			if p.Role == "participant" && pending != nil && pending.Plan.Scope.Phase != phase {
+				actionLabel = ""
+				ui.message(toneError, "Retained %s work belongs to %s; the ceremony is now in %s. Resolve the retained operation before continuing. No operation was repeated or reassigned.\n", pending.Plan.Kind, pending.Plan.Scope.Phase, phase)
+			} else if enrollmentAction {
 				// Enrollment is a ceremony-wide prerequisite; do not offer later
 				// participant, audit, or release work until it is recorded.
 			} else if p.Role == "participant" && turn.Scope.ParticipantID != "" {
@@ -330,33 +349,33 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 					if enrollmentExpected == nil {
 						actionErr = errors.New("no missing signed enrollment was selected")
 					} else {
-						actionErr = runWorkflowV4CoordinatorExpectedEnrollment(&ui, snapshot, protocol, config, p, signer, inspector, *enrollmentExpected, coordinatorProgress)
+						actionErr = runWorkflowV4CoordinatorExpectedEnrollment(ui, snapshot, protocol, config, p, signer, inspector, *enrollmentExpected, coordinatorProgress)
 					}
 				} else {
-					actionErr = runWorkflowV4OwnEnrollmentUpload(&ui, snapshot, protocol, p, config, inspector, identity)
+					actionErr = runWorkflowV4OwnEnrollmentUpload(ui, snapshot, protocol, p, config, inspector, identity)
 				}
 				if actionErr != nil {
 					ui.message(toneError, "Enrollment action stopped: %v\nSigned files and verified downloads were retained. No action is automatically repeated.\n", actionErr)
 					continue
 				}
 			} else if p.Role == "participant" && participant != nil {
-				if err := runWorkflowV4ParticipantAction(&ui, j, snapshot, protocol, *participant, config, inspector, cli, turn, progress); err != nil {
+				if err := runWorkflowV4ParticipantAction(ui, j, snapshot, protocol, *participant, config, inspector, cli, turn, progress); err != nil {
 					ui.message(toneError, "Participant action stopped: %v\nSaved state and verified public files were retained. No action is automatically repeated.\n", err)
 					continue
 				}
 			} else if p.Role == "coordinator" {
 				var actionErr error
 				if lifecycleAction != "" {
-					actionErr = runWorkflowV4CoordinatorLifecycle(&ui, lifecycleAction, snapshot, protocol, p, signer, inspector)
+					actionErr = runWorkflowV4CoordinatorLifecycle(ui, lifecycleAction, snapshot, protocol, p, signer, inspector)
 				} else {
-					actionErr = runWorkflowV4CoordinatorAction(&ui, snapshot, protocol, config, p, signer, inspector, recommendation, turn, coordinatorProgress)
+					actionErr = runWorkflowV4CoordinatorAction(ui, snapshot, protocol, config, p, signer, inspector, recommendation, turn, coordinatorProgress)
 				}
 				if actionErr != nil {
 					ui.message(toneError, "Coordinator action stopped: %v\nSigned files and verified downloads were retained. No action is automatically repeated.\n", actionErr)
 					continue
 				}
 			} else if p.Role == "release-signer" {
-				if err := runWorkflowV4ReleaseSignerAction(&ui, snapshot, protocol, config, p, signer, identity, releaseProgress); err != nil {
+				if err := runWorkflowV4ReleaseSignerAction(ui, snapshot, protocol, config, p, signer, identity, releaseProgress); err != nil {
 					ui.message(toneError, "Release-signer action stopped: %v\nVerified downloads and any complete signed package were retained. No signing or upload is automatically repeated.\n", err)
 					continue
 				}

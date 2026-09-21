@@ -81,7 +81,7 @@ func (s SnapshotV4) RecommendTurnV4(protocol transcript.DefinitionProtocol, phas
 	case TurnWaitingV4:
 		return answer("wait-for-your-turn", false, "An earlier scheduled participant must finish first.")
 	case TurnPhaseClosedV4, TurnPhaseCompleteV4:
-		return answer("phase-follow-up-not-connected", false, "This phase has no open participant turn; the V4 next-area workflow is not connected yet.")
+		return answer("phase-follow-up-not-connected", false, "This phase has no open participant turn. Refresh after the coordinator publishes the next ceremony state.")
 	}
 	if local.Scope != (transcript.ContributionScopeV4{}) && local.Scope != view.Scope {
 		return TurnRecommendationV4{}, errors.New("retained work belongs to another turn; select its exact scope before proceeding")

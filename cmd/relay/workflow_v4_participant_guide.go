@@ -119,6 +119,9 @@ func runWorkflowV4ParticipantAction(ui *coordinatorWizard, j *workflowV4Journal,
 		return err
 	}
 	if pending != nil {
+		if pending.Plan.Scope.Phase != participant.Phase || pending.Plan.Scope != view.Scope {
+			return errors.New("retained operation belongs to another participant turn; resolve it before continuing")
+		}
 		switch pending.Plan.Kind {
 		case "contribute":
 			if pending.Status == "prepared" {

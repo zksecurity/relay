@@ -45,6 +45,19 @@ Linux participants require native Docker Engine and disabled host swap,
 including after a reboot. Relay checks before contribution; the
 [computer setup guide](../setup-host.md) explains preparation.
 
+## Moving to Phase 2
+
+For a storage-first ceremony, reopen the same participant launcher or choose
+**Refresh from storage** after the coordinator publishes the signed Phase 2
+starting state. Relay authenticates that state and selects Phase 2 automatically.
+Check the displayed phase and participant before choosing the contribution action.
+There is no need to edit profile files or prepare another signing identity.
+
+Only participants assigned to Phase 2 in the signed ceremony can contribute.
+A Phase-1-only participant has no further contribution turn. Unfinished work from
+an earlier phase is retained and blocks new actions until it is resolved; never
+remove the journal or recompute to bypass that warning.
+
 ## If something fails
 
 Keep the error and public candidate. If computation finished but upload failed,
