@@ -187,3 +187,5 @@ begin recording diagnostics when opened with a compatible updated launcher.
 Tessera needs its matching setup-v3 contract and policy-driven role/evidence
 handling before storage-first Tessera ceremonies can be enabled. Existing
 Tessera ceremonies stay pinned to their prior setup contract and Relay release.
+
+- Add local `relay audit export` and `relay audit combine` commands for sanitized ceremony activity reports, explicit coverage gaps, source provenance, and optional independently anchored checkpoint verification. Durable guided-action recording retains history beyond the diagnostic ring buffer; local observations remain unauthenticated. No public payload archive or mathematical replay is implied. Tessera compatibility: shared setup contracts and website activation are unchanged.

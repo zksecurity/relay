@@ -32,6 +32,8 @@ func main() {
 		return
 	case "pack-ceremony":
 		err = runPackCeremony(os.Args[2:])
+	case "audit":
+		err = runAudit(os.Args[2:])
 	case "diagnostics":
 		err = runDiagnostics(os.Args[2:])
 	case "verify-ceremony":
@@ -122,6 +124,8 @@ func usage() {
   relay tessera confirm --request FILE --identity FILE --signing-key FILE --out FRESH_FILE
 
 recovery and debugging:
+  relay audit export --work ROLE_WORK --out FRESH_DIRECTORY
+  relay audit combine --input ROLE_EXPORT [--input ROLE_EXPORT ...] --out FRESH_DIRECTORY
   relay diagnostics export --work ROLE_WORK --out FRESH_ZIP
   relay advanced storage-first-sync --ceremony FILE --ceremony-signature FILE \
              --coordinator-key FILE --ceremony-id SHA256 --workspace DIR \
