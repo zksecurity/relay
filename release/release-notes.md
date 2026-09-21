@@ -10,6 +10,8 @@
 - Release signers can review a transferred public snapshot and sign offline.
   The coordinator imports their public enrollment and uploads the returned
   signed package. These handoff actions are recorded in the local activity log.
+- The participant Docker launcher recognizes definition v5 when selecting the
+  exact signed binary for its platform.
 - New initialization rejects older circuit drafts and incompatible Tessera setup
   imports before changing ceremony state. Existing ceremonies use their original
   pinned release; no automatic migration is provided.

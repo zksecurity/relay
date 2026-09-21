@@ -242,8 +242,8 @@ func runLiveFullProviderJourney(t *testing.T, awsLive bool) {
 			// Transfer public enrollment only; the signer never gets an upload grant.
 			source := filepath.Join(releaseSigner.profile.Work, "my-enrollment")
 			ui := workflowV4LiveUI("I\n" + source + "\nVERIFY AND RECORD ENROLLMENT\nQ\n")
-			if err := runWorkflowV4GuideLoop(coordinator.profile, coordinator.signer, coordinator.identity, protocol, coordinator.journal, config, coordinator.inspector, "docker", nil, ui, func() (storagefirst.SnapshotV4, error) {
-				return coordinator.journal.syncV4(objects, coordinator.inspector, "docker")
+			if err := runWorkflowV4GuideLoop(coordinator.profile, coordinator.signer, coordinator.identity, protocol, coordinator.journal, config, coordinator.inspector, workflowV4LiveDockerCLI(t), nil, ui, func() (storagefirst.SnapshotV4, error) {
+				return coordinator.journal.syncV4(objects, coordinator.inspector, workflowV4LiveDockerCLI(t))
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -304,8 +304,8 @@ func runLiveFullProviderJourney(t *testing.T, awsLive bool) {
 	// Exercise the coordinator's public export and the signer's offline import.
 	exported := filepath.Join(coordinator.profile.Work, "offline-review-snapshot")
 	ui := workflowV4LiveUI("E\n" + exported + "\nQ\n")
-	if err := runWorkflowV4GuideLoop(coordinator.profile, coordinator.signer, coordinator.identity, protocol, coordinator.journal, config, coordinator.inspector, "docker", nil, ui, func() (storagefirst.SnapshotV4, error) {
-		return coordinator.journal.syncV4(objects, coordinator.inspector, "docker")
+	if err := runWorkflowV4GuideLoop(coordinator.profile, coordinator.signer, coordinator.identity, protocol, coordinator.journal, config, coordinator.inspector, workflowV4LiveDockerCLI(t), nil, ui, func() (storagefirst.SnapshotV4, error) {
+		return coordinator.journal.syncV4(objects, coordinator.inspector, workflowV4LiveDockerCLI(t))
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -314,8 +314,8 @@ func runLiveFullProviderJourney(t *testing.T, awsLive bool) {
 		t.Fatal(err)
 	}
 	ui = workflowV4LiveUI("1\nSIGN RELEASE PACKAGE\nQ\n")
-	if err := runWorkflowV4GuideLoop(releaseSigner.profile, releaseSigner.signer, releaseSigner.identity, protocol, releaseSigner.journal, access.StorageConfig{}, releaseSigner.inspector, "docker", nil, ui, func() (storagefirst.SnapshotV4, error) {
-		return releaseSigner.journal.syncV4(offlineObjects, releaseSigner.inspector, "docker")
+	if err := runWorkflowV4GuideLoop(releaseSigner.profile, releaseSigner.signer, releaseSigner.identity, protocol, releaseSigner.journal, access.StorageConfig{}, releaseSigner.inspector, workflowV4LiveDockerCLI(t), nil, ui, func() (storagefirst.SnapshotV4, error) {
+		return releaseSigner.journal.syncV4(offlineObjects, releaseSigner.inspector, workflowV4LiveDockerCLI(t))
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -328,8 +328,8 @@ func runLiveFullProviderJourney(t *testing.T, awsLive bool) {
 		t.Fatal(err)
 	}
 	ui = workflowV4LiveUI("U\n" + returned + "\n" + grantPath + "\nUPLOAD RELEASE PACKAGE\nQ\n")
-	if err := runWorkflowV4GuideLoop(coordinator.profile, coordinator.signer, coordinator.identity, protocol, coordinator.journal, config, coordinator.inspector, "docker", nil, ui, func() (storagefirst.SnapshotV4, error) {
-		return coordinator.journal.syncV4(objects, coordinator.inspector, "docker")
+	if err := runWorkflowV4GuideLoop(coordinator.profile, coordinator.signer, coordinator.identity, protocol, coordinator.journal, config, coordinator.inspector, workflowV4LiveDockerCLI(t), nil, ui, func() (storagefirst.SnapshotV4, error) {
+		return coordinator.journal.syncV4(objects, coordinator.inspector, workflowV4LiveDockerCLI(t))
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -815,6 +815,9 @@ func runWorkflowV4LiveTurn(t *testing.T, objects store.Client, protocol transcri
 		return participant.journal.syncV4(objects, participant.inspector, dockerCLI)
 	}); err != nil {
 		t.Fatal(err)
+	}
+	if strings.Contains(ui.output.(*bytes.Buffer).String(), "action stopped:") || strings.Contains(ui.output.(*bytes.Buffer).String(), "synchronization failed:") {
+		t.Fatalf("participant guide failed before inbox check: %s", ui.output)
 	}
 	if participant.participant.Phase != "phase1" {
 		t.Fatal("participant guide changed the saved phase profile")
