@@ -20,9 +20,15 @@
 ## Validation and limits
 
 Both architecture assets of the pinned proof tool passed checksum and GitHub
-attestation verification against the exact protected-main commit. Integration
-validation, including the live AWS offline-signing rehearsal, is still pending.
-This draft is not ready for a production ceremony or publication.
+attestation verification against the exact protected-main commit. Go tests, vet,
+platform checks, and Linux ceremony/archive and release-package checks pass.
+
+A tiny AWS rehearsal completed both phases and beacons, coordinator review,
+offline release signing, coordinator upload and acceptance, and fresh final-state
+reconstruction. It resumed from its frozen release review after the offline import
+fix; no contributions were repeated. Audit reports were exported from all three
+roles. This same-host rehearsal does not establish production circuit performance,
+physical machine separation, or a complete four-machine onboarding workflow.
 
 ## Tessera compatibility
 
