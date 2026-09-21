@@ -234,7 +234,7 @@ func runWorkflowV4OfflineHandoff(ui *coordinatorWizard, action string, snapshot 
 		if enrollment == nil || enrollment.Role != "release-signer" {
 			return errors.New("no offline release-signer enrollment is pending")
 		}
-		source, err := ui.required("Directory containing only the offline signer's public enrollment.json, enrollment.sig and disclosure.txt", "")
+		source, err := ui.required("Directory containing the offline signer's prepared public enrollment (preserve its original layout; never transfer keys)", "")
 		if err != nil {
 			return err
 		}
