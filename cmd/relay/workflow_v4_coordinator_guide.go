@@ -290,7 +290,11 @@ func runWorkflowV4CoordinatorGrant(ui *coordinatorWizard, config access.StorageC
 	}
 	storage, _ := pathWithin(online.Work, filepath.Join(online.Work, "ceremony", "config", "relay-storage.json"), "/work")
 	out, _ := pathWithin(online.Work, progress.GrantPath, "/work")
-	command := []string{"relay", "coordinator", "grant", "--storage", storage, "--role", access.RoleParticipant, "--identity", view.Scope.ParticipantID, "--credential-ttl", "1h", "--minimum-remaining", "15m", "--out", out, "--checkpoint-digest", checkpointDigest, "--submission-kind", access.SubmissionKindCandidate, "--phase", view.Scope.Phase, "--index", strconv.Itoa(int(view.Scope.Index)), "--attempt-id", view.CandidateAttempt.AttemptID}
+	grantTTL, err := workflowV4GrantTTL(config)
+	if err != nil {
+		return err
+	}
+	command := []string{"relay", "coordinator", "grant", "--storage", storage, "--role", access.RoleParticipant, "--identity", view.Scope.ParticipantID, "--credential-ttl", grantTTL, "--minimum-remaining", "15m", "--out", out, "--checkpoint-digest", checkpointDigest, "--submission-kind", access.SubmissionKindCandidate, "--phase", view.Scope.Phase, "--index", strconv.Itoa(int(view.Scope.Index)), "--attempt-id", view.CandidateAttempt.AttemptID}
 	if err := runWorkflowV4ProfileCommand(online, command, true); err != nil {
 		return err
 	}

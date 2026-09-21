@@ -164,13 +164,21 @@ func TestStorageFirstGrantRemainingLifetimeUsesNow(t *testing.T) {
 	}
 
 	long := validStorageFirstGrant()
+	long.Provider = "aws"
+	long.Endpoint = ""
+	long.Region = "us-east-1"
 	long.IssuedAt = "2026-09-15T01:00:00Z"
-	long.ExpiresAt = "2026-09-15T13:00:00Z"
-	if err := long.CheckUnexpired(now); err == nil {
-		t.Fatal("12h remaining upload credentials accepted")
+	long.ExpiresAt = "2026-09-15T13:00:03Z"
+	if err := long.CheckUnexpired(now); err != nil {
+		t.Fatalf("AWS 12h session with a few seconds of round-trip rejected: %v", err)
+	}
+	tooLong := long
+	tooLong.ExpiresAt = "2026-09-15T13:03:00Z"
+	if err := tooLong.CheckUnexpired(now); err == nil {
+		t.Fatal("more than 12h remaining upload credentials accepted")
 	}
 
-	// Remaining-at-accept: a longer original window is allowed once ≤1h remains.
+	// Remaining-at-accept: an older original window is allowed once ≤12h remains.
 	late := validStorageFirstGrant()
 	late.IssuedAt = "2026-09-15T00:00:00Z"
 	late.ExpiresAt = "2026-09-15T02:00:00Z"

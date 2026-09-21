@@ -214,7 +214,11 @@ func runWorkflowV4IssueReleaseGrant(ui *coordinatorWizard, snapshot storagefirst
 	out, _ := pathWithin(online.Work, outPath, "/work")
 	record, _ := pathWithin(online.Work, filepath.Join(root, filepath.FromSlash(enrollment.Refs.Record.Name)), "/work")
 	signature, _ := pathWithin(online.Work, filepath.Join(root, filepath.FromSlash(enrollment.Refs.Signature.Name)), "/work")
-	command := []string{"relay", "coordinator", "grant", "--storage", storagePath, "--role", access.RoleRelease, "--identity", expected.Identity.ID, "--credential-ttl", "1h", "--minimum-remaining", "15m", "--enrollment", record, "--enrollment-signature", signature, "--out", out, "--checkpoint-digest", snapshot.Head().Record.Digest.SHA256, "--submission-kind", access.SubmissionKindRelease, "--phase", "release", "--index", strconv.Itoa(1), "--attempt-id", attempt}
+	grantTTL, err := workflowV4GrantTTL(config)
+	if err != nil {
+		return err
+	}
+	command := []string{"relay", "coordinator", "grant", "--storage", storagePath, "--role", access.RoleRelease, "--identity", expected.Identity.ID, "--credential-ttl", grantTTL, "--minimum-remaining", "15m", "--enrollment", record, "--enrollment-signature", signature, "--out", out, "--checkpoint-digest", snapshot.Head().Record.Digest.SHA256, "--submission-kind", access.SubmissionKindRelease, "--phase", "release", "--index", strconv.Itoa(1), "--attempt-id", attempt}
 	if err := runWorkflowV4ProfileCommand(online, command, true); err != nil {
 		return err
 	}
