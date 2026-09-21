@@ -24,7 +24,7 @@ type DefinitionProtocol struct {
 }
 
 func (p DefinitionProtocol) UsesV4() bool {
-	return p.DefinitionSchema == "proof-tool-mpc-ceremony-definition-v4" && p.StorageWorkflow == "storage-first-v2" && p.ReleaseVerification == "coordinator-full-replay-v1"
+	return (p.DefinitionSchema == "proof-tool-mpc-ceremony-definition-v4" || p.DefinitionSchema == "proof-tool-mpc-ceremony-definition-v5") && p.StorageWorkflow == "storage-first-v2" && p.ReleaseVerification == "coordinator-full-replay-v1"
 }
 
 // AuthenticateCheckpointForPublicationV4 verifies signed ancestry and asks
@@ -86,7 +86,7 @@ func (i Inspector) DefinitionProtocol() (DefinitionProtocol, error) {
 		return DefinitionProtocol{}, errors.New("unsupported protocol inspection schema")
 	}
 	switch p.DefinitionSchema {
-	case "proof-tool-mpc-ceremony-definition-v4":
+	case "proof-tool-mpc-ceremony-definition-v4", "proof-tool-mpc-ceremony-definition-v5":
 		if !p.UsesV4() {
 			return DefinitionProtocol{}, errors.New("inconsistent V4 protocol selector")
 		}

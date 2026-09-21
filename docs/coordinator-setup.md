@@ -18,10 +18,11 @@ cannot run the helper. Install a matching new release rather than mixing binarie
 
 ## Fill in the draft
 
-If the ceremony was drafted in Tessera, start with **Open setup downloaded
-from Tessera**. After initialization and verification, use **Export setup
-for Tessera**. See the [current website setup guide](tessera-setup-v3.md).
-Relay still verifies existing [v2 setup files](tessera-setup-v2.md).
+This release supports new standalone ceremonies. Existing Tessera setup contracts
+need a compatible circuit-v3 and definition-v5 integration before new ceremonies
+can use this runtime. Imported setups are preserved and rejected before
+initialization; use their original pinned release. Completed setup verification
+remains available.
 
 Setup highlights **NEXT REQUIRED ACTION** with its reason. Use **Show other
 actions and requirements** for edits, optional checks, and offline preparation.
@@ -29,7 +30,7 @@ Action numbers stay stable. Choosing another action never bypasses its checks.
 
 1. Choose **Basics**: explicitly select rehearsal or production and the circuit.
    Select from the numbered choices; no internal names need to be typed.
-   `rehearsal-tiny-v1` is only for testing; `ownership-destination-v2` is the
+   `rehearsal-tiny-v1` is only for testing; `ownership-destination-v3` is the
    supported production circuit.
 2. Generate your coordinator identity, or keep your existing keypair.
    The helper assigns an ID automatically; you only enter a public display name.
@@ -41,8 +42,9 @@ Action numbers stay stable. Choosing another action never bypasses its checks.
    Reimport the same ID to replace its draft entry; remove mistaken assignments
    with **Remove an identity assignment**. Private keys stay with their owners.
 4. Choose **Orders, minimum contributions and reviewed beacon policy**.
-   Choose the standard settings: drand Quicknet with a 180-second witness lead
-   time. Pick participant orders and minimum counts from the prompts, then
+   Choose drand Quicknet with a 180-second beacon wait for rehearsals or the
+   30-minute default for production. Shorter production waits require explicit
+   review. Pick participant orders and minimum counts from the prompts, then
    review and confirm. Reopening keeps your saved beacon settings by default.
    A custom policy file is available only through the **Advanced** choice.
    Review this choice with the roles. Adjust both participant orders and minimum

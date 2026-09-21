@@ -240,10 +240,10 @@ scripted in this directory, but they are *not* blocked by the tiny circuit:
 `mpc-ceremony finalize prepare`, public evidence, `finalize complete`, `audit`,
 and `release sign` compile the circuit named by the signed ceremony definition
 (via `compileCircuitForCeremony`), so they run against `rehearsal-tiny-v1` just
-as they would against `ownership-destination-v2`.
+as they would against `ownership-destination-v3`.
 
 The one stage a tiny run can never satisfy is the production GO/NO-GO
 **decision**: its `exact-k21-rehearsal` gate requires the exact
-`ownership-destination-v2` circuit at domain 2^21. That gate is intentional —
+`ownership-destination-v3` circuit at domain 2^21. That gate is intentional —
 the production decision must reference a real K=21 ceremony — so end-to-end
 production decision testing still requires a fresh K=21 rehearsal.

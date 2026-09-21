@@ -741,7 +741,7 @@ func TestDockerContributionReportsProvenCreateNoEffect(t *testing.T) {
 func TestSignedCeremonyBinarySHA256SelectsConfiguredPlatform(t *testing.T) {
 	amdDigest := "sha256:" + strings.Repeat("a", 64)
 	armDigest := "sha256:" + strings.Repeat("b", 64)
-	for _, schema := range []string{"proof-tool-mpc-ceremony-definition-v2", "proof-tool-mpc-ceremony-definition-v3", "proof-tool-mpc-ceremony-definition-v4"} {
+	for _, schema := range []string{"proof-tool-mpc-ceremony-definition-v2", "proof-tool-mpc-ceremony-definition-v3", "proof-tool-mpc-ceremony-definition-v4", "proof-tool-mpc-ceremony-definition-v5"} {
 		t.Run(schema, func(t *testing.T) {
 			definition := `{"schema":"` + schema + `","software":{"binaries":[` +
 				`{"goos":"linux","goarch":"amd64","goamd64":"v1","tool_binary":{"sha256":"` + amdDigest + `"}},` +

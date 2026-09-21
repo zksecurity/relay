@@ -69,7 +69,7 @@ func runWorkflowV4ReleaseSignerAction(ui *coordinatorWizard, snapshot storagefir
 	if !progress.PackageReady {
 		return runWorkflowV4ReleaseSigning(ui, snapshot, online, signer, expected, progress)
 	}
-	return runWorkflowV4ReleaseUpload(ui, snapshot, protocol, config, online, identity.ID, expected.Identity.KeyID, progress)
+	return errors.New("transfer the signed public package to the separate online upload workspace; the signing host must stay offline")
 }
 
 func runWorkflowV4ReleaseSigning(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, online, signer guidedProfile, expected transcript.ExpectedEnrollment, progress workflowV4ReleaseSignerProgress) error {

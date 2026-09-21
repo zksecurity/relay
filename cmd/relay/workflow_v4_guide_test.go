@@ -15,7 +15,7 @@ import (
 )
 
 func TestWorkflowV4RoutingIsIrrevocable(t *testing.T) {
-	for _, version := range []int{1, 2, 3, 4} {
+	for _, version := range []int{1, 2, 3, 4, 5} {
 		p := guidedProfile{Work: t.TempDir()}
 		path := filepath.Join(p.Work, "ceremony", "public", "ceremony.json")
 		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -25,7 +25,7 @@ func TestWorkflowV4RoutingIsIrrevocable(t *testing.T) {
 			t.Fatal(err)
 		}
 		got, err := workflowV4RouteHint(p)
-		if err != nil || got != (version == 4) {
+		if err != nil || got != (version >= 4) {
 			t.Fatalf("version %d: %v %v", version, got, err)
 		}
 		// A retained V4 marker always wins, including a damaged marker: the

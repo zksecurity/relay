@@ -10,7 +10,7 @@ import (
 )
 
 func TestDefinitionProtocolV4ExactDispatch(t *testing.T) {
-	for version := 1; version <= 4; version++ {
+	for version := 1; version <= 5; version++ {
 		p := DefinitionProtocol{Schema: "proof-tool-mpc-definition-protocol-inspection-v1", DefinitionSchema: fmt.Sprintf("proof-tool-mpc-ceremony-definition-v%d", version), StorageWorkflow: "storage-first-v1", Definition: testDefinition()}
 		p.Definition.CeremonyID = "sha256:" + hex64
 		p.Definition.Mode = "rehearsal"
@@ -18,7 +18,7 @@ func TestDefinitionProtocolV4ExactDispatch(t *testing.T) {
 		for _, role := range []string{"coordinator", "release-signer", "participant"} {
 			p.Definition.Journey.RequiredEnrollments = append(p.Definition.Journey.RequiredEnrollments, ExpectedEnrollment{Role: role, RoleIndex: 1, Identity: PublicIdentity{ID: role, KeyID: "key-" + role, PublicKeyFingerprint: "fingerprint-" + role}})
 		}
-		if version == 4 {
+		if version >= 4 {
 			p.StorageWorkflow, p.ReleaseVerification = "storage-first-v2", "coordinator-full-replay-v1"
 			p.DefinitionRefs = SignedArtifactRefs{Record: inspectionTestRef("ceremony.json"), Signature: inspectionTestRef("ceremony.sig")}
 		}
@@ -28,10 +28,10 @@ func TestDefinitionProtocolV4ExactDispatch(t *testing.T) {
 			return i.DefinitionProtocol()
 		}
 		got, err := check(p)
-		if err != nil || !reflect.DeepEqual(got, p) || got.UsesV4() != (version == 4) {
+		if err != nil || !reflect.DeepEqual(got, p) || got.UsesV4() != (version >= 4) {
 			t.Fatalf("version %d: %+v %v", version, got, err)
 		}
-		if version == 4 {
+		if version >= 4 {
 			for _, refs := range []SignedArtifactRefs{{}, {Record: inspectionTestRef("other.json"), Signature: p.DefinitionRefs.Signature}} {
 				bad := p
 				bad.DefinitionRefs = refs

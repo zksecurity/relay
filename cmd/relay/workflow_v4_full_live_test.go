@@ -37,7 +37,14 @@ type workflowV4LiveRole struct {
 // two-phase rehearsal in the configured test buckets and waits for two real
 // future Quicknet rounds. It drives the same role action functions as the
 // normal coordinator, participant and release-signer guide.
-func TestV4LiveFullR2Journey(t *testing.T) {
+func TestV4LiveFullR2Journey(t *testing.T) { runLiveFullProviderJourney(t, false) }
+func TestV4LiveFullAWSJourney(t *testing.T) {
+	if os.Getenv("RELAY_AWS_LIVE_PROBES_APPROVED") != "1" {
+		t.Skip("requires dedicated AWS test approval")
+	}
+	runLiveFullProviderJourney(t, true)
+}
+func runLiveFullProviderJourney(t *testing.T, awsLive bool) {
 	offlineImage := os.Getenv("RELAY_PREPARE_TEST_IMAGE")
 	onlineImage := os.Getenv("RELAY_V4_LIVE_ONLINE_IMAGE")
 	relayBinary := os.Getenv("RELAY_V4_LIVE_RELAY_BINARY")
@@ -46,8 +53,15 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 	parentPath := os.Getenv("RELAY_V4_LIVE_R2_PARENT")
 	controlPath := os.Getenv("RELAY_V4_LIVE_R2_CONTROL")
 	proofBinary := os.Getenv("RELAY_V4_LIVE_PROOF_BINARY")
-	if offlineImage == "" || onlineImage == "" || relayBinary == "" || configPath == "" || credentialsPath == "" || parentPath == "" || controlPath == "" || proofBinary == "" {
-		t.Skip("set the V4 live R2 images, config, three credential paths, and native Relay and proof-tool binaries")
+	if awsLive {
+		configPath = os.Getenv("RELAY_AWS_LIVE_SETTINGS_FILE")
+		parentPath, controlPath = "", ""
+	}
+	if offlineImage == "" || onlineImage == "" || relayBinary == "" || configPath == "" || (!awsLive && (credentialsPath == "" || parentPath == "" || controlPath == "")) || proofBinary == "" {
+		t.Skip("set the V4 live images, provider settings and credentials, and native Relay and proof-tool binaries")
+	}
+	if awsLive {
+		credentialsPath = freshAWSLiveCredentials(t)
 	}
 	// Live development runs may start from locally named images. Resolve those
 	// names once and pass only immutable image IDs to every ceremony command.
@@ -56,24 +70,49 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 	offlineImage = workflowV4LiveImmutableImage(t, offlineImage)
 	onlineImage = workflowV4LiveImmutableImage(t, onlineImage)
 	for _, path := range []string{relayBinary, configPath, credentialsPath, parentPath, controlPath, proofBinary} {
+		if awsLive && path == "" {
+			continue
+		}
 		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
 			t.Fatal("live test paths must be absolute and clean")
 		}
 	}
 	previousExecutor := workflowV4ChildExecutor
 	workflowV4ChildExecutor = func(args []string) error {
+		args = append([]string(nil), args...)
+		if awsLive {
+			for n, a := range args {
+				if a == "--aws-credentials" && n+1 < len(args) {
+					args[n+1] = freshAWSLiveCredentials(t)
+				}
+			}
+		}
 		command := exec.Command(relayBinary, args...)
 		command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
 		return command.Run()
 	}
 	t.Cleanup(func() { workflowV4ChildExecutor = previousExecutor })
-	rawConfig, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	base, err := access.Decode(rawConfig, access.StorageConfig.Validate)
-	if err != nil || base.Provider != "r2" {
-		t.Fatalf("live test requires an existing valid R2 configuration: %v", err)
+	var base access.StorageConfig
+	var err error
+	if awsLive {
+		var settings coordinatorStorageSettings
+		if err = setupReadJSON(configPath, &settings); err != nil {
+			t.Fatal(err)
+		}
+		base, err = settings.infrastructure()
+		if err != nil {
+			t.Fatal(err)
+		}
+		requireAWSLiveConfiguration(t, base)
+	} else {
+		rawConfig, e := os.ReadFile(configPath)
+		if e != nil {
+			t.Fatal(e)
+		}
+		base, err = access.Decode(rawConfig, access.StorageConfig.Validate)
+		if err != nil || base.Provider != "r2" {
+			t.Fatalf("valid R2 config required: %v", err)
+		}
 	}
 	platform, err := machineDockerPlatform()
 	if err != nil {
@@ -100,7 +139,7 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 	}
 	coordinator := newWorkflowV4LiveRole(t, root, "coordinator", "coordinator", onlineImage, offlineImage, platform)
 	participant := newWorkflowV4LiveRole(t, root, "participant", "participant-01", offlineImage, offlineImage, platform)
-	releaseSigner := newWorkflowV4LiveRole(t, root, "release-signer", "release-signer", onlineImage, offlineImage, platform)
+	releaseSigner := newWorkflowV4LiveRole(t, root, "release-signer", "release-signer", offlineImage, offlineImage, platform)
 	// Coordinator setup aliases are derived from the ceremony name. Give every
 	// live run a fresh name so an old developer profile can never substitute a
 	// previously saved command for this run.
@@ -150,6 +189,7 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := base
+	config.Schema = access.StorageConfigSchema
 	config.CeremonyID = protocol.Definition.CeremonyID
 	config.CeremonyPath = "/work/ceremony/public/ceremony.json"
 	config.CeremonySignature = "/work/ceremony/public/ceremony.sig"
@@ -195,6 +235,22 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 			ui := workflowV4LiveUI("RECORD COORDINATOR ENROLLMENT\n")
 			if err := runWorkflowV4CoordinatorExpectedEnrollment(ui, snapshot, protocol, config, coordinator.profile, coordinator.signer, coordinator.inspector, *expected, progress); err != nil {
 				t.Fatal(err)
+			}
+			continue
+		}
+		if expected.Role == "release-signer" {
+			// Transfer public enrollment only; the signer never gets an upload grant.
+			source := filepath.Join(releaseSigner.profile.Work, "my-enrollment")
+			ui := workflowV4LiveUI("I\n" + source + "\nVERIFY AND RECORD ENROLLMENT\nQ\n")
+			if err := runWorkflowV4GuideLoop(coordinator.profile, coordinator.signer, coordinator.identity, protocol, coordinator.journal, config, coordinator.inspector, workflowV4LiveDockerCLI(t), nil, ui, func() (storagefirst.SnapshotV4, error) {
+				return coordinator.journal.syncV4(objects, coordinator.inspector, workflowV4LiveDockerCLI(t))
+			}); err != nil {
+				t.Fatal(err)
+			}
+			updated := syncWorkflowV4LiveRole(t, &coordinator, objects)
+			committed, err := workflowV4EnrollmentCommitted(updated, releaseSigner.identity.ID)
+			if err != nil || !committed {
+				t.Fatalf("offline enrollment handoff failed: %v: %s", err, ui.output)
 			}
 			continue
 		}
@@ -245,31 +301,53 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 	if err != nil || grant == nil {
 		t.Fatalf("missing release grant: %v", err)
 	}
-	releaseSnapshot := syncWorkflowV4LiveRole(t, &releaseSigner, objects)
+	completeWorkflowV4LiveRelease(t, objects, protocol, config, root, &coordinator, &releaseSigner, grantPath)
+}
+
+func completeWorkflowV4LiveRelease(t *testing.T, objects store.Client, protocol transcript.DefinitionProtocol, config access.StorageConfig, root string, coordinator, releaseSigner *workflowV4LiveRole, grantPath string) {
+	t.Helper()
+	// Exercise the coordinator's public export and the signer's offline import.
+	exported := filepath.Join(coordinator.profile.Work, fmt.Sprintf("offline-review-snapshot-%d", time.Now().UnixNano()))
+	ui := workflowV4LiveUI("E\n" + exported + "\nQ\n")
+	if err := runWorkflowV4GuideLoop(coordinator.profile, coordinator.signer, coordinator.identity, protocol, coordinator.journal, config, coordinator.inspector, workflowV4LiveDockerCLI(t), nil, ui, func() (storagefirst.SnapshotV4, error) {
+		return coordinator.journal.syncV4(objects, coordinator.inspector, workflowV4LiveDockerCLI(t))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	offlineObjects, err := openWorkflowV4OfflineStore(exported)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ui = workflowV4LiveUI("1\nSIGN RELEASE PACKAGE\nQ\n")
+	if err := runWorkflowV4GuideLoop(releaseSigner.profile, releaseSigner.signer, releaseSigner.identity, protocol, releaseSigner.journal, access.StorageConfig{}, releaseSigner.inspector, workflowV4LiveDockerCLI(t), nil, ui, func() (storagefirst.SnapshotV4, error) {
+		return releaseSigner.journal.syncV4(offlineObjects, releaseSigner.inspector, workflowV4LiveDockerCLI(t))
+	}); err != nil {
+		t.Fatal(err)
+	}
 	progress, err := workflowV4ReleaseSignerProgressFor(releaseSigner.profile.Work)
-	if err != nil {
+	if err != nil || !progress.PackageReady {
+		t.Fatalf("offline signing failed: %v: %s", err, ui.output)
+	}
+	returned := filepath.Join(coordinator.profile.Work, fmt.Sprintf("returned-release-package-%d", time.Now().UnixNano()))
+	if err := os.CopyFS(returned, os.DirFS(progress.PackageDir)); err != nil {
 		t.Fatal(err)
 	}
-	if err := runWorkflowV4ReleaseSignerAction(workflowV4LiveUI("SIGN RELEASE PACKAGE\n"), releaseSnapshot, protocol, config, releaseSigner.profile, releaseSigner.signer, releaseSigner.identity, progress); err != nil {
+	ui = workflowV4LiveUI("U\n" + returned + "\n" + grantPath + "\nUPLOAD RELEASE PACKAGE\nQ\n")
+	if err := runWorkflowV4GuideLoop(coordinator.profile, coordinator.signer, coordinator.identity, protocol, coordinator.journal, config, coordinator.inspector, workflowV4LiveDockerCLI(t), nil, ui, func() (storagefirst.SnapshotV4, error) {
+		return coordinator.journal.syncV4(objects, coordinator.inspector, workflowV4LiveDockerCLI(t))
+	}); err != nil {
 		t.Fatal(err)
 	}
-	progress, err = workflowV4ReleaseSignerProgressFor(releaseSigner.profile.Work)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := runWorkflowV4ReleaseSignerAction(workflowV4LiveUI(grantPath+"\nUPLOAD RELEASE PACKAGE\n"), releaseSnapshot, protocol, config, releaseSigner.profile, releaseSigner.signer, releaseSigner.identity, progress); err != nil {
-		t.Fatal(err)
-	}
-	snapshot = syncWorkflowV4LiveRole(t, &coordinator, objects)
+	snapshot := syncWorkflowV4LiveRole(t, coordinator, objects)
 	if err := runWorkflowV4CoordinatorLifecycle(workflowV4LiveUI("CHECK RELEASE INBOX\nVERIFY AND RECORD RELEASE\n"), workflowV4Release, snapshot, protocol, coordinator.profile, coordinator.signer, coordinator.inspector); err != nil {
 		t.Fatal(err)
 	}
 
-	freshRoot := filepath.Join(root, "fresh-client")
+	freshRoot := filepath.Join(root, fmt.Sprintf("fresh-client-%d", time.Now().UnixNano()))
 	freshTranscript := filepath.Join(freshRoot, "ceremony", "public")
 	freshTrust := filepath.Join(freshRoot, "trust")
 	for _, name := range []string{"ceremony.json", "ceremony.sig"} {
-		copyWorkflowV4LiveFile(t, filepath.Join(ceremonyRoot, name), filepath.Join(freshTranscript, name))
+		copyWorkflowV4LiveFile(t, filepath.Join(coordinator.profile.Work, "ceremony", "public", name), filepath.Join(freshTranscript, name))
 	}
 	copyWorkflowV4LiveFile(t, filepath.Join(coordinator.profile.Trust, "setup-coordinator.hex"), filepath.Join(freshTrust, "coordinator-public-key.hex"))
 	freshInspector := workflowV4LiveFreshInspector(t, coordinator.profile, freshRoot, freshTranscript, freshTrust)
@@ -285,7 +363,7 @@ func TestV4LiveFullR2Journey(t *testing.T) {
 	if err != nil || stateView.Progress.FinalRelease == nil {
 		t.Fatalf("fresh verifier did not reconstruct the final release: %+v %v", stateView.Progress, err)
 	}
-	t.Logf("completed and freshly reconstructed live R2 V4 ceremony %s at signed update %d", protocol.Definition.CeremonyID, stateView.Sequence)
+	t.Logf("completed and freshly reconstructed live %s V4 ceremony %s at signed update %d", config.Provider, protocol.Definition.CeremonyID, stateView.Sequence)
 }
 
 func workflowV4LiveImmutableImage(t *testing.T, image string) string {
@@ -743,6 +821,9 @@ func runWorkflowV4LiveTurn(t *testing.T, objects store.Client, protocol transcri
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if strings.Contains(ui.output.(*bytes.Buffer).String(), "action stopped:") || strings.Contains(ui.output.(*bytes.Buffer).String(), "synchronization failed:") {
+		t.Fatalf("participant guide failed before inbox check: %s", ui.output)
+	}
 	if participant.participant.Phase != "phase1" {
 		t.Fatal("participant guide changed the saved phase profile")
 	}
@@ -817,4 +898,63 @@ func runWorkflowV4LiveBeacon(t *testing.T, objects store.Client, protocol transc
 		}
 		time.Sleep(time.Second)
 	}
+}
+
+// Resume the exact retained tiny AWS review after a late local handoff failure.
+// No initialization or contribution phase is repeated and no binding is rewritten.
+func TestV4LiveResumeAWSOfflineRelease(t *testing.T) {
+	if os.Getenv("RELAY_AWS_LIVE_PROBES_APPROVED") != "1" {
+		t.Skip("explicit dedicated AWS test approval required")
+	}
+	root := os.Getenv("RELAY_V4_LIVE_RESUME_ROOT")
+	proofBinary := os.Getenv("RELAY_V4_LIVE_PROOF_BINARY")
+	relayBinary := os.Getenv("RELAY_V4_LIVE_RELAY_BINARY")
+	for _, p := range []string{root, proofBinary, relayBinary} {
+		if !filepath.IsAbs(p) || filepath.Clean(p) != p {
+			t.Fatal("exact retained root and tool paths required")
+		}
+	}
+	ceremonyRoot := filepath.Join(root, "coordinator/work/ceremony/public")
+	inspector := transcript.Inspector{Executable: proofBinary, CeremonyPath: filepath.Join(ceremonyRoot, "ceremony.json"), CeremonySignaturePath: filepath.Join(ceremonyRoot, "ceremony.sig"), CoordinatorPublicKeyPath: filepath.Join(root, "coordinator/trust/setup-coordinator.hex"), TranscriptRoot: ceremonyRoot}
+	protocol, err := inspector.DefinitionProtocol()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if protocol.Definition.Mode != "rehearsal" {
+		t.Fatal("only a retained rehearsal may be resumed by this test")
+	}
+	config, err := loadStorageConfig(filepath.Join(root, "coordinator/work/ceremony/config/relay-storage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireAWSLiveConfiguration(t, config)
+	previous := workflowV4ChildExecutor
+	workflowV4ChildExecutor = func(args []string) error {
+		args = append([]string(nil), args...)
+		for n, a := range args {
+			if a == "--aws-credentials" && n+1 < len(args) {
+				args[n+1] = freshAWSLiveCredentials(t)
+			}
+		}
+		command := exec.Command(relayBinary, args...)
+		command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
+		return command.Run()
+	}
+	t.Cleanup(func() { workflowV4ChildExecutor = previous })
+	coordinator := reopenWorkflowV4LiveRole(t, root, "coordinator", protocol)
+	defer coordinator.journal.close()
+	coordinator.profile.Credentials = freshAWSLiveCredentials(t)
+	signer := reopenWorkflowV4LiveRole(t, root, "release-signer", protocol)
+	defer signer.journal.close()
+	objects := store.Client{PublicBaseURL: config.PublishedBaseURL}
+	snapshot := syncWorkflowV4LiveRole(t, &coordinator, objects)
+	view, err := snapshot.State()
+	if err != nil || view.Progress.ReleaseReview == nil || view.Progress.FinalRelease != nil {
+		t.Fatal("exact unfinished review required", err)
+	}
+	grant, path, err := workflowV4CurrentReleaseGrant(snapshot, protocol, config, coordinator.profile.Work, signer.identity.ID, time.Now().UTC())
+	if err != nil || grant == nil {
+		t.Fatal("retained release grant required", err)
+	}
+	completeWorkflowV4LiveRelease(t, objects, protocol, config, root, &coordinator, &signer, path)
 }
