@@ -3,6 +3,10 @@
 The compatibility policies are empty: no existing ceremony is approved for
 updates yet. Implemented paths below are locally tested, not release-qualified.
 
+See the [ordinary-use regression comparison](ceremony-upgrade-no-selection-tests.md)
+for testing against current main without activating an upgrade. Earlier candidate
+qualification results below predate that rebase and do not qualify its new bytes.
+
 ## Current first-release scope
 
 The initial scope is now **initialized coordinator, native launcher only, between

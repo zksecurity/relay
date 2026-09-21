@@ -20,6 +20,10 @@
 
 ## Validation and limits
 
+A focused non-upgraded comparison against main covers all seven roles' setup
+menus and saved state, plus original-image dispatch for saved actions. It does
+not claim exhaustive interactive or live-provider coverage.
+
 Go tests, vet and installer tests pass locally. Opt-in provider and release-pair
 qualification tests are separate; missing fixtures or skipped tests are not
 passing evidence. Broader role, draft-stage and interrupted-work upgrades remain

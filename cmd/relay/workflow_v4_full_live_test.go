@@ -362,6 +362,9 @@ func runLiveFullProviderJourneyWithUpgrade(t *testing.T, awsLive bool, upgradeHo
 		t.Fatalf("missing release grant: %v", err)
 	}
 	completeWorkflowV4LiveRelease(t, objects, protocol, config, root, &coordinator, &releaseSigner, grantPath)
+	if upgradeHook != nil && (upgradeHook.OldCalls == 0 || upgradeHook.NewCalls == 0) {
+		t.Fatal("both actual application versions must execute ceremony commands")
+	}
 }
 
 func completeWorkflowV4LiveRelease(t *testing.T, objects store.Client, protocol transcript.DefinitionProtocol, config access.StorageConfig, root string, coordinator, releaseSigner *workflowV4LiveRole, grantPath string) {
@@ -423,17 +426,7 @@ func completeWorkflowV4LiveRelease(t *testing.T, objects store.Client, protocol 
 	if err != nil || stateView.Progress.FinalRelease == nil {
 		t.Fatalf("fresh verifier did not reconstruct the final release: %+v %v", stateView.Progress, err)
 	}
-	lane := "live R2"
-	if awsLane {
-		lane = "live AWS S3"
-	}
-	if upgradeHook != nil && upgradeHook.LocalStorage {
-		lane = "local storage adapter (not provider validation)"
-	}
-	t.Logf("completed and freshly reconstructed %s V4 ceremony %s at signed update %d", lane, protocol.Definition.CeremonyID, stateView.Sequence)
-	if upgradeHook != nil && (upgradeHook.OldCalls == 0 || upgradeHook.NewCalls == 0) {
-		t.Fatal("both actual application versions must execute ceremony commands")
-	}
+	t.Logf("completed and freshly reconstructed V4 ceremony %s at signed update %d; configured provider %s (local adapter tests are not provider validation)", protocol.Definition.CeremonyID, stateView.Sequence, config.Provider)
 }
 
 func workflowV4LiveImmutableImage(t *testing.T, image string) string {
