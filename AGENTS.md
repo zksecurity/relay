@@ -88,6 +88,17 @@ to the current changes; published GitHub releases retain the historical notes.
 For documentation-only edits, verify referenced paths and content; a full test
 run is unnecessary.
 
+Every PR intended to ship a user-facing change must also bump `release/version`
+to a new, unused numbered release in the same PR. Use a patch bump for fixes
+(including CLI wording), and a minor bump for substantive features or
+compatibility changes; see `docs/maintainer/release-versions.md`. Before merging,
+compare the version with current main and published GitHub tags, resolve any
+concurrent version reservation, and state the intended version in the PR.
+Leaving the version unchanged publishes only a commit-based release; do that
+only for an intentionally unnumbered change and explain it in the PR. Never move
+an existing version tag or replace its assets. After merge, verify the requested
+numbered release and its attested mapping as well as the canonical commit release.
+
 The private Tessera repository runs the website/CLI integration matrix. Before
 merging a CLI PR, a maintainer runs its `scripts/check-relay-pr.mjs PR_NUMBER`
 against the reviewed exact head. The required public status is `Tessera integration`;
