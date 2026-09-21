@@ -270,7 +270,11 @@ func runWorkflowV4CoordinatorExpectedEnrollment(ui *coordinatorWizard, snapshot 
 		}
 		storagePath, _ := pathWithin(online.Work, filepath.Join(online.Work, "ceremony", "config", "relay-storage.json"), "/work")
 		out, _ := pathWithin(online.Work, outPath, "/work")
-		command := []string{"relay", "coordinator", "grant", "--storage", storagePath, "--role", grantRole, "--identity", expected.Identity.ID, "--credential-ttl", "1h", "--minimum-remaining", "15m", "--out", out, "--checkpoint-digest", snapshot.Head().Record.Digest.SHA256, "--submission-kind", access.SubmissionKindEnrollment, "--phase", "setup", "--index", strconv.Itoa(expected.RoleIndex), "--attempt-id", attempt}
+		grantTTL, err := workflowV4GrantTTL(config)
+		if err != nil {
+			return err
+		}
+		command := []string{"relay", "coordinator", "grant", "--storage", storagePath, "--role", grantRole, "--identity", expected.Identity.ID, "--credential-ttl", grantTTL, "--minimum-remaining", "15m", "--out", out, "--checkpoint-digest", snapshot.Head().Record.Digest.SHA256, "--submission-kind", access.SubmissionKindEnrollment, "--phase", "setup", "--index", strconv.Itoa(expected.RoleIndex), "--attempt-id", attempt}
 		if err := runWorkflowV4ProfileCommand(online, command, true); err != nil {
 			return err
 		}

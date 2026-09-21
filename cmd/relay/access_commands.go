@@ -269,8 +269,8 @@ func runGrant(args []string) error {
 	if err != nil || ttl < time.Second || ttl%time.Second != 0 {
 		return errors.New("--credential-ttl must be a positive whole-second duration")
 	}
-	if v4 && ttl > access.MaxStorageFirstGrantLifetime {
-		return fmt.Errorf("storage-first --credential-ttl may be at most %s", access.MaxStorageFirstGrantLifetime)
+	if v4 && ttl > access.StorageFirstGrantLifetime(config.Provider) {
+		return fmt.Errorf("storage-first --credential-ttl may be at most %s", access.StorageFirstGrantLifetime(config.Provider))
 	}
 	minimum, err := time.ParseDuration(minimumText)
 	if err != nil || minimum <= 0 || minimum > ttl {
@@ -628,6 +628,9 @@ func issueAWS(config access.StorageConfig, identity, prefix string, ttl time.Dur
 		var stdout, stderr bytes.Buffer
 		command.Stdout, command.Stderr = &stdout, &stderr
 		if err := command.Run(); err != nil {
+			if strings.Contains(stderr.String(), "1 hour session limit for roles assumed by role chaining") {
+				return nil, fmt.Errorf("AWS rejected the grant duration: these issuer credentials are limited to 1h by role chaining; use a 1h grant or an issuer credential method that AWS permits for longer sessions (an IAM-user ARN alone does not establish eligibility): %w", err)
+			}
 			return nil, fmt.Errorf("AWS STS assume-role: %w: %s", err, strings.TrimSpace(stderr.String()))
 		}
 		return stdout.Bytes(), nil

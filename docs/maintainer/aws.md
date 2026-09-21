@@ -236,17 +236,26 @@ anonymously readable and removes both probes.
 
 ## Credential lifetime warning
 
+Storage-first AWS guides request the configured `grant-role-max-ttl`, up to 12h,
+for enrollment, contribution and release grants. The IAM role maximum must also
+permit that duration. Longer grants require updated receiving clients: older
+frozen Relay releases reject more than one hour of remaining validity.
+
+Do not infer eligibility solely from `GetCallerIdentity`: the tested `aws login`
+session reported an IAM-user ARN but AWS rejected a 43200-second AssumeRole
+request as role chaining. Validate the actual issuer credential method with AWS.
+Changing the role maximum alone cannot remove that credential-path restriction.
+
 AWS limits a session created by role chaining to one hour. IAM Identity Center
 and other assumed-role profiles therefore cannot issue a Relay upload session
 longer than one hour, even if `GRANT_ROLE_MAX_TTL` is configured above `1h`.
 The setup script rejects that impossible combination. Keep the default `1h`
 for the included rehearsal.
 
-If a production ceremony requires a participant upload window longer than one
-hour, one-profile setup requires a direct IAM user profile, whose credential
-storage and rotation must be approved by the AWS administrator. The safer
-alternative is a separate issuer design or R2. Relay checks the remaining
-credential lifetime before starting expensive work.
+For longer windows, use an issuer credential method AWS permits and verify actual
+issuance. Otherwise retain one-hour grants and renew them when needed. Do not
+replace renewable login credentials with permanent keys merely to change the
+duration without reviewing that operational choice.
 
 ## Production checklist
 

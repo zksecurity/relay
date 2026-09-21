@@ -18,9 +18,10 @@ const (
 	SubmissionKindRelease    = "release"
 
 	maxStorageFirstContributionIndex = 255
-	// MaxStorageFirstGrantLifetime is the intended upload-key window. Remaining
+	// MaxStorageFirstGrantLifetime matches the longest AWS role session Relay
+	// permits. Each ceremony may configure a shorter provider limit. Remaining
 	// validity is measured against now, not against a self-written issued_at.
-	MaxStorageFirstGrantLifetime  = time.Hour
+	MaxStorageFirstGrantLifetime  = 12 * time.Hour
 	maxStorageFirstGrantClockSkew = 5 * time.Minute
 	// Provider clocks and AssumeRole round-trip can place AWS Expiration a few
 	// seconds past a full-hour request. This is not extra requested duration.
@@ -117,6 +118,13 @@ func (g StorageFirstGrant) Validate() error {
 	return g.Credentials.Validate()
 }
 
+func StorageFirstGrantLifetime(provider string) time.Duration {
+	if provider == "aws" {
+		return MaxStorageFirstGrantLifetime
+	}
+	return time.Hour
+}
+
 func (g StorageFirstGrant) CheckUnexpired(now time.Time) error {
 	if err := g.Validate(); err != nil {
 		return err
@@ -134,8 +142,9 @@ func (g StorageFirstGrant) CheckUnexpired(now time.Time) error {
 	if issued.After(start) {
 		start = issued
 	}
-	if expires.Sub(start) > MaxStorageFirstGrantLifetime+maxStorageFirstGrantExpirySkew {
-		return fmt.Errorf("storage-first upload credentials may remain valid at most %s from now", MaxStorageFirstGrantLifetime)
+	maximum := StorageFirstGrantLifetime(g.Provider)
+	if expires.Sub(start) > maximum+maxStorageFirstGrantExpirySkew {
+		return fmt.Errorf("storage-first upload credentials may remain valid at most %s from now", maximum)
 	}
 	return nil
 }

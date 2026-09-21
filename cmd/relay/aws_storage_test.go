@@ -60,6 +60,38 @@ func TestAWSGrantRequestsOnlyIntendedInboxPrefix(t *testing.T) {
 	}
 }
 
+func TestAWSGrantRequestsTwelveHours(t *testing.T) {
+	config, err := storageSettingsFixture().infrastructure()
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.GrantRoleMaxTTL = "12h"
+	ttlText, err := workflowV4GrantTTL(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ttl, err := time.ParseDuration(ttlText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expires := time.Now().UTC().Add(12 * time.Hour).Truncate(time.Second)
+	_, got, err := issueAWSWithRunner(config, "participant-01", "setup-probes/12h/", ttl, func(args ...string) ([]byte, error) {
+		found := false
+		for i, arg := range args {
+			if arg == "--duration-seconds" && i+1 < len(args) {
+				found = args[i+1] == "43200"
+			}
+		}
+		if !found {
+			t.Fatal("12h configuration did not request 43200 seconds")
+		}
+		return json.Marshal(map[string]any{"Credentials": map[string]string{"AccessKeyId": "test-access", "SecretAccessKey": "test-secret", "SessionToken": "test-token", "Expiration": expires.Format(time.RFC3339)}})
+	})
+	if err != nil || !got.Equal(expires) {
+		t.Fatalf("12h issuance: expiration=%s error=%v", got, err)
+	}
+}
+
 func TestAWSStoragePreflightAndFailureCleanup(t *testing.T) {
 	for _, fault := range []string{"", "public-inbox", "inbox-not-found", "inbox-network-error", "authenticated-corruption", "public-corruption", "public-unavailable", "version-denied", "inbox-write-denied", "delete-denied", "ambiguous-write", "collision"} {
 		t.Run(fault, func(t *testing.T) {
