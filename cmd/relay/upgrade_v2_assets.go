@@ -14,6 +14,16 @@ import (
 
 type upgradeAssets struct{ root, bundle, trustedRoot string }
 
+func upgradeApprovalCommit(tag, target string) (string, error) {
+	if tag == "" {
+		tag = "role-images-" + target
+	}
+	if !launcherReleaseTag.MatchString(tag) {
+		return "", errors.New("an exact approval role-images release is required")
+	}
+	return strings.TrimPrefix(tag, "role-images-"), nil
+}
+
 func newUpgradeAssets(bundle, trustedRoot string) (*upgradeAssets, func(), error) {
 	if (bundle == "") != (trustedRoot == "") {
 		return nil, nil, errors.New("offline verification requires both --bundle and independently trusted --trusted-root")
@@ -98,6 +108,7 @@ func runUpgradeBundle(args []string) error {
 	original := f.String("original-release", "", "original role-images release")
 	source := f.String("source-release", "", "currently selected application release")
 	target := f.String("release", "", "target role-images release")
+	approval := f.String("approval-release", "", "release publishing approval (defaults to target)")
 	role := f.String("role", "", "ceremony role")
 	host := f.String("host", "", "destination host OS/architecture")
 	platform := f.String("platform", "", "destination Docker platform")
@@ -114,6 +125,10 @@ func runUpgradeBundle(args []string) error {
 		return errors.New("supply a fresh absolute output folder")
 	}
 	d := upgrade.DeclarationV2{OriginalRelease: strings.TrimPrefix(*original, "role-images-"), SourceApp: strings.TrimPrefix(*source, "role-images-"), TargetApp: strings.TrimPrefix(*target, "role-images-"), Role: *role, Host: *host, Platform: *platform}
+	approvalCommit, err := upgradeApprovalCommit(*approval, d.TargetApp)
+	if err != nil {
+		return err
+	}
 	// Reject path input before downloading any asset.
 	if !guidedName.MatchString(*role) || (*host != "darwin/arm64" && *host != "darwin/amd64" && *host != "linux/arm64" && *host != "linux/amd64") || (*platform != "linux/arm64" && *platform != "linux/amd64") {
 		return errors.New("unsupported role/host/platform")
@@ -158,7 +173,7 @@ func runUpgradeBundle(args []string) error {
 		}
 		return raw, nil
 	}
-	raw, err := copyAsset(d.TargetApp, d.AssetName())
+	raw, err := copyAsset(approvalCommit, d.AssetName())
 	if err != nil {
 		return err
 	}
@@ -169,7 +184,7 @@ func runUpgradeBundle(args []string) error {
 	if actual.OriginalRelease != d.OriginalRelease || actual.SourceApp != d.SourceApp || actual.TargetApp != d.TargetApp || actual.Role != d.Role || actual.Host != d.Host || actual.Platform != d.Platform {
 		return errors.New("declaration does not match requested bundle")
 	}
-	report, err := copyAsset(d.TargetApp, "upgrade-qualification-"+strings.TrimPrefix(actual.QualificationSHA256, "sha256:")+".json")
+	report, err := copyAsset(approvalCommit, "upgrade-qualification-"+strings.TrimPrefix(actual.QualificationSHA256, "sha256:")+".json")
 	if err != nil {
 		return err
 	}
@@ -197,6 +212,9 @@ func runUpgradeBundle(args []string) error {
 		return errors.New("bundle binary was not qualified")
 	}
 	if err := publishPublicInput(filepath.Join(*out, "COMPLETE"), []byte(actual.AssetName()+"\n")); err != nil {
+		return err
+	}
+	if err := publishPublicInput(filepath.Join(*out, "APPROVAL-RELEASE"), []byte("role-images-"+approvalCommit+"\n")); err != nil {
 		return err
 	}
 	fmt.Fprintln(os.Stdout, "Public update bundle prepared. The offline machine must independently verify its provenance using previously trusted roots. Original Docker images must already be cached; no signing key was copied.")

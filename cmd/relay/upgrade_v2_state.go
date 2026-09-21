@@ -35,6 +35,7 @@ type upgradeSelectionV2 struct {
 	InventorySHA256 string            `json:"inventory_sha256"`
 	Kinds           []string          `json:"kinds"`
 	Setup           *upgradeSetupV2   `json:"setup,omitempty"`
+	ApprovalRelease string            `json:"approval_release,omitempty"`
 }
 
 type upgradeV2Pointer struct {
@@ -94,6 +95,9 @@ func upgradeV2ReadHistory(work string) ([]upgradeSelectionV2, string, error) {
 			return nil, "", err
 		}
 		d, _ := upgrade.DecodeV2(s.Declaration)
+		if _, err := upgradeApprovalCommit(s.ApprovalRelease, d.TargetApp); err != nil {
+			return nil, "", err
+		}
 		if !upgradeV2ProfileMatches(s.Profile, s.Profile, d) {
 			return nil, "", errors.New("selection history changed its frozen role")
 		}
@@ -237,6 +241,9 @@ func upgradeV2Activate(s upgradeSelectionV2, expected string) error {
 	if err != nil {
 		return err
 	}
+	if _, err := upgradeApprovalCommit(s.ApprovalRelease, d.TargetApp); err != nil {
+		return err
+	}
 	if s.Setup != nil {
 		if err := upgradeV2SetupManifest(s.Setup.Manifest, s.OriginalMap, d.OriginalRelease, d.Platform, d.ProofToolSHA256); err != nil {
 			return err
@@ -301,6 +308,18 @@ func upgradeV2Activate(s upgradeSelectionV2, expected string) error {
 	}
 	if err := d.Cover(apps, s.Kinds); err != nil {
 		return err
+	}
+	if q.Schema == upgrade.CleanExitQualificationSchema {
+		if err := upgradeRequireCleanExit(s, d); err != nil {
+			return err
+		}
+		inv, err := upgradeV2Inventory(s.Profile, d)
+		if err != nil {
+			return err
+		}
+		if inv.digest() != s.InventorySHA256 {
+			return errors.New("retained work changed during update review; nothing selected")
+		}
 	}
 	root := upgradeV2Root(s.Profile.Work)
 	if err := ensurePrivateDirectory(root); err != nil {

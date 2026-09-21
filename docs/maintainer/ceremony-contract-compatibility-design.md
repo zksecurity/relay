@@ -1,7 +1,9 @@
 # Updating Relay during an ongoing ceremony
 
-Status: complete target design, revised after independent review. Implementation is
-partial; no released source/target pair is enabled. This is not permission to
+Status: broader target design. The first release is narrowed to initialized
+coordinators updating the native launcher between completed steps, with all Docker
+images unchanged. See [current scope and three qualification scenarios](ceremony-upgrade-qualification.md#current-first-release-scope).
+Other cases below are deferred. No released source/target pair is enabled; do not
 change a frozen ceremony's release fields manually.
 
 ## Promise and limits
@@ -41,8 +43,9 @@ Proof-tool itself are outside this application-update mechanism.
    report if useful. No automatic update or repeated contribution occurs.
 2. Install the exact compatible release supplied through the agreed channel.
 3. Run `relay ceremony upgrade NAME --role ROLE --release role-images-COMMIT`.
+   For separately published approval, add `--approval-release role-images-APPROVAL`.
    The command resolves saved folders; users do not edit profile JSON.
-   Before a shared profile exists, also supply `--work ROLE_WORK` to locate
+   In the broader deferred draft design, also supply `--work ROLE_WORK` to locate
    the existing preparation draft. This does not create an identity or ceremony.
 4. Relay checks release provenance, original ceremony bindings, current app
    selection, retained work and execution safety. Online roles authenticate
@@ -89,14 +92,12 @@ image; existing actions and contribution/signing runtimes retain their pins.
 Activation preserves the journals; normal recovery still verifies their outputs.
 Custom start scripts are preserved, with an explicit resume command.
 
-The connected upgrade paths include standalone drafts and initialized coordinator,
-participant, auditor and release-signer profiles. Missing ordinary observer/
-upload-station journeys, killed-parent recovery, and rollback remain unsupported.
-These are implementation limits, not completed target-design features.
-Both release upgrade policies are empty. Actual predecessor/candidate draft-resume
-tests and a two-phase native update using local test storage pass. Live-provider,
-online-image replacement, offline disconnected-machine and full failure-matrix
-qualification remain required. No release pair is enabled.
+Existing broad readers remain for saved selections, but new approvals are limited
+to initialized coordinators, completed steps, and unchanged Docker images. The
+three-scenario local suite covers that initial scope; broader role/draft updates,
+online-image replacement and interrupted-work migration remain deferred.
+Both release upgrade policies are empty. No release pair is enabled. Publishing
+one requires reviewed qualification of the exact published app, not a local build.
 
 The review closed inherited-work coverage across repeated updates, unsafe old
 launcher reentry, non-circular release qualification, edited-script behavior and

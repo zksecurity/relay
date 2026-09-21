@@ -203,12 +203,25 @@ type QualificationV2 struct {
 
 var QualificationChecks = []string{"full-journey", "mixed-versions", "retained-work", "activation-crashes", "execution-exclusion", "predecessor-reentry", "published-reconstruction"}
 
+const CleanExitQualificationSchema = "relay-upgrade-qualification/v3"
+
+var CleanExitQualificationChecks = []string{"completed-step-continuation", "updater-interruption", "unsafe-update-refusal"}
+
 func VerifyQualification(raw []byte, d DeclarationV2) (QualificationV2, error) {
 	var q QualificationV2
 	if err := decodeCanonical(raw, &q); err != nil {
 		return q, err
 	}
-	if q.Schema != "relay-upgrade-qualification/v2" || q.OriginalRelease != d.OriginalRelease || q.SourceApp != d.SourceApp || q.TargetApp != d.TargetApp || q.Role != d.Role || q.Host != d.Host || q.Platform != d.Platform || q.OnlineImage != d.OnlineImage || q.ProofToolSHA256 != d.ProofToolSHA256 || !digestPattern.MatchString(q.LauncherSHA256) {
+	checks := QualificationChecks
+	if q.Schema == CleanExitQualificationSchema {
+		if d.Role != "coordinator" || d.OnlineImage != d.OriginalImage {
+			return q, errors.New("clean-exit qualification only covers native-only coordinator updates")
+		}
+		checks = CleanExitQualificationChecks
+	} else if q.Schema != "relay-upgrade-qualification/v2" {
+		return q, errors.New("unknown qualification schema")
+	}
+	if q.OriginalRelease != d.OriginalRelease || q.SourceApp != d.SourceApp || q.TargetApp != d.TargetApp || q.Role != d.Role || q.Host != d.Host || q.Platform != d.Platform || q.OnlineImage != d.OnlineImage || q.ProofToolSHA256 != d.ProofToolSHA256 || !digestPattern.MatchString(q.LauncherSHA256) {
 		return q, errors.New("qualification does not cover this exact application/runtime pair")
 	}
 	if q.OriginalImage != d.OriginalImage || q.SigningImage != d.SigningImage || len(q.Predecessors) != len(d.SafePredecessors) {
@@ -219,10 +232,10 @@ func VerifyQualification(raw []byte, d DeclarationV2) (QualificationV2, error) {
 			return q, errors.New("qualification lacks a predecessor executable digest")
 		}
 	}
-	if len(q.Passed) != len(QualificationChecks) {
+	if len(q.Passed) != len(checks) {
 		return q, errors.New("unexpected qualification checks")
 	}
-	for _, check := range QualificationChecks {
+	for _, check := range checks {
 		if !slices.Contains(q.Passed, check) {
 			return q, fmt.Errorf("missing qualification: %s", check)
 		}

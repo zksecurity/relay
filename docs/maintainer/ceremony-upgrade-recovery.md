@@ -2,6 +2,10 @@
 
 Target design. “No restart” means preserving valid ceremony progress, not skipping
 failed verification or promising that missing secrets/evidence can be recovered.
+For the [narrowed first release](ceremony-upgrade-qualification.md#current-first-release-scope),
+resolve unfinished ceremony work using the original app before updating.
+Repair of an interrupted updater remains available; it does not repeat ceremony
+operations. Broader pending-work migration described below is deferred.
 
 ## Establish that old work has stopped
 

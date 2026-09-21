@@ -3,6 +3,79 @@
 The compatibility policies are empty: no existing ceremony is approved for
 updates yet. Implemented paths below are locally tested, not release-qualified.
 
+## Current first-release scope
+
+The initial scope is now **initialized coordinator, native launcher only, between
+completed steps**. Keep every Docker image and signed ceremony file unchanged.
+An operator exits normally, installs the proposed launcher, and requests the
+update. Unfinished or uncertain ceremony operations must be resolved using the
+existing version first. An interrupted updater is different: restarting it may
+repair selection or `start.sh` without repeating ceremony work.
+
+New admissions use qualification schema `relay-upgrade-qualification/v3`:
+
+1. Update an ongoing ceremony after a completed step, then finish it.
+2. Interrupt the updater; repair it safely or retain the previous launcher.
+3. Refuse unfinished work and incompatible versions without changing selection
+   or ceremony files.
+
+The admission check authenticates recorded accepted progress with the original
+runtime and checks retained actions against it. A signed but unpublished output
+is not completion. This does not establish current backend freshness; ordinary
+ceremony synchronization still runs before subsequent actions.
+
+Test the exact published executables locally; a dedicated Mac CI runner is not
+required for this initial scope. Publish the implementation with no pairs enabled,
+then review exact-build test evidence before publishing compatibility approval.
+No rebuilt executable may inherit another executable's qualification.
+
+The older seven-check v2 report remains readable for existing selections and
+interrupted-updater repair. It does not authorize new v3 admissions. Draft updates,
+other roles, changed images and updates during unfinished work are deferred.
+The broader matrix below is retained as future/historical design, **not** a
+prerequisite for the narrowed first release. The three named integration runner
+entry points use real signed local-storage ceremonies and actual source/candidate
+executables. Focused unit tests alone are not qualification.
+
+## Publish the app first, approve the tested bytes later
+
+1. Publish target app B containing the upgrade and separate-approval support.
+   Leave `release/upgrade-policy-v2.json` empty.
+2. Download and authenticate B and its predecessor. Compile the qualification
+   tests from the reviewed checkout; the private request uses
+   `qualification_schema: relay-upgrade-qualification/v3` and exact asset paths.
+   Run the qualification command below on a Docker-capable local machine.
+3. Submit the sanitized report and exact policy pair for review. The report filename
+   is the declaration's `AssetName()` under `release/upgrade-qualification/`.
+   Do not commit the private request, credentials or raw logs.
+4. A later protected-main release C authenticates B and every predecessor binary,
+   compares their hashes to the reviewed report, then publishes approval/report.
+   C does not rebuild B. Its provenance attests approval of local evidence, not
+   execution of Mac tests in CI.
+5. Install B; use `ceremony upgrade NAME --role coordinator --release
+   role-images-B --approval-release role-images-C` with the saved settings root.
+   The UI shows both releases. Omitting approval defaults to the target release
+   for existing same-release approvals; it never searches other releases.
+
+Declaration/report provenance must match C; executable/map provenance must match
+B. The saved selection retains C, while existing selections without that field
+retain their original meaning. B must contain this reader before qualification:
+an arbitrary older binary cannot read new selection fields. Same-target repair
+preserves the selected approval and does not reapply new-update admission.
+Offline bundle preparation accepts the same `--approval-release`; its
+`APPROVAL-RELEASE` text identifies the value to pass at installation. Offline
+verification still requires an independently trusted root outside the bundle.
+
+Completed-step admission result (2026-09-21, macOS ARM64): local two-phase
+continuation **PASS, 203.29 seconds**, using the attested
+`9b3f86d7dfe85e1f6b4256065748136cc8f42711` predecessor and a local candidate.
+The update followed verified Phase 1 acceptance. Original images stayed pinned;
+Phase 2, both future beacons, coordinator replay, tiny public proof, signing,
+publication and empty-client reconstruction completed. The test exposed and fixed
+a public-key newline comparison; its local harness now refreshes accepted progress
+before updating, as normal CLI reopening does. This uses synthetic test-only
+authorization and local storage, not published-pair qualification or provider testing.
+
 ## Implementation slices
 
 | Slice | Required result | Current status |
@@ -22,14 +95,12 @@ release on each slice. Use local immutable test images, preserving original Linu
 Proof-tool binaries separately from any native host inspector. Publish the paired
 release only after the candidate matrix passes; verify published assets afterward.
 
-## Required matrix
+## Broader matrix (deferred)
 
 Initial intended release scope: coordinator, macOS ARM64, native application
 only, retaining original online/signing/contribution images. This scope is not
-enabled. The seven real qualification entry points and protected-main job still
-need implementation. The repository currently has no registered dedicated Mac
-runner; choosing/provisioning a Docker-capable qualification runner is a release
-prerequisite, not something satisfied by ordinary hosted macOS unit tests.
+enabled. The seven real qualification entry points remain future work for this
+broader scope. Ordinary hosted macOS unit tests do not replace Docker journeys.
 Do not register a developer's machine as a CI runner without explicit approval.
 
 For each advertised source/target, host OS, Docker architecture and enabled role:
@@ -70,14 +141,15 @@ for uncertain outcomes and backend advancement, not just a successful trace.
 
 ## Non-circular qualification and release gates
 
-Protected-main CI builds immutable candidate assets once. An isolated test harness
-supplies test-only authorization to exercise the actual candidate and source
-assets before a production declaration exists. No runtime trust-bypass flag is
-shipped. The report binds source/candidate digests and coverage, not its own future
-declaration. After tests, CI generates the declaration containing the report hash,
-attests both, and promotes those exact tested assets without rebuilding binaries
-or images. The report hash is not compiled into those binaries. Post-release
-smoke tests exercise the delivered production authorization, not test injection.
+Protected-main CI publishes immutable app assets first. An isolated local test
+harness supplies test-only authorization to exercise those exact app and source
+assets before approval exists. No runtime trust-bypass flag is shipped. The
+report binds source/candidate digests and coverage, not its own future declaration.
+After review, a later protected-main release publishes the declaration containing
+the report hash and attests both. It authenticates the earlier published binaries;
+it does not rebuild or promote different bytes. The report hash is not compiled
+into the app. Post-approval smoke tests exercise delivered production authority,
+not test injection. CI attestation does not itself establish that local tests ran.
 
 - Run Go tests/vet, installer tests and applicable release, Docker, ceremony and
   Tessera checks on the candidate. Synthetic metadata is test-only.
@@ -110,10 +182,13 @@ binary hashes plus original/signing image digests.
 Ctrl-C/termination cancels the scenario process group; output is bounded and
 overflow cancels execution. Every observed subtest must finish successfully.
 
-The runner is **not** the scenario suite. The seven `TestUpgradeQualification…`
-scenarios still need real old/candidate journeys; ordinary unit tests cannot
-substitute. Publication remains blocked for nonempty policies without those
-executed reports. No real pair or live-provider result is claimed here.
+The runner executes `TestUpgradeCleanExitContinuation`,
+`TestUpgradeCleanExitInterruption`, and `TestUpgradeCleanExitRefusal` for v3.
+Each finishes a real two-phase local-storage ceremony; the latter two additionally
+exercise abrupt updater boundaries or refusal before continuing. Test-only
+authorization permits pre-approval execution without a shipped bypass.
+The broader seven `TestUpgradeQualification…` v2 entry points remain deferred;
+ordinary unit tests cannot substitute for either suite.
 
 Generated installer entry points retain preparation and their original settings.
 An upgraded setup resolves its saved settings root from the active selection,

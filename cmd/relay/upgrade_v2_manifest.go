@@ -77,6 +77,7 @@ func runUpgradeManifestsV2(args []string) error {
 	images := f.String("role-images", "", "target release image map")
 	launchers := f.String("launchers", "", "exact qualified native binaries")
 	out := f.String("out", "", "fresh declaration directory")
+	published := f.Bool("reviewed-published", false, "approve previously published exact binaries using reviewed local reports")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
@@ -91,6 +92,17 @@ func runUpgradeManifestsV2(args []string) error {
 		return errors.New("invalid v2 upgrade policy")
 	}
 	files := map[string][]byte{}
+	var assets *upgradeAssets
+	if *published && len(p.Pairs) > 0 {
+		var cleanup func()
+		var err error
+		assets, cleanup, err = newUpgradeAssets("", "")
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+	}
+	var publishedTarget string
 	for _, d := range p.Pairs {
 		if !launcherReleaseTag.MatchString("role-images-"+d.OriginalRelease) || !launcherReleaseTag.MatchString("role-images-"+d.SourceApp) {
 			return errors.New("invalid original/source commit")
@@ -98,6 +110,27 @@ func runUpgradeManifestsV2(args []string) error {
 		// Validate constrained path fields before opening policy-named files.
 		if !guidedName.MatchString(d.Role) || (d.Host != "darwin/arm64" && d.Host != "darwin/amd64" && d.Host != "linux/arm64" && d.Host != "linux/amd64") || (d.Platform != "linux/arm64" && d.Platform != "linux/amd64") {
 			return errors.New("unsupported qualification platform")
+		}
+		if *published {
+			if publishedTarget != "" && publishedTarget != d.TargetApp {
+				return errors.New("review one published target per approval release")
+			}
+			publishedTarget = d.TargetApp
+			report, err := readTesseraRegularFile(filepath.Join(*reports, d.AssetName()), upgrade.MaximumBytes, false)
+			if err != nil {
+				return fmt.Errorf("missing reviewed local qualification report: %w", err)
+			}
+			produced, err := generateReviewedPublishedUpgrade(d, report, assets.get)
+			if err != nil {
+				return err
+			}
+			for name, raw := range produced {
+				if _, ok := files[name]; ok {
+					return errors.New("duplicate upgrade pair or report")
+				}
+				files[name] = raw
+			}
+			continue
 		}
 		original, err := readTesseraRegularFile(filepath.Join(*originals, d.OriginalRelease+".json"), 1<<20, false)
 		if err != nil {
@@ -136,4 +169,47 @@ func runUpgradeManifestsV2(args []string) error {
 	}
 	fmt.Printf("Generated %d v2 upgrade assets. No policy entry is inferred from version numbers.\n", len(files))
 	return nil
+}
+
+// get must authenticate the exact repository, protected-main workflow, source
+// commit and bytes. CI attests approval of reviewed local evidence, not execution
+// of the Mac tests. Target binaries are downloaded, never rebuilt or republished.
+func generateReviewedPublishedUpgrade(d upgrade.DeclarationV2, report []byte, get func(string, string) ([]byte, error)) (map[string][]byte, error) {
+	if !launcherReleaseTag.MatchString("role-images-"+d.TargetApp) || d.Role != "coordinator" || d.OnlineImage != d.OriginalImage {
+		return nil, errors.New("published approval requires an exact native-only coordinator target")
+	}
+	d.QualificationSHA256 = "sha256:" + upgradeBytesHash(report)
+	if err := d.Validate(); err != nil {
+		return nil, err
+	}
+	q, err := upgrade.VerifyQualification(report, d)
+	if err != nil {
+		return nil, err
+	}
+	if q.Schema != upgrade.CleanExitQualificationSchema {
+		return nil, errors.New("reviewed published approval requires completed-step qualification")
+	}
+	asset := "relay-" + strings.ReplaceAll(d.Host, "/", "-")
+	for _, commit := range d.SafePredecessors {
+		binary, err := get(commit, asset)
+		if err != nil {
+			return nil, err
+		}
+		if q.Predecessors[commit] != "sha256:"+upgradeBytesHash(binary) {
+			return nil, errors.New("qualification used another predecessor executable")
+		}
+	}
+	original, err := get(d.OriginalRelease, "relay-role-images.release.json")
+	if err != nil {
+		return nil, err
+	}
+	target, err := get(d.TargetApp, "relay-role-images.release.json")
+	if err != nil {
+		return nil, err
+	}
+	binary, err := get(d.TargetApp, asset)
+	if err != nil {
+		return nil, err
+	}
+	return generateUpgradeV2(d, d.TargetApp, original, target, report, binary)
 }

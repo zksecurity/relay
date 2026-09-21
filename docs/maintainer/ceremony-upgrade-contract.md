@@ -1,6 +1,9 @@
 # Compatibility and activation contract
 
 Target design; see [scope and implementation status](ceremony-contract-compatibility-design.md).
+The [narrowed first release](ceremony-upgrade-qualification.md#current-first-release-scope)
+allows only completed-step native coordinator updates. Broader adapters and draft
+activation described below are deferred, not currently authorized.
 
 ## Authority
 
@@ -8,6 +11,12 @@ Protected-main release CI publishes an attested declaration for each reviewed
 source-app → target-app pair, role and platform. No automatic compatibility from
 version numbers or matching Proof-tool hashes. Existing ceremonies keep their
 original release identity; a separate local record selects the current app.
+
+For local qualification of already published bytes, a later approval release
+may carry the declaration/report. `--approval-release` names that exact release;
+its provenance is checked separately from the target app. It defaults to the
+target release for existing records. The target must already support this
+selection format before it is tested. See the [publication sequence](ceremony-upgrade-qualification.md#publish-the-app-first-approve-the-tested-bytes-later).
 
 A declaration binds:
 

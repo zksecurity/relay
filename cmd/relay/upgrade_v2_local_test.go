@@ -129,7 +129,12 @@ func TestUpgradeLocalTwoPhaseJourney(t *testing.T) {
 		t.Fatal(e)
 	}
 	build := func(out, goos string) {
-		c := exec.Command("go", "build", "-o", out, "./testdata/localaws")
+		module, err := exec.Command("go", "env", "GOMOD").Output()
+		if err != nil || !filepath.IsAbs(strings.TrimSpace(string(module))) {
+			t.Fatal("local adapter requires the reviewed module checkout", err)
+		}
+		c := exec.Command("go", "build", "-o", out, "./cmd/relay/testdata/localaws")
+		c.Dir = filepath.Dir(strings.TrimSpace(string(module)))
 		c.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+runtime.GOARCH, "CGO_ENABLED=0")
 		if b, e := c.CombinedOutput(); e != nil {
 			t.Fatalf("build local adapter: %v %s", e, b)

@@ -338,6 +338,9 @@ func runLiveFullProviderJourneyWithUpgrade(t *testing.T, awsLive bool, upgradeHo
 
 	runWorkflowV4LiveTurn(t, objects, protocol, config, &coordinator, &participant, "phase1")
 	if upgradeHook != nil {
+		// A normal reopened CLI refreshes its accepted-state anchor before exit.
+		// Local TLS fixtures skip that terminal, so perform the same verified sync.
+		syncWorkflowV4LiveRole(t, &coordinator, objects)
 		upgradeHook.AfterPhase1(&coordinator)
 	}
 	runWorkflowV4LiveLifecycle(t, objects, protocol, &coordinator, workflowV4ClosePhase1, "CLOSE PHASE1\n")

@@ -28,6 +28,7 @@ func runCeremonyUpgradeV2(args []string) error {
 	f := flag.NewFlagSet("ceremony upgrade", flag.ContinueOnError)
 	role := f.String("role", "", "saved ceremony role")
 	target := f.String("release", "", "exact target release")
+	approval := f.String("approval-release", "", "exact release publishing compatibility approval (defaults to target)")
 	work := f.String("work", "", "existing role work folder for an unfinished setup")
 	bundle := f.String("bundle", "", "previously prepared offline release bundle")
 	trust := f.String("trusted-root", "", "independently installed Sigstore trust root for offline verification")
@@ -39,6 +40,10 @@ func runCeremonyUpgradeV2(args []string) error {
 		return errors.New("an exact target release is required")
 	}
 	targetCommit := strings.TrimPrefix(*target, "role-images-")
+	approvalCommit, err := upgradeApprovalCommit(*approval, targetCommit)
+	if err != nil {
+		return err
+	}
 	if err := checkLauncherRelease(targetCommit); err != nil {
 		return err
 	}
@@ -124,6 +129,12 @@ func runCeremonyUpgradeV2(args []string) error {
 		if err != nil {
 			return err
 		}
+		if *approval != "" {
+			selectedApproval, err := upgradeApprovalCommit(s.ApprovalRelease, targetCommit)
+			if err != nil || selectedApproval != approvalCommit {
+				return errors.New("repair must retain the selected approval release")
+			}
+		}
 		return upgradeV2FinishStart(s)
 	}
 	if source == targetCommit {
@@ -153,7 +164,7 @@ func runCeremonyUpgradeV2(args []string) error {
 		return err
 	}
 	expected := upgrade.DeclarationV2{OriginalRelease: p.ReleaseCommit, SourceApp: source, TargetApp: targetCommit, Role: p.Role, Host: runtime.GOOS + "/" + runtime.GOARCH, Platform: p.Platform}
-	raw, err := assets.get(targetCommit, expected.AssetName())
+	raw, err := assets.get(approvalCommit, expected.AssetName())
 	if err != nil {
 		return fmt.Errorf("no authenticated compatibility declaration for this exact update: %w", err)
 	}
@@ -187,13 +198,16 @@ func runCeremonyUpgradeV2(args []string) error {
 			return errors.New("target image differs from its release")
 		}
 	}
-	report, err := assets.get(targetCommit, "upgrade-qualification-"+strings.TrimPrefix(d.QualificationSHA256, "sha256:")+".json")
+	report, err := assets.get(approvalCommit, "upgrade-qualification-"+strings.TrimPrefix(d.QualificationSHA256, "sha256:")+".json")
 	if err != nil {
 		return err
 	}
 	q, err := upgrade.VerifyQualification(report, d)
 	if err != nil {
 		return err
+	}
+	if q.Schema != upgrade.CleanExitQualificationSchema {
+		return errors.New("new updates require completed-step qualification; existing selections remain usable")
 	}
 	if "sha256:"+upgradeBytesHash(report) != d.QualificationSHA256 {
 		return errors.New("qualification report hash mismatch")
@@ -330,11 +344,15 @@ func runCeremonyUpgradeV2(args []string) error {
 		return err
 	}
 	s := upgradeSelectionV2{Schema: upgradeSelectionV2Schema, Previous: previous, Declaration: raw, OriginalMap: originalMap, TargetMap: targetMap, Qualification: report, Profile: p, SettingsRoot: root, Bindings: bindings, Launcher: exe, LauncherSHA256: exeHash, StartPath: filepath.Join(filepath.Dir(p.Work), "start.sh"), InventorySHA256: inv.digest(), Kinds: inv.Kinds, Setup: setup}
+	if approvalCommit != targetCommit {
+		s.ApprovalRelease = "role-images-" + approvalCommit
+	}
 	s.PreviousStart, err = readTesseraRegularFile(s.StartPath, 64<<10, false)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(os.Stdout, "Update %s application: %s → %s\nOriginal ceremony release: %s (unchanged)\nOriginal contribution and signing images remain pinned.\nInventoried %d files and %d retained operations. No ceremony command will be replayed by this update.\n", p.Role, source, targetCommit, p.ReleaseCommit, len(inv.Files), len(inv.Pending))
+	fmt.Fprintf(os.Stdout, "Compatibility approval release: role-images-%s (reviewed local test evidence; not a claim that these tests ran in CI).\n", approvalCommit)
 	for _, pending := range inv.Pending {
 		fmt.Fprintln(os.Stdout, "  "+pending)
 	}

@@ -117,6 +117,16 @@ func realUpgradeSelection(t *testing.T, f upgradeRealFixture, p guidedProfile, r
 		q.Predecessors[commit] = "sha256:" + h
 	}
 	s.Qualification, _ = json.Marshal(q)
+	if f.request.QualificationSchema == upgrade.CleanExitQualificationSchema {
+		q.Schema = upgrade.CleanExitQualificationSchema
+		q.Passed = append([]string{}, upgrade.CleanExitQualificationChecks...)
+		s.Qualification, _ = json.Marshal(q)
+		inv, err := upgradeV2Inventory(p, d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.InventorySHA256 = inv.digest()
+	}
 	d.QualificationSHA256 = "sha256:" + upgradeBytesHash(s.Qualification)
 	s.Declaration, _ = json.Marshal(d)
 	return s
@@ -372,8 +382,12 @@ func runUpgradeTwoPhaseJourney(t *testing.T, f upgradeRealFixture, local bool) {
 			runRealUpgradeTerminal(t, f.request.Predecessors[d.SourceApp], guide, "Q\n", 10*time.Minute)
 		}
 		s := realUpgradeSelection(t, f, role.profile, settings, nil)
-		if err := upgradeV2Activate(s, ""); err != nil {
-			t.Fatal(err)
+		if scenario := os.Getenv("RELAY_UPGRADE_CLEAN_SCENARIO"); scenario != "" {
+			exerciseCleanExitScenario(t, f, s, scenario)
+		} else {
+			if err := upgradeV2Activate(s, ""); err != nil {
+				t.Fatal(err)
+			}
 		}
 		if !local {
 			runRealUpgradeTerminal(t, f.request.Candidate, guide, "Q\n", 10*time.Minute)

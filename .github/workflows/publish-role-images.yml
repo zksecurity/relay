@@ -280,12 +280,15 @@ jobs:
       - name: Generate reviewed upgrade declarations
         id: upgrades
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           launchers/relay-linux-amd64 ceremony upgrade-manifests --sources release/upgrade-sources.json --role-images relay-role-images.release.json --proof-inputs release/role-images.json --out upgrades
-          # A nonempty v2 policy requires exact-build qualification reports and
-          # authenticated original maps. Never infer passing qualification here.
-          launchers/relay-linux-amd64 ceremony upgrade-manifests-v2 --policy release/upgrade-policy-v2.json --reports upgrade-qualification --originals upgrade-originals --role-images relay-role-images.release.json --launchers launchers --out upgrades-v2
+          # Approve exact earlier binaries using protected-main-reviewed local
+          # reports. This workflow authenticates them; it does not run Mac tests
+          # or rebuild/replace the qualified binaries.
+          launchers/relay-linux-amd64 ceremony upgrade-manifests-v2 --reviewed-published --policy release/upgrade-policy-v2.json --reports release/upgrade-qualification --out upgrades-v2
           if compgen -G 'upgrades-v2/*.json' > /dev/null; then
             cp upgrades-v2/*.json upgrades/
           fi

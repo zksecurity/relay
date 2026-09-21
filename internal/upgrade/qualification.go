@@ -33,10 +33,11 @@ var qualificationTests = map[string]string{
 
 // Paths are private runner input. They must never be included in public reports.
 type QualificationRequest struct {
-	Declaration  DeclarationV2     `json:"declaration"`
-	Candidate    string            `json:"candidate"`
-	Predecessors map[string]string `json:"predecessors"`
-	TestBinary   string            `json:"test_binary"`
+	QualificationSchema string            `json:"qualification_schema,omitempty"`
+	Declaration         DeclarationV2     `json:"declaration"`
+	Candidate           string            `json:"candidate"`
+	Predecessors        map[string]string `json:"predecessors"`
+	TestBinary          string            `json:"test_binary"`
 }
 
 func qualificationFileHash(path string) (string, error) {
@@ -178,6 +179,18 @@ func RunQualification(ctx context.Context, request QualificationRequest) (Qualif
 		hashes[path] = h
 	}
 	q := QualificationV2{Schema: "relay-upgrade-qualification/v2", OriginalRelease: d.OriginalRelease, SourceApp: d.SourceApp, TargetApp: d.TargetApp, Role: d.Role, Host: d.Host, Platform: d.Platform, LauncherSHA256: hashes[request.Candidate], OnlineImage: d.OnlineImage, ProofToolSHA256: d.ProofToolSHA256, OriginalImage: d.OriginalImage, SigningImage: d.SigningImage, Predecessors: map[string]string{}}
+	checks := QualificationChecks
+	tests := qualificationTests
+	if request.QualificationSchema == CleanExitQualificationSchema {
+		if d.Role != "coordinator" || d.OnlineImage != d.OriginalImage {
+			return zero, errors.New("completed-step qualification requires native-only coordinator update")
+		}
+		q.Schema = CleanExitQualificationSchema
+		checks = CleanExitQualificationChecks
+		tests = map[string]string{"completed-step-continuation": "TestUpgradeCleanExitContinuation", "updater-interruption": "TestUpgradeCleanExitInterruption", "unsafe-update-refusal": "TestUpgradeCleanExitRefusal"}
+	} else if request.QualificationSchema != "" && request.QualificationSchema != q.Schema {
+		return zero, errors.New("unknown qualification schema")
+	}
 	for commit, path := range request.Predecessors {
 		q.Predecessors[commit] = hashes[path]
 	}
@@ -194,8 +207,8 @@ func RunQualification(ctx context.Context, request QualificationRequest) (Qualif
 	if err := os.WriteFile(input, raw, 0600); err != nil {
 		return zero, err
 	}
-	for _, check := range QualificationChecks {
-		name := qualificationTests[check]
+	for _, check := range checks {
+		name := tests[check]
 		scenarioContext, cancel := context.WithCancel(ctx)
 		cmd := exec.CommandContext(scenarioContext, "go", "tool", "test2json", "-p", "upgrade-qualification", request.TestBinary, "-test.v=test2json", "-test.run=^"+name+"$", "-test.count=1", "-test.timeout=30m")
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
