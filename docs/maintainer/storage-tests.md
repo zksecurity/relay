@@ -175,3 +175,23 @@ remote object, cancellation, and retry (`internal/storagefirst/publish_test.go`
 and `verified_objects_test.go`). Benchmarks with a simulated 2 ms provider
 latency and 64 objects of 64 KiB on an Apple M1 Pro: sequential publication
 235 ms, parallel publication 34 ms, memo-confirmed re-publication 26 ms.
+
+## Standalone AWS login renewal
+
+`TestAWSLoginDockerMultipartProvider` runs one real AWS CLI multipart upload
+against a local fake S3 endpoint, rotates synthetic credentials after its first
+part, and checks that later parts use the replacement credential. It uses no AWS
+account or live bucket. Set `RELAY_AWS_LOGIN_TEST_IMAGE` to a preloaded online role
+image and `RELAY_AWS_LOGIN_TEST_BINARY` to an absolute path to a test build of
+Linux Relay matching that image's architecture, then run:
+
+```sh
+go test ./cmd/relay -run '^TestAWSLoginDockerMultipartProvider$' -v -count=1
+```
+
+The test mounts the new helper and credential directory read-only. This verifies
+refresh within one long-lived AWS client; it does not establish real-provider
+availability or extend an AWS login session. Ordinary tests separately cover
+host refresh, identity binding, expiry deadlines, atomic reads, and cancellation
+during container creation and execution. Test builds must not replace a frozen
+ceremony's approved launcher or images.

@@ -273,6 +273,13 @@ func runRecoverInitial1828(args []string) error {
 }
 
 func executeLegacyRemoteRecovery(p guidedProfile, draft coordinatorDraft, dir string, attempt *flowAttempt, commit string) error {
+	binding, bindingErr := readAWSLoginBinding(draft.Credentials)
+	if bindingErr != nil {
+		return bindingErr
+	}
+	if binding != nil {
+		return errors.New("legacy publication recovery requires the frozen release credential workflow; renewable AWS login bindings are not supported")
+	}
 	tag := "role-images-" + commit
 	image, _, err := verifiedReleaseImage(tag, "coordinator", p.Platform)
 	if err != nil {

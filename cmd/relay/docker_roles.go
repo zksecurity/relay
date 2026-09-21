@@ -19,6 +19,7 @@ type dockerRoleOptions struct {
 	role, image, platform, work, trust, keys, credentials, config, docker string
 	r2Parent, r2Control                                                   string
 	recoveryContext                                                       string
+	awsLoginRuntime                                                       string
 }
 
 var roleImagePattern = regexp.MustCompile(`^(sha256:[0-9a-f]{64}|[^\s@]+@sha256:[0-9a-f]{64})$`)
@@ -67,6 +68,15 @@ func runDockerRole(args []string) error {
 	binary, err := exec.LookPath(o.docker)
 	if err != nil {
 		return err
+	}
+	if awsCredentialCommand(o, set.Args()) {
+		binding, err := readAWSLoginBinding(o.credentials)
+		if err != nil {
+			return err
+		}
+		if binding != nil {
+			return runAWSLoginDocker(o, set.Args(), *binding, binary, endpoint)
+		}
 	}
 	// Replace the launcher so Docker receives terminal and service signals.
 	return syscall.Exec(binary, append([]string{binary, "--host", endpoint}, argv...), dockerEnvironmentWithoutTargetOverrides())
@@ -161,8 +171,23 @@ func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]stri
 	if o.keys != "" && o.role == "upload-station" {
 		return nil, errors.New("upload stations must not receive signing keys")
 	}
+	if o.awsLoginRuntime != "" && (!awsCredentialCommand(o, command) || o.credentials != "") {
+		return nil, errors.New("invalid renewable AWS credential mount")
+	}
+	credentialSource := o.credentials
+	// Bindings are host instructions, never container credentials. Runtime
+	// preparation supplies a fresh directory only after identity verification.
+	if o.credentials != "" {
+		binding, err := readAWSLoginBinding(o.credentials)
+		if err != nil {
+			return nil, err
+		}
+		if binding != nil {
+			o.credentials = ""
+		}
+	}
 	var sources []string
-	for _, source := range []string{o.work, o.trust, o.keys, o.credentials, o.r2Parent, o.r2Control, o.recoveryContext} {
+	for _, source := range []string{o.work, o.trust, o.keys, credentialSource, o.r2Parent, o.r2Control, o.recoveryContext, o.awsLoginRuntime} {
 		if source == "" {
 			continue
 		}
@@ -190,6 +215,7 @@ func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]stri
 		{o.work, "/work", false, false}, {o.trust, "/trust", true, false}, {o.keys, "/keys", true, false}, {o.credentials, "/credentials/aws", true, true},
 		{o.r2Parent, "/credentials/r2-parent", true, true}, {o.r2Control, "/credentials/r2-control", true, true},
 		{o.recoveryContext, "/recovery", true, false},
+		{o.awsLoginRuntime, "/credentials/aws-login", true, false},
 	} {
 		if mount.source == "" && mount.target != "/work" {
 			continue
@@ -205,6 +231,9 @@ func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]stri
 	}
 	if o.credentials != "" {
 		argv = append(argv, "--env=AWS_SHARED_CREDENTIALS_FILE=/credentials/aws")
+	}
+	if o.awsLoginRuntime != "" {
+		argv = append(argv, "--env=AWS_CONFIG_FILE=/credentials/aws-login/config")
 	}
 	if o.r2Parent != "" {
 		argv = append(argv, "--env="+r2ParentSecretEnvironment+"_FILE=/credentials/r2-parent")
