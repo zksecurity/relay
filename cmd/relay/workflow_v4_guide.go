@@ -433,7 +433,7 @@ func runWorkflowV4GuideLoop(p, signer guidedProfile, identity setupIdentity, pro
 		} else {
 			fmt.Fprintln(ui.output, "[R] Refresh from storage\n[Q] Save and exit")
 		}
-		answer, err := ui.ask("Choose", "Q")
+		answer, err := ui.ask("Choose an action [Enter = save and exit]", "")
 		if err != nil {
 			return err
 		}
@@ -521,7 +521,7 @@ func runWorkflowV4GuideLoop(p, signer guidedProfile, identity setupIdentity, pro
 			if actionErr != nil {
 				ui.message(toneError, "Public handoff stopped: %v\nRetained work was preserved.\n", actionErr)
 			}
-		case "Q":
+		case "", "Q":
 			return nil
 		case "R":
 		default:
