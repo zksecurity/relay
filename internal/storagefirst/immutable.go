@@ -1,6 +1,7 @@
 package storagefirst
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -32,6 +33,15 @@ type PublishingStore interface {
 // one, the object is downloaded and hashed. Mere existence is not proof of
 // identical content, and a nil memo keeps the always-fetch behavior.
 func PublishImmutable(objects ImmutableStore, ref state.ContentRef, localPath, tempParent string, memo *VerifiedObjects) error {
+	return PublishImmutableContext(context.Background(), objects, ref, localPath, tempParent, memo)
+}
+
+// PublishImmutableContext makes staging and verification cancellable. Provider
+// calls must also be bound to ctx by the caller; cleanup waits for them to return.
+func PublishImmutableContext(ctx context.Context, objects ImmutableStore, ref state.ContentRef, localPath, tempParent string, memo *VerifiedObjects) (result error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if objects == nil {
 		return errors.New("immutable object store is required")
 	}
@@ -46,16 +56,26 @@ func PublishImmutable(objects ImmutableStore, ref state.ContentRef, localPath, t
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(temp)
+	defer func() {
+		if err := os.RemoveAll(temp); err != nil {
+			result = errors.Join(result, fmt.Errorf("clean staged upload: %w", err))
+		}
+	}()
 	staged := filepath.Join(temp, "payload")
-	if err := stageDeliveryFile(localPath, staged, deliveryFile{SHA256: ref.SHA256, Size: ref.Size}); err != nil {
+	if err := stageDeliveryFileContext(ctx, localPath, staged, deliveryFile{SHA256: ref.SHA256, Size: ref.Size}); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	key := store.Key(ref.SHA256)
 	created, err := objects.PutIfAbsent(key, staged)
+	if cancelErr := ctx.Err(); cancelErr != nil {
+		return cancelErr
+	}
 	if err == nil {
 		memo.Record(key, created)
-		return nil
+		return ctx.Err()
 	}
 	if !errors.Is(err, store.ErrExists) {
 		return err
@@ -67,14 +87,21 @@ func PublishImmutable(objects ImmutableStore, ref state.ContentRef, localPath, t
 	}
 	if memo != nil {
 		if publishing, ok := objects.(PublishingStore); ok {
-			return memo.confirmExisting(publishing, key, ref, filepath.Join(temp, "object"))
+			return memo.confirmExistingContext(ctx, publishing, key, ref, filepath.Join(temp, "object"))
 		}
 	}
-	_, err = fetchExactVersion(objects, ref, filepath.Join(temp, "object"))
+	_, err = fetchExactVersionContext(ctx, objects, ref, filepath.Join(temp, "object"))
 	return err
 }
 
 func verifyLocalRef(ref state.ContentRef, localPath string) error {
+	return verifyLocalRefContext(context.Background(), ref, localPath)
+}
+
+func verifyLocalRefContext(ctx context.Context, ref state.ContentRef, localPath string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if ref.Size <= 0 || !validDigest(ref.SHA256) {
 		return errors.New("immutable reference requires a positive size and valid SHA-256")
 	}
@@ -96,8 +123,11 @@ func verifyLocalRef(ref state.ContentRef, localPath string) error {
 	}
 	hash := sha256.New()
 	// Hash only the declared bytes, then check for growth without size+1 overflow.
-	n, err := io.Copy(hash, io.LimitReader(file, ref.Size))
+	n, err := io.Copy(hash, io.LimitReader(contextReader{ctx: ctx, reader: file}, ref.Size))
 	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	var extra [1]byte
@@ -112,7 +142,7 @@ func verifyLocalRef(ref state.ContentRef, localPath string) error {
 	if "sha256:"+hex.EncodeToString(hash.Sum(nil)) != ref.SHA256 {
 		return errors.New("immutable upload source digest does not match its reference")
 	}
-	return nil
+	return ctx.Err()
 }
 
 func digestBytes(raw []byte) string {

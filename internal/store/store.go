@@ -13,6 +13,7 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Credentials struct {
@@ -42,6 +44,22 @@ type Client struct {
 	Credentials   *Credentials
 	NoSign        bool
 	httpClient    *http.Client
+	ctx           context.Context
+}
+
+// WithContext returns an operation-scoped copy. It cancels direct AWS CLI
+// processes and public HTTP reads; it does not manage arbitrary wrapper or
+// container descendants. A cancelled write may already have reached storage.
+func (c Client) WithContext(ctx context.Context) Client {
+	c.ctx = ctx
+	return c
+}
+
+func (c Client) operationContext() context.Context {
+	if c.ctx != nil {
+		return c.ctx
+	}
+	return context.Background()
 }
 
 // Key returns the content-addressed object key for a tagged sha256 digest.
@@ -68,7 +86,12 @@ func (c Client) args(rest ...string) []string {
 }
 
 func (c Client) run(args ...string) ([]byte, error) {
-	cmd := exec.Command("aws", c.args(args...)...)
+	ctx := c.operationContext()
+	cmd := exec.CommandContext(ctx, "aws", c.args(args...)...)
+	if c.ctx != nil {
+		// Bound waits for inherited output pipes after the direct child exits.
+		cmd.WaitDelay = 2 * time.Second
+	}
 	if c.Credentials != nil {
 		cmd.Env = append(os.Environ(),
 			"AWS_ACCESS_KEY_ID="+c.Credentials.AccessKeyID,
@@ -79,8 +102,14 @@ func (c Client) run(args ...string) ([]byte, error) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, fmt.Errorf("aws %s: %w: %s",
 			strings.Join(args[:1], " "), err, strings.TrimSpace(stderr.String()))
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	return stdout.Bytes(), nil
 }
@@ -135,7 +164,11 @@ func (c Client) getPublic(key, localPath string) error {
 		return errors.New("invalid public base URL")
 	}
 	base.Path = strings.TrimSuffix(base.Path, "/") + "/" + key
-	response, err := http.Get(base.String()) // #nosec G107 -- base is operator configuration validated as HTTPS.
+	request, err := http.NewRequestWithContext(c.operationContext(), http.MethodGet, base.String(), nil) // #nosec G107 -- base is operator configuration validated as HTTPS.
+	if err != nil {
+		return err
+	}
+	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return err
 	}

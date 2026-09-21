@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/zksecurity/relay/internal/state"
 	"github.com/zksecurity/relay/internal/storagefirst"
@@ -70,21 +73,28 @@ func runCoordinatorCommitV4(args []string) error {
 	if err != nil {
 		return err
 	}
-	objects := coordinatorClient(config, config.PublishedBucket)
+	// Catch cancellation only for the publication stage. Drain active provider
+	// calls and staging cleanup rather than exiting midway through a copy.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
+	objects := coordinatorClient(config, config.PublishedBucket).WithContext(ctx)
 	// The verified-objects memo is workspace-private state beside the public
 	// artifact root: it records which stored versions this coordinator already
 	// digest-verified, so the cumulative artifact inventory carried by every
 	// checkpoint is confirmed by a metadata request instead of re-downloading
 	// each earlier artifact on every commit.
 	memo := storagefirst.LoadVerifiedObjects(filepath.Join(filepath.Dir(root), "verified-objects.json"))
-	if err := storagefirst.PublishArtifacts(objects, child.PublicationArtifacts(), root, filepath.Dir(root), memo, storagefirst.DefaultPublishLimits()); err != nil {
+	if err := storagefirst.PublishArtifactsContext(ctx, objects, child.PublicationArtifacts(), root, filepath.Dir(root), memo, storagefirst.DefaultPublishLimits()); err != nil {
 		return err
 	}
-	if err := storagefirst.PublishImmutable(objects, checkpointRef, checkpoint, filepath.Dir(root), memo); err != nil {
+	if err := storagefirst.PublishImmutableContext(ctx, objects, checkpointRef, checkpoint, filepath.Dir(root), memo); err != nil {
 		return fmt.Errorf("publish immutable checkpoint: %w", err)
 	}
-	if err := storagefirst.PublishImmutable(objects, signatureRef, signature, filepath.Dir(root), memo); err != nil {
+	if err := storagefirst.PublishImmutableContext(ctx, objects, signatureRef, signature, filepath.Dir(root), memo); err != nil {
 		return fmt.Errorf("publish immutable checkpoint signature: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if err := memo.Save(); err != nil {
 		return fmt.Errorf("record verified objects: %w", err)
@@ -125,6 +135,11 @@ func runCoordinatorCommitV4(args []string) error {
 		}
 		commit.Previous, commit.PreviousVersion = &current, &version
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Cancellation racing the CAS can leave a committed remote head. Retry
+	// retains the exact-head reconciliation above; never assume no effect.
 	committed, err := storagefirst.CommitRoot(objects, commit, filepath.Dir(root))
 	if err != nil {
 		return err

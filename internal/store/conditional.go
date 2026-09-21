@@ -177,7 +177,7 @@ func (c Client) getPublicVersionedAtMost(key, local string, maximum int64) (Obje
 	// Client.Timeout is a useful backstop, but make the deadline explicit on
 	// the request as well. That ensures custom transports and blocked response
 	// bodies receive cancellation rather than leaving a synchronizer stranded.
-	ctx, cancel := context.WithTimeout(context.Background(), publicReadTimeout)
+	ctx, cancel := context.WithTimeout(c.operationContext(), publicReadTimeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base.String(), nil) // #nosec G107 -- validated operator-configured HTTPS origin.
 	if err != nil {

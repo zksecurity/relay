@@ -1,5 +1,12 @@
 ## What changed
 
+- Cancelling storage-first checkpoint publication with Ctrl-C or a termination
+  signal now stops new uploads, cancels active provider calls, and drains staging
+  cleanup before returning. Retry still verifies existing immutable objects and
+  reconciles any uncertain final root update. Existing orphan files from hard
+  termination are not automatically deleted. Tessera compatibility is unchanged:
+  no setup contract, signed format, or API changes are required.
+
 - The storage-first participant guide now follows the authenticated transition
   from Phase 1 to Phase 2 when refreshed or reopened, using the same saved
   profile. Earlier-phase unfinished work is retained and blocks new actions.
