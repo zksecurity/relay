@@ -187,8 +187,10 @@ func (j *workflowV4Journal) resumeCandidateUpload(id string, snapshot storagefir
 	return j.transition(id, "returned-needs-verification")
 }
 
-func (j *workflowV4Journal) uploadCandidatePlan(plan workflowV4OperationPlan, objects storagefirst.ImmutableStore, scope storagefirst.DeliveryScope, sources map[string]state.ContentRef, paths map[string]string, resultID, manifestKey, temporary string, now time.Time) error {
-	if err := storagefirst.UploadDelivery(objects, scope, workflowV4CandidateDeliveryInventory(), sources, paths, temporary); err != nil {
+func (j *workflowV4Journal) uploadCandidatePlan(plan workflowV4OperationPlan, objects storagefirst.ImmutableStore, scope storagefirst.DeliveryScope, sources map[string]state.ContentRef, paths map[string]string, resultID, manifestKey, temporary string, now time.Time) (result error) {
+	observe, finish := startCandidateUploadProgress(progressOutput, progressHeartbeatInterval)
+	defer func() { finish(result) }()
+	if err := storagefirst.UploadDeliveryWithProgress(objects, scope, workflowV4CandidateDeliveryInventory(), sources, paths, temporary, observe); err != nil {
 		return err
 	}
 	if err := ensureWorkflowV4Directory(j.state.Marker.Binding.Work, filepath.Dir(plan.Outputs[0])); err != nil {

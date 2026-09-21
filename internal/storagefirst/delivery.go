@@ -199,6 +199,24 @@ func decodeDelivery(raw []byte, scope DeliveryScope, inventory DeliveryInventory
 // private copies before any provider writes. Repeating identical bytes is safe;
 // different existing bytes fail. A successful return means uploaded, not accepted.
 func UploadDelivery(objects ImmutableStore, scope DeliveryScope, inventory DeliveryInventory, sources map[string]state.ContentRef, paths map[string]string, tempParent string) error {
+	return UploadDeliveryWithProgress(objects, scope, inventory, sources, paths, tempParent, nil)
+}
+
+// DeliveryProgress contains validated public names and byte counts only.
+// ConfirmedBytes includes successful writes and byte-verified existing objects,
+// not bytes sent on the network. TotalBytes includes the final transport manifest.
+type DeliveryProgress struct {
+	Stage          string
+	Name           string
+	Size           int64
+	ConfirmedBytes int64
+	TotalBytes     int64
+	Manifest       bool
+}
+
+// UploadDeliveryWithProgress invokes observe synchronously during delivery.
+// Observation does not change immutable writes, retry verification, or ordering.
+func UploadDeliveryWithProgress(objects ImmutableStore, scope DeliveryScope, inventory DeliveryInventory, sources map[string]state.ContentRef, paths map[string]string, tempParent string, observe func(DeliveryProgress)) error {
 	if objects == nil {
 		return errors.New("delivery store required")
 	}
@@ -232,12 +250,23 @@ func UploadDelivery(objects ImmutableStore, scope DeliveryScope, inventory Deliv
 	if _, err := decodeDelivery(raw, scope, inventory); err != nil {
 		return err
 	}
+	total := int64(len(raw))
+	for _, file := range m.Files {
+		total += file.Size
+	}
+	var confirmed int64
+	notify := func(stage string, file deliveryFile, manifest bool) {
+		if observe != nil {
+			observe(DeliveryProgress{Stage: stage, Name: file.Name, Size: file.Size, ConfirmedBytes: confirmed, TotalBytes: total, Manifest: manifest})
+		}
+	}
 	tmp, err := os.MkdirTemp(tempParent, "relay-delivery-upload-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(tmp)
 	for _, file := range m.Files {
+		notify("staging", file, false)
 		if err := stageDeliveryFile(paths[file.Name], filepath.Join(tmp, file.Name), file); err != nil {
 			return err
 		}
@@ -248,15 +277,24 @@ func UploadDelivery(objects ImmutableStore, scope DeliveryScope, inventory Deliv
 	if err := os.WriteFile(manifestPath, raw, 0600); err != nil {
 		return err
 	}
+	publish := func(key, path string, file deliveryFile, manifest bool) error {
+		notify("uploading", file, manifest)
+		if err := putExactDelivery(objects, key, path, file, tmp, func() { notify("checking existing", file, manifest) }); err != nil {
+			return err
+		}
+		confirmed += file.Size
+		notify("confirmed", file, manifest)
+		return nil
+	}
 	for _, file := range m.Files {
-		if err := putExactDelivery(objects, prefix+"/files/"+file.Name, filepath.Join(tmp, file.Name), file, tmp); err != nil {
+		if err := publish(prefix+"/files/"+file.Name, filepath.Join(tmp, file.Name), file, false); err != nil {
 			return err
 		}
 	}
-	return putExactDelivery(objects, prefix+"/manifest.json", manifestPath, deliveryFile{Name: "manifest.json", SHA256: digestBytes(raw), Size: int64(len(raw))}, tmp)
+	return publish(prefix+"/manifest.json", manifestPath, deliveryFile{Name: "manifest.json", SHA256: digestBytes(raw), Size: int64(len(raw))}, true)
 }
 
-func putExactDelivery(objects ImmutableStore, key, local string, file deliveryFile, temp string) error {
+func putExactDelivery(objects ImmutableStore, key, local string, file deliveryFile, temp string, checkingExisting func()) error {
 	_, err := objects.PutIfAbsent(key, local)
 	if err == nil {
 		return nil
@@ -264,6 +302,7 @@ func putExactDelivery(objects ImmutableStore, key, local string, file deliveryFi
 	if !errors.Is(err, store.ErrExists) {
 		return err
 	}
+	checkingExisting()
 	comparison, err := os.MkdirTemp(temp, "existing-")
 	if err != nil {
 		return err

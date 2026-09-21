@@ -111,6 +111,73 @@ func TestDeliveryManifestLastAndExactRetry(t *testing.T) {
 	// treated as authenticated receipts or completed ceremony operations.
 }
 
+func TestDeliveryProgressConfirmsOnlyCompletedObjects(t *testing.T) {
+	for _, lost := range []bool{false, true} {
+		s, scope, inventory, refs, paths := deliveryFixture(t)
+		prefix, _ := scope.Prefix()
+		s.failKey, s.lostResponse = prefix+"/manifest.json", lost
+		var events []DeliveryProgress
+		observe := func(p DeliveryProgress) { events = append(events, p) }
+		if err := UploadDeliveryWithProgress(s, scope, inventory, refs, paths, t.TempDir(), observe); err == nil {
+			t.Fatal("lost response hidden")
+		}
+		last := events[len(events)-1]
+		if !last.Manifest || last.Stage != "uploading" || last.ConfirmedBytes >= last.TotalBytes {
+			t.Fatalf("premature confirmation: %+v", last)
+		}
+		s.failKey = ""
+		events = nil
+		if err := UploadDeliveryWithProgress(s, scope, inventory, refs, paths, t.TempDir(), observe); err != nil {
+			t.Fatal(err)
+		}
+		var confirmed int64
+		checks := 0
+		for _, event := range events {
+			if event.Stage == "checking existing" {
+				checks++
+			}
+			if event.Stage == "confirmed" {
+				confirmed += event.Size
+			}
+			if event.ConfirmedBytes != confirmed {
+				t.Fatalf("confirmation advanced at wrong stage: %+v", event)
+			}
+			if event.Stage == "staging" && confirmed != 0 {
+				t.Fatal("staging did not finish before writes")
+			}
+		}
+		last = events[len(events)-1]
+		if checks < 2 || !last.Manifest || last.Stage != "confirmed" || confirmed != last.TotalBytes {
+			t.Fatalf("retry incomplete: %+v checks=%d", last, checks)
+		}
+		if len(s.writes) != 3 {
+			t.Fatal("retry duplicated writes")
+		}
+	}
+}
+
+func TestDeliveryProgressRefusesConflictingBytes(t *testing.T) {
+	s, scope, inventory, refs, paths := deliveryFixture(t)
+	prefix, _ := scope.Prefix()
+	s.objects[prefix+"/files/receipt.json"] = []byte("conflicting bytes")
+	var events []DeliveryProgress
+	if err := UploadDeliveryWithProgress(s, scope, inventory, refs, paths, t.TempDir(), func(p DeliveryProgress) { events = append(events, p) }); err == nil {
+		t.Fatal("conflict accepted")
+	}
+	for _, event := range events {
+		if event.ConfirmedBytes != 0 || event.Manifest {
+			t.Fatalf("conflict confirmed: %+v", event)
+		}
+	}
+	if len(s.writes) != 0 {
+		t.Fatal("wrote after conflict")
+	}
+	inventory["bad\nname"] = 1
+	if err := UploadDeliveryWithProgress(s, scope, inventory, refs, paths, t.TempDir(), func(DeliveryProgress) { t.Fatal("invalid input reported") }); err == nil {
+		t.Fatal("invalid input accepted")
+	}
+}
+
 func TestDeliveryInterruptedUploadAndLostResponse(t *testing.T) {
 	for _, lost := range []bool{false, true} {
 		for _, target := range []string{"files/receipt.sig", "manifest.json"} {
