@@ -19,12 +19,42 @@ read_installer_answer() {
 parse_release() {
   local selection=$1
   selection=${selection#https://github.com/zksecurity/relay/releases/tag/}
+  if [[ "$selection" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+    tag=$selection
+    commit=''
+    return 0
+  fi
   [[ "$selection" =~ ^role-images-([0-9a-f]{40})$ ]] || {
-    echo 'Use an exact Relay role-images release URL or tag, not latest or a branch.' >&2
+    echo 'Use an exact Relay version (v0.2.0) or role-images commit tag, not latest or a branch.' >&2
     return 1
   }
   tag=$selection
   commit=${BASH_REMATCH[1]}
+}
+
+resolve_version() {
+  [[ -z "$commit" ]] || return 0
+  local version=$tag folder mapped_version mapped_commit extra
+  folder=$(mktemp -d)
+  if ! gh release download "$version" --repo zksecurity/relay --pattern relay-release-version.txt --dir "$folder"; then
+    rm -rf -- "$folder"; return 1
+  fi
+  {
+    IFS= read -r mapped_version && IFS= read -r mapped_commit && ! IFS= read -r extra
+  } < "$folder/relay-release-version.txt" || { rm -rf -- "$folder"; return 1; }
+  [[ -z "$extra" && "$(wc -c < "$folder/relay-release-version.txt")" -eq $((${#mapped_version}+${#mapped_commit}+2)) ]] || { rm -rf -- "$folder"; return 1; }
+  [[ "$mapped_version" == "$version" && "$mapped_commit" =~ ^[0-9a-f]{40}$ ]] || { rm -rf -- "$folder"; return 1; }
+  # Prove the mapping was produced by this exact protected-main build before
+  # trusting the commit or using it for any subsequent download or execution.
+  if ! gh attestation verify "$folder/relay-release-version.txt" --repo zksecurity/relay \
+    --signer-workflow zksecurity/relay/.github/workflows/publish-role-images.yml \
+    --source-ref refs/heads/main --source-digest "$mapped_commit" --deny-self-hosted-runners; then
+    rm -rf -- "$folder"; return 1
+  fi
+  rm -rf -- "$folder"
+  commit=$mapped_commit
+  tag="role-images-$commit"
+  printf 'Verified Relay %s: %s\n' "$version" "$commit"
 }
 
 default_role_folder() { printf '%s/ceremonies/%s/%s' "$HOME" "$1" "$2"; }
@@ -200,6 +230,7 @@ if "$guided"; then
     read_installer_answer selection
     parse_release "$selection"
   fi
+  resolve_version
   prepare_guided_settings
   if [[ -n "$resume_start" ]]; then
     printf 'Resume the existing role with:\n  '; shell_quote "$resume_start"; printf '\nNo files or release settings were changed.\n'
@@ -208,6 +239,7 @@ if "$guided"; then
 elif [[ -z "$preset_release" ]]; then
   echo 'An exact release is required.' >&2; return 1
 fi
+resolve_version
 for tool in gh docker shasum; do command -v "$tool" >/dev/null; done
 case "$(uname -s)" in Darwin) os=darwin;; Linux) os=linux;; *) exit 1;; esac
 case "$(uname -m)" in arm64|aarch64) arch=arm64;; x86_64) arch=amd64;; *) exit 1;; esac
