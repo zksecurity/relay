@@ -28,14 +28,16 @@ const diagnosticLimit = 100
 const diagnosticDirectory = ".relay-diagnostics"
 
 type diagnosticEvent struct {
-	Time      string `json:"time"`
-	Release   string `json:"release"`
-	Role      string `json:"role"`
-	Stage     string `json:"stage"`
-	Action    string `json:"action"`
-	Outcome   string `json:"outcome"`
-	ErrorCode string `json:"error_code,omitempty"`
-	ExitCode  int    `json:"exit_code,omitempty"`
+	Sequence    uint64 `json:"sequence,omitempty"`
+	OperationID string `json:"operation_id,omitempty"`
+	Time        string `json:"time"`
+	Release     string `json:"release"`
+	Role        string `json:"role"`
+	Stage       string `json:"stage"`
+	Action      string `json:"action"`
+	Outcome     string `json:"outcome"`
+	ErrorCode   string `json:"error_code,omitempty"`
+	ExitCode    int    `json:"exit_code,omitempty"`
 }
 
 type diagnosticContext struct{ Work, Role, Release, Stage, Action string }
@@ -93,12 +95,20 @@ func cleanDiagnosticEvent(e diagnosticEvent) diagnosticEvent {
 		e.Time = "unknown"
 	}
 	e.Release = diagnosticRelease(e.Release)
+	if !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(e.OperationID) {
+		e.OperationID = ""
+	}
 	stages := roleFlowStages(e.Role)
 	if len(stages) == 0 {
 		e.Role = "unknown"
 	}
 	valid := false
-	if e.Stage == "launcher" {
+	if e.Stage == "workflow-v4" {
+		switch e.Action {
+		case "enrollment", "participant-action", "coordinator-action", "coordinator-lifecycle", "release-signer-action":
+			valid = true
+		}
+	} else if e.Stage == "launcher" {
 		valid = e.Action == "open-guide"
 	} else if e.Stage == "setup" {
 		n, err := strconv.Atoi(e.Action)
@@ -205,12 +215,20 @@ func recordDiagnostic(c diagnosticContext, outcome string, cause error, output i
 	if c.Work == "" {
 		return
 	} // test-only flows without a role folder
-	if err := appendDiagnostic(c, outcome, cause); err != nil && output != nil {
+	when := time.Now()
+	if err := appendAuditActivityAt(c, outcome, cause, "", when); err != nil && output != nil {
+		fmt.Fprintln(output, "Activity log unavailable. Action result is unchanged; this observation may be missing from the audit.")
+	}
+	if err := appendDiagnosticAt(c, outcome, cause, when); err != nil && output != nil {
 		fmt.Fprintln(output, "Diagnostic log unavailable. Ceremony recovery state is separate; the action's result is unchanged.")
 	}
 }
 
 func appendDiagnostic(c diagnosticContext, outcome string, cause error) error {
+	return appendDiagnosticAt(c, outcome, cause, time.Now())
+}
+
+func appendDiagnosticAt(c diagnosticContext, outcome string, cause error, when time.Time) error {
 	root, err := diagnosticRoot(c.Work, true)
 	if err != nil {
 		return err
@@ -225,7 +243,7 @@ func appendDiagnostic(c diagnosticContext, outcome string, cause error) error {
 		return err
 	}
 	code, exit := diagnosticError(cause)
-	e := cleanDiagnosticEvent(diagnosticEvent{Time: time.Now().UTC().Format(time.RFC3339Nano), Release: c.Release, Role: c.Role, Stage: c.Stage, Action: c.Action, Outcome: outcome, ErrorCode: code, ExitCode: exit})
+	e := cleanDiagnosticEvent(diagnosticEvent{Time: when.UTC().Format(time.RFC3339Nano), Release: c.Release, Role: c.Role, Stage: c.Stage, Action: c.Action, Outcome: outcome, ErrorCode: code, ExitCode: exit})
 	events = append(events, e)
 	if len(events) > diagnosticLimit {
 		events = events[len(events)-diagnosticLimit:]

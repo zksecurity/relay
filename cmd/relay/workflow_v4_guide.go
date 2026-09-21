@@ -376,43 +376,67 @@ func runWorkflowV4GuideLoop(p, signer guidedProfile, identity setupIdentity, pro
 				fmt.Fprintln(ui.output, "No role action is available for the authenticated state.")
 				continue
 			}
+
+			activityAction := "coordinator-action"
 			if enrollmentAction {
-				var actionErr error
-				if p.Role == "coordinator" {
-					if enrollmentExpected == nil {
-						actionErr = errors.New("no missing signed enrollment was selected")
-					} else {
-						actionErr = runWorkflowV4CoordinatorExpectedEnrollment(ui, snapshot, protocol, config, p, signer, inspector, *enrollmentExpected, coordinatorProgress)
-					}
-				} else {
-					actionErr = runWorkflowV4OwnEnrollmentUpload(ui, snapshot, protocol, p, config, inspector, identity)
-				}
-				if actionErr != nil {
-					ui.message(toneError, "Enrollment action stopped: %v\nSigned files and verified downloads were retained. No action is automatically repeated.\n", actionErr)
-					continue
-				}
-			} else if p.Role == "participant" && participant != nil {
-				if err := runWorkflowV4ParticipantAction(ui, j, snapshot, protocol, *participant, config, inspector, cli, turn, progress); err != nil {
-					ui.message(toneError, "Participant action stopped: %v\nSaved state and verified public files were retained. No action is automatically repeated.\n", err)
-					continue
-				}
-			} else if p.Role == "coordinator" {
-				var actionErr error
-				if lifecycleAction != "" {
-					actionErr = runWorkflowV4CoordinatorLifecycle(ui, lifecycleAction, snapshot, protocol, p, signer, inspector)
-				} else {
-					actionErr = runWorkflowV4CoordinatorAction(ui, snapshot, protocol, config, p, signer, inspector, recommendation, turn, coordinatorProgress)
-				}
-				if actionErr != nil {
-					ui.message(toneError, "Coordinator action stopped: %v\nSigned files and verified downloads were retained. No action is automatically repeated.\n", actionErr)
-					continue
-				}
+				activityAction = "enrollment"
+			} else if p.Role == "participant" {
+				activityAction = "participant-action"
 			} else if p.Role == "release-signer" {
-				if err := runWorkflowV4ReleaseSignerAction(ui, snapshot, protocol, config, p, signer, identity, releaseProgress); err != nil {
-					ui.message(toneError, "Release-signer action stopped: %v\nVerified downloads and any complete signed package were retained. No signing or upload is automatically repeated.\n", err)
-					continue
-				}
+				activityAction = "release-signer-action"
+			} else if lifecycleAction != "" {
+				activityAction = "coordinator-lifecycle"
 			}
+			finishActivity, activityErr := beginAuditActivity(diagnosticContext{Work: p.Work, Role: p.Role, Release: launcherCommit(), Stage: "workflow-v4", Action: activityAction})
+			if activityErr != nil {
+				ui.message(toneError, "%v\n", activityErr)
+				continue
+			}
+			actionResult := func() error {
+				if enrollmentAction {
+					var actionErr error
+					if p.Role == "coordinator" {
+						if enrollmentExpected == nil {
+							actionErr = errors.New("no missing signed enrollment was selected")
+						} else {
+							actionErr = runWorkflowV4CoordinatorExpectedEnrollment(ui, snapshot, protocol, config, p, signer, inspector, *enrollmentExpected, coordinatorProgress)
+						}
+					} else {
+						actionErr = runWorkflowV4OwnEnrollmentUpload(ui, snapshot, protocol, p, config, inspector, identity)
+					}
+					if actionErr != nil {
+						ui.message(toneError, "Enrollment action stopped: %v\nSigned files and verified downloads were retained. No action is automatically repeated.\n", actionErr)
+						return actionErr
+					}
+				} else if p.Role == "participant" && participant != nil {
+					if err := runWorkflowV4ParticipantAction(ui, j, snapshot, protocol, *participant, config, inspector, cli, turn, progress); err != nil {
+						ui.message(toneError, "Participant action stopped: %v\nSaved state and verified public files were retained. No action is automatically repeated.\n", err)
+						return err
+					}
+				} else if p.Role == "coordinator" {
+					var actionErr error
+					if lifecycleAction != "" {
+						actionErr = runWorkflowV4CoordinatorLifecycle(ui, lifecycleAction, snapshot, protocol, p, signer, inspector)
+					} else {
+						actionErr = runWorkflowV4CoordinatorAction(ui, snapshot, protocol, config, p, signer, inspector, recommendation, turn, coordinatorProgress)
+					}
+					if actionErr != nil {
+						ui.message(toneError, "Coordinator action stopped: %v\nSigned files and verified downloads were retained. No action is automatically repeated.\n", actionErr)
+						return actionErr
+					}
+				} else if p.Role == "release-signer" {
+					if err := runWorkflowV4ReleaseSignerAction(ui, snapshot, protocol, config, p, signer, identity, releaseProgress); err != nil {
+						ui.message(toneError, "Release-signer action stopped: %v\nVerified downloads and any complete signed package were retained. No signing or upload is automatically repeated.\n", err)
+						return err
+					}
+				}
+				return nil
+			}()
+			finishActivity(actionResult, ui.output)
+			if actionResult != nil {
+				continue
+			}
+
 			fmt.Fprintln(ui.output, "Action finished locally. Relay will refresh signed storage state before recommending anything else.")
 		case "E", "I", "U":
 			if p.Role != "coordinator" || snapshot.Checked() == 0 {
