@@ -143,6 +143,12 @@ func (s *workflowV4OfflineStore) GetVersionedAtMost(key, path string, maximum in
 		}
 		input = file
 	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return store.ObjectVersion{}, err
+	}
+	if err := requireOfflineRealPath(filepath.Dir(path)); err != nil {
+		return store.ObjectVersion{}, err
+	}
 	output, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return store.ObjectVersion{}, err

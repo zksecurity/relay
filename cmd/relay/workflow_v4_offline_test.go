@@ -44,7 +44,11 @@ func TestOfflineSnapshotBoundedPublicTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := filepath.Join(t.TempDir(), "copy")
+	outputRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(outputRoot, "artifacts", "checkpoints", "final", "copy")
 	if _, err = s.GetVersionedAtMost(store.Key(ref.SHA256), out, ref.Size-1); err == nil {
 		t.Fatal("oversize object accepted")
 	}
