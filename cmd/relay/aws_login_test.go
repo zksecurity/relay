@@ -334,7 +334,9 @@ func TestAWSLoginDockerCleanup(t *testing.T) {
 			script := `#!/bin/sh
 shift 2
 case "$1" in
-run) printf 'relay-aws-login-v1\n';;
+info) printf '{"ID":"aws-cleanup-test","Name":"test","ServerVersion":"28","OperatingSystem":"Linux","OSType":"linux","Architecture":"amd64","MemoryLimit":true,"SwapLimit":true,"CpuCfsQuota":true,"MemTotal":17179869184,"NCPU":8}\n';;
+container) :;;
+run) printf '%s\n' "$@" > "$RELAY_AWS_FAKE_DOCKER/probe-args"; printf 'relay-aws-login-v1\n';;
 create)
  shift
  while test "$#" -gt 0; do
@@ -395,6 +397,15 @@ esac
 				}
 			case <-time.After(5 * time.Second):
 				t.Fatal("action failed to stop")
+			}
+			probeArgs, err := os.ReadFile(filepath.Join(dir, "probe-args"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range []string{"--cpus\n2", "--memory\n6g", "--memory-swap\n6g", "GOMAXPROCS=2", "GOMEMLIMIT=4GiB", "org.zksecurity.relay.role=credential-probe"} {
+				if !strings.Contains(string(probeArgs), want) {
+					t.Fatalf("credential probe omitted runtime bound %q", want)
+				}
 			}
 			if _, err := os.Stat(filepath.Join(dir, "removed")); err != nil {
 				t.Fatal("container not removed", err)

@@ -113,7 +113,7 @@ func workflowV4ParticipantActionLabel(recommendation storagefirst.TurnRecommenda
 	return ""
 }
 
-func runWorkflowV4ParticipantAction(ui *coordinatorWizard, j *workflowV4Journal, snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, participant access.RoleConfig, config access.StorageConfig, inspector transcript.Inspector, dockerCLI string, view storagefirst.TurnViewV4, progress workflowV4ParticipantProgress) error {
+func runWorkflowV4ParticipantAction(ui *coordinatorWizard, j *workflowV4Journal, snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, participant access.RoleConfig, config access.StorageConfig, inspector transcript.Inspector, dockerCLI string, view storagefirst.TurnViewV4, progress workflowV4ParticipantProgress, resources *dockerRuntimeLimits) error {
 	pending, err := j.pending()
 	if err != nil {
 		return err
@@ -166,6 +166,11 @@ func runWorkflowV4ParticipantAction(ui *coordinatorWizard, j *workflowV4Journal,
 		if err != nil {
 			return err
 		}
+		limits, err := resolvedDockerRuntimeLimits(resources)
+		if err != nil {
+			return err
+		}
+		plan.Runtime.Resources = &limits
 		if err := j.prepare(plan); err != nil {
 			return err
 		}
@@ -179,7 +184,7 @@ func runWorkflowV4ParticipantAction(ui *coordinatorWizard, j *workflowV4Journal,
 			return errors.New("verified retained computation required before cleanup")
 		}
 		candidate := progress.Contribution.Plan.Outputs[0]
-		driver := &dockerDriver{image: progress.Contribution.Plan.Runtime.Image, platform: progress.Contribution.Plan.Runtime.Platform}
+		driver := &dockerDriver{runtimeLimits: progress.Contribution.Plan.Runtime.Resources, image: progress.Contribution.Plan.Runtime.Image, platform: progress.Contribution.Plan.Runtime.Platform}
 		role := roleOpts{outDir: candidate, docker: driver}
 		if err := confirmDockerNoCopiesWithIO(role, ui.input, ui.output); err != nil {
 			return err

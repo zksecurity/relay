@@ -38,6 +38,17 @@ func (j *workflowV4Journal) validateContributionLifecycle(p workflowV4OperationP
 	if !validDockerActiveState(intent) || intent.OperationID != p.ID || intent.WorkspaceID != r.WorkspaceID || intent.Image != r.Image || intent.Platform != r.Platform || intent.DaemonID != r.Daemon.ID || intent.DaemonEndpoint != r.Daemon.Endpoint || len(intent.CreateArgs) == 0 {
 		return errors.New("cleanup lifecycle differs from the original Docker invocation")
 	}
+	limits, err := resolvedDockerRuntimeLimits(p.Runtime.Resources)
+	if err != nil {
+		return err
+	}
+	recorded, err := resolvedDockerRuntimeLimits(intent.RuntimeLimits)
+	if err != nil {
+		return err
+	}
+	if limits != recorded || (r.Schema == dockerLifecycleSchema && !limits.matchesSecurityFacts(r.Security)) {
+		return errors.New("cleanup lifecycle resource allocation differs from the saved contribution")
+	}
 	destination := sha256.Sum256([]byte(filepath.Clean(candidate)))
 	invocation, _ := json.Marshal(intent.CreateArgs)
 	digest := sha256.Sum256(invocation)

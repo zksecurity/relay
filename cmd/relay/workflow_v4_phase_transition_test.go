@@ -171,7 +171,7 @@ func TestWorkflowV4GuidePhaseTransition(t *testing.T) {
 			var out bytes.Buffer
 			ui := coordinatorWizard{input: bufio.NewReader(strings.NewReader(tc.input)), output: &out}
 			calls := 0
-			err = runWorkflowV4GuideLoop(p, guidedProfile{}, setupIdentity{ID: b.IdentityID}, protocol, j, access.StorageConfig{}, transcript.Inspector{}, "/unused/docker", &loaded, &ui, func() (storagefirst.SnapshotV4, error) {
+			err = runWorkflowV4GuideLoop(t.TempDir(), p, guidedProfile{}, setupIdentity{ID: b.IdentityID}, protocol, j, access.StorageConfig{}, transcript.Inspector{}, "/unused/docker", &loaded, &ui, func() (storagefirst.SnapshotV4, error) {
 				if calls >= len(tc.snapshots) {
 					t.Fatal("unexpected refresh")
 				}
@@ -224,7 +224,7 @@ func TestWorkflowV4GuidePhaseOnlyRosters(t *testing.T) {
 				}
 				var out bytes.Buffer
 				ui := coordinatorWizard{input: bufio.NewReader(strings.NewReader("Q\n")), output: &out}
-				err = runWorkflowV4GuideLoop(p, guidedProfile{}, setupIdentity{ID: b.IdentityID}, protocol, j, access.StorageConfig{}, transcript.Inspector{}, "/unused/docker", &saved, &ui, func() (storagefirst.SnapshotV4, error) { return snapshot, nil })
+				err = runWorkflowV4GuideLoop(t.TempDir(), p, guidedProfile{}, setupIdentity{ID: b.IdentityID}, protocol, j, access.StorageConfig{}, transcript.Inspector{}, "/unused/docker", &saved, &ui, func() (storagefirst.SnapshotV4, error) { return snapshot, nil })
 				j.close()
 				if err != nil {
 					t.Fatal(err)
@@ -259,7 +259,7 @@ func TestWorkflowV4GuidePreservesEarlierPhasePendingWork(t *testing.T) {
 			before, _ := json.Marshal(j.state)
 			var out bytes.Buffer
 			ui := coordinatorWizard{input: bufio.NewReader(strings.NewReader("1\nQ\n")), output: &out}
-			err = runWorkflowV4GuideLoop(p, guidedProfile{}, setupIdentity{ID: b.IdentityID}, protocol, j, access.StorageConfig{}, transcript.Inspector{}, "/unused/docker", &saved, &ui, func() (storagefirst.SnapshotV4, error) { return snapshot, nil })
+			err = runWorkflowV4GuideLoop(t.TempDir(), p, guidedProfile{}, setupIdentity{ID: b.IdentityID}, protocol, j, access.StorageConfig{}, transcript.Inspector{}, "/unused/docker", &saved, &ui, func() (storagefirst.SnapshotV4, error) { return snapshot, nil })
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -272,7 +272,7 @@ func TestWorkflowV4GuidePreservesEarlierPhasePendingWork(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = runWorkflowV4ParticipantAction(&ui, j, snapshot, protocol, active, access.StorageConfig{}, transcript.Inspector{}, "/unused/docker", view, workflowV4ParticipantProgress{})
+			err = runWorkflowV4ParticipantAction(&ui, j, snapshot, protocol, active, access.StorageConfig{}, transcript.Inspector{}, "/unused/docker", view, workflowV4ParticipantProgress{}, nil)
 			if err == nil || !strings.Contains(err.Error(), "another participant turn") {
 				t.Fatalf("pending action dispatched: %v", err)
 			}

@@ -146,7 +146,7 @@ func runWorkflowV4CoordinatorLifecycle(ui *coordinatorWizard, action string, sna
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "close-"+phase, closureRecord, command); err != nil {
 			return err
 		}
 	}
@@ -160,7 +160,7 @@ func runWorkflowV4CoordinatorLifecycle(ui *coordinatorWizard, action string, sna
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "record-"+phase+"-closure", outputDir, command); err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -188,11 +188,15 @@ func runWorkflowV4ReleaseReviewLifecycle(ui *coordinatorWizard, snapshot storage
 		if regularPreparationFile(signature) {
 			return errors.New("retained evidence signature has no canonical bundle; preserve it for inspection")
 		}
-		command, err := workflowV4BundleCommand(snapshot.Head(), online, signer, "prepare", bundle, signature, "", time.Now().UTC())
+		stamp, err := retainedWorkflowV4LifecycleTime(signer, snapshot.Head(), "prepare-evidence-bundle", bundle, time.Now().UTC())
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		command, err := workflowV4BundleCommand(snapshot.Head(), online, signer, "prepare", bundle, signature, "", stamp)
+		if err != nil {
+			return err
+		}
+		if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "prepare-evidence-bundle", bundle, command); err != nil {
 			return err
 		}
 	}
@@ -209,7 +213,7 @@ func runWorkflowV4ReleaseReviewLifecycle(ui *coordinatorWizard, snapshot storage
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "sign-evidence-bundle", signature, command); err != nil {
 			return err
 		}
 	}
@@ -223,7 +227,7 @@ func runWorkflowV4ReleaseReviewLifecycle(ui *coordinatorWizard, snapshot storage
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "record-release-review", outputDir, command); err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -282,11 +286,15 @@ func runWorkflowV4FinalizeLifecycle(ui *coordinatorWizard, snapshot storagefirst
 	}
 	preliminary := filepath.Join(finalRoot, "preliminary")
 	if _, err := os.Lstat(preliminary); errors.Is(err, os.ErrNotExist) {
-		command, err := workflowV4FinalizeCommand(state, online, signer, "prepare", preliminary, "", time.Now().UTC())
+		stamp, err := retainedWorkflowV4LifecycleTime(signer, snapshot.Head(), "finalize-preliminary", preliminary, time.Now().UTC())
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		command, err := workflowV4FinalizeCommand(state, online, signer, "prepare", preliminary, "", stamp)
+		if err != nil {
+			return err
+		}
+		if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "finalize-preliminary", preliminary, command); err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -301,17 +309,21 @@ func runWorkflowV4FinalizeLifecycle(ui *coordinatorWizard, snapshot storagefirst
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "rehearsal-evidence", publicEvidence, command); err != nil {
 			return err
 		}
 	}
 	candidate := filepath.Join(finalRoot, "candidate")
 	if _, err := os.Lstat(candidate); errors.Is(err, os.ErrNotExist) {
-		command, err := workflowV4FinalizeCommand(state, online, signer, "complete", candidate, publicEvidence, time.Now().UTC())
+		stamp, err := retainedWorkflowV4LifecycleTime(signer, snapshot.Head(), "finalize-complete", candidate, time.Now().UTC())
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		command, err := workflowV4FinalizeCommand(state, online, signer, "complete", candidate, publicEvidence, stamp)
+		if err != nil {
+			return err
+		}
+		if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "finalize-complete", candidate, command); err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -335,7 +347,7 @@ func runWorkflowV4FinalizeLifecycle(ui *coordinatorWizard, snapshot storagefirst
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "record-final-candidate", outputDir, command); err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -471,7 +483,7 @@ func runWorkflowV4SealPhase1Lifecycle(ui *coordinatorWizard, snapshot storagefir
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "seal-phase1", sealDir, command); err != nil {
 			return err
 		}
 	}
@@ -485,7 +497,7 @@ func runWorkflowV4SealPhase1Lifecycle(ui *coordinatorWizard, snapshot storagefir
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "record-phase1-seal", outputDir, command); err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -545,7 +557,7 @@ func runWorkflowV4StartPhase2Lifecycle(ui *coordinatorWizard, snapshot storagefi
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "derive-phase2", phase2Dir, command); err != nil {
 			return err
 		}
 	}
@@ -559,7 +571,7 @@ func runWorkflowV4StartPhase2Lifecycle(ui *coordinatorWizard, snapshot storagefi
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "record-phase2-genesis", outputDir, command); err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -644,11 +656,15 @@ func runWorkflowV4BeaconLifecycle(ui *coordinatorWizard, phase string, snapshot 
 	if record, signature := regularPreparationFile(beaconRecord), regularPreparationFile(beaconSignature); record != signature {
 		return errors.New("incomplete retained beacon record; preserve it for inspection")
 	} else if !record {
-		command, err := workflowV4BeaconCommand(online, signer, phase, *closure, responsePath, now)
+		stamp, err := retainedWorkflowV4LifecycleTime(signer, snapshot.Head(), "beacon-"+phase, beaconRecord, now)
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		command, err := workflowV4BeaconCommand(online, signer, phase, *closure, responsePath, stamp)
+		if err != nil {
+			return err
+		}
+		if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "beacon-"+phase, beaconRecord, command); err != nil {
 			return err
 		}
 	}
@@ -663,7 +679,7 @@ func runWorkflowV4BeaconLifecycle(ui *coordinatorWizard, phase string, snapshot 
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "record-"+phase+"-beacon", outputDir, command); err != nil {
 			return err
 		}
 	} else if err != nil {

@@ -94,6 +94,7 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 	if err != nil {
 		return fmt.Errorf("prepare this role's network-disabled signing image in onboarding: %w", err)
 	}
+	signer.Resources = p.Resources
 	var identity setupIdentity
 	identityFiles, err := upgradeV2CaptureSetup(p.Work, "identity")
 	if err != nil {
@@ -114,8 +115,12 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 	if err := prepareGuidedImage(p.Image, p.Platform, cli, false); err != nil {
 		return err
 	}
-	d := dockerDriver{image: p.Image, platform: p.Platform, ceremonyBinary: dockerCeremonyBinary, root: root, inspectionRoot: p.Work, definition: filepath.Join(root, "ceremony.json"), definitionSig: filepath.Join(root, "ceremony.sig"), coordinatorKey: key, client: osDockerCommandClient{binary: cli}}
+	d := dockerDriver{runtimeLimits: p.Resources, image: p.Image, platform: p.Platform, ceremonyBinary: dockerCeremonyBinary, root: root, inspectionRoot: p.Work, definition: filepath.Join(root, "ceremony.json"), definitionSig: filepath.Join(root, "ceremony.sig"), coordinatorKey: key, client: osDockerCommandClient{binary: cli}}
 	if err := d.authenticateDaemon(); err != nil {
+		return err
+	}
+	ui := coordinatorWizard{input: bufio.NewReader(os.Stdin), output: os.Stdout}
+	if err := ensureGuidedResourcePolicy(&ui, d.client, d.daemon); err != nil {
 		return err
 	}
 	inspector := d.inspector()
@@ -192,7 +197,6 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 		}
 		fmt.Fprintln(os.Stdout, "Relay update active; cryptographic and signing runtimes retain their original identities.")
 	}
-	ui := coordinatorWizard{input: bufio.NewReader(os.Stdin), output: os.Stdout}
 	if p.Role == "release-signer" {
 		if p.Credentials != "" || p.R2Parent != "" || p.R2Control != "" {
 			return errors.New("offline signer must not have storage credentials")
@@ -206,7 +210,7 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 			return err
 		}
 		fmt.Fprintln(ui.output, "OFFLINE REVIEW: this imported snapshot does not prove current online freshness. Keep this host disconnected. No storage credentials or upload are needed.")
-		return runWorkflowV4GuideLoop(p, signer, identity, protocol, j, access.StorageConfig{}, inspector, cli, nil, &ui, func() (storagefirst.SnapshotV4, error) { return j.syncV4(objects, inspector, cli) })
+		return runWorkflowV4GuideLoop(settingsRoot, p, signer, identity, protocol, j, access.StorageConfig{}, inspector, cli, nil, &ui, func() (storagefirst.SnapshotV4, error) { return j.syncV4(objects, inspector, cli) })
 	}
 	if _, err := pathWithin(p.Work, storagePath, "/work"); err != nil {
 		return err
@@ -229,14 +233,14 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 		return err
 	}
 	objects := store.Client{PublicBaseURL: config.PublishedBaseURL}
-	return runWorkflowV4GuideLoop(p, signer, identity, protocol, j, config, inspector, cli, participant, &ui, func() (storagefirst.SnapshotV4, error) {
+	return runWorkflowV4GuideLoop(settingsRoot, p, signer, identity, protocol, j, config, inspector, cli, participant, &ui, func() (storagefirst.SnapshotV4, error) {
 		return j.syncV4(objects, inspector, cli)
 	})
 }
 
 // The normal guide and its scripted regression tests share this refresh/action
 // loop. Only the caller's authenticated synchronizer can provide a snapshot.
-func runWorkflowV4GuideLoop(p, signer guidedProfile, identity setupIdentity, protocol transcript.DefinitionProtocol, j *workflowV4Journal, config access.StorageConfig, inspector transcript.Inspector, cli string, savedParticipant *access.RoleConfig, ui *coordinatorWizard, sync func() (storagefirst.SnapshotV4, error)) error {
+func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identity setupIdentity, protocol transcript.DefinitionProtocol, j *workflowV4Journal, config access.StorageConfig, inspector transcript.Inspector, cli string, savedParticipant *access.RoleConfig, ui *coordinatorWizard, sync func() (storagefirst.SnapshotV4, error)) error {
 	binding := j.state.Marker.Binding
 	for {
 		// Phase selection is per authenticated refresh; never rewrite onboarding
@@ -271,6 +275,11 @@ func runWorkflowV4GuideLoop(p, signer guidedProfile, identity setupIdentity, pro
 			}
 			if c.Definition != binding.Definition {
 				return errors.New("backend definition differs from this role's authenticated definition")
+			}
+			if p.Role == "coordinator" || p.Role == "release-signer" {
+				if _, err := ensureWorkflowV4ResourceOrigin(p.Work, snapshot.Head(), j.state.ResourcePolicyVersion == 1); err != nil {
+					return err
+				}
 			}
 			if p.Role == "coordinator" {
 				enrollmentExpected, err = workflowV4NextRequiredEnrollment(snapshot, protocol)
@@ -433,11 +442,51 @@ func runWorkflowV4GuideLoop(p, signer guidedProfile, identity setupIdentity, pro
 		} else {
 			fmt.Fprintln(ui.output, "[R] Refresh from storage\n[Q] Save and exit")
 		}
+		limits, limitsErr := resolvedDockerRuntimeLimits(p.Resources)
+		if limitsErr != nil {
+			return limitsErr
+		}
+		fmt.Fprintf(ui.output, "Resource preferences: %d CPUs, %d GiB memory.\n", limits.CPUs, limits.MemoryGiB)
+		fmt.Fprintln(ui.output, "[L] Resource limits for subsequent operations\n[B] Aggregate Docker resource policy")
 		answer, err := ui.ask("Choose an action [Enter = save and exit]", "")
 		if err != nil {
 			return err
 		}
 		switch strings.ToUpper(strings.TrimSpace(answer)) {
+		case "B":
+			driver := &dockerDriver{client: osDockerCommandClient{binary: cli}}
+			if err := driver.authenticateDaemon(); err != nil {
+				ui.message(toneError, "%v\n", err)
+				continue
+			}
+			if err := configureGuidedResourcePolicy(ui, driver.client, driver.daemon); err != nil {
+				ui.message(toneError, "%v\n", err)
+			}
+			continue
+		case "L":
+			driver := &dockerDriver{client: osDockerCommandClient{binary: cli}}
+			if err := driver.authenticateDaemon(); err != nil {
+				ui.message(toneError, "%v\n", err)
+				continue
+			}
+			selected, err := chooseGuidedResources(ui, p.Resources, driver.daemon)
+			if err != nil {
+				ui.message(toneError, "%v\n", err)
+				continue
+			}
+			dir, err := guidedDirectory(settingsRoot, p.Name, p.Role)
+			if err != nil {
+				return err
+			}
+			updated := p
+			updated.Resources = selected
+			if err := writeJSONAtomic(filepath.Join(dir, "profile.json"), updated, 0600); err != nil {
+				return err
+			}
+			p = updated
+			signer.Resources = selected
+			fmt.Fprintln(ui.output, "Saved resource preferences for subsequent operations. Running containers are unchanged.")
+			continue
 		case "1":
 			if actionLabel == "" {
 				fmt.Fprintln(ui.output, "No role action is available for the authenticated state.")
@@ -476,7 +525,7 @@ func runWorkflowV4GuideLoop(p, signer guidedProfile, identity setupIdentity, pro
 						return actionErr
 					}
 				} else if p.Role == "participant" && participant != nil {
-					if err := runWorkflowV4ParticipantAction(ui, j, snapshot, protocol, *participant, config, inspector, cli, turn, progress); err != nil {
+					if err := runWorkflowV4ParticipantAction(ui, j, snapshot, protocol, *participant, config, inspector, cli, turn, progress, p.Resources); err != nil {
 						ui.message(toneError, "Participant action stopped: %v\nSaved state and verified public files were retained. No action is automatically repeated.\n", err)
 						return err
 					}
@@ -586,6 +635,9 @@ func printWorkflowV4Status(out io.Writer, role string, c transcript.CheckpointSt
 func printWorkflowV4Pending(out io.Writer, pending *workflowV4Operation) {
 	if pending != nil {
 		fmt.Fprintf(out, "Retained operation needs inspection: %s (%s). It will not be repeated automatically.\n", pending.Plan.Kind, pending.Status)
+		if limits, err := resolvedDockerRuntimeLimits(pending.Plan.Runtime.Resources); err == nil {
+			fmt.Fprintf(out, "Recorded allocation: %d CPUs, %d GiB memory. Updated preferences apply to new operations.\n", limits.CPUs, limits.MemoryGiB)
+		}
 	}
 }
 

@@ -112,6 +112,7 @@ type dockerMount struct {
 }
 
 type dockerDriver struct {
+	runtimeLimits          *dockerRuntimeLimits
 	image                  string
 	platform               string
 	ceremonyBinary         string
@@ -134,20 +135,21 @@ type dockerDriver struct {
 }
 
 type dockerActiveState struct {
-	Schema         string        `json:"schema"`
-	OperationID    string        `json:"operation_id,omitempty"`
-	WorkspaceID    string        `json:"workspace_id,omitempty"`
-	ContainerName  string        `json:"container_name,omitempty"`
-	ContainerID    string        `json:"container_id"`
-	Image          string        `json:"image"`
-	Platform       string        `json:"platform"`
-	DaemonID       string        `json:"daemon_id"`
-	DaemonEndpoint string        `json:"daemon_endpoint"`
-	HandoffDir     string        `json:"handoff_dir"`
-	CreatedAt      string        `json:"created_at"`
-	MountDigest    string        `json:"mount_digest,omitempty"`
-	Mounts         []dockerMount `json:"mounts,omitempty"`
-	CreateArgs     []string      `json:"create_args,omitempty"`
+	RuntimeLimits  *dockerRuntimeLimits `json:"runtime_limits,omitempty"`
+	Schema         string               `json:"schema"`
+	OperationID    string               `json:"operation_id,omitempty"`
+	WorkspaceID    string               `json:"workspace_id,omitempty"`
+	ContainerName  string               `json:"container_name,omitempty"`
+	ContainerID    string               `json:"container_id"`
+	Image          string               `json:"image"`
+	Platform       string               `json:"platform"`
+	DaemonID       string               `json:"daemon_id"`
+	DaemonEndpoint string               `json:"daemon_endpoint"`
+	HandoffDir     string               `json:"handoff_dir"`
+	CreatedAt      string               `json:"created_at"`
+	MountDigest    string               `json:"mount_digest,omitempty"`
+	Mounts         []dockerMount        `json:"mounts,omitempty"`
+	CreateArgs     []string             `json:"create_args,omitempty"`
 }
 
 type dockerDaemonFacts struct {
@@ -249,7 +251,7 @@ func (d *dockerDriver) inspectionRunner(executable string, args ...string) ([]by
 	command := d.baseRunArgs(true, mounts)
 	command = append(command, d.image)
 	command = append(command, rewritten...)
-	return d.client.Output(command...)
+	return d.admittedInspectionOutput(command)
 }
 
 func (d *dockerDriver) inspector() transcript.Inspector {
@@ -267,7 +269,11 @@ func (d *dockerDriver) preflight() error {
 	if err := d.authenticateDaemon(); err != nil {
 		return err
 	}
-	if err := validateDockerRuntimeCapacity(d.daemon, proofDockerRuntimeLimits); err != nil {
+	limits, err := resolvedDockerRuntimeLimits(d.runtimeLimits)
+	if err != nil {
+		return err
+	}
+	if err := validateDockerRuntimeCapacity(d.daemon, limits); err != nil {
 		return err
 	}
 	if _, err := d.swapStatus(); err != nil {
@@ -402,6 +408,9 @@ func inspectDockerDaemon(client dockerCommandClient, contextName, endpoint strin
 }
 
 func validateDockerRuntimeCapacity(facts dockerDaemonFacts, limits dockerRuntimeLimits) error {
+	if err := limits.validate(); err != nil {
+		return err
+	}
 	if !facts.MemoryLimit || !facts.SwapLimit || !facts.CPUQuota {
 		return errors.New("Docker daemon does not enforce the required CPU, memory, and swap limits; configure cgroup delegation/resource controls before ceremony work")
 	}
@@ -430,6 +439,15 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 	if err := ensurePrivateDirectory(d.candidateRoot); err != nil {
 		return nil, fmt.Errorf("candidate parent: %w", err)
 	}
+	limits, err := resolvedDockerRuntimeLimits(d.runtimeLimits)
+	if err != nil {
+		return nil, err
+	}
+	admission, err := acquireDockerCapacity(d.client, d.daemon, limits)
+	if err != nil {
+		return nil, err
+	}
+	defer admission.release()
 	handoff, err := os.MkdirTemp(d.candidateRoot, ".relay-handoff-")
 	if err != nil {
 		return nil, err
@@ -479,7 +497,7 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 	}
 	mountDigest := sha256.Sum256(mountBytes)
 	state := dockerActiveState{
-		Schema: dockerActiveStateSchema, OperationID: operationID,
+		Schema: dockerActiveStateSchema, OperationID: operationID, RuntimeLimits: d.runtimeLimits,
 		WorkspaceID: fmt.Sprintf("sha256:%x", workspaceDigest), ContainerName: "relay-contributor-" + operationID,
 		Image: d.image, Platform: d.platform, DaemonID: d.daemon.ID, DaemonEndpoint: d.daemon.Endpoint,
 		HandoffDir: handoff, CreatedAt: receipt.CreatedAt, MountDigest: fmt.Sprintf("sha256:%x", mountDigest), Mounts: append([]dockerMount(nil), mounts...),
@@ -575,6 +593,11 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 		return nil, fmt.Errorf("persist created contributor identity: %w", err)
 	}
 
+	if err := admission.release(); err != nil {
+		_ = d.cleanupTrackedContainer(containerID)
+		return nil, fmt.Errorf("release Docker admission after recording contributor: %w", err)
+	}
+
 	removed := false
 	promoted := false
 	defer func() {
@@ -603,6 +626,7 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 		return nil, err
 	}
 	receipt.Security = facts
+	limits.announceStart()
 	receipt.StartedAt = d.now().UTC().Format(time.RFC3339)
 	startErr := runWithProgress(o.phase+" contribution computation", func() error {
 		return d.client.AttachedContext(interruptCtx, os.Stdout, os.Stderr, "start", "--attach", containerID)
@@ -958,7 +982,11 @@ func (d *dockerDriver) securityArgs(mounts []dockerMount) []string {
 		"--workdir", "/tmp",
 		"--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=67108864,mode=700",
 	}
-	args = append(args, dockerRuntimeArgs()...)
+	limits := proofDockerRuntimeLimits
+	if d.runtimeLimits != nil {
+		limits = *d.runtimeLimits
+	}
+	args = append(args, limits.dockerArgs()...)
 	for _, mount := range mounts {
 		value := "type=bind,src=" + mount.Source + ",dst=" + mount.Destination
 		if mount.ReadOnly {
@@ -1020,7 +1048,10 @@ func (d *dockerDriver) inspectSecurity(containerID string, expected []dockerMoun
 		return dockerSecurityFacts{}, errors.New("decode contributor Docker inspection")
 	}
 	r := records[0]
-	runtimeLimits := proofDockerRuntimeLimits
+	runtimeLimits, limitsErr := resolvedDockerRuntimeLimits(d.runtimeLimits)
+	if limitsErr != nil {
+		return dockerSecurityFacts{}, limitsErr
+	}
 	memoryBytes := int64(runtimeLimits.MemoryGiB) << 30
 	cpuNano := int64(runtimeLimits.CPUs) * 1_000_000_000
 	goMaxProcs := strconv.Itoa(runtimeLimits.CPUs)
@@ -1166,6 +1197,9 @@ func (d *dockerDriver) removeAndVerify(containerID string) error {
 }
 
 func validDockerActiveState(state dockerActiveState) bool {
+	if _, err := resolvedDockerRuntimeLimits(state.RuntimeLimits); err != nil {
+		return false
+	}
 	if state.Schema != dockerActiveStateSchema && state.Schema != dockerActiveStateSchemaV2 {
 		return false
 	}

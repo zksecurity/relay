@@ -23,26 +23,43 @@ import (
 const testContainerID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 type dockerClientFake struct {
-	image             string
-	platform          string
-	createArgs        []string
-	handoff           string
-	removed           bool
-	stillPresent      bool
-	unsafe            bool
-	unsafeResource    string
-	onCreate          func()
-	createErrAfter    bool
-	host              string
-	endpoint          string
-	daemonID          string
-	usernsMode        string
-	securityOptions   []string
-	onAttachedContext func(context.Context) error
-	attachDelay       time.Duration
+	capacityContainers []dockerCapacityContainer
+	image              string
+	platform           string
+	createArgs         []string
+	handoff            string
+	removed            bool
+	stillPresent       bool
+	unsafe             bool
+	unsafeResource     string
+	onCreate           func()
+	createErrAfter     bool
+	host               string
+	endpoint           string
+	daemonID           string
+	usernsMode         string
+	securityOptions    []string
+	onAttachedContext  func(context.Context) error
+	attachDelay        time.Duration
 }
 
 func (f *dockerClientFake) Output(args ...string) ([]byte, []byte, error) {
+	if len(args) == 2 && args[0] == "inspect" {
+		for _, c := range f.capacityContainers {
+			if c.ID == args[1] {
+				raw, _ := json.Marshal([]dockerCapacityContainer{c})
+				return raw, nil, nil
+			}
+		}
+	}
+	if len(args) == 6 && strings.Join(args, " ") == "container ls --all --no-trunc --format {{.ID}}" {
+		var ids []string
+		for _, c := range f.capacityContainers {
+			ids = append(ids, c.ID)
+		}
+		return []byte(strings.Join(ids, "\n")), nil, nil
+	}
+
 	switch {
 	case len(args) == 2 && args[0] == "context" && args[1] == "show":
 		return []byte("test-local\n"), nil, nil
@@ -947,5 +964,49 @@ func TestConfirmDockerNoCopiesUpdatesLocalLifecycleLog(t *testing.T) {
 	}
 	if receipt.ParticipantConfirmation != "CLEANUP PRECAUTIONS CONFIRMED" || receipt.ConfirmedAt == "" {
 		t.Fatalf("confirmation not recorded: %#v", receipt)
+	}
+}
+
+func TestDockerContributionAdmissionPrecedesIntentAndCreation(t *testing.T) {
+	o, pos, _, fake := dockerContributionFixture(t)
+	c := dockerCapacityContainer{ID: strings.Repeat("b", 64)}
+	c.State.Status = "running"
+	c.HostConfig.NanoCPUs = 2_000_000_000
+	c.HostConfig.Memory = 12 << 30
+	fake.capacityContainers = []dockerCapacityContainer{c}
+	if err := runNextAt(o, pos, time.Now()); err == nil || !strings.Contains(err.Error(), "insufficient unclaimed") {
+		t.Fatalf("oversubscribed launch: %v", err)
+	}
+	if len(fake.createArgs) != 0 {
+		t.Fatal("created contributor despite capacity rejection")
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(o.outDir), dockerActiveStateFileName)); !os.IsNotExist(err) {
+		t.Fatal("capacity rejection left contributor intent", err)
+	}
+}
+
+func TestDockerContributionHoldsAdmissionThroughCreation(t *testing.T) {
+	o, pos, d, fake := dockerContributionFixture(t)
+	fake.onCreate = func() {
+		lock, err := acquireDockerAdmission(d.daemon)
+		if err == nil {
+			lock.release()
+			t.Error("admission lock released before create completed")
+		}
+	}
+	fake.onAttachedContext = func(context.Context) error {
+		lock, err := acquireDockerAdmission(d.daemon)
+		if err != nil {
+			t.Error("admission lock remained held during computation", err)
+		} else {
+			lock.release()
+		}
+		return errors.New("stop test before computation")
+	}
+	if err := runNextAt(o, pos, time.Now()); err == nil {
+		t.Fatal("missing test interruption")
+	}
+	if !fake.removed {
+		t.Fatal("interrupted contributor not removed")
 	}
 }

@@ -27,16 +27,45 @@ during signing. Removing an ordinary role container is not an erasure receipt.
 
 ## Proof runtime limits
 
-Every role-image and participant proof container uses two CPUs, a 6 GiB
-hard memory and swap limit, `GOMAXPROCS=2`, `GOMEMLIMIT=4GiB`, and `GOGC=25`.
-These bounds also cover transcript inspection, coordinator verification and
-sealing, and release signing; a heavy operation cannot bypass them by entering
-through another role command. The Docker host needs at least 6 GiB available to
-the daemon plus memory for the host and other services. Relay retains the exact
-participant create arguments so interruption cleanup continues to identify the
-original bounded container. Before proof work Relay rejects a Docker daemon
-with less capacity or whose cgroup configuration cannot enforce CPU, memory and
-swap limits. Capacity-test the exact circuit before production.
+The default allocation is two CPUs, a 6 GiB hard memory and swap limit,
+`GOMAXPROCS=2`, `GOMEMLIMIT=4GiB`, and `GOGC=25`. The V4 guide's `[L]`
+menu saves explicit CPU and memory preferences for subsequent operations. It
+shows total Docker capacity, which is not a measurement of free memory. Leave
+capacity for the host and other services; qualify the exact circuit before
+increasing parallelism. Automatic resource recommendations are not yet enabled.
+
+The `[B]` menu sets aggregate Docker resource policy. Before onboarding, use
+`relay resources` to configure the same host-local policy without a ceremony
+workspace. Noninteractive setup verification fails closed with this recovery
+command when capacity cannot be established. Strict mode rejects
+unbounded workloads. Operator-budget mode explicitly acknowledges the listed
+unbounded external workloads and assigns a total Relay CPU/memory budget; it
+disables automatic recommendations. A replacement workload, relevant resource
+change, or daemon capacity change requires renewed review. Missing or corrupt
+policy never grants permission to ignore unbounded workloads. Resource-policy
+records currently live beside the shared daemon lock; removal requires renewed
+acknowledgment. This policy does not cap unrelated services.
+
+Admission is wired into contributor and ordinary role creation. Ordinary roles
+retain a deterministic container name and created ID before attaching. A retained
+container stops duplicate launch; a verified absent container allows a subsequent
+execution through the existing workflow checks. Inspection, setup verification, release-tool checks, and renewable-login paths
+also use admission. Short credential probes hold admission for their bounded
+runtime; longer action containers carry their own claims after creation. Real
+Docker lifecycle and release qualification remain required.
+
+Direct role launches accept `--cpus`, `--memory-gib`, `--go-memory-gib`, and
+`--go-gc-percent`. The Go memory target must remain at least 2 GiB below the
+container ceiling. Docker CPU quota and `GOMAXPROCS` use the same CPU count;
+the memory and swap limits remain equal. Relay rejects invalid settings and
+Docker daemons that cannot enforce the requested limits.
+
+Contribution plans, named actions, and V4 proof-command resource records retain
+the allocation selected before launch. Retrying a recorded operation uses those
+limits, even after preferences change. Legacy records without a resource field
+retain the released default. Corrupt resource records stop recovery rather than
+silently selecting different limits. Running containers are not resized. The
+child-command heartbeat reports elapsed waiting time, not a completion estimate.
 
 ## Save an action
 

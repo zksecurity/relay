@@ -44,7 +44,7 @@ func (j *workflowV4Journal) executePreparedContribution(id, dockerCLI string, sn
 	if err != nil {
 		return err
 	}
-	d := &dockerDriver{image: p.Runtime.Image, platform: p.Runtime.Platform, ceremonyBinary: dockerCeremonyBinary, root: o.root, definition: o.definition, definitionSig: o.definitionSig, coordinatorKey: o.coordinatorKey, signingKey: o.signingKey, environment: o.envPath, candidateRoot: filepath.Dir(o.outDir), executionIntentPath: workflowV4ContributorIntentPath(b.Work, p.ID), client: osDockerCommandClient{binary: dockerCLI}, now: time.Now}
+	d := &dockerDriver{runtimeLimits: p.Runtime.Resources, image: p.Runtime.Image, platform: p.Runtime.Platform, ceremonyBinary: dockerCeremonyBinary, root: o.root, definition: o.definition, definitionSig: o.definitionSig, coordinatorKey: o.coordinatorKey, signingKey: o.signingKey, environment: o.envPath, candidateRoot: filepath.Dir(o.outDir), executionIntentPath: workflowV4ContributorIntentPath(b.Work, p.ID), client: osDockerCommandClient{binary: dockerCLI}, now: time.Now}
 	o.docker = d
 	if err := workflowV4OutputsAbsent(p); err != nil {
 		return err

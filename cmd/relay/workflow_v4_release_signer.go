@@ -101,11 +101,15 @@ func runWorkflowV4ReleaseSigning(ui *coordinatorWizard, snapshot storagefirst.Sn
 			return errors.New("retained release review time is invalid; preserve it for inspection")
 		}
 	} else {
+		releasedAt, err = retainedWorkflowV4LifecycleTime(online, checkpoint, "release-review", progress.ReviewReport, releasedAt)
+		if err != nil {
+			return err
+		}
 		command, err := workflowV4ReleaseReviewCommand(online, signer, checkpoint, progress.ReviewReport, releasedAt)
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(online, command, false); err != nil {
+		if err := runWorkflowV4LifecycleCommand(online, checkpoint, "release-review", progress.ReviewReport, command); err != nil {
 			return err
 		}
 	}
@@ -116,7 +120,7 @@ func runWorkflowV4ReleaseSigning(ui *coordinatorWizard, snapshot storagefirst.Sn
 	if err != nil {
 		return err
 	}
-	if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+	if err := runWorkflowV4LifecycleCommand(signer, checkpoint, "sign-release", progress.PackageDir, command); err != nil {
 		return err
 	}
 	fmt.Fprintf(ui.output, "Signed release package created and self-verified at %s. It is still private and has not been accepted or published.\n", progress.PackageDir)

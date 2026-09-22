@@ -35,7 +35,7 @@ func workflowV4CandidateInspector(p workflowV4OperationPlan, b workflowV4Binding
 	if err != nil {
 		return zero, err
 	}
-	d := &dockerDriver{image: r.Image, platform: r.Platform, root: inputRoot, inspectionRoot: b.Work, client: client}
+	d := &dockerDriver{runtimeLimits: p.Runtime.Resources, image: r.Image, platform: r.Platform, root: inputRoot, inspectionRoot: b.Work, client: client}
 	if daemon.Endpoint != "" {
 		if err := validateLocalDockerEndpoint(daemon.Endpoint); err != nil {
 			return zero, err
@@ -91,7 +91,7 @@ func workflowV4CandidateInspector(p workflowV4OperationPlan, b workflowV4Binding
 		}
 		command := append(d.baseRunArgs(true, mounts), d.image)
 		command = append(command, rewritten...)
-		stdout, stderr, err := d.client.Output(command...)
+		stdout, stderr, err := d.admittedInspectionOutput(command)
 		if err != nil {
 			return stdout, stderr, fmt.Errorf("inspect retained contribution in saved runtime: %w", err)
 		}

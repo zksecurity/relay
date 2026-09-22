@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -23,7 +24,7 @@ func TestWorkflowV4CoordinatorIntentIsStableAndCheckpointStaysPublic(t *testing.
 		t.Fatal(err)
 	}
 	second, err := loadOrCreateWorkflowV4CoordinatorIntent(path, "allocate", pair, scope, "", output)
-	if err != nil || second != first {
+	if err != nil || !reflect.DeepEqual(second, first) {
 		t.Fatalf("unstable intent: first=%+v second=%+v err=%v", first, second, err)
 	}
 	public := filepath.Join(work, "ceremony", "public")
@@ -274,4 +275,52 @@ func pairV4Test(seed string) transcript.SignedArtifactRefs {
 		return transcript.Digest{SHA256: "sha256:" + strings.Repeat(s, 64), Blake2b256: "blake2b256:" + strings.Repeat(s, 64), Size: 10}
 	}
 	return transcript.SignedArtifactRefs{Record: transcript.ArtifactRef{Name: "checkpoints/" + seed + "/checkpoint.json", Digest: digest("a")}, Signature: transcript.ArtifactRef{Name: "checkpoints/" + seed + "/checkpoint.sig", Digest: digest("b")}}
+}
+
+func TestCoordinatorIntentResourcesSurviveLegacyMigrationAndPreferenceChanges(t *testing.T) {
+	work := t.TempDir()
+	scope := transcript.ContributionScopeV4{CeremonyID: "ceremony", Phase: "phase1", Index: 1, ParticipantID: "participant"}
+	head := pairV4Test("head")
+	output := filepath.Join(work, "checkpoint")
+	path := filepath.Join(work, "accept-intent.json")
+	legacy := workflowV4CoordinatorIntent{Schema: workflowV4CoordinatorIntentSchema, Action: "accept", Scope: scope, Predecessor: head, AttemptID: strings.Repeat("a", 32), At: "2026-09-23T00:00:00Z", OutputDir: output}
+	if err := writeJSONNoReplace(path, legacy, 0600); err != nil {
+		t.Fatal(err)
+	}
+	selected := dockerRuntimeLimits{CPUs: 6, MemoryGiB: 6, GoMemoryGiB: 4, GoGCPercent: 25}
+	migrated, err := loadOrCreateWorkflowV4CoordinatorIntent(path, "accept", head, scope, legacy.AttemptID, output, &selected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if migrated.Resources == nil || migrated.Resources.CPUs != 2 || migrated.At != legacy.At || migrated.AttemptID != legacy.AttemptID {
+		t.Fatal("legacy allocation or identity changed")
+	}
+	previous := workflowV4ChildExecutor
+	defer func() { workflowV4ChildExecutor = previous }()
+	var launch []string
+	workflowV4ChildExecutor = func(args []string) error { launch = append([]string(nil), args...); return nil }
+	p := guidedProfile{Work: work, Role: "decision-signer", Resources: &selected}
+	if err := runWorkflowV4IntentCommand(p, migrated, []string{"mpc-ceremony", "checkpoint", "accept-candidate-v4"}); err != nil {
+		t.Fatal(err)
+	}
+	if commandValue(launch, "cpus") != "2" {
+		t.Fatal("legacy launch adopted current preferences")
+	}
+	nextPath := filepath.Join(work, "next-intent.json")
+	next, err := loadOrCreateWorkflowV4CoordinatorIntent(nextPath, "accept", head, scope, strings.Repeat("b", 32), output+"-next", &selected)
+	if err != nil || next.Resources == nil || next.Resources.CPUs != 6 {
+		t.Fatal("new attempt ignored preferences", err)
+	}
+	selected.CPUs = 4
+	retry, err := loadOrCreateWorkflowV4CoordinatorIntent(nextPath, "accept", head, scope, next.AttemptID, next.OutputDir, &selected)
+	if err != nil || retry.Resources.CPUs != 6 {
+		t.Fatal("retry lost retained allocation", err)
+	}
+	retry.Resources = nil
+	if err := writeJSONAtomic(nextPath, retry, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadOrCreateWorkflowV4CoordinatorIntent(nextPath, "accept", head, scope, next.AttemptID, next.OutputDir, &selected); err == nil {
+		t.Fatal("missing v2 resources silently replaced")
+	}
 }

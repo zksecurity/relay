@@ -26,6 +26,7 @@ var guidedName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 // Saved commands contain public identifiers and file paths, not file contents.
 // They are operator-selected actions, never inferred from untrusted web status.
 type guidedProfile struct {
+	Resources *dockerRuntimeLimits `json:"resources,omitempty"`
 	// Applied only in memory after authenticating an explicit upgrade selection.
 	UpgradeOnlineImage string   `json:"-"`
 	ReleaseCommit      string   `json:"release_commit,omitempty"`
@@ -45,7 +46,7 @@ type guidedProfile struct {
 }
 
 func (p guidedProfile) options() dockerRoleOptions {
-	return dockerRoleOptions{role: p.Role, image: p.Image, platform: p.Platform, work: p.Work, trust: p.Trust, keys: p.Keys, credentials: p.Credentials, config: p.Config, docker: "docker", r2Parent: p.R2Parent, r2Control: p.R2Control}
+	return dockerRoleOptions{runtimeLimits: p.Resources, role: p.Role, image: p.Image, platform: p.Platform, work: p.Work, trust: p.Trust, keys: p.Keys, credentials: p.Credentials, config: p.Config, docker: "docker", r2Parent: p.R2Parent, r2Control: p.R2Control}
 }
 
 func guidedRoot() (string, error) {
@@ -309,6 +310,9 @@ func readGuidedProfile(path, name, role string) (guidedProfile, error) {
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return p, errors.New("trailing data in saved profile")
 	}
+	if _, err := resolvedDockerRuntimeLimits(p.Resources); err != nil {
+		return p, fmt.Errorf("saved resource allocation: %w", err)
+	}
 	if p.Schema != guidedSchema || p.Name != name || p.Role != role {
 		return p, errors.New("saved profile does not match this ceremony alias and role")
 	}
@@ -370,6 +374,11 @@ func prepareGuidedAction(dir, action string, command []string, execution ...guid
 		saved = guidedProfile{Schema: guidedSchema, Name: action, Role: "action", Command: command}
 		if len(execution) == 1 {
 			saved.Image, saved.Platform = upgradeV2NewActionImage(execution[0], command), execution[0].Platform
+			limits, err := resolvedDockerRuntimeLimits(execution[0].Resources)
+			if err != nil {
+				return nil, "", err
+			}
+			saved.Resources = &limits
 		}
 		err = writeJSONNoReplace(path, saved, 0o600)
 	}
@@ -474,6 +483,11 @@ func runGuidedOpen(args []string) error {
 		if err != nil {
 			return err
 		}
+		savedAction, err := readGuidedProfile(filepath.Join(dir, "actions", action, "profile.json"), action, "action")
+		if err != nil {
+			return err
+		}
+		p.Resources = savedAction.Resources
 		p.Image, err = upgradeV2SavedActionImage(p, filepath.Join(dir, "actions", action, "profile.json"), action)
 		if err != nil {
 			return err
@@ -651,6 +665,19 @@ func executeGuidedChild(args []string) error {
 	}
 	finished := make(chan struct{})
 	defer close(finished)
+	started := time.Now()
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				fmt.Fprintf(os.Stderr, "Operation still running (%s elapsed); waiting for command completion.\n", time.Since(started).Round(time.Second))
+			case <-finished:
+				return
+			}
+		}
+	}()
 	go func() {
 		for {
 			select {

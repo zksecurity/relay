@@ -14,8 +14,13 @@ type inspectionClientV4 struct {
 
 func (f *inspectionClientV4) BindHost(host string) dockerCommandClient { f.host = host; return f }
 func (f *inspectionClientV4) Output(args ...string) ([]byte, []byte, error) {
-	if len(args) > 0 && args[0] == "run" {
+	if len(args) > 0 && args[0] == "create" {
 		f.invocation = append([]string(nil), args...)
+		f.removed = false
+		return f.dockerClientFake.Output(args...)
+	}
+	if len(args) > 0 && args[0] == "start" {
+		f.removed = true
 		return []byte("{}"), nil, nil
 	}
 	return f.dockerClientFake.Output(args...)
@@ -31,7 +36,8 @@ func TestWorkflowV4CandidateInspectionMountsNoSecrets(t *testing.T) {
 	if err := os.WriteFile(scope, []byte("{}"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	f := &inspectionClientV4{dockerClientFake: &dockerClientFake{platform: p.Runtime.Platform}}
+	f := &inspectionClientV4{dockerClientFake: &dockerClientFake{platform: p.Runtime.Platform, daemonID: "inspection-" + t.TempDir()}}
+	t.Cleanup(func() { os.RemoveAll(filepath.Dir(dockerResourcePolicyPath(f.daemonID))) })
 	i, err := workflowV4CandidateInspector(p, b, scope, f, dockerDaemonFacts{})
 	if err != nil {
 		t.Fatal(err)
@@ -72,6 +78,25 @@ func TestWorkflowV4CandidateInspectionMountsNoSecrets(t *testing.T) {
 	if f.host != originalEndpoint {
 		t.Fatal("inspection followed another Docker context")
 	}
+	if !strings.Contains(strings.Join(f.invocation, " "), "org.zksecurity.relay.role=inspector") {
+		t.Fatal("inspection omitted aggregate-budget role label")
+	}
+	if _, err := os.Stat(filepath.Join(b.Work, "workflow-v4", "role-launches")); !os.IsNotExist(err) {
+		t.Fatal("read-only inspection wrote launch state into ceremony workspace", err)
+	}
+	busy := dockerCapacityContainer{ID: strings.Repeat("b", 64)}
+	busy.State.Status = "running"
+	busy.HostConfig.NanoCPUs = 2_000_000_000
+	busy.HostConfig.Memory = 12 << 30
+	f.capacityContainers = []dockerCapacityContainer{busy}
+	f.invocation = nil
+	if _, _, err := i.Runner("mpc-ceremony", args...); err == nil {
+		t.Fatal("inspection bypassed capacity admission")
+	}
+	if len(f.invocation) != 0 {
+		t.Fatal("capacity rejection still created inspection")
+	}
+
 }
 
 func TestWorkflowV4CleanupInspectionUsesContributionSnapshot(t *testing.T) {

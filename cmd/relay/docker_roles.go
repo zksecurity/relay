@@ -16,6 +16,7 @@ import (
 // This launcher packages ordinary role tools, not the toxic-waste lifecycle.
 // Participants use the existing host supervisor and its separate Docker driver.
 type dockerRoleOptions struct {
+	runtimeLimits                                                         *dockerRuntimeLimits
 	role, image, platform, work, trust, keys, credentials, config, docker string
 	r2Parent, r2Control                                                   string
 	recoveryContext                                                       string
@@ -27,6 +28,7 @@ var roleImagePattern = regexp.MustCompile(`^(sha256:[0-9a-f]{64}|[^\s@]+@sha256:
 
 func runDockerRole(args []string) error {
 	var o dockerRoleOptions
+	limits, _ := resolvedDockerRuntimeLimits(nil)
 	set := flag.NewFlagSet("role", flag.ContinueOnError)
 	set.StringVar(&o.role, "role", "", "coordinator, participant, witness, mirror, auditor, upload-station, release-signer, decision-signer, or keygen")
 	set.StringVar(&o.image, "image", "", "preloaded approved image digest or immutable image ID")
@@ -39,9 +41,14 @@ func runDockerRole(args []string) error {
 	set.StringVar(&o.r2Control, "r2-control-credential", "", "protected R2 control token file; mounted only for storage checks")
 	set.StringVar(&o.config, "config", "", "participant Docker profile on the host")
 	set.StringVar(&o.docker, "docker-cli", "docker", "Docker CLI path")
+	set.IntVar(&limits.CPUs, "cpus", limits.CPUs, "CPU limit for this operation")
+	set.IntVar(&limits.MemoryGiB, "memory-gib", limits.MemoryGiB, "container memory limit in GiB")
+	set.IntVar(&limits.GoMemoryGiB, "go-memory-gib", limits.GoMemoryGiB, "Go memory target in GiB; retain container headroom")
+	set.IntVar(&limits.GoGCPercent, "go-gc-percent", limits.GoGCPercent, "Go garbage collection target percentage")
 	if err := set.Parse(args); err != nil {
 		return err
 	}
+	o.runtimeLimits = &limits
 	if o.role == "participant" {
 		var invalid string
 		set.Visit(func(f *flag.Flag) {
@@ -71,7 +78,11 @@ func runDockerRole(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := validateDockerRuntimeCapacity(daemon, proofDockerRuntimeLimits); err != nil {
+	limits, err = resolvedDockerRuntimeLimits(o.runtimeLimits)
+	if err != nil {
+		return err
+	}
+	if err := validateDockerRuntimeCapacity(daemon, limits); err != nil {
 		return err
 	}
 	binary, err := exec.LookPath(o.docker)
@@ -87,8 +98,14 @@ func runDockerRole(args []string) error {
 			return runAWSLoginDocker(o, set.Args(), *binding, binary, endpoint)
 		}
 	}
-	// Replace the launcher so Docker receives terminal and service signals.
-	return syscall.Exec(binary, append([]string{binary, "--host", endpoint}, argv...), dockerEnvironmentWithoutTargetOverrides())
+	id, err := prepareAdmittedDockerRole(boundClient, daemon, o, set.Args(), argv)
+	if err != nil {
+		return err
+	}
+	limits.announceStart()
+	// The created container carries the claim after admission is released.
+	// Replace the launcher so Docker still receives terminal/service signals.
+	return syscall.Exec(binary, []string{binary, "--host", endpoint, "start", "--attach", "--interactive", id}, dockerEnvironmentWithoutTargetOverrides())
 }
 
 func runDockerRoleParticipant(o dockerRoleOptions, args []string) error {
@@ -114,6 +131,10 @@ func runDockerRoleParticipant(o dockerRoleOptions, args []string) error {
 }
 
 func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]string, error) {
+	limits, err := resolvedDockerRuntimeLimits(o.runtimeLimits)
+	if err != nil {
+		return nil, err
+	}
 	if (o.r2Parent != "" || o.r2Control != "") && o.role != "coordinator" {
 		return nil, errors.New("R2 administrative credentials are coordinator-only")
 	}
@@ -212,7 +233,7 @@ func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]stri
 		sources = append(sources, resolved)
 	}
 	argv := []string{"run", "--rm", "--pull=never", "--interactive", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--ulimit=core=0:0", "--user", strconv.Itoa(uid) + ":" + strconv.Itoa(gid), "--platform", o.platform, "--workdir=/work", "--tmpfs=/tmp:rw,nosuid,nodev,noexec,size=256m,mode=1777", "--env=HOME=/tmp", "--env=AWS_EC2_METADATA_DISABLED=true", "--env=AWS_PAGER=", "--env=AWS_CONFIG_FILE=/nonexistent", "--env=AWS_SHARED_CREDENTIALS_FILE=/nonexistent", "--label=org.zksecurity.relay.role=" + o.role}
-	argv = append(argv, dockerRuntimeArgs()...)
+	argv = append(argv, limits.dockerArgs()...)
 	if offline {
 		argv = append(argv, "--network=none")
 	} else {

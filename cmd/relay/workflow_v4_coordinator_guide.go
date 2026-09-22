@@ -32,6 +32,7 @@ type workflowV4CoordinatorProgress struct {
 
 type workflowV4CoordinatorIntent struct {
 	Schema      string                         `json:"schema"`
+	Resources   *dockerRuntimeLimits           `json:"resources,omitempty"`
 	Action      string                         `json:"action"`
 	Scope       transcript.ContributionScopeV4 `json:"scope"`
 	Predecessor transcript.SignedArtifactRefs  `json:"predecessor"`
@@ -41,6 +42,7 @@ type workflowV4CoordinatorIntent struct {
 }
 
 const workflowV4CoordinatorIntentSchema = "relay-workflow-v4-coordinator-intent-v1"
+const workflowV4CoordinatorResourceIntentSchema = "relay-workflow-v4-coordinator-intent-v2"
 
 func workflowV4CoordinatorEnrollmentProgressFor(snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, expected transcript.ExpectedEnrollment, binding workflowV4Binding, config access.StorageConfig, now time.Time) (workflowV4CoordinatorProgress, error) {
 	progress := workflowV4CoordinatorProgress{EnrollmentExpected: &expected}
@@ -248,7 +250,7 @@ func runWorkflowV4CoordinatorAllocation(ui *coordinatorWizard, snapshot storagef
 	basis := strings.TrimPrefix(snapshot.Head().Record.Digest.SHA256, "sha256:")[:16]
 	intentPath := filepath.Join(workflowV4CoordinatorTurnDir(online.Work, view.Scope), "allocation-"+basis+"-intent.json")
 	outputDir := workflowV4CoordinatorCheckpointDir(online.Work, view.Scope, "allocate", basis)
-	intent, err := loadOrCreateWorkflowV4CoordinatorIntent(intentPath, "allocate", snapshot.Head(), view.Scope, "", outputDir)
+	intent, err := loadOrCreateWorkflowV4CoordinatorIntent(intentPath, "allocate", snapshot.Head(), view.Scope, "", outputDir, signer.Resources)
 	if err != nil {
 		return err
 	}
@@ -260,7 +262,7 @@ func runWorkflowV4CoordinatorAllocation(ui *coordinatorWizard, snapshot storagef
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		if err := runWorkflowV4IntentCommand(signer, intent, command); err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -347,7 +349,7 @@ func runWorkflowV4CoordinatorAcceptance(ui *coordinatorWizard, snapshot storagef
 	}
 	intentPath := filepath.Join(workflowV4CoordinatorTurnDir(online.Work, view.Scope), "acceptance-"+view.CandidateAttempt.AttemptID+"-intent.json")
 	outputDir := workflowV4CoordinatorCheckpointDir(online.Work, view.Scope, "accept", view.CandidateAttempt.AttemptID)
-	intent, err := loadOrCreateWorkflowV4CoordinatorIntent(intentPath, "accept", snapshot.Head(), view.Scope, view.CandidateAttempt.AttemptID, outputDir)
+	intent, err := loadOrCreateWorkflowV4CoordinatorIntent(intentPath, "accept", snapshot.Head(), view.Scope, view.CandidateAttempt.AttemptID, outputDir, signer.Resources)
 	if err != nil {
 		return err
 	}
@@ -362,7 +364,7 @@ func runWorkflowV4CoordinatorAcceptance(ui *coordinatorWizard, snapshot storagef
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		if err := runWorkflowV4IntentCommand(signer, intent, command); err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -377,7 +379,7 @@ func runWorkflowV4CoordinatorRejection(ui *coordinatorWizard, snapshot storagefi
 	}
 	intentPath := filepath.Join(workflowV4CoordinatorTurnDir(online.Work, view.Scope), "rejection-"+view.CandidateAttempt.AttemptID+"-intent.json")
 	outputDir := workflowV4CoordinatorCheckpointDir(online.Work, view.Scope, "reject", view.CandidateAttempt.AttemptID)
-	intent, err := loadOrCreateWorkflowV4CoordinatorIntent(intentPath, "reject", snapshot.Head(), view.Scope, view.CandidateAttempt.AttemptID, outputDir)
+	intent, err := loadOrCreateWorkflowV4CoordinatorIntent(intentPath, "reject", snapshot.Head(), view.Scope, view.CandidateAttempt.AttemptID, outputDir, signer.Resources)
 	if err != nil {
 		return err
 	}
@@ -392,7 +394,7 @@ func runWorkflowV4CoordinatorRejection(ui *coordinatorWizard, snapshot storagefi
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		if err := runWorkflowV4IntentCommand(signer, intent, command); err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -413,11 +415,28 @@ func workflowV4CoordinatorCheckpointDir(work string, scope transcript.Contributi
 	return filepath.Join(work, "ceremony", "public", "checkpoints", scope.Phase, fmt.Sprintf("%02d", scope.Index), name)
 }
 
-func loadOrCreateWorkflowV4CoordinatorIntent(path, action string, predecessor transcript.SignedArtifactRefs, scope transcript.ContributionScopeV4, attempt, outputDir string) (workflowV4CoordinatorIntent, error) {
+func loadOrCreateWorkflowV4CoordinatorIntent(path, action string, predecessor transcript.SignedArtifactRefs, scope transcript.ContributionScopeV4, attempt, outputDir string, preferences ...*dockerRuntimeLimits) (workflowV4CoordinatorIntent, error) {
 	var intent workflowV4CoordinatorIntent
 	if err := readWorkflowV4JSON(path, &intent); err == nil {
-		if intent.Schema != workflowV4CoordinatorIntentSchema || intent.Action != action || intent.Scope != scope || intent.Predecessor != predecessor || intent.OutputDir != outputDir || (attempt != "" && intent.AttemptID != attempt) {
+		if (intent.Schema != workflowV4CoordinatorIntentSchema && intent.Schema != workflowV4CoordinatorResourceIntentSchema) || intent.Action != action || intent.Scope != scope || intent.Predecessor != predecessor || intent.OutputDir != outputDir || (attempt != "" && intent.AttemptID != attempt) {
 			return intent, errors.New("retained coordinator intent belongs to different authenticated state")
+		}
+		if intent.Schema == workflowV4CoordinatorIntentSchema {
+			if intent.Resources != nil {
+				return intent, errors.New("legacy intent has unexpected resource metadata")
+			}
+			limits, _ := resolvedDockerRuntimeLimits(nil)
+			intent.Resources = &limits
+			intent.Schema = workflowV4CoordinatorResourceIntentSchema
+			if err := writeJSONAtomic(path, intent, 0600); err != nil {
+				return intent, err
+			}
+		}
+		if intent.Resources == nil {
+			return intent, errors.New("coordinator intent is missing retained resources")
+		}
+		if err := intent.Resources.validate(); err != nil {
+			return intent, err
 		}
 		return intent, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -430,8 +449,16 @@ func loadOrCreateWorkflowV4CoordinatorIntent(path, action string, predecessor tr
 			return intent, err
 		}
 	}
+	var selected *dockerRuntimeLimits
+	if len(preferences) > 0 {
+		selected = preferences[0]
+	}
+	limits, err := resolvedDockerRuntimeLimits(selected)
+	if err != nil {
+		return intent, err
+	}
 	stamp := time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
-	intent = workflowV4CoordinatorIntent{Schema: workflowV4CoordinatorIntentSchema, Action: action, Scope: scope, Predecessor: predecessor, AttemptID: attempt, At: stamp, OutputDir: outputDir}
+	intent = workflowV4CoordinatorIntent{Schema: workflowV4CoordinatorResourceIntentSchema, Resources: &limits, Action: action, Scope: scope, Predecessor: predecessor, AttemptID: attempt, At: stamp, OutputDir: outputDir}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return intent, err
 	}
@@ -529,7 +556,22 @@ func runWorkflowV4CommitCommand(online guidedProfile, outputDir string) error {
 // same process boundary as every other guided action.
 var workflowV4ChildExecutor = executeGuidedChild
 
+func runWorkflowV4IntentCommand(profile guidedProfile, intent workflowV4CoordinatorIntent, command []string) error {
+	if intent.Schema != workflowV4CoordinatorResourceIntentSchema || intent.Resources == nil {
+		return errors.New("retained coordinator resources required")
+	}
+	if err := intent.Resources.validate(); err != nil {
+		return err
+	}
+	profile.Resources = intent.Resources
+	return runWorkflowV4ProfileCommandWithRetention(profile, command, false, false)
+}
+
 func runWorkflowV4ProfileCommand(profile guidedProfile, command []string, credentials bool) error {
+	return runWorkflowV4ProfileCommandWithRetention(profile, command, credentials, true)
+}
+
+func runWorkflowV4ProfileCommandWithRetention(profile guidedProfile, command []string, credentials, retainCommand bool) error {
 	// Only online Relay changes. Proof-tool and signing commands retain their
 	// original image, including during recovery of previously signed work.
 	if profile.UpgradeOnlineImage != "" && len(command) > 0 && command[0] == "relay" {
@@ -538,7 +580,22 @@ func runWorkflowV4ProfileCommand(profile guidedProfile, command []string, creden
 		}
 		profile.Image = profile.UpgradeOnlineImage
 	}
+	if retainCommand && len(command) > 1 && command[0] == "mpc-ceremony" && !workflowV4ReadOnlyProofCommand(command) {
+		limits, err := retainedWorkflowV4CommandResources(profile, command)
+		if err != nil {
+			return err
+		}
+		profile.Resources = &limits
+	}
 	launch := []string{"role", "--role", profile.Role, "--image", profile.Image, "--platform", profile.Platform, "--work", profile.Work}
+	if profile.Resources != nil {
+		limits, err := resolvedDockerRuntimeLimits(profile.Resources)
+		if err != nil {
+			return err
+		}
+		launch = append(launch, limits.roleFlags()...)
+	}
+
 	for _, pair := range [][2]string{{"--trust", profile.Trust}, {"--keys", profile.Keys}} {
 		if pair[1] != "" {
 			launch = append(launch, pair[0], pair[1])

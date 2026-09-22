@@ -151,7 +151,7 @@ func TestAuditActivityUnavailablePreventsGuideAction(t *testing.T) {
 	before, _ := json.Marshal(j.state)
 	var out bytes.Buffer
 	ui := coordinatorWizard{input: bufio.NewReader(strings.NewReader("1\nQ\n")), output: &out}
-	err = runWorkflowV4GuideLoop(p, guidedProfile{}, setupIdentity{ID: b.IdentityID}, protocol, j, access.StorageConfig{}, transcript.Inspector{}, "/must-not-run/docker", &saved, &ui, func() (storagefirst.SnapshotV4, error) { return snapshot, nil })
+	err = runWorkflowV4GuideLoop(t.TempDir(), p, guidedProfile{}, setupIdentity{ID: b.IdentityID}, protocol, j, access.StorageConfig{}, transcript.Inspector{}, "/must-not-run/docker", &saved, &ui, func() (storagefirst.SnapshotV4, error) { return snapshot, nil })
 	if err != nil {
 		t.Fatal(err)
 	}

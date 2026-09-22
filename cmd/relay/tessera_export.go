@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -474,12 +473,8 @@ func runTesseraExport(args []string) error {
 	}
 	inspector := transcript.Inspector{Executable: "mpc-ceremony", CeremonyPath: "/input/ceremony.json", CeremonySignaturePath: "/input/ceremony.sig", CoordinatorPublicKeyPath: "/input/coordinator.hex", Runner: func(executable string, args ...string) ([]byte, []byte, error) {
 		argv := dockerProofInspectionArgs(dir, image, *platform, args)
-		command := exec.Command("docker", argv...)
-		var stdout, stderr bytes.Buffer
-		command.Stdout = &stdout
-		command.Stderr = &stderr
-		err := command.Run()
-		return stdout.Bytes(), stderr.Bytes(), err
+		driver := dockerDriver{image: image, platform: *platform, client: osDockerCommandClient{binary: "docker"}}
+		return driver.admittedInspectionOutput(argv)
 	}}
 	inspected, err := inspector.Definition()
 	if err != nil {

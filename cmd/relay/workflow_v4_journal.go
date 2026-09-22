@@ -40,9 +40,10 @@ type workflowV4Marker struct {
 }
 
 type workflowV4Runtime struct {
-	Image    string            `json:"image"`
-	Platform string            `json:"platform"`
-	Mounts   map[string]string `json:"mounts"` // container destination -> original host path
+	Resources *dockerRuntimeLimits `json:"resources,omitempty"`
+	Image     string               `json:"image"`
+	Platform  string               `json:"platform"`
+	Mounts    map[string]string    `json:"mounts"` // container destination -> original host path
 }
 
 type workflowV4Input struct {
@@ -75,10 +76,11 @@ type workflowV4Operation struct {
 }
 
 type workflowV4State struct {
-	Schema     string                `json:"schema"`
-	Marker     workflowV4Marker      `json:"marker"`
-	Status     string                `json:"status"`
-	Operations []workflowV4Operation `json:"operations"`
+	ResourcePolicyVersion int                   `json:"resource_policy_version,omitempty"`
+	Schema                string                `json:"schema"`
+	Marker                workflowV4Marker      `json:"marker"`
+	Status                string                `json:"status"`
+	Operations            []workflowV4Operation `json:"operations"`
 }
 
 // The journal owns the workspace lock until close. It records execution
@@ -139,7 +141,7 @@ func openWorkflowV4Journal(protocol transcript.DefinitionProtocol, definition tr
 		if err != nil {
 			return nil, err
 		}
-		j.state = workflowV4State{Schema: workflowV4JournalSchema, Status: "initializing", Marker: workflowV4Marker{Schema: workflowV4MarkerSchema, WorkspaceID: id, StatePath: j.path, Binding: binding}}
+		j.state = workflowV4State{ResourcePolicyVersion: 1, Schema: workflowV4JournalSchema, Status: "initializing", Marker: workflowV4Marker{Schema: workflowV4MarkerSchema, WorkspaceID: id, StatePath: j.path, Binding: binding}}
 		if err := j.persist(j.state); err != nil {
 			return nil, err
 		}
@@ -425,6 +427,9 @@ func validateWorkflowV4Ref(ref transcript.ArtifactRef) error {
 }
 
 func validateWorkflowV4State(s workflowV4State, binding workflowV4Binding, path string) error {
+	if s.ResourcePolicyVersion < 0 || s.ResourcePolicyVersion > 1 {
+		return errors.New("unknown resource policy version")
+	}
 	if s.Schema != workflowV4JournalSchema || s.Marker.Schema != workflowV4MarkerSchema || !validFlowAttemptID(s.Marker.WorkspaceID) || s.Marker.StatePath != path || !reflect.DeepEqual(s.Marker.Binding, binding) {
 		return errors.New("V4 recovery state belongs to another workspace or definition")
 	}
@@ -576,7 +581,7 @@ func validateWorkflowV4Plan(p workflowV4OperationPlan, b workflowV4Binding) erro
 	if p.Kind == "sign-receipt" || p.Kind == "sign-return" || p.Kind == "sign-return-receipt" || p.Kind == "attest-erasure" {
 		class = "signer"
 	}
-	if expected, ok := b.Runtimes[class]; !ok || !reflect.DeepEqual(expected, p.Runtime) {
+	if expected, ok := b.Runtimes[class]; !ok || !sameWorkflowV4RuntimeIdentity(expected, p.Runtime) {
 		return errors.New("V4 operation runtime differs from the approved role profile")
 	}
 	if err := validateWorkflowV4Runtime(p.Runtime, b.Work); err != nil {
@@ -597,6 +602,9 @@ func validateWorkflowV4Plan(p workflowV4OperationPlan, b workflowV4Binding) erro
 }
 
 func validateWorkflowV4Runtime(runtime workflowV4Runtime, work string) error {
+	if _, err := resolvedDockerRuntimeLimits(runtime.Resources); err != nil {
+		return err
+	}
 	if !roleImagePattern.MatchString(runtime.Image) || (runtime.Platform != "linux/amd64" && runtime.Platform != "linux/arm64") || runtime.Mounts["/work"] != work || len(runtime.Mounts) > 3 {
 		return errors.New("V4 operation requires the original pinned Linux runtime and work mount")
 	}
@@ -794,4 +802,12 @@ func workflowV4NoSymlinkPath(root, path string, allowMissing bool) error {
 		}
 	}
 	return nil
+}
+
+// Resource preferences may change between operations. Image, platform, and
+// mount identity remain bound to the approved profile; each operation retains
+// its own validated allocation in the durable plan.
+func sameWorkflowV4RuntimeIdentity(a, b workflowV4Runtime) bool {
+	a.Resources, b.Resources = nil, nil
+	return reflect.DeepEqual(a, b)
 }
