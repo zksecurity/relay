@@ -16,7 +16,7 @@ import (
 	"github.com/zksecurity/relay/internal/transcript"
 )
 
-// runCoordinatorCommitV4 publishes an already signed and fully checked V4
+// runCoordinatorCommitV4 publishes an already signed and offline-accepted V4
 // checkpoint. It is intended to run in the coordinator's online role image:
 // proof-tool is pinned there and the coordinator storage credential is mounted
 // read-only. The two immutable files are uploaded before the mutable root.

@@ -1,12 +1,9 @@
 package transcript
 
 import (
-	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -27,48 +24,14 @@ func (p DefinitionProtocol) UsesV4() bool {
 	return (p.DefinitionSchema == "proof-tool-mpc-ceremony-definition-v4" || p.DefinitionSchema == "proof-tool-mpc-ceremony-definition-v5") && p.StorageWorkflow == "storage-first-v2" && p.ReleaseVerification == "coordinator-full-replay-v1"
 }
 
-// AuthenticateCheckpointForPublicationV4 verifies signed ancestry and asks
-// proof-tool to prepare the exact proposal again. prepare-v4 checks the
-// transition's evidence and replays contribution mathematics for acceptance
-// edges. Relay may publish only when the checked bytes are identical.
+// AuthenticateCheckpointForPublicationV4 verifies the exact signed checkpoint
+// and its complete signed ancestry before publication. Candidate mathematics
+// have already been replayed by the offline accept-candidate-v4 action which
+// produced this signed child. The online publisher has no coordinator signing
+// key, so it must not repeat that expensive replay merely to publish the exact
+// accepted bytes.
 func (i Inspector) AuthenticateCheckpointForPublicationV4(root, record, signature string) (CheckpointInspectionV4, error) {
-	inspection, err := i.StoredCheckpointV4(root, record, signature)
-	if err != nil {
-		return CheckpointInspectionV4{}, err
-	}
-	temp, err := os.MkdirTemp(root, ".relay-v4-publication-check-")
-	if err != nil {
-		return CheckpointInspectionV4{}, err
-	}
-	defer os.RemoveAll(temp)
-	checked := filepath.Join(temp, "checkpoint.json")
-	result, err := i.execute(
-		"checkpoint", "prepare-v4",
-		"--ceremony", i.CeremonyPath,
-		"--ceremony-signature", i.CeremonySignaturePath,
-		"--coordinator-public-key-file", i.CoordinatorPublicKeyPath,
-		"--artifact-root", root,
-		"--proposal", record,
-		"--out", checked,
-	)
-	if err != nil {
-		return CheckpointInspectionV4{}, err
-	}
-	if result.Command != "checkpoint prepare-v4" {
-		return CheckpointInspectionV4{}, errors.New("mpc-ceremony returned the wrong V4 checkpoint authentication result")
-	}
-	original, err := os.ReadFile(record)
-	if err != nil {
-		return CheckpointInspectionV4{}, err
-	}
-	prepared, err := os.ReadFile(checked)
-	if err != nil {
-		return CheckpointInspectionV4{}, err
-	}
-	if !bytes.Equal(original, prepared) {
-		return CheckpointInspectionV4{}, errors.New("proof-tool checked different V4 checkpoint bytes")
-	}
-	return inspection, nil
+	return i.StoredCheckpointV4(root, record, signature)
 }
 
 // DefinitionProtocol never falls back after a failed inspection. Older pinned
