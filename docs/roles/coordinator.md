@@ -3,6 +3,8 @@
 You schedule turns, verify submissions, and publish accepted ceremony state.
 Other roles keep their own private keys.
 
+To apply a CLI fix, follow the [coordinator upgrade guide](../coordinator-upgrade.md).
+
 ## Start or resume
 
 Complete [installation](../install.md), then run the `start.sh` printed by

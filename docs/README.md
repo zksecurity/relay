@@ -9,6 +9,8 @@ printed `start.sh` command; no settings-loading command is needed.
 Use the [ceremony flow map](ceremony-flow.md) to see how the role lanes and
 handoffs fit together before starting.
 
+For an existing ceremony, see [upgrade the coordinator CLI](coordinator-upgrade.md).
+
 | Your assignment | Guide |
 | --- | --- |
 | Coordinator | [Coordinate the ceremony](roles/coordinator.md) |
