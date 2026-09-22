@@ -395,10 +395,7 @@ func runCeremonyUpgrade(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := upgradeCheckJournal(p, binding); err != nil {
-		return err
-	}
-	if err := upgradeCheckInitialArtifacts(p); err != nil {
+	if err := upgradeCheckOperatorSelectedCleanExit(p, signer.Image, targetImage, sourceHash, targetCommit); err != nil {
 		return err
 	}
 	storagePath := filepath.Join(p.Work, "ceremony/config/relay-storage.json")
@@ -437,10 +434,7 @@ func runCeremonyUpgrade(args []string) error {
 	}
 	// Recheck after confirmation: operator time is unbounded. Normal source
 	// exits are required; a killed parent can leave a not-yet-created child.
-	if err := upgradeCheckJournal(p, binding); err != nil {
-		return err
-	}
-	if err := upgradeCheckInitialArtifacts(p); err != nil {
+	if err := upgradeCheckOperatorSelectedCleanExit(p, signer.Image, targetImage, sourceHash, targetCommit); err != nil {
 		return err
 	}
 	if err := driver.authenticateDaemon(); err != nil {
@@ -463,40 +457,51 @@ func runCeremonyUpgrade(args []string) error {
 	return nil
 }
 
-// The first activation scope is intentionally before coordinator storage
-// actions. Later checkpoints/partial closure outputs have recovery semantics
-// not covered by the generic journal, even if no intent file exists.
-func upgradeCheckInitialArtifacts(p guidedProfile) error {
-	root := filepath.Join(p.Work, "ceremony", "public")
-	allowed := map[string]bool{
-		"ceremony.json": true, "ceremony.sig": true, "coordinator-public-key.hex": true,
-		"ownership-destination.ccs": true, "phase1/genesis.bin": true,
-		"phase1/chain-0000.json": true, "phase1/chain-0000.sig": true,
-		"checkpoints/initial/checkpoint.json": true, "checkpoints/initial/checkpoint.sig": true,
+// upgradeCheckOperatorSelectedCleanExit reuses the completed-step verifier used
+// by qualified upgrades. An operator-selected CLI update remains a local
+// application choice; this only decides whether retained coordinator state is
+// clean enough to preserve across that choice.
+func upgradeCheckOperatorSelectedCleanExit(p guidedProfile, signingImage, targetImage, proofHash, targetCommit string) error {
+	d, err := upgradeOperatorSelectedCleanExitDeclaration(p, signingImage, targetImage, proofHash, targetCommit)
+	if err != nil {
+		return err
 	}
-	return filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+	return upgradeRequireCleanExit(upgradeSelectionV2{Profile: p}, d, upgrade.OnlineCleanExitQualificationSchema)
+}
+
+func upgradeOperatorSelectedCleanExitDeclaration(p guidedProfile, signingImage, targetImage, proofHash, targetCommit string) (upgrade.DeclarationV2, error) {
+	d := upgrade.DeclarationV2{
+		Schema:          upgrade.OperatorTransitionSchema,
+		OriginalRelease: p.ReleaseCommit,
+		SourceApp:       p.ReleaseCommit,
+		TargetApp:       targetCommit,
+		Role:            p.Role,
+		Host:            runtime.GOOS + "/" + runtime.GOARCH,
+		Platform:        p.Platform,
+		OriginalImage:   p.Image,
+		SigningImage:    signingImage,
+		OnlineImage:     targetImage,
+		ProofToolSHA256: proofHash,
+		Protocol:        "proof-tool-mpc-ceremony-definition-v4",
+		StorageLayout:   "storage-first-v2",
+		ProfileSchema:   guidedSchema,
+		JournalSchema:   workflowV4JournalSchema,
+	}
+	seen := map[string]bool{}
+	for _, kind := range upgradeV2RoleKinds(p.Role) {
+		adapter, err := upgrade.Adapter(kind)
 		if err != nil {
-			return err
+			return d, err
 		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
+		if !seen[adapter] {
+			seen[adapter] = true
+			d.Adapters = append(d.Adapters, adapter)
 		}
-		rel = filepath.ToSlash(rel)
-		if entry.Type()&os.ModeSymlink != 0 {
-			return errors.New("symlink in retained ceremony artifacts")
-		}
-		if entry.IsDir() {
-			if rel == "." || rel == "phase1" || rel == "checkpoints" || rel == "checkpoints/initial" {
-				return nil
-			}
-			return errors.New("upgrade after coordinator storage actions is not yet qualified; use original release")
-		}
-		if !entry.Type().IsRegular() || !allowed[rel] {
-			return errors.New("retained ceremony work is outside the qualified upgrade activation scope")
-		}
-		return nil
-	})
+	}
+	if err := d.Validate(); err != nil {
+		return d, err
+	}
+	return d, nil
 }
 
 func upgradeStartBytes(s ceremonyUpgradeSelection, p guidedProfile) []byte {

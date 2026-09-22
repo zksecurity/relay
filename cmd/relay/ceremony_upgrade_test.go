@@ -199,23 +199,29 @@ func TestUpgradeManifestBindsProofAndReleasePair(t *testing.T) {
 	}
 }
 
-func TestUpgradeInitialArtifactsRejectPartialLaterWork(t *testing.T) {
-	p := guidedProfile{Work: t.TempDir()}
-	root := filepath.Join(p.Work, "ceremony", "public")
-	if err := os.MkdirAll(filepath.Join(root, "phase1"), 0700); err != nil {
+func TestOperatorSelectedCleanExitDeclarationUsesOnlyFrozenRuntime(t *testing.T) {
+	p := guidedProfile{
+		Schema:        guidedSchema,
+		Role:          "coordinator",
+		ReleaseCommit: strings.Repeat("a", 40),
+		Platform:      "linux/arm64",
+		Image:         "ghcr.io/zksecurity/relay/relay-role-online@sha256:" + strings.Repeat("b", 64),
+	}
+	d, err := upgradeOperatorSelectedCleanExitDeclaration(
+		p,
+		"ghcr.io/zksecurity/relay/relay-role-offline@sha256:"+strings.Repeat("c", 64),
+		"ghcr.io/zksecurity/relay/relay-role-online@sha256:"+strings.Repeat("d", 64),
+		"sha256:"+strings.Repeat("e", 64),
+		strings.Repeat("f", 40),
+	)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "phase1", "genesis.bin"), []byte("fixture"), 0600); err != nil {
-		t.Fatal(err)
+	if !d.OperatorSelected() || d.QualificationSHA256 != "" || len(d.SafePredecessors) != 0 {
+		t.Fatal("clean-exit admission claimed release-pair qualification")
 	}
-	if err := upgradeCheckInitialArtifacts(p); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(filepath.Join(root, "phase1", "closure"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if upgradeCheckInitialArtifacts(p) == nil {
-		t.Fatal("accepted unjournaled closure")
+	if err := d.Cover(nil, upgradeV2RoleKinds("coordinator")); err != nil {
+		t.Fatal("admission declaration omitted retained coordinator work", err)
 	}
 }
 
