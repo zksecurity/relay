@@ -157,6 +157,11 @@ func RunQualification(ctx context.Context, request QualificationRequest) (Qualif
 	if err := d.Validate(); err != nil {
 		return zero, err
 	}
+	if request.QualificationSchema == OnlineCleanExitQualificationSchema {
+		if err := validateOnlineCleanExitScope(d); err != nil {
+			return zero, err
+		}
+	}
 	if d.Host != runtime.GOOS+"/"+runtime.GOARCH {
 		return zero, errors.New("qualification must run on the declared host")
 	}
@@ -189,9 +194,6 @@ func RunQualification(ctx context.Context, request QualificationRequest) (Qualif
 		checks = CleanExitQualificationChecks
 		tests = map[string]string{"completed-step-continuation": "TestUpgradeCleanExitContinuation", "updater-interruption": "TestUpgradeCleanExitInterruption", "unsafe-update-refusal": "TestUpgradeCleanExitRefusal"}
 	} else if request.QualificationSchema == OnlineCleanExitQualificationSchema {
-		if d.Role != "coordinator" || d.OnlineImage == d.OriginalImage {
-			return zero, errors.New("online completed-step qualification requires a changed coordinator online image")
-		}
 		q.Schema = OnlineCleanExitQualificationSchema
 		checks = OnlineCleanExitQualificationChecks
 		tests = map[string]string{"completed-step-continuation": "TestUpgradeCleanExitContinuation", "updater-interruption": "TestUpgradeCleanExitInterruption", "unsafe-update-refusal": "TestUpgradeCleanExitRefusal", "online-runtime-retry": "TestUpgradeOnlineRuntimeRetry", "predecessor-reentry": "TestUpgradeOnlinePredecessorReentry"}

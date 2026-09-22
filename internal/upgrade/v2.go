@@ -217,6 +217,17 @@ var OnlineCleanExitQualificationChecks = []string{"completed-step-continuation",
 
 var CleanExitQualificationChecks = []string{"completed-step-continuation", "updater-interruption", "unsafe-update-refusal"}
 
+// V4 evidence exercises one original executable, not arbitrary retained versions.
+func validateOnlineCleanExitScope(d DeclarationV2) error {
+	if d.Role != "coordinator" || d.OnlineImage == d.OriginalImage {
+		return errors.New("online completed-step qualification requires a changed coordinator online image")
+	}
+	if d.SourceApp != d.OriginalRelease || len(d.SafePredecessors) != 1 || d.SafePredecessors[0] != d.SourceApp {
+		return errors.New("online completed-step qualification requires the first hop and exactly its original predecessor")
+	}
+	return nil
+}
+
 func VerifyQualification(raw []byte, d DeclarationV2) (QualificationV2, error) {
 	var q QualificationV2
 	if err := decodeCanonical(raw, &q); err != nil {
@@ -229,8 +240,8 @@ func VerifyQualification(raw []byte, d DeclarationV2) (QualificationV2, error) {
 		}
 		checks = CleanExitQualificationChecks
 	} else if q.Schema == OnlineCleanExitQualificationSchema {
-		if d.Role != "coordinator" || d.OnlineImage == d.OriginalImage {
-			return q, errors.New("online completed-step qualification requires a changed coordinator online image")
+		if err := validateOnlineCleanExitScope(d); err != nil {
+			return q, err
 		}
 		checks = OnlineCleanExitQualificationChecks
 	} else if q.Schema != "relay-upgrade-qualification/v2" {

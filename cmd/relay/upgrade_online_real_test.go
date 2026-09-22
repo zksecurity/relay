@@ -47,7 +47,7 @@ func configureOnlineUpgradeScenario(t *testing.T, f upgradeRealFixture, hook *wo
 	if inject && store == nil {
 		t.Fatal("controlled storage fault required")
 	}
-	observed, exercised := false, false
+	observed, exercised, completedReentry := false, false, false
 	value := func(args []string, key string) string {
 		for i := 0; i+1 < len(args); i++ {
 			if args[i] == key {
@@ -70,6 +70,31 @@ func configureOnlineUpgradeScenario(t *testing.T, f upgradeRealFixture, hook *wo
 		} else if image != d.OriginalImage && image != d.SigningImage {
 			t.Fatal("cryptographic action changed original image")
 		}
+		// After the interrupted-state case, exercise a separate publication that
+		// the target completes itself, then reopen that completed work with the old
+		// executable/container. Success must be idempotent; refusal must be inert.
+		if scenario == "predecessor-reentry" && exercised && !completedReentry && online && slices.Contains(args, "commit-v4") {
+			previousRootWrites := store.PublicationFault(false).RootWrites
+			if err := run(binary, args); err != nil {
+				return err
+			}
+			rootWrites := store.PublicationFault(false).RootWrites
+			if rootWrites != previousRootWrites+1 {
+				t.Fatal("target did not complete a new publication before predecessor reentry")
+			}
+			publicBefore := cleanExitTree(t, filepath.Join(hook.TargetWork, "ceremony/public"))
+			before := cleanExitTree(t, filepath.Join(hook.TargetWork, "ceremony"), filepath.Join(hook.TargetWork, "workflow-v4"))
+			old := originalOnlineArgs(args, d.OriginalImage)
+			oldErr := run(f.request.Predecessors[d.SourceApp], old)
+			if store.PublicationFault(false).RootWrites != rootWrites || !reflect.DeepEqual(publicBefore, cleanExitTree(t, filepath.Join(hook.TargetWork, "ceremony/public"))) {
+				t.Fatal("predecessor changed a completed target publication")
+			}
+			if oldErr != nil && !reflect.DeepEqual(before, cleanExitTree(t, filepath.Join(hook.TargetWork, "ceremony"), filepath.Join(hook.TargetWork, "workflow-v4"))) {
+				t.Fatal("predecessor refusal changed completed target state", oldErr)
+			}
+			completedReentry = true
+			return nil
+		}
 		if !inject || exercised || !online || !slices.Contains(args, "commit-v4") {
 			return run(binary, args)
 		}
@@ -81,12 +106,7 @@ func configureOnlineUpgradeScenario(t *testing.T, f upgradeRealFixture, hook *wo
 			t.Fatal("target did not stop after a partial immutable publication", err)
 		}
 		if scenario == "predecessor-reentry" {
-			old := append([]string{}, args...)
-			for i := 0; i+1 < len(old); i++ {
-				if old[i] == "--image" {
-					old[i+1] = d.OriginalImage
-				}
-			}
+			old := originalOnlineArgs(args, d.OriginalImage)
 			before := cleanExitTree(t, filepath.Join(hook.TargetWork, "ceremony"), filepath.Join(hook.TargetWork, "workflow-v4"))
 			oldErr := run(f.request.Predecessors[d.SourceApp], old)
 			if oldErr != nil && !reflect.DeepEqual(before, cleanExitTree(t, filepath.Join(hook.TargetWork, "ceremony"), filepath.Join(hook.TargetWork, "workflow-v4"))) {
@@ -109,8 +129,21 @@ func configureOnlineUpgradeScenario(t *testing.T, f upgradeRealFixture, hook *wo
 		if !observed {
 			t.Error("no actual upgraded online action executed")
 		}
+		if scenario == "predecessor-reentry" && !completedReentry {
+			t.Error("completed target-publication predecessor reentry did not execute")
+		}
 		if inject && !exercised {
 			t.Error("publication retry/reentry scenario did not execute")
 		}
 	})
+}
+
+func originalOnlineArgs(args []string, image string) []string {
+	old := append([]string{}, args...)
+	for i := 0; i+1 < len(old); i++ {
+		if old[i] == "--image" {
+			old[i+1] = image
+		}
+	}
+	return old
 }

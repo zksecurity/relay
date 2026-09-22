@@ -14,7 +14,10 @@ coordinator image between completed operations. No pair is enabled. V3 remains
 native-only, and legacy V2 evidence does not authorize new admissions. The native
 launcher, target online image and unchanged Proof-tool digest must match the exact
 reviewed declaration and attested release assets. Original signing/contribution
-images, identity, definition and accepted progress remain frozen.
+images, identity, definition and accepted progress remain frozen. V4 is limited
+to the first hop: source application equals the original release, with exactly
+that one safe predecessor. Additional predecessor hashes cannot stand in for
+executed compatibility tests.
 
 V4 requires all three completed-step checks below plus `online-runtime-retry` and
 `predecessor-reentry`. The runner executes `TestUpgradeOnlineRuntimeRetry` and
@@ -24,7 +27,11 @@ target-image publication after one immutable upload, then retry with the target;
 the second scenario first tries the original executable and original image against
 the interrupted state. It must either reconcile successfully or refuse without
 changing ceremony/journal files. The target retry must complete exactly one root
-transition; its successful immutable body must not be retransmitted. The remainder
+transition; its successful immutable body must not be retransmitted. The reentry
+scenario also completes a separate publication with the target itself, then runs
+the original executable/container against that completed state. It must produce
+no additional root transition or changed public artifacts, and a refusal must
+leave retained ceremony/journal state unchanged. The remainder
 of each ceremony completes signing, publication and fresh reconstruction.
 
 These scenarios are opt-in and require the private exact-asset request. Skips are
