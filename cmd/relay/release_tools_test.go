@@ -192,7 +192,11 @@ func TestGuidedEnvironmentPreservesEarlierIndentedPlan(t *testing.T) {
 
 func TestContributorEntrypointDoesNotUseHostPath(t *testing.T) {
 	d := dockerDriver{ceremonyBinary: "/host-only/download/tool", image: "sha256:" + strings.Repeat("a", 64), platform: "linux/" + runtime.GOARCH}
-	args := strings.Join(d.securityArgs(nil), " ")
+	securityArgs, err := d.securityArgs(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Join(securityArgs, " ")
 	if strings.Contains(args, d.ceremonyBinary) || !strings.Contains(args, "/usr/local/bin/mpc-ceremony") {
 		t.Fatalf("wrong container entrypoint: %s", args)
 	}

@@ -35,7 +35,10 @@ func TestDockerDriverWithRealCeremonyTool(t *testing.T) {
 	if err := validateMountSources(bootstrapMounts); err != nil {
 		t.Fatal(err)
 	}
-	initialize := bootstrap.baseRunArgs(true, bootstrapMounts)
+	initialize, err := bootstrap.baseRunArgs(true, bootstrapMounts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	initialize = append(initialize, image, "rehearsal", "init",
 		"--created-at", time.Now().UTC().Add(-time.Minute).Truncate(time.Second).Format(time.RFC3339),
 		"--out-dir", "/work/rehearsal")
@@ -107,7 +110,10 @@ func TestDockerDriverWithRealCeremonyTool(t *testing.T) {
 	if err := validateMountSources(mounts); err != nil {
 		t.Fatal(err)
 	}
-	verify := driver.baseRunArgs(true, mounts)
+	verify, err := driver.baseRunArgs(true, mounts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	verify = append(verify, image,
 		"phase1", "verify",
 		"--ceremony", "/relay/public/ceremony.json",

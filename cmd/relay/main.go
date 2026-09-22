@@ -21,6 +21,10 @@ import (
 )
 
 func main() {
+	if _, err := loadDockerRuntimeLimits(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: invalid Docker runtime limits: %v\n", err)
+		os.Exit(1)
+	}
 	args, normalizeErr := normalizeReleaseVersions(os.Args[1:], resolveReleaseVersion)
 	if normalizeErr != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", normalizeErr)

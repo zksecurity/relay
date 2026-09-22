@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -29,6 +30,7 @@ type dockerClientFake struct {
 	removed           bool
 	stillPresent      bool
 	unsafe            bool
+	unsafeResource    string
 	onCreate          func()
 	createErrAfter    bool
 	host              string
@@ -59,7 +61,8 @@ func (f *dockerClientFake) Output(args ...string) ([]byte, []byte, error) {
 		raw, _ := json.Marshal(map[string]any{
 			"ID": daemonID, "Name": "test-daemon", "ServerVersion": "28.0.0",
 			"OperatingSystem": "Test Linux", "OSType": "linux", "Architecture": "arm64",
-			"SecurityOptions": f.securityOptions,
+			"SecurityOptions": f.securityOptions, "MemoryLimit": true, "SwapLimit": true,
+			"CpuCfsQuota": true, "MemTotal": int64(16) << 30, "NCPU": 8,
 		})
 		return raw, nil, nil
 	case len(args) >= 2 && args[0] == "image" && args[1] == "inspect":
@@ -162,6 +165,8 @@ func (f *dockerClientFake) inspectionJSON() []byte {
 	var runtimeMounts []map[string]any
 	name := ""
 	labels := map[string]string{}
+	var environment []string
+	var memory, memorySwap, nanoCPUs int64
 	for index, arg := range f.createArgs {
 		if arg == "--name" && index+1 < len(f.createArgs) {
 			name = f.createArgs[index+1]
@@ -174,6 +179,23 @@ func (f *dockerClientFake) inspectionJSON() []byte {
 		}
 		if arg == "--user" && index+1 < len(f.createArgs) {
 			user = f.createArgs[index+1]
+		}
+		if arg == "--env" && index+1 < len(f.createArgs) {
+			environment = append(environment, f.createArgs[index+1])
+		}
+		if arg == "--memory" && index+1 < len(f.createArgs) {
+			value := strings.TrimSuffix(f.createArgs[index+1], "g")
+			gib, _ := strconv.ParseInt(value, 10, 64)
+			memory = gib << 30
+		}
+		if arg == "--memory-swap" && index+1 < len(f.createArgs) {
+			value := strings.TrimSuffix(f.createArgs[index+1], "g")
+			gib, _ := strconv.ParseInt(value, 10, 64)
+			memorySwap = gib << 30
+		}
+		if arg == "--cpus" && index+1 < len(f.createArgs) {
+			cpus, _ := strconv.ParseInt(f.createArgs[index+1], 10, 64)
+			nanoCPUs = cpus * 1_000_000_000
 		}
 		if arg != "--mount" || index+1 >= len(f.createArgs) {
 			continue
@@ -198,11 +220,22 @@ func (f *dockerClientFake) inspectionJSON() []byte {
 			"RW": !mount["ReadOnly"].(bool),
 		})
 	}
+	switch f.unsafeResource {
+	case "memory":
+		memory = 0
+	case "memory-swap":
+		memorySwap = -1
+	case "cpu":
+		nanoCPUs = 0
+	case "environment":
+		environment = append(environment, "GOMEMLIMIT=unlimited")
+	}
 	record := []map[string]any{{
 		"Name":   "/" + name,
-		"Config": map[string]any{"Image": image, "User": user, "Labels": labels},
+		"Config": map[string]any{"Image": image, "User": user, "Labels": labels, "Env": environment},
 		"HostConfig": map[string]any{
 			"NetworkMode": network, "ReadonlyRootfs": true, "Privileged": false,
+			"Memory": memory, "MemorySwap": memorySwap, "NanoCpus": nanoCPUs,
 			"CapDrop": []string{"ALL"}, "SecurityOpt": []string{"no-new-privileges=true"},
 			"PidMode": "", "IpcMode": "none", "UsernsMode": f.usernsMode,
 			"LogConfig": map[string]any{"Type": "none"},
@@ -471,6 +504,53 @@ func TestDockerContributionRejectsUnsafeEffectiveConfiguration(t *testing.T) {
 	}
 	if _, err := os.Lstat(o.outDir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("unsafe contributor output was retained: %v", err)
+	}
+}
+
+func TestDockerContributionRejectsMissingEffectiveRuntimeLimits(t *testing.T) {
+	for _, resource := range []string{"memory", "memory-swap", "cpu", "environment"} {
+		t.Run(resource, func(t *testing.T) {
+			o, pos, _, fake := dockerContributionFixture(t)
+			fake.unsafeResource = resource
+			err := runNextAt(o, pos, time.Now())
+			if err == nil || !strings.Contains(err.Error(), "failed isolation verification") {
+				t.Fatalf("unsafe runtime limit error = %v", err)
+			}
+			if !fake.removed {
+				t.Fatal("unbounded contributor was not removed")
+			}
+			if _, err := os.Lstat(o.outDir); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("unbounded contribution output exists: %v", err)
+			}
+		})
+	}
+}
+
+func TestDockerLifecycleRuntimeEvidenceIsVersioned(t *testing.T) {
+	o, pos, _, _ := dockerContributionFixture(t)
+	if err := runNextAt(o, pos, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(o.outDir, dockerLifecycleLogName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt dockerLifecycleReceipt
+	if err := json.Unmarshal(raw, &receipt); err != nil {
+		t.Fatal(err)
+	}
+	if receipt.Schema != dockerLifecycleSchema || !receipt.Security.RuntimeLimitsVerified || !verifiedLifecycleFacts(receipt.Schema, receipt.Security) {
+		t.Fatalf("new receipt lacks verified runtime evidence: %#v", receipt.Security)
+	}
+	legacy := receipt.Security
+	legacy.RuntimeLimitsVerified = false
+	legacy.CPULimitNano, legacy.MemoryLimitBytes, legacy.MemorySwapLimitBytes = 0, 0, 0
+	legacy.GoMaxProcs, legacy.GoMemoryLimit, legacy.GoGCPercent = "", "", ""
+	if !verifiedLifecycleFacts(dockerLifecycleSchemaV2, legacy) {
+		t.Fatal("compatible v2 lifecycle evidence was rejected")
+	}
+	if verifiedLifecycleFacts(dockerLifecycleSchema, legacy) {
+		t.Fatal("new lifecycle receipt accepted missing runtime evidence")
 	}
 }
 
@@ -826,7 +906,7 @@ func TestConfirmDockerNoCopiesUpdatesLocalLifecycleLog(t *testing.T) {
 		hostSwapStatus = dockerMacSwapUnassessed
 	}
 	receipt := dockerLifecycleReceipt{
-		Schema: dockerLifecycleSchema, ContainerID: testContainerID, RemovalVerified: true,
+		Schema: dockerLifecycleSchemaV2, ContainerID: testContainerID, RemovalVerified: true,
 		HostSwapStatus: hostSwapStatus,
 		Daemon: dockerDaemonFacts{
 			Context: "test-local", Endpoint: "unix:///var/run/docker.sock", ID: "test-daemon-id",

@@ -604,9 +604,9 @@ func confirmDockerNoCopiesWithIO(o roleOpts, input *bufio.Reader, output io.Writ
 		return fmt.Errorf("read Docker lifecycle record: %w", err)
 	}
 	var receipt dockerLifecycleReceipt
-	if err := json.Unmarshal(raw, &receipt); err != nil || receipt.Schema != dockerLifecycleSchema ||
+	if err := json.Unmarshal(raw, &receipt); err != nil || !validDockerLifecycleSchema(receipt.Schema) ||
 		!receipt.RemovalVerified || !verifiedDaemonFacts(receipt.Daemon) ||
-		!verifiedLifecycleFacts(receipt.Security) || !verifiedHostSwapStatus(runtime.GOOS, receipt.HostSwapStatus) {
+		!verifiedLifecycleFacts(receipt.Schema, receipt.Security) || !verifiedHostSwapStatus(runtime.GOOS, receipt.HostSwapStatus) {
 		return errors.New("Docker lifecycle record does not contain the required cleanup checks")
 	}
 	shortID := shortContainerID(receipt.ContainerID)
@@ -693,9 +693,9 @@ func dockerErasureIntent(o roleOpts) (time.Time, bool, error) {
 		return time.Time{}, false, fmt.Errorf("read Docker lifecycle record: %w", err)
 	}
 	var receipt dockerLifecycleReceipt
-	if err := json.Unmarshal(raw, &receipt); err != nil || receipt.Schema != dockerLifecycleSchema || !receipt.RemovalVerified ||
+	if err := json.Unmarshal(raw, &receipt); err != nil || !validDockerLifecycleSchema(receipt.Schema) || !receipt.RemovalVerified ||
 		o.docker == nil || receipt.Image != o.docker.image || receipt.Platform != o.docker.platform ||
-		!verifiedDaemonFacts(receipt.Daemon) || !verifiedLifecycleFacts(receipt.Security) ||
+		!verifiedDaemonFacts(receipt.Daemon) || !verifiedLifecycleFacts(receipt.Schema, receipt.Security) ||
 		!verifiedHostSwapStatus(runtime.GOOS, receipt.HostSwapStatus) {
 		return time.Time{}, false, errors.New("Docker lifecycle record is invalid")
 	}
@@ -722,9 +722,9 @@ func persistDockerErasureIntent(o roleOpts, destroyedAt time.Time) error {
 		return fmt.Errorf("read Docker lifecycle record: %w", err)
 	}
 	var receipt dockerLifecycleReceipt
-	if err := json.Unmarshal(raw, &receipt); err != nil || receipt.Schema != dockerLifecycleSchema || !receipt.RemovalVerified ||
+	if err := json.Unmarshal(raw, &receipt); err != nil || !validDockerLifecycleSchema(receipt.Schema) || !receipt.RemovalVerified ||
 		o.docker == nil || receipt.Image != o.docker.image || receipt.Platform != o.docker.platform ||
-		!verifiedDaemonFacts(receipt.Daemon) || !verifiedLifecycleFacts(receipt.Security) ||
+		!verifiedDaemonFacts(receipt.Daemon) || !verifiedLifecycleFacts(receipt.Schema, receipt.Security) ||
 		!verifiedHostSwapStatus(runtime.GOOS, receipt.HostSwapStatus) ||
 		receipt.ParticipantConfirmation != "CLEANUP PRECAUTIONS CONFIRMED" {
 		return errors.New("Docker cleanup confirmation must be durably recorded before erasure signing")

@@ -62,7 +62,11 @@ func (j *workflowV4Journal) syncV4(objects storagefirst.ObjectStore, trust trans
 		if err != nil {
 			return nil, nil, err
 		}
-		command := append(child.baseRunArgs(true, mounts), child.image)
+		command, err := child.baseRunArgs(true, mounts)
+		if err != nil {
+			return nil, nil, err
+		}
+		command = append(command, child.image)
 		return child.client.Output(append(command, rewritten...)...)
 	}
 	trust.Executable = "mpc-ceremony"

@@ -89,7 +89,11 @@ func workflowV4CandidateInspector(p workflowV4OperationPlan, b workflowV4Binding
 		for n := range mounts {
 			mounts[n].ReadOnly = true
 		}
-		command := append(d.baseRunArgs(true, mounts), d.image)
+		command, err := d.baseRunArgs(true, mounts)
+		if err != nil {
+			return nil, nil, err
+		}
+		command = append(command, d.image)
 		command = append(command, rewritten...)
 		stdout, stderr, err := d.client.Output(command...)
 		if err != nil {
