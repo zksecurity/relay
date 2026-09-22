@@ -1,7 +1,7 @@
 ## What changed
 
-- Avoid replaying contribution mathematics a second time when the coordinator publishes an already offline-accepted V4 checkpoint. Publication still verifies the exact signed checkpoint, complete signed ancestry, immutable artifact hashes, and conditional storage-head update.
+- Permit a coordinator-only Relay CLI update between completed storage operations. Relay now reuses the retained-state verifier: it requires a resolved workflow, an authenticated high-water checkpoint, complete signed checkpoint ancestry, exact local public artifacts, completed publication records, and unchanged proof/signing images. A pending release-signer handoff still blocks the update until it is resolved by the original Relay.
 
 ## Tessera compatibility
 
-Tessera setup contracts, signed ceremony formats, proof-tool pins, and stored checkpoint formats are unchanged. This changes only the coordinator's online publication verification work.
+Tessera setup contracts, signed ceremony formats, proof-tool pins, stored checkpoint formats, and role-image pins are unchanged. This changes only local coordinator CLI update admission.

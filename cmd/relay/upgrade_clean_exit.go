@@ -159,6 +159,12 @@ func upgradeCheckCleanFiles(p guidedProfile, inv upgradeInventory, accepted map[
 	root := filepath.Join(p.Work, "ceremony/public")
 	for _, f := range inv.Files {
 		path := filepath.Join(p.Work, filepath.FromSlash(f.Name))
+		// Release grants and received release packages are cross-role handoffs.
+		// Until a terminal release checkpoint covers them, they must be resolved
+		// with the original runtime rather than carried into an application update.
+		if strings.HasPrefix(f.Name, "workflow-v4/coordinator/release/") {
+			return errors.New("release handoff is still retained; finish or resolve it with the original Relay before updating")
+		}
 		if strings.HasPrefix(f.Name, "ceremony/public/") {
 			name := strings.TrimPrefix(f.Name, "ceremony/public/")
 			if name == "coordinator-public-key.hex" {

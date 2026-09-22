@@ -103,3 +103,11 @@ func TestCleanExitRejectsUnacceptedPublicOutput(t *testing.T) {
 		t.Fatal("blocked completed historical intent", err)
 	}
 }
+
+func TestCleanExitRejectsRetainedReleaseHandoff(t *testing.T) {
+	p := guidedProfile{Work: t.TempDir()}
+	inv := upgradeInventory{Files: []upgradeInventoryFile{{Name: "workflow-v4/coordinator/release/grants/release.json"}}}
+	if err := upgradeCheckCleanFiles(p, inv, nil, nil); err == nil {
+		t.Fatal("accepted an unresolved release handoff")
+	}
+}

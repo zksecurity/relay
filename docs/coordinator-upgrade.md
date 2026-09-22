@@ -5,7 +5,9 @@ separate release-pair approval. Run the upgrade command from the **new** launche
 Relay verifies the release and records your choice; it does not claim the version
 pair passed compatibility testing.
 
-This path supports initialized coordinators between completed operations.
+This path supports initialized coordinators between completed operations. It refuses an
+unfinished upload, acceptance, publication, lifecycle transition, or release-signer
+handoff; resolve that work with the original Relay first.
 Participants and release signers can keep their current versions for a
 coordinator-only fix. Their contributor and signing images remain pinned, as do
 the signed definition, circuit, proof-tool, identities and existing progress.
