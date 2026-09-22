@@ -190,7 +190,7 @@ func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
 		if err := prepareGuidedImage(p.UpgradeOnlineImage, p.Platform, cli, false); err != nil {
 			return err
 		}
-		fmt.Fprintln(os.Stdout, "Compatible Relay update active; cryptographic and signing runtimes retain their original identities.")
+		fmt.Fprintln(os.Stdout, "Relay update active; cryptographic and signing runtimes retain their original identities.")
 	}
 	ui := coordinatorWizard{input: bufio.NewReader(os.Stdin), output: os.Stdout}
 	if p.Role == "release-signer" {

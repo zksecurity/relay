@@ -18,8 +18,8 @@ import (
 // Admission only: never call this when starting an already selected app or
 // repairing its start script. Those operations must preserve ordinary recovery.
 func upgradeRequireCleanExit(s upgradeSelectionV2, d upgrade.DeclarationV2, qualificationSchema string) error {
-	onlineQualified := qualificationSchema == upgrade.OnlineCleanExitQualificationSchema
-	if s.Setup != nil || d.Role != "coordinator" || (!onlineQualified && d.OnlineImage != d.OriginalImage) {
+	onlineReplacementAllowed := qualificationSchema == upgrade.OnlineCleanExitQualificationSchema || d.OperatorSelected()
+	if s.Setup != nil || d.Role != "coordinator" || (!onlineReplacementAllowed && d.OnlineImage != d.OriginalImage) {
 		return errors.New("this update supports only initialized coordinators with qualified online images")
 	}
 	p := s.Profile
@@ -46,19 +46,38 @@ func upgradeRequireCleanExit(s upgradeSelectionV2, d upgrade.DeclarationV2, qual
 	// anchor reads it; no synchronization or ceremony file writes occur here.
 	id := journal.Marker.Binding.CeremonyID
 	anchor := filepath.Join(p.Work, ".relay", strings.ReplaceAll(id, ":", "-"), "checkpoint-high-water.json")
-	if !regularPreparationFile(anchor) {
-		return errors.New("open the current Relay and verify accepted ceremony progress before updating")
-	}
-	water, err := state.OpenWorkspaceHighWater(p.Work, id)
-	if err != nil {
-		return err
-	}
-	seen, ok, err := water.Seen()
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return errors.New("no recorded accepted ceremony progress")
+	var seen state.CheckpointPosition
+	var initialRoot *state.Root
+	var recheck func() error
+	if _, err := os.Lstat(anchor); errors.Is(err, os.ErrNotExist) {
+		if !d.OperatorSelected() || d.SourceApp != d.OriginalRelease {
+			return errors.New("open the current Relay and verify accepted ceremony progress before updating")
+		}
+		current, check, err := upgradeInitialPublishedRoot(p, id)
+		if err != nil {
+			return err
+		}
+		initialRoot, recheck = &current, check
+		seen = state.CheckpointPosition{Sequence: 0, Digest: current.Checkpoint.SHA256}
+	} else {
+		if err != nil {
+			return err
+		}
+		if !regularPreparationFile(anchor) {
+			return errors.New("invalid accepted-state anchor")
+		}
+		water, err := state.OpenWorkspaceHighWater(p.Work, id)
+		if err != nil {
+			return err
+		}
+		var ok bool
+		seen, ok, err = water.Seen()
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errors.New("no recorded accepted ceremony progress")
+		}
 	}
 	root := filepath.Join(p.Work, "ceremony/public")
 	var head string
@@ -100,6 +119,11 @@ func upgradeRequireCleanExit(s upgradeSelectionV2, d upgrade.DeclarationV2, qual
 		if count == 0 && (checked.CheckpointRefs.Record.Digest.SHA256 != seen.Digest || checked.Checkpoint.Sequence != seen.Sequence) {
 			return errors.New("checkpoint differs from accepted-state anchor")
 		}
+		if count == 0 && initialRoot != nil {
+			if err := upgradeMatchInitialRoot(*initialRoot, checked); err != nil {
+				return err
+			}
+		}
 		pair := checked.CheckpointRefs
 		if _, exists := accepted[pair.Record.Name]; exists {
 			return errors.New("cyclic checkpoint ancestry")
@@ -122,7 +146,13 @@ func upgradeRequireCleanExit(s upgradeSelectionV2, d upgrade.DeclarationV2, qual
 		head = filepath.Join(root, filepath.FromSlash(previous.Record.Name))
 		signature = filepath.Join(root, filepath.FromSlash(previous.Signature.Name))
 	}
-	return upgradeCheckCleanFiles(p, inv, accepted, files)
+	if err := upgradeCheckCleanFiles(p, inv, accepted, files); err != nil {
+		return err
+	}
+	if recheck != nil {
+		return recheck()
+	}
+	return nil
 }
 
 func upgradeCheckCleanFiles(p guidedProfile, inv upgradeInventory, accepted map[string]transcript.CheckpointInspectionV4, public map[string]transcript.ArtifactRef) error {

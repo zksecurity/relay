@@ -108,7 +108,7 @@ func runUpgradeBundle(args []string) error {
 	original := f.String("original-release", "", "original role-images release")
 	source := f.String("source-release", "", "currently selected application release")
 	target := f.String("release", "", "target role-images release")
-	approval := f.String("approval-release", "", "release publishing approval (defaults to target)")
+	approval := f.String("approval-release", "", "optional historical compatibility approval release")
 	role := f.String("role", "", "ceremony role")
 	host := f.String("host", "", "destination host OS/architecture")
 	platform := f.String("platform", "", "destination Docker platform")
@@ -173,27 +173,31 @@ func runUpgradeBundle(args []string) error {
 		}
 		return raw, nil
 	}
-	raw, err := copyAsset(approvalCommit, d.AssetName())
-	if err != nil {
-		return err
-	}
-	actual, err := upgrade.DecodeV2(raw)
-	if err != nil {
-		return err
-	}
-	if actual.OriginalRelease != d.OriginalRelease || actual.SourceApp != d.SourceApp || actual.TargetApp != d.TargetApp || actual.Role != d.Role || actual.Host != d.Host || actual.Platform != d.Platform {
-		return errors.New("declaration does not match requested bundle")
-	}
-	report, err := copyAsset(approvalCommit, "upgrade-qualification-"+strings.TrimPrefix(actual.QualificationSHA256, "sha256:")+".json")
-	if err != nil {
-		return err
-	}
-	q, err := upgrade.VerifyQualification(report, actual)
-	if err != nil {
-		return err
-	}
-	if "sha256:"+upgradeBytesHash(report) != actual.QualificationSHA256 {
-		return errors.New("qualification hash mismatch")
+	var qualifiedLauncher string
+	if *approval != "" {
+		raw, err := copyAsset(approvalCommit, d.AssetName())
+		if err != nil {
+			return err
+		}
+		actual, err := upgrade.DecodeV2(raw)
+		if err != nil {
+			return err
+		}
+		if actual.OriginalRelease != d.OriginalRelease || actual.SourceApp != d.SourceApp || actual.TargetApp != d.TargetApp || actual.Role != d.Role || actual.Host != d.Host || actual.Platform != d.Platform {
+			return errors.New("declaration does not match requested bundle")
+		}
+		report, err := copyAsset(approvalCommit, "upgrade-qualification-"+strings.TrimPrefix(actual.QualificationSHA256, "sha256:")+".json")
+		if err != nil {
+			return err
+		}
+		q, err := upgrade.VerifyQualification(report, actual)
+		if err != nil {
+			return err
+		}
+		if "sha256:"+upgradeBytesHash(report) != actual.QualificationSHA256 {
+			return errors.New("qualification hash mismatch")
+		}
+		qualifiedLauncher = q.LauncherSHA256
 	}
 	if _, err := copyAsset(d.OriginalRelease, "relay-role-images.release.json"); err != nil {
 		return err
@@ -208,10 +212,10 @@ func runUpgradeBundle(args []string) error {
 	if err != nil {
 		return err
 	}
-	if "sha256:"+upgradeBytesHash(binary) != q.LauncherSHA256 {
+	if qualifiedLauncher != "" && "sha256:"+upgradeBytesHash(binary) != qualifiedLauncher {
 		return errors.New("bundle binary was not qualified")
 	}
-	if err := publishPublicInput(filepath.Join(*out, "COMPLETE"), []byte(actual.AssetName()+"\n")); err != nil {
+	if err := publishPublicInput(filepath.Join(*out, "COMPLETE"), []byte(d.AssetName()+"\n")); err != nil {
 		return err
 	}
 	if err := publishPublicInput(filepath.Join(*out, "APPROVAL-RELEASE"), []byte("role-images-"+approvalCommit+"\n")); err != nil {

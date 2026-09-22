@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/zksecurity/relay/internal/access"
@@ -28,7 +30,7 @@ func runCeremonyUpgradeV2(args []string) error {
 	f := flag.NewFlagSet("ceremony upgrade", flag.ContinueOnError)
 	role := f.String("role", "", "saved ceremony role")
 	target := f.String("release", "", "exact target release")
-	approval := f.String("approval-release", "", "exact release publishing compatibility approval (defaults to target)")
+	approval := f.String("approval-release", "", "optional historical compatibility approval release")
 	work := f.String("work", "", "existing role work folder for an unfinished setup")
 	bundle := f.String("bundle", "", "previously prepared offline release bundle")
 	trust := f.String("trusted-root", "", "independently installed Sigstore trust root for offline verification")
@@ -140,6 +142,9 @@ func runCeremonyUpgradeV2(args []string) error {
 	if source == targetCommit {
 		return errors.New("this application is already the original release")
 	}
+	if *approval == "" && (p.Role != "coordinator" || setup != nil) {
+		return errors.New("operator-selected upgrades currently require an initialized coordinator; other roles retain their existing qualified upgrade path")
+	}
 	fmt.Fprintln(os.Stdout, "Exit every Relay session normally first. If a process was killed or a child may still be running, cancel and resolve that with the original runtime. Do not run other commands during this update. Have all sessions exited normally?")
 	if err := confirmGuided(os.Stdin, os.Stdout); err != nil {
 		return err
@@ -164,19 +169,41 @@ func runCeremonyUpgradeV2(args []string) error {
 		return err
 	}
 	expected := upgrade.DeclarationV2{OriginalRelease: p.ReleaseCommit, SourceApp: source, TargetApp: targetCommit, Role: p.Role, Host: runtime.GOOS + "/" + runtime.GOARCH, Platform: p.Platform}
-	raw, err := assets.get(approvalCommit, expected.AssetName())
-	if err != nil {
-		return fmt.Errorf("no authenticated compatibility declaration for this exact update: %w", err)
-	}
-	d, err := upgrade.DecodeV2(raw)
-	if err != nil {
-		return err
-	}
-	if d.OriginalRelease != expected.OriginalRelease || d.SourceApp != source || d.TargetApp != targetCommit || d.Role != p.Role || d.Host != expected.Host || d.Platform != p.Platform {
-		return errors.New("compatibility declaration is for another installation")
-	}
-	if err := d.Cover(apps, upgradeV2RoleKinds(p.Role)); err != nil {
-		return err
+	var raw, report []byte
+	var d upgrade.DeclarationV2
+	var qualifiedLauncher string
+	if *approval != "" {
+		raw, err = assets.get(approvalCommit, expected.AssetName())
+		if err != nil {
+			return fmt.Errorf("no authenticated compatibility declaration for this exact update: %w", err)
+		}
+		d, err = upgrade.DecodeV2(raw)
+		if err != nil {
+			return err
+		}
+		if d.OriginalRelease != expected.OriginalRelease || d.SourceApp != source || d.TargetApp != targetCommit || d.Role != p.Role || d.Host != expected.Host || d.Platform != p.Platform {
+			return errors.New("compatibility declaration is for another installation")
+		}
+		if err := d.Cover(apps, upgradeV2RoleKinds(p.Role)); err != nil {
+			return err
+		}
+
+	} else {
+		d = expected
+		d.Schema = upgrade.OperatorTransitionSchema
+		d.Protocol = "proof-tool-mpc-ceremony-definition-v4"
+		d.StorageLayout = "storage-first-v2"
+		d.ProfileSchema = "relay-guided-role-v1"
+		d.JournalSchema = "relay-workflow-v4-state-v1"
+		for _, kind := range upgradeV2RoleKinds(p.Role) {
+			adapter, err := upgrade.Adapter(kind)
+			if err != nil {
+				return err
+			}
+			if !slices.Contains(d.Adapters, adapter) {
+				d.Adapters = append(d.Adapters, adapter)
+			}
+		}
 	}
 	originalImage, err := selectReleaseImage(originalMap, p.ReleaseCommit, p.Role, p.Platform)
 	if err != nil {
@@ -185,6 +212,28 @@ func runCeremonyUpgradeV2(args []string) error {
 	signingImage, err := selectReleaseImage(originalMap, p.ReleaseCommit, "decision-signer", p.Platform)
 	if err != nil {
 		return err
+	}
+	if d.OperatorSelected() {
+		d.OriginalImage, d.SigningImage = originalImage, signingImage
+		if p.Role == "coordinator" {
+			d.OnlineImage, err = selectReleaseImage(targetMap, targetCommit, p.Role, p.Platform)
+			if err != nil {
+				return err
+			}
+		} else if p.Role == "auditor" {
+			d.OnlineImage = originalImage
+		}
+		d.ProofToolSHA256, err = upgradeImageProofHashMode(originalImage, p.Platform, *bundle == "")
+		if err != nil {
+			return err
+		}
+		if err := d.Validate(); err != nil {
+			return err
+		}
+		raw, err = json.Marshal(d)
+		if err != nil {
+			return err
+		}
 	}
 	if originalImage != p.Image || d.OriginalImage != p.Image || d.SigningImage != signingImage {
 		return errors.New("declaration differs from original authenticated images")
@@ -198,19 +247,22 @@ func runCeremonyUpgradeV2(args []string) error {
 			return errors.New("target image differs from its release")
 		}
 	}
-	report, err := assets.get(approvalCommit, "upgrade-qualification-"+strings.TrimPrefix(d.QualificationSHA256, "sha256:")+".json")
-	if err != nil {
-		return err
-	}
-	q, err := upgrade.VerifyQualification(report, d)
-	if err != nil {
-		return err
-	}
-	if !upgrade.IsCleanExitQualification(q.Schema) {
-		return errors.New("new updates require completed-step qualification; existing selections remain usable")
-	}
-	if "sha256:"+upgradeBytesHash(report) != d.QualificationSHA256 {
-		return errors.New("qualification report hash mismatch")
+	if !d.OperatorSelected() {
+		report, err = assets.get(approvalCommit, "upgrade-qualification-"+strings.TrimPrefix(d.QualificationSHA256, "sha256:")+".json")
+		if err != nil {
+			return err
+		}
+		q, err := upgrade.VerifyQualification(report, d)
+		if err != nil {
+			return err
+		}
+		if !upgrade.IsCleanExitQualification(q.Schema) {
+			return errors.New("new updates require completed-step qualification; existing selections remain usable")
+		}
+		if "sha256:"+upgradeBytesHash(report) != d.QualificationSHA256 {
+			return errors.New("qualification report hash mismatch")
+		}
+		qualifiedLauncher = q.LauncherSHA256
 	}
 	launcher, err := assets.get(targetCommit, "relay-"+runtime.GOOS+"-"+runtime.GOARCH)
 	if err != nil {
@@ -224,8 +276,8 @@ func runCeremonyUpgradeV2(args []string) error {
 	if err != nil {
 		return err
 	}
-	if upgradeBytesHash(launcher) != exeHash || q.LauncherSHA256 != "sha256:"+exeHash {
-		return errors.New("running executable differs from the qualified attested binary")
+	if upgradeBytesHash(launcher) != exeHash || (qualifiedLauncher != "" && qualifiedLauncher != "sha256:"+exeHash) {
+		return errors.New("running executable differs from the attested target binary")
 	}
 	for _, image := range []string{p.Image, signingImage, d.OnlineImage} {
 		if image == "" {
@@ -344,7 +396,7 @@ func runCeremonyUpgradeV2(args []string) error {
 		return err
 	}
 	s := upgradeSelectionV2{Schema: upgradeSelectionV2Schema, Previous: previous, Declaration: raw, OriginalMap: originalMap, TargetMap: targetMap, Qualification: report, Profile: p, SettingsRoot: root, Bindings: bindings, Launcher: exe, LauncherSHA256: exeHash, StartPath: filepath.Join(filepath.Dir(p.Work), "start.sh"), InventorySHA256: inv.digest(), Kinds: inv.Kinds, Setup: setup}
-	if approvalCommit != targetCommit {
+	if !d.OperatorSelected() && approvalCommit != targetCommit {
 		s.ApprovalRelease = "role-images-" + approvalCommit
 	}
 	s.PreviousStart, err = readTesseraRegularFile(s.StartPath, 64<<10, false)
@@ -352,7 +404,11 @@ func runCeremonyUpgradeV2(args []string) error {
 		return err
 	}
 	fmt.Fprintf(os.Stdout, "Update %s application: %s → %s\nOriginal ceremony release: %s (unchanged)\nOriginal contribution and signing images remain pinned.\nInventoried %d files and %d retained operations. No ceremony command will be replayed by this update.\n", p.Role, source, targetCommit, p.ReleaseCommit, len(inv.Files), len(inv.Pending))
-	fmt.Fprintf(os.Stdout, "Compatibility approval release: role-images-%s (reviewed local test evidence; not a claim that these tests ran in CI).\n", approvalCommit)
+	if d.OperatorSelected() {
+		fmt.Fprintln(os.Stdout, "Operator-selected update. Compatibility results are informational; no passing qualification is claimed. Use the selected launcher for recovery; older launchers may refuse this selection.")
+	} else {
+		fmt.Fprintf(os.Stdout, "Compatibility approval release: role-images-%s (reviewed local test evidence; not a claim that these tests ran in CI).\n", approvalCommit)
+	}
 	for _, pending := range inv.Pending {
 		fmt.Fprintln(os.Stdout, "  "+pending)
 	}
