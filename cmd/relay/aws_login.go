@@ -20,8 +20,12 @@ import (
 	"github.com/zksecurity/relay/internal/access"
 )
 
-const awsLoginSchema = "relay-aws-login-v1"
+const (
+	awsLoginSchema   = "relay-aws-login-v1"
+	awsLoginSchemaV2 = "relay-aws-login-v2"
+)
 const awsLoginReserve = 3 * time.Minute
+const awsStaticLoginRenewalLead = 10 * time.Minute
 
 type awsLoginBinding struct {
 	Schema      string           `json:"schema"`
@@ -33,6 +37,10 @@ type awsLoginBinding struct {
 	Credentials string           `json:"credentials"`
 	Cache       string           `json:"cache"`
 	Identity    awsLoginIdentity `json:"identity"`
+	// StaticIssuer is set only after setup proves that Profile exports a
+	// long-lived IAM-user key. The key remains in the host AWS files. Relay uses
+	// it to obtain temporary coordinator credentials and exact scoped grants.
+	StaticIssuer bool `json:"static_issuer,omitempty"`
 }
 type awsLoginIdentity struct{ Account, Arn, UserId string }
 type awsProcessCredentials struct {
@@ -178,7 +186,7 @@ func readAWSLoginBinding(path string) (*awsLoginBinding, error) {
 		return nil, nil
 	}
 	var b awsLoginBinding
-	if len(raw) > 1024*1024 || setupReadJSON(path, &b) != nil || b.Schema != awsLoginSchema {
+	if len(raw) > 1024*1024 || setupReadJSON(path, &b) != nil || (b.Schema != awsLoginSchema && b.Schema != awsLoginSchemaV2) {
 		return nil, errors.New("invalid AWS login binding")
 	}
 	for _, p := range []string{b.Binary, b.Config, b.Credentials, b.Cache} {
@@ -192,6 +200,12 @@ func readAWSLoginBinding(path string) (*awsLoginBinding, error) {
 	// Stored identity is already normalized; role ARNs therefore lack a session suffix.
 	if b.Identity.Account == "" || b.Identity.Arn == "" || b.Identity.UserId == "" {
 		return nil, errAWSLoginInvalid
+	}
+	if b.Schema == awsLoginSchema && b.StaticIssuer {
+		return nil, errors.New("invalid v1 AWS login binding")
+	}
+	if b.Schema == awsLoginSchemaV2 && (!b.StaticIssuer || !strings.HasPrefix(b.Identity.Arn, "arn:aws:iam::"+b.Identity.Account+":user/")) {
+		return nil, errors.New("v2 AWS login binding requires an IAM-user host issuer")
 	}
 	return &b, nil
 }
@@ -239,6 +253,16 @@ func refreshAWSLogin(ctx context.Context, b awsLoginBinding) (awsProcessCredenti
 	if err != nil {
 		return c, err
 	}
+	if c.Expiration == "" && c.SessionToken == "" && b.Schema == awsLoginSchemaV2 && b.StaticIssuer {
+		raw, err = awsLoginCommand(ctx, b, nil, "--profile", b.Profile, "--region", b.Region, "sts", "get-session-token", "--duration-seconds", "43200", "--output", "json")
+		if err != nil {
+			return c, err
+		}
+		c, err = parseAWSGetSessionToken(raw, time.Now())
+		if err != nil {
+			return c, err
+		}
+	}
 	if c.Expiration == "" || c.SessionToken == "" {
 		return c, errAWSLoginInvalid
 	}
@@ -257,9 +281,14 @@ func refreshAWSLogin(ctx context.Context, b awsLoginBinding) (awsProcessCredenti
 	return c, nil
 }
 
+func mustJSON(value any) []byte {
+	raw, _ := json.Marshal(value)
+	return raw
+}
+
 func runAWSLoginCredentials(args []string) error {
 	if len(args) == 1 && args[0] == "--probe" {
-		fmt.Fprintln(os.Stdout, awsLoginSchema)
+		fmt.Fprintln(os.Stdout, awsLoginSchemaV2)
 		return nil
 	}
 	if len(args) != 1 || args[0] != "/credentials/aws-login/current.json" {
@@ -288,14 +317,7 @@ func runAWSLoginCredentials(args []string) error {
 // has a safe remaining lifetime. A changed identity never receives that grace.
 func maintainAWSLogin(ctx context.Context, b awsLoginBinding, path string, c awsProcessCredentials, refresh func(context.Context, awsLoginBinding) (awsProcessCredentials, error)) error {
 	for {
-		delay := time.Minute
-		var expiry time.Time
-		if c.Expiration != "" {
-			expiry, _ = time.Parse(time.RFC3339, c.Expiration)
-			if remaining := time.Until(expiry.Add(-awsLoginReserve - 45*time.Second)); remaining < delay {
-				delay = remaining
-			}
-		}
+		delay, expiry := awsLoginRenewalDelay(b, c, time.Now())
 		if delay <= 0 {
 			return errors.New("AWS login could not renew before the safety deadline; log in again on the coordinator")
 		}
@@ -339,4 +361,19 @@ func maintainAWSLogin(ctx context.Context, b awsLoginBinding, path string, c aws
 		}
 		c = next
 	}
+}
+
+func awsLoginRenewalDelay(b awsLoginBinding, c awsProcessCredentials, now time.Time) (time.Duration, time.Time) {
+	delay := time.Minute
+	var expiry time.Time
+	if c.Expiration != "" {
+		expiry, _ = time.Parse(time.RFC3339, c.Expiration)
+		remaining := expiry.Add(-awsLoginReserve - 45*time.Second).Sub(now)
+		if b.Schema == awsLoginSchemaV2 && b.StaticIssuer {
+			delay = expiry.Add(-awsStaticLoginRenewalLead).Sub(now)
+		} else if remaining < delay {
+			delay = remaining
+		}
+	}
+	return delay, expiry
 }

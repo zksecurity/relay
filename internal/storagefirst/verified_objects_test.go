@@ -1,6 +1,7 @@
 package storagefirst
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -25,6 +26,7 @@ func TestVerifiedObjectsRoundTripAndFailSafe(t *testing.T) {
 	v.Record("blob/sha256/aa", store.ObjectVersion{ETag: "e1", VersionID: "v1", Size: 3})
 	// Versions without an ETag or version id must not be pinned.
 	v.Record("blob/sha256/bb", store.ObjectVersion{Size: 9})
+	v.Record("blob/sha256/cc", store.ObjectVersion{ETag: "invalid\n", Size: 9})
 	if err := v.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -35,6 +37,9 @@ func TestVerifiedObjectsRoundTripAndFailSafe(t *testing.T) {
 	}
 	if _, ok := reloaded.Verified("blob/sha256/bb"); ok {
 		t.Fatal("unpinned version was remembered")
+	}
+	if _, ok := reloaded.Verified("blob/sha256/cc"); ok {
+		t.Fatal("invalid version was remembered")
 	}
 	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
@@ -55,6 +60,9 @@ func TestSameVersionRequiresIdentity(t *testing.T) {
 		{ETag: "e1", Size: 4},
 		{ETag: "e1", VersionID: "v9", Size: 3},
 		{Size: 3},
+		{ETag: "e1\n", Size: 3},
+		{ETag: "e1", VersionID: "v1\r", Size: 3},
+		{ETag: "e1", Size: -1},
 	} {
 		if sameVersion(pinned, other) {
 			t.Fatalf("different version matched: %v", other)
@@ -62,6 +70,22 @@ func TestSameVersionRequiresIdentity(t *testing.T) {
 	}
 	if sameVersion(store.ObjectVersion{Size: 3}, store.ObjectVersion{Size: 3}) {
 		t.Fatal("size-only versions matched")
+	}
+}
+
+func TestSameVersionTreatsProviderTokensAsOpaque(t *testing.T) {
+	for _, version := range []store.ObjectVersion{
+		{ETag: `"0123456789abcdef-17"`, Size: 1 << 30},
+		{ETag: `"0123456789abcdef-17"`, VersionID: "null", Size: 1 << 30},
+	} {
+		if !sameVersion(version, version) {
+			t.Fatalf("identical opaque provider version did not match: %+v", version)
+		}
+	}
+	withNull := store.ObjectVersion{ETag: `"0123456789abcdef-17"`, VersionID: "null", Size: 1 << 30}
+	withoutVersion := store.ObjectVersion{ETag: withNull.ETag, Size: withNull.Size}
+	if sameVersion(withNull, withoutVersion) {
+		t.Fatal("different opaque version-ID responses matched")
 	}
 }
 
@@ -206,6 +230,9 @@ func TestPublishImmutableMemoSkipsUnchangedExistingVersion(t *testing.T) {
 	if fake.heads != 1 {
 		t.Fatalf("existing object was not checked by metadata: heads=%d", fake.heads)
 	}
+	if fake.attempts != 1 {
+		t.Fatalf("unchanged version was retransmitted: attempts=%d", fake.attempts)
+	}
 }
 
 func TestPublishImmutableMemoCatchesRewrittenObject(t *testing.T) {
@@ -223,6 +250,9 @@ func TestPublishImmutableMemoCatchesRewrittenObject(t *testing.T) {
 	if fake.gets != 1 {
 		t.Fatalf("changed version did not fall back to a full fetch: gets=%d", fake.gets)
 	}
+	if fake.attempts != 2 {
+		t.Fatalf("changed version skipped conditional create: attempts=%d", fake.attempts)
+	}
 }
 
 func TestPublishImmutableMemoFallsBackWhenHeadUnavailable(t *testing.T) {
@@ -239,5 +269,85 @@ func TestPublishImmutableMemoFallsBackWhenHeadUnavailable(t *testing.T) {
 	}
 	if fake.gets != 1 {
 		t.Fatalf("unavailable metadata did not fall back to a full fetch: gets=%d", fake.gets)
+	}
+	if fake.attempts != 2 {
+		t.Fatalf("unavailable metadata skipped conditional create: attempts=%d", fake.attempts)
+	}
+}
+
+func TestPublishImmutableMemoDoesNotHeadUnknownObject(t *testing.T) {
+	dir := t.TempDir()
+	path, ref := writeArtifact(t, dir, "artifacts/a.bin", []byte("payload-a"))
+	fake := newPublishingFake()
+	memo := LoadVerifiedObjects(filepath.Join(dir, "verified-objects.json"))
+	if err := PublishImmutable(fake, ref, path, dir, memo); err != nil {
+		t.Fatal(err)
+	}
+	if fake.heads != 0 || fake.attempts != 1 {
+		t.Fatalf("unknown object used preflight metadata: heads=%d attempts=%d", fake.heads, fake.attempts)
+	}
+}
+
+func TestPublishImmutableMemoMismatchRetainsConditionalAndFetch(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change func(store.ObjectVersion) store.ObjectVersion
+	}{
+		{"etag", func(v store.ObjectVersion) store.ObjectVersion { v.ETag = "changed"; return v }},
+		{"version-id", func(v store.ObjectVersion) store.ObjectVersion { v.VersionID = "changed"; return v }},
+		{"size", func(v store.ObjectVersion) store.ObjectVersion { v.Size++; return v }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path, ref := writeArtifact(t, dir, "artifacts/a.bin", []byte("payload-a"))
+			fake := newPublishingFake()
+			memo := LoadVerifiedObjects(filepath.Join(dir, "verified-objects.json"))
+			if err := PublishImmutable(fake, ref, path, dir, memo); err != nil {
+				t.Fatal(err)
+			}
+			key := store.Key(ref.SHA256)
+			fake.mu.Lock()
+			fake.version[key] = test.change(fake.version[key])
+			fake.mu.Unlock()
+			err := PublishImmutable(fake, ref, path, dir, memo)
+			if test.name == "size" && err == nil {
+				t.Fatal("provider size mismatch was accepted")
+			}
+			if test.name != "size" && err != nil {
+				t.Fatal(err)
+			}
+			if fake.attempts != 2 || fake.gets != 1 {
+				t.Fatalf("mismatch bypassed fallback: attempts=%d gets=%d", fake.attempts, fake.gets)
+			}
+		})
+	}
+}
+
+type cancellingHeadStore struct {
+	*publishingFake
+	cancel context.CancelFunc
+}
+
+func (s cancellingHeadStore) HeadVersion(key string) (store.ObjectVersion, error) {
+	version, err := s.publishingFake.HeadVersion(key)
+	s.cancel()
+	return version, err
+}
+
+func TestPublishImmutableMemoCancellationAfterHeadDoesNotUpload(t *testing.T) {
+	dir := t.TempDir()
+	path, ref := writeArtifact(t, dir, "artifacts/a.bin", []byte("payload-a"))
+	fake := newPublishingFake()
+	memo := LoadVerifiedObjects(filepath.Join(dir, "verified-objects.json"))
+	if err := PublishImmutable(fake, ref, path, dir, memo); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	err := PublishImmutableContext(ctx, cancellingHeadStore{publishingFake: fake, cancel: cancel}, ref, path, dir, memo)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation after HEAD = %v", err)
+	}
+	if fake.attempts != 1 {
+		t.Fatalf("cancellation fell through to upload: attempts=%d", fake.attempts)
 	}
 }

@@ -52,6 +52,9 @@ func TestPublishArtifactsPublishesAllAndMemoSkipsReverifiedObjects(t *testing.T)
 	if fake.heads != len(refs) {
 		t.Fatalf("existing objects not confirmed by metadata: heads=%d want %d", fake.heads, len(refs))
 	}
+	if fake.attempts != len(next) {
+		t.Fatalf("already-verified objects were retransmitted: attempts=%d want %d", fake.attempts, len(next))
+	}
 	for _, ref := range next {
 		if _, ok := fake.version[store.Key(ref.SHA256)]; !ok {
 			t.Fatalf("artifact %q was not stored", ref.Name)
@@ -77,6 +80,34 @@ func TestPublishArtifactsConflictingRemoteObjectFails(t *testing.T) {
 	}
 	if fake.gets != 1 {
 		t.Fatalf("changed version must trigger exactly one full fetch: gets=%d", fake.gets)
+	}
+}
+
+func TestPublishArtifactsPartialFailureMemoMakesRetryMetadataOnly(t *testing.T) {
+	root := t.TempDir()
+	fake := newPublishingFake()
+	memoPath := filepath.Join(root, "verified-objects.json")
+	memo := LoadVerifiedObjects(memoPath)
+	refs := artifactRefs(t, root, "a.bin", "b.bin")
+	failingKey := store.Key(refs[1].SHA256)
+	fake.putFail[failingKey] = errors.New("injected upload failure")
+	if err := PublishArtifacts(fake, refs, root, root, memo, PublishLimits{InFlightBytes: 1 << 20, Workers: 1}); err == nil {
+		t.Fatal("partial publication unexpectedly succeeded")
+	}
+	// coordinator commit persists the drained batch's successful records even
+	// on error; model the process boundary by saving and reloading the memo.
+	if err := memo.Save(); err != nil {
+		t.Fatal(err)
+	}
+	delete(fake.putFail, failingKey)
+	if err := PublishArtifacts(fake, refs, root, root, LoadVerifiedObjects(memoPath), PublishLimits{InFlightBytes: 1 << 20, Workers: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if fake.attempts != 3 {
+		t.Fatalf("successful object from failed batch was retransmitted: attempts=%d want 3", fake.attempts)
+	}
+	if fake.heads != 1 || fake.gets != 0 {
+		t.Fatalf("successful object was not retried by exact metadata: heads=%d gets=%d", fake.heads, fake.gets)
 	}
 }
 

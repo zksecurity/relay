@@ -109,7 +109,7 @@ func (j *workflowV4Journal) runPreparedErasure(id string, inspector transcript.I
 	}
 	when, _ := time.Parse(time.RFC3339, flags["--destroyed-at"])
 	confirmed, confirmErr := time.Parse(time.RFC3339Nano, receipt.ConfirmedAt)
-	if receipt.Schema != dockerLifecycleSchema || receipt.Image != contributor.Image || receipt.Platform != contributor.Platform || !receipt.RemovalVerified || receipt.ExitCode != 0 || !validContainerID(receipt.ContainerID) || !verifiedDaemonFacts(receipt.Daemon) || !verifiedLifecycleFacts(receipt.Security) || !verifiedHostSwapStatus(runtime.GOOS, receipt.HostSwapStatus) || receipt.ParticipantConfirmation != "CLEANUP PRECAUTIONS CONFIRMED" || confirmErr != nil || confirmed.IsZero() || receipt.ErasureDestroyedAt != flags["--destroyed-at"] {
+	if !validDockerLifecycleSchema(receipt.Schema) || receipt.Image != contributor.Image || receipt.Platform != contributor.Platform || !receipt.RemovalVerified || receipt.ExitCode != 0 || !validContainerID(receipt.ContainerID) || !verifiedDaemonFacts(receipt.Daemon) || !verifiedLifecycleFacts(receipt.Schema, receipt.Security) || !verifiedHostSwapStatus(runtime.GOOS, receipt.HostSwapStatus) || receipt.ParticipantConfirmation != "CLEANUP PRECAUTIONS CONFIRMED" || confirmErr != nil || confirmed.IsZero() || receipt.ErasureDestroyedAt != flags["--destroyed-at"] {
 		return errors.New("cleanup requires the original verified lifecycle and recorded confirmation/time")
 	}
 	d := &dockerDriver{image: p.Runtime.Image, platform: p.Runtime.Platform, definition: paths["--ceremony"], definitionSig: paths["--ceremony-signature"], coordinatorKey: paths["--coordinator-public-key-file"], signingKey: paths["--participant-signing-key"], client: client, daemon: receipt.Daemon}

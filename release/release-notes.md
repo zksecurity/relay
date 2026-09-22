@@ -1,20 +1,10 @@
 ## What changed
 
-- Clarify the storage-first role menu prompt: “Choose an action [Enter = save
-  and exit]”. Pressing Enter still exits; type the displayed action number to
-  continue. This avoids presenting Q as a suggested next ceremony action.
-- Show start, one-minute elapsed-time heartbeats, and completion or failure while
-  Relay waits for Phase 1 and Phase 2 contribution computation. The heartbeat
-  indicates elapsed waiting time, not a percentage or proof of forward progress.
-- Show candidate-upload file sizes, staging and retry-verification steps, bytes
-  confirmed in storage, and elapsed heartbeats. Counts advance after complete
-  files are confirmed; the final upload manifest remains last. Upload completion
-  still requires coordinator verification and signed acceptance.
-- Release this fix as `v0.2.1` and require an explicit version check in the
-  maintainer guidance for future user-facing changes.
+- Bound proof containers to two CPUs and 6 GiB memory, with no additional swap, a 4 GiB Go memory target and GOGC=25. Verify participant limits and reject unsupported Docker capacity before computation.
+- Support host IAM-user profiles for renewable 12-hour coordinator sessions and scoped grants. Permanent credentials remain on the host; the approved role image authenticates the ceremony request before grant issuance.
+- Avoid retransmitting verified immutable storage objects when authoritative ETag, version and size match. Preserve successful upload records after partial failures, retaining full verification on uncertainty.
+- Show elapsed progress during checkpoint authentication before publication.
 
 ## Tessera compatibility
 
-Tessera setup contracts, signed artifacts, role actions and software pins are
-unchanged. This is a prompt clarification only; existing ceremonies keep their
-frozen launcher and its original wording.
+Setup contracts, signed ceremony artifacts and proof-tool pins are unchanged. Local participant lifecycle receipts record runtime limits while retaining recovery support for older receipts. Existing frozen ceremonies keep their release. The new IAM host-issuer mode requires a compatible launcher and role image; this release does not claim a qualified upgrade for an already active ceremony.

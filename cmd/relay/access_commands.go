@@ -329,6 +329,18 @@ func runGrant(args []string) error {
 			return err
 		}
 	}
+	awsRequest := awsGrantRequest{Schema: "relay-aws-grant-request-v1", Config: config, Role: role, IdentityID: identity, Prefix: prefix, TTLSeconds: int64(ttl / time.Second), Checkpoint: checkpointDigest, SubmissionKind: submissionKind, Phase: phase, Index: index, AttemptID: attemptID}
+	if validationPath := os.Getenv(awsHostGrantValidationEnvironment); validationPath != "" {
+		if config.Provider != "aws" || validationPath != "/credentials/aws-login/request.json" {
+			return errors.New("invalid host grant validation request")
+		}
+		return writeJSONNoReplace(validationPath, awsRequest, 0600)
+	}
+	if config.Provider == "aws" {
+		if err := validateAWSHostGrantRequest(awsRequest); err != nil {
+			return err
+		}
+	}
 	credentials, expires, err := issueCredentials(config, identity, prefix, ttl, now)
 	if err != nil {
 		return err
@@ -623,6 +635,9 @@ func issueR2Locally(config access.StorageConfig, prefix string, ttl time.Duratio
 }
 
 func issueAWS(config access.StorageConfig, identity, prefix string, ttl time.Duration) (access.SessionCredentials, time.Time, error) {
+	if credentials, expires, present, err := consumeAWSHostGrant(config, identity, prefix, ttl); present {
+		return credentials, expires, err
+	}
 	return issueAWSWithRunner(config, identity, prefix, ttl, func(args ...string) ([]byte, error) {
 		command := exec.Command("aws", args...)
 		var stdout, stderr bytes.Buffer

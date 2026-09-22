@@ -273,7 +273,7 @@ func verifiedDockerLifecycleFixture() (dockerLifecycleReceipt, *dockerDriver) {
 		status = dockerMacSwapUnassessed
 	}
 	receipt := dockerLifecycleReceipt{
-		Schema: dockerLifecycleSchema, Image: image, Platform: "linux/arm64", RemovalVerified: true,
+		Schema: dockerLifecycleSchemaV2, Image: image, Platform: "linux/arm64", RemovalVerified: true,
 		ParticipantConfirmation: "CLEANUP PRECAUTIONS CONFIRMED", ConfirmedAt: "2026-09-12T00:00:00Z", HostSwapStatus: status,
 		Daemon:   dockerDaemonFacts{Context: "default", Endpoint: "unix:///var/run/docker.sock", ID: "daemon", Name: "docker", ServerVersion: "1", OperatingSystem: "Linux", OSType: "linux", Architecture: "arm64", LocalUnixEndpoint: true},
 		Security: dockerSecurityFacts{NetworkNone: true, ReadOnlyRoot: true, NonRoot: true, CapabilitiesOff: true, NoNewPrivileges: true, CoreDumpsOff: true, LogDriverOff: true, PrivatePID: true, PrivateIPC: true, UserNamespaceMode: "private", BoundedTmpfs: true, MountsVerified: true},

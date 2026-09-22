@@ -33,7 +33,8 @@ const (
 	// participant container. Host-side proof-tool paths are measured during
 	// setup, but are never mounted or executed by Docker.
 	dockerCeremonyBinary      = "/usr/local/bin/mpc-ceremony"
-	dockerLifecycleSchema     = "relay-docker-lifecycle-v2"
+	dockerLifecycleSchemaV2   = "relay-docker-lifecycle-v2"
+	dockerLifecycleSchema     = "relay-docker-lifecycle-v3"
 	dockerActiveStateSchemaV2 = "relay-docker-active-container-v2"
 	dockerActiveStateSchema   = "relay-docker-active-container-v3"
 	dockerLifecycleLogName    = "relay-lifecycle.json"
@@ -162,6 +163,11 @@ type dockerDaemonFacts struct {
 	LocalUnixEndpoint  bool     `json:"local_unix_endpoint"`
 	UserNamespaceRemap bool     `json:"user_namespace_remap"`
 	Rootless           bool     `json:"rootless"`
+	MemoryLimit        bool     `json:"memory_limit,omitempty"`
+	SwapLimit          bool     `json:"swap_limit,omitempty"`
+	CPUQuota           bool     `json:"cpu_quota,omitempty"`
+	MemoryBytes        int64    `json:"memory_bytes,omitempty"`
+	CPUs               int      `json:"cpus,omitempty"`
 }
 
 type dockerSecurityFacts struct {
@@ -178,6 +184,13 @@ type dockerSecurityFacts struct {
 	UserNamespaceRemapped bool   `json:"user_namespace_remapped"`
 	BoundedTmpfs          bool   `json:"bounded_tmpfs"`
 	MountsVerified        bool   `json:"mounts_verified"`
+	RuntimeLimitsVerified bool   `json:"runtime_limits_verified,omitempty"`
+	CPULimitNano          int64  `json:"cpu_limit_nano,omitempty"`
+	MemoryLimitBytes      int64  `json:"memory_limit_bytes,omitempty"`
+	MemorySwapLimitBytes  int64  `json:"memory_swap_limit_bytes,omitempty"`
+	GoMaxProcs            string `json:"go_max_procs,omitempty"`
+	GoMemoryLimit         string `json:"go_memory_limit,omitempty"`
+	GoGCPercent           string `json:"go_gc_percent,omitempty"`
 }
 
 type dockerLifecycleReceipt struct {
@@ -252,6 +265,9 @@ func (d *dockerDriver) preflight() error {
 		return errors.New("Relay refuses to launch the contributor as root")
 	}
 	if err := d.authenticateDaemon(); err != nil {
+		return err
+	}
+	if err := validateDockerRuntimeCapacity(d.daemon, proofDockerRuntimeLimits); err != nil {
 		return err
 	}
 	if _, err := d.swapStatus(); err != nil {
@@ -354,6 +370,11 @@ func inspectDockerDaemon(client dockerCommandClient, contextName, endpoint strin
 		OSType          string   `json:"OSType"`
 		Architecture    string   `json:"Architecture"`
 		SecurityOptions []string `json:"SecurityOptions"`
+		MemoryLimit     bool     `json:"MemoryLimit"`
+		SwapLimit       bool     `json:"SwapLimit"`
+		CPUCfsQuota     bool     `json:"CpuCfsQuota"`
+		MemoryBytes     int64    `json:"MemTotal"`
+		CPUs            int      `json:"NCPU"`
 	}
 	if err := json.Unmarshal(stdout, &info); err != nil {
 		return dockerDaemonFacts{}, errors.New("decode Docker daemon inspection")
@@ -371,11 +392,27 @@ func inspectDockerDaemon(client dockerCommandClient, contextName, endpoint strin
 		LocalUnixEndpoint:  true,
 		UserNamespaceRemap: dockerSecurityOptionEnabled(securityOptions, "name=userns"),
 		Rootless:           dockerSecurityOptionEnabled(securityOptions, "name=rootless"),
+		MemoryLimit:        info.MemoryLimit, SwapLimit: info.SwapLimit, CPUQuota: info.CPUCfsQuota,
+		MemoryBytes: info.MemoryBytes, CPUs: info.CPUs,
 	}
 	if !verifiedDaemonFacts(facts) {
 		return dockerDaemonFacts{}, errors.New("Docker daemon identity or security inspection failed verification")
 	}
 	return facts, nil
+}
+
+func validateDockerRuntimeCapacity(facts dockerDaemonFacts, limits dockerRuntimeLimits) error {
+	if !facts.MemoryLimit || !facts.SwapLimit || !facts.CPUQuota {
+		return errors.New("Docker daemon does not enforce the required CPU, memory, and swap limits; configure cgroup delegation/resource controls before ceremony work")
+	}
+	requiredMemory := int64(limits.MemoryGiB) << 30
+	if facts.MemoryBytes < requiredMemory {
+		return fmt.Errorf("Docker daemon has %.1f GiB memory, below the configured %d GiB container limit", float64(facts.MemoryBytes)/(1<<30), limits.MemoryGiB)
+	}
+	if facts.CPUs < limits.CPUs {
+		return fmt.Errorf("Docker daemon has %d CPUs, below the configured %d CPU limit", facts.CPUs, limits.CPUs)
+	}
+	return nil
 }
 
 func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time.Time) (*dockerLifecycleReceipt, error) {
@@ -921,6 +958,7 @@ func (d *dockerDriver) securityArgs(mounts []dockerMount) []string {
 		"--workdir", "/tmp",
 		"--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=67108864,mode=700",
 	}
+	args = append(args, dockerRuntimeArgs()...)
 	for _, mount := range mounts {
 		value := "type=bind,src=" + mount.Source + ",dst=" + mount.Destination
 		if mount.ReadOnly {
@@ -938,10 +976,14 @@ func (d *dockerDriver) inspectSecurity(containerID string, expected []dockerMoun
 	}
 	var records []struct {
 		Config struct {
-			Image string `json:"Image"`
-			User  string `json:"User"`
+			Image string   `json:"Image"`
+			User  string   `json:"User"`
+			Env   []string `json:"Env"`
 		} `json:"Config"`
 		HostConfig struct {
+			Memory         int64    `json:"Memory"`
+			MemorySwap     int64    `json:"MemorySwap"`
+			NanoCPUs       int64    `json:"NanoCpus"`
 			NetworkMode    string   `json:"NetworkMode"`
 			ReadonlyRootfs bool     `json:"ReadonlyRootfs"`
 			Privileged     bool     `json:"Privileged"`
@@ -978,6 +1020,16 @@ func (d *dockerDriver) inspectSecurity(containerID string, expected []dockerMoun
 		return dockerSecurityFacts{}, errors.New("decode contributor Docker inspection")
 	}
 	r := records[0]
+	runtimeLimits := proofDockerRuntimeLimits
+	memoryBytes := int64(runtimeLimits.MemoryGiB) << 30
+	cpuNano := int64(runtimeLimits.CPUs) * 1_000_000_000
+	goMaxProcs := strconv.Itoa(runtimeLimits.CPUs)
+	goMemoryLimit := strconv.Itoa(runtimeLimits.GoMemoryGiB) + "GiB"
+	goGCPercent := strconv.Itoa(runtimeLimits.GoGCPercent)
+	runtimeLimitsVerified := r.HostConfig.Memory == memoryBytes && r.HostConfig.MemorySwap == memoryBytes && r.HostConfig.NanoCPUs == cpuNano &&
+		exactContainerEnvironment(r.Config.Env, "GOMAXPROCS", goMaxProcs) &&
+		exactContainerEnvironment(r.Config.Env, "GOMEMLIMIT", goMemoryLimit) &&
+		exactContainerEnvironment(r.Config.Env, "GOGC", goGCPercent)
 	userNamespaceMode := "daemon-default-unremapped"
 	userNamespaceRemapped := false
 	switch {
@@ -1000,6 +1052,9 @@ func (d *dockerDriver) inspectSecurity(containerID string, expected []dockerMoun
 		LogDriverOff:    r.HostConfig.LogConfig.Type == "none",
 		PrivatePID:      r.HostConfig.PidMode != "host", PrivateIPC: r.HostConfig.IpcMode != "host",
 		UserNamespaceMode: userNamespaceMode, UserNamespaceRemapped: userNamespaceRemapped,
+		RuntimeLimitsVerified: runtimeLimitsVerified, CPULimitNano: r.HostConfig.NanoCPUs,
+		MemoryLimitBytes: r.HostConfig.Memory, MemorySwapLimitBytes: r.HostConfig.MemorySwap,
+		GoMaxProcs: goMaxProcs, GoMemoryLimit: goMemoryLimit, GoGCPercent: goGCPercent,
 	}
 	for _, limit := range r.HostConfig.Ulimits {
 		if limit.Name == "core" && limit.Soft == 0 && limit.Hard == 0 {
@@ -1013,10 +1068,24 @@ func (d *dockerDriver) inspectSecurity(containerID string, expected []dockerMoun
 		!facts.NetworkNone || !facts.ReadOnlyRoot || !facts.NonRoot || !facts.CapabilitiesOff ||
 		!facts.NoNewPrivileges || !facts.CoreDumpsOff || !facts.LogDriverOff ||
 		!facts.PrivatePID || !facts.PrivateIPC || facts.UserNamespaceMode == "host" ||
-		!facts.BoundedTmpfs || !facts.MountsVerified {
+		!facts.BoundedTmpfs || !facts.MountsVerified || !facts.RuntimeLimitsVerified {
 		return dockerSecurityFacts{}, errors.New("effective contributor container configuration failed isolation verification")
 	}
 	return facts, nil
+}
+
+func exactContainerEnvironment(environment []string, name, want string) bool {
+	prefix := name + "="
+	count := 0
+	for _, entry := range environment {
+		if strings.HasPrefix(entry, prefix) {
+			count++
+			if entry != prefix+want {
+				return false
+			}
+		}
+	}
+	return count == 1
 }
 
 func verifiedMounts(actual []struct {
@@ -1464,11 +1533,16 @@ func writeJSONAtomic(path string, value any, mode os.FileMode) error {
 	return syncDirectory(filepath.Dir(path))
 }
 
-func verifiedLifecycleFacts(f dockerSecurityFacts) bool {
+func verifiedLifecycleFacts(schema string, f dockerSecurityFacts) bool {
 	return f.NetworkNone && f.ReadOnlyRoot && f.NonRoot && f.CapabilitiesOff &&
 		f.NoNewPrivileges && f.CoreDumpsOff && f.LogDriverOff && f.PrivatePID &&
 		f.PrivateIPC && f.UserNamespaceMode != "" && f.UserNamespaceMode != "host" &&
-		f.BoundedTmpfs && f.MountsVerified
+		f.BoundedTmpfs && f.MountsVerified && (schema == dockerLifecycleSchemaV2 ||
+		(schema == dockerLifecycleSchema && f.RuntimeLimitsVerified && f.CPULimitNano > 0 && f.MemoryLimitBytes > 0 && f.MemorySwapLimitBytes == f.MemoryLimitBytes && f.GoMaxProcs != "" && f.GoMemoryLimit != "" && f.GoGCPercent != ""))
+}
+
+func validDockerLifecycleSchema(schema string) bool {
+	return schema == dockerLifecycleSchema || schema == dockerLifecycleSchemaV2
 }
 
 func verifiedHostSwapStatus(goos, status string) bool {

@@ -69,6 +69,23 @@ func PublishImmutableContext(ctx context.Context, objects ImmutableStore, ref st
 		return err
 	}
 	key := store.Key(ref.SHA256)
+	// AWS S3 can consume the complete request body before rejecting an
+	// If-None-Match upload for an existing object. Avoid retransmitting a large
+	// cumulative artifact only when authoritative current metadata exactly
+	// matches the version this workspace previously digest-verified. Every
+	// unknown, changed, or unavailable version retains the conditional-create
+	// and full verification path below.
+	if memo != nil {
+		if publishing, ok := objects.(PublishingStore); ok {
+			matches, err := memo.matchesCurrentContext(ctx, publishing, key)
+			if err != nil {
+				return err
+			}
+			if matches {
+				return ctx.Err()
+			}
+		}
+	}
 	created, err := objects.PutIfAbsent(key, staged)
 	if cancelErr := ctx.Err(); cancelErr != nil {
 		return cancelErr

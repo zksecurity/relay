@@ -69,7 +69,7 @@ func (j *workflowV4Journal) reconcileCandidateOperation(id, scopeFile, dockerCLI
 				return err
 			}
 		}
-		if receipt.Schema != dockerLifecycleSchema || receipt.ExecutionMode != dockerExecutionMode || !receipt.RemovalVerified || receipt.ExitCode != 0 || !validContainerID(receipt.ContainerID) || !verifiedDaemonFacts(receipt.Daemon) || !verifiedLifecycleFacts(receipt.Security) || !verifiedHostSwapStatus(runtime.GOOS, receipt.HostSwapStatus) {
+		if !validDockerLifecycleSchema(receipt.Schema) || receipt.ExecutionMode != dockerExecutionMode || !receipt.RemovalVerified || receipt.ExitCode != 0 || !validContainerID(receipt.ContainerID) || !verifiedDaemonFacts(receipt.Daemon) || !verifiedLifecycleFacts(receipt.Schema, receipt.Security) || !verifiedHostSwapStatus(runtime.GOOS, receipt.HostSwapStatus) {
 			return errors.New("retained contributor lifecycle is incomplete")
 		}
 		if err := validateLocalDockerEndpoint(receipt.Daemon.Endpoint); err != nil {
