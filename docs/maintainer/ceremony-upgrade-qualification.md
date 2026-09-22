@@ -1,7 +1,8 @@
 # Qualification and remaining implementation
 
-The compatibility policies are empty: no existing ceremony is approved for
-updates yet. Implemented paths below are locally tested, not release-qualified.
+The proposed policy contains one exact coordinator pair: v0.2.2 to v0.3.0 on
+macOS ARM64 with Linux ARM64 Docker. Publication and installed-command validation
+remain separate gates; a local policy file is not published upgrade authority.
 
 See the [ordinary-use regression comparison](ceremony-upgrade-no-selection-tests.md)
 for testing against current main without activating an upgrade. Earlier candidate
@@ -37,7 +38,11 @@ of each ceremony completes signing, publication and fresh reconstruction.
 These scenarios are opt-in and require the private exact-asset request. Skips are
 not evidence and cannot produce qualification. Local adapter tests are not live
 S3/R2 conformance; the affected provider path also needs isolated acceptance before
-advertising provider compatibility. No exact published V4 pair has been qualified.
+advertising provider compatibility. The five local-storage V4 scenarios passed against the exact published v0.2.2
+and v0.3.0 artifacts on 2026-09-22. The report is retained under
+`release/upgrade-qualification/`. Live-provider acceptance and the delivered
+approval-command smoke are still pending; these local results do not establish
+S3/R2 upgrade conformance.
 
 The test harness performs initial activation, while the real candidate exercises
 selection repair and subsequent commands. Compile the harness from the exact

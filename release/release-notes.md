@@ -1,9 +1,9 @@
 ## What changed
 
-- Allow larger public ceremony downloads more total time while cancelling connections that stop delivering data for 30 seconds.
-- Reuse retained public artifacts only after copying and checking their bytes against the authenticated signed reference. Refresh still retrieves and verifies the published checkpoint history; local reuse does not demonstrate remote artifact availability.
-- Preserve conflicting-file rejection, download size limits, cancellation cleanup and existing upgrade admission rules. This release does not itself approve an upgrade pair.
+- Approve the exact v0.2.2 to v0.3.0 coordinator upgrade on macOS ARM64 with Linux ARM64 Docker, between completed operations.
+- Bind approval to the published launchers, online image and five-scenario qualification report. Signing, contribution and proof-tool pins remain unchanged.
+- Other release pairs, platforms and roles remain unapproved. This release supplies approval for the existing v0.3.0 artifacts; it does not approve v0.3.1 as an upgrade target.
 
 ## Tessera compatibility
 
-Tessera setup contracts, signed artifact formats and proof-tool pins are unchanged. These fixes affect public download timing and verified local artifact reuse. Frozen ceremonies require a separately qualified and published upgrade approval before installation.
+Setup contracts and signed ceremony formats are unchanged. This approval covers the standalone coordinator path only; no Tessera activation is implied.
