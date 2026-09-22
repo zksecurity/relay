@@ -38,8 +38,9 @@ func (c AuthenticatedRootChild) PublicationArtifacts() []state.ContentRef {
 
 // PublicationVerifierV4 is the narrow proof-tool boundary used before a V4
 // checkpoint can become the discoverable storage head. Its implementation
-// must authenticate the signature and full ancestry and recheck the exact
-// transition evidence, including mathematical replay for candidate acceptance.
+// must authenticate the signature and full ancestry. Candidate mathematics are
+// replayed when the offline acceptance action produces the signed checkpoint,
+// before this online publication boundary is reached.
 type PublicationVerifierV4 interface {
 	AuthenticateCheckpointForPublicationV4(root, record, signature string) (transcript.CheckpointInspectionV4, error)
 }

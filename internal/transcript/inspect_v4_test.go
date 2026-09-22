@@ -102,6 +102,22 @@ func TestStoredCheckpointV4RejectsMalformedProgress(t *testing.T) {
 	}
 }
 
+func TestAuthenticateCheckpointForPublicationV4UsesSignedStoredVerificationOnly(t *testing.T) {
+	pair := SignedArtifactRefs{Record: inspectionTestRef("record.json"), Signature: inspectionTestRef("record.sig")}
+	c := CheckpointStateV4{Schema: "proof-tool-mpc-checkpoint-v4", Workflow: "storage-first-v2", ReleaseVerification: "coordinator-full-replay-v1", CeremonyID: "sha256:" + hex64, Definition: pair, AcceptedArtifacts: []ArtifactRef{}, Deliveries: []DeliverySlotV4{}}
+	c.Progress.Phase1 = CheckpointPhaseState{Phase: "phase1", HeadRecordID: "sha256:" + hex64, HeadPayload: inspectionTestRef("payload.bin"), Chain: pair}
+	want := CheckpointInspectionV4{Schema: "proof-tool-mpc-checkpoint-inspection-v4", Depth: "checkpoint-structure", Checkpoint: c, CheckpointRefs: pair, Commitments: CheckpointCommitmentsV4{Enrollments: []SignedArtifactRefs{}, Turns: []TurnCommitmentV4{}}}
+	i := testInspector()
+	i.run = inspectionTestRunner(t, inspectionResult{Schema: commandResultSchema, OK: true, Command: "checkpoint verify-stored-v4", CheckpointInspectionV4: &want}, "checkpoint verify-stored-v4")
+	got, err := i.AuthenticateCheckpointForPublicationV4("/stage", "/stage/record.json", "/stage/record.sig")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("inspection = %+v, want %+v", got, want)
+	}
+}
+
 func TestCheckpointGuidanceV4UsesStrictReleasedFinalInventoryFallback(t *testing.T) {
 	pair := SignedArtifactRefs{Record: inspectionTestRef("checkpoints/final.json"), Signature: inspectionTestRef("checkpoints/final.sig")}
 	definition := SignedArtifactRefs{Record: inspectionTestRef("ceremony.json"), Signature: inspectionTestRef("ceremony.sig")}
