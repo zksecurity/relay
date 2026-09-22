@@ -21,10 +21,31 @@ import (
 // with a different version would be a different state transition.
 var ErrVersionConflict = errors.New("object version conflict")
 
-// publicReadTimeout bounds a single read from the unauthenticated public
-// distribution endpoint. The synchronizer can safely retry a failed read, but
-// must never let one stalled CDN connection hold a role workflow forever.
+// publicReadTimeout bounds inactivity (including waiting for headers), and the
+// complete transfer of small public metadata objects.
 var publicReadTimeout = 30 * time.Second
+
+// The caller's validated size bound, never a response header, sets the budget.
+// Large artifacts receive one second per MiB in addition to the startup budget.
+func publicReadBudget(maximum int64) time.Duration {
+	if maximum <= 1<<20 {
+		return publicReadTimeout
+	}
+	return publicReadTimeout + time.Duration((maximum+(1<<20)-1)/(1<<20))*time.Second
+}
+
+type publicProgressReader struct {
+	reader io.Reader
+	timer  *time.Timer
+}
+
+func (r publicProgressReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	if n > 0 {
+		r.timer.Reset(publicReadTimeout)
+	}
+	return n, err
+}
 
 // ObjectVersion is the storage-provider version returned with an object read
 // or write. ETag is the conditional-write token used by S3 and R2. VersionID is
@@ -167,7 +188,8 @@ func (c Client) getPublicVersionedAtMost(key, local string, maximum int64) (Obje
 		client = c.httpClient
 	}
 	boundedClient := *client
-	boundedClient.Timeout = publicReadTimeout
+	budget := publicReadBudget(maximum)
+	boundedClient.Timeout = budget
 	boundedClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 3 || req.URL.Scheme+"://"+req.URL.Host != origin {
 			return errors.New("public object redirect left the configured origin")
@@ -177,8 +199,10 @@ func (c Client) getPublicVersionedAtMost(key, local string, maximum int64) (Obje
 	// Client.Timeout is a useful backstop, but make the deadline explicit on
 	// the request as well. That ensures custom transports and blocked response
 	// bodies receive cancellation rather than leaving a synchronizer stranded.
-	ctx, cancel := context.WithTimeout(c.operationContext(), publicReadTimeout)
+	ctx, cancel := context.WithTimeout(c.operationContext(), budget)
 	defer cancel()
+	idle := time.AfterFunc(publicReadTimeout, cancel)
+	defer idle.Stop()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base.String(), nil) // #nosec G107 -- validated operator-configured HTTPS origin.
 	if err != nil {
 		return ObjectVersion{}, err
@@ -188,8 +212,9 @@ func (c Client) getPublicVersionedAtMost(key, local string, maximum int64) (Obje
 		return ObjectVersion{}, err
 	}
 	defer response.Body.Close()
+	body := publicProgressReader{reader: response.Body, timer: idle}
 	if response.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+		_, _ = io.Copy(io.Discard, io.LimitReader(body, 4096))
 		return ObjectVersion{}, fmt.Errorf("GET %s: HTTP %s", key, response.Status)
 	}
 	if response.ContentLength > maximum {
@@ -202,8 +227,11 @@ func (c Client) getPublicVersionedAtMost(key, local string, maximum int64) (Obje
 	if err != nil {
 		return ObjectVersion{}, err
 	}
-	written, copyErr := io.Copy(file, io.LimitReader(response.Body, maximum+1))
+	written, copyErr := io.Copy(file, io.LimitReader(body, maximum+1))
 	closeErr := file.Close()
+	if copyErr == nil {
+		copyErr = ctx.Err()
+	}
 	if copyErr != nil || closeErr != nil || written > maximum || (response.ContentLength >= 0 && written != response.ContentLength) {
 		_ = os.Remove(local)
 		switch {

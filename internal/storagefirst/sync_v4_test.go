@@ -349,3 +349,73 @@ func TestSyncV4RequiresCurrentPayload(t *testing.T) {
 		t.Fatalf("available current payload was rejected: %v", err)
 	}
 }
+
+func TestSyncV4ReusesSignedLocalPayloadButStillReadsRemoteHead(t *testing.T) {
+	objects, verifier, id := syncFixtureV4(t, 2)
+	root := filepath.Join(t.TempDir(), "public")
+	water := &highWaterFake{}
+	if _, err := SyncV4Retained(objects, verifier, water, id, t.TempDir(), root); err != nil {
+		t.Fatal(err)
+	}
+	delete(objects, store.Key(sum([]byte("phase1 genesis"))))
+	if _, err := SyncV4Retained(objects, verifier, water, id, t.TempDir(), root); err != nil {
+		t.Fatalf("verified local payload not reused: %v", err)
+	}
+	if _, err := SyncV4(objects, verifier, &highWaterFake{}, id, t.TempDir()); err == nil {
+		t.Fatal("fresh reader accepted missing remote payload")
+	}
+	delete(objects, state.RootKey(id))
+	if _, err := SyncV4Retained(objects, verifier, water, id, t.TempDir(), root); err == nil {
+		t.Fatal("local files replaced remote head discovery")
+	}
+}
+
+func TestSyncV4RejectsSymlinkedRetainedPayload(t *testing.T) {
+	objects, verifier, id := syncFixtureV4(t, 2)
+	root := filepath.Join(t.TempDir(), "public")
+	if _, err := SyncV4Retained(objects, verifier, &highWaterFake{}, id, t.TempDir(), root); err != nil {
+		t.Fatal(err)
+	}
+	original := filepath.Join(root, "phase1", "genesis.bin")
+	moved := filepath.Join(t.TempDir(), "genesis.bin")
+	if err := os.Rename(original, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(moved, original); err != nil {
+		t.Fatal(err)
+	}
+	water := &highWaterFake{}
+	if _, err := SyncV4Retained(objects, verifier, water, id, t.TempDir(), root); err == nil {
+		t.Fatal("symlink reused")
+	}
+	if water.exists {
+		t.Fatal("failed reuse advanced high water")
+	}
+}
+
+func TestRetainedArtifactCopyVerifiesDigestAndIsIndependent(t *testing.T) {
+	root, stage := t.TempDir(), t.TempDir()
+	raw := []byte("signed payload")
+	ref := state.ContentRef{Name: "artifact.bin", SHA256: sum(raw), Size: int64(len(raw))}
+	source := filepath.Join(root, ref.Name)
+	if err := os.WriteFile(source, []byte("wrong! payload"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stageRetainedPublicArtifact(stage, root, ref, fetchedNames{}); err == nil {
+		t.Fatal("same-size corrupt payload reused")
+	}
+	if err := os.WriteFile(source, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	stage = t.TempDir()
+	reused, err := stageRetainedPublicArtifact(stage, root, ref, fetchedNames{})
+	if err != nil || !reused {
+		t.Fatalf("reuse: %v %v", reused, err)
+	}
+	if err := os.WriteFile(source, []byte("wrong! payload"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyLocalRef(ref, filepath.Join(stage, ref.Name)); err != nil {
+		t.Fatalf("stage shares mutable source: %v", err)
+	}
+}
