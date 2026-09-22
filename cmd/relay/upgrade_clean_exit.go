@@ -17,9 +17,10 @@ import (
 
 // Admission only: never call this when starting an already selected app or
 // repairing its start script. Those operations must preserve ordinary recovery.
-func upgradeRequireCleanExit(s upgradeSelectionV2, d upgrade.DeclarationV2) error {
-	if s.Setup != nil || d.Role != "coordinator" || d.OnlineImage != d.OriginalImage {
-		return errors.New("this update supports only initialized coordinators with unchanged Docker images")
+func upgradeRequireCleanExit(s upgradeSelectionV2, d upgrade.DeclarationV2, qualificationSchema string) error {
+	onlineQualified := qualificationSchema == upgrade.OnlineCleanExitQualificationSchema
+	if s.Setup != nil || d.Role != "coordinator" || (!onlineQualified && d.OnlineImage != d.OriginalImage) {
+		return errors.New("this update supports only initialized coordinators with qualified online images")
 	}
 	p := s.Profile
 	inv, err := upgradeV2Inventory(p, d)

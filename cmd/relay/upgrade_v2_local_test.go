@@ -187,5 +187,5 @@ func TestUpgradeLocalTwoPhaseJourney(t *testing.T) {
 	for k, v := range map[string]string{"RELAY_V4_LIVE_R2_CONFIG": configPath, "RELAY_V4_LIVE_R2_CREDENTIALS": credentials, "RELAY_V4_LIVE_R2_PARENT": parent, "RELAY_V4_LIVE_R2_CONTROL": control, "RELAY_V4_LIVE_PROOF_BINARY": copied} {
 		t.Setenv(k, v)
 	}
-	runUpgradeTwoPhaseJourney(t, f, true)
+	runUpgradeTwoPhaseJourney(t, f, true, s)
 }

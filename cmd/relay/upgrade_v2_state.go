@@ -309,8 +309,8 @@ func upgradeV2Activate(s upgradeSelectionV2, expected string) error {
 	if err := d.Cover(apps, s.Kinds); err != nil {
 		return err
 	}
-	if q.Schema == upgrade.CleanExitQualificationSchema {
-		if err := upgradeRequireCleanExit(s, d); err != nil {
+	if upgrade.IsCleanExitQualification(q.Schema) {
+		if err := upgradeRequireCleanExit(s, d, q.Schema); err != nil {
 			return err
 		}
 		inv, err := upgradeV2Inventory(s.Profile, d)

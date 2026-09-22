@@ -36,15 +36,25 @@ func TestCleanExitPublicKeyFormatting(t *testing.T) {
 }
 
 func TestCleanExitRefusesMissingEvidenceWithoutSelecting(t *testing.T) {
+	for _, schema := range []string{upgrade.CleanExitQualificationSchema, upgrade.OnlineCleanExitQualificationSchema} {
+		t.Run(schema, func(t *testing.T) { testCleanExitRefusesMissingEvidence(t, schema) })
+	}
+}
+func testCleanExitRefusesMissingEvidence(t *testing.T, schema string) {
 	s, d := testUpgradeV2(t, "coordinator")
-	d.OnlineImage = d.OriginalImage
+	if schema == upgrade.CleanExitQualificationSchema {
+		d.OnlineImage = d.OriginalImage
+	}
 	testUpgradeV2Report(t, &s, &d)
 	var q upgrade.QualificationV2
 	if err := json.Unmarshal(s.Qualification, &q); err != nil {
 		t.Fatal(err)
 	}
-	q.Schema = upgrade.CleanExitQualificationSchema
+	q.Schema = schema
 	q.Passed = append([]string{}, upgrade.CleanExitQualificationChecks...)
+	if schema == upgrade.OnlineCleanExitQualificationSchema {
+		q.Passed = append([]string{}, upgrade.OnlineCleanExitQualificationChecks...)
+	}
 	s.Qualification, _ = json.Marshal(q)
 	d.QualificationSHA256 = "sha256:" + upgradeBytesHash(s.Qualification)
 	s.Declaration, _ = json.Marshal(d)

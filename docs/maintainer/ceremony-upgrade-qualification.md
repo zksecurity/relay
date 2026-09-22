@@ -7,6 +7,51 @@ See the [ordinary-use regression comparison](ceremony-upgrade-no-selection-tests
 for testing against current main without activating an upgrade. Earlier candidate
 qualification results below predate that rebase and do not qualify its new bytes.
 
+## Completed-step online coordinator fixes (unapproved)
+
+The reader also supports `relay-upgrade-qualification/v4` for a changed online
+coordinator image between completed operations. No pair is enabled. V3 remains
+native-only, and legacy V2 evidence does not authorize new admissions. The native
+launcher, target online image and unchanged Proof-tool digest must match the exact
+reviewed declaration and attested release assets. Original signing/contribution
+images, identity, definition and accepted progress remain frozen. V4 is limited
+to the first hop: source application equals the original release, with exactly
+that one safe predecessor. Additional predecessor hashes cannot stand in for
+executed compatibility tests.
+
+V4 requires all three completed-step checks below plus `online-runtime-retry` and
+`predecessor-reentry`. The runner executes `TestUpgradeOnlineRuntimeRetry` and
+`TestUpgradeOnlinePredecessorReentry` against exact executable/image inputs. Both
+use a real signed two-phase ceremony and the local test storage adapter: stop a
+target-image publication after one immutable upload, then retry with the target;
+the second scenario first tries the original executable and original image against
+the interrupted state. It must either reconcile successfully or refuse without
+changing ceremony/journal files. The target retry must complete exactly one root
+transition; its successful immutable body must not be retransmitted. The reentry
+scenario also completes a separate publication with the target itself, then runs
+the original executable/container against that completed state. It must produce
+no additional root transition or changed public artifacts, and a refusal must
+leave retained ceremony/journal state unchanged. The remainder
+of each ceremony completes signing, publication and fresh reconstruction.
+
+These scenarios are opt-in and require the private exact-asset request. Skips are
+not evidence and cannot produce qualification. Local adapter tests are not live
+S3/R2 conformance; the affected provider path also needs isolated acceptance before
+advertising provider compatibility. No exact published V4 pair has been qualified.
+
+The test harness performs initial activation, while the real candidate exercises
+selection repair and subsequent commands. Compile the harness from the exact
+reviewed target checkout and require an isolated smoke through the delivered
+`ceremony upgrade` command and approval path before upgrading a real ceremony.
+A new reader release must precede qualification/approval: existing v0.2.2 binaries
+cannot read V4 evidence. Use the separate-approval sequence below unchanged.
+
+Generic saved actions retain their image. V4 coordinator recovery uses the
+currently selected online image; this extension therefore admits only completed
+old operations and makes no promise about upgrading unfinished work or arbitrary
+future/multi-hop compatibility. Equal Proof-tool hashes do not replace testing
+changed orchestration, retained-state interpretation or provider publication.
+
 ## Current first-release scope
 
 The initial scope is now **initialized coordinator, native launcher only, between

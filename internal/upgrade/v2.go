@@ -205,7 +205,28 @@ var QualificationChecks = []string{"full-journey", "mixed-versions", "retained-w
 
 const CleanExitQualificationSchema = "relay-upgrade-qualification/v3"
 
+// OnlineCleanExitQualificationSchema adds online runtime replacement without
+// changing the native-only meaning of existing v3 reports.
+const OnlineCleanExitQualificationSchema = "relay-upgrade-qualification/v4"
+
+func IsCleanExitQualification(schema string) bool {
+	return schema == CleanExitQualificationSchema || schema == OnlineCleanExitQualificationSchema
+}
+
+var OnlineCleanExitQualificationChecks = []string{"completed-step-continuation", "updater-interruption", "unsafe-update-refusal", "online-runtime-retry", "predecessor-reentry"}
+
 var CleanExitQualificationChecks = []string{"completed-step-continuation", "updater-interruption", "unsafe-update-refusal"}
+
+// V4 evidence exercises one original executable, not arbitrary retained versions.
+func validateOnlineCleanExitScope(d DeclarationV2) error {
+	if d.Role != "coordinator" || d.OnlineImage == d.OriginalImage {
+		return errors.New("online completed-step qualification requires a changed coordinator online image")
+	}
+	if d.SourceApp != d.OriginalRelease || len(d.SafePredecessors) != 1 || d.SafePredecessors[0] != d.SourceApp {
+		return errors.New("online completed-step qualification requires the first hop and exactly its original predecessor")
+	}
+	return nil
+}
 
 func VerifyQualification(raw []byte, d DeclarationV2) (QualificationV2, error) {
 	var q QualificationV2
@@ -218,6 +239,11 @@ func VerifyQualification(raw []byte, d DeclarationV2) (QualificationV2, error) {
 			return q, errors.New("clean-exit qualification only covers native-only coordinator updates")
 		}
 		checks = CleanExitQualificationChecks
+	} else if q.Schema == OnlineCleanExitQualificationSchema {
+		if err := validateOnlineCleanExitScope(d); err != nil {
+			return q, err
+		}
+		checks = OnlineCleanExitQualificationChecks
 	} else if q.Schema != "relay-upgrade-qualification/v2" {
 		return q, errors.New("unknown qualification schema")
 	}
