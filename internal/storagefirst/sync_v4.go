@@ -244,6 +244,15 @@ func syncV4(objects ObjectStore, verifier VerifierV4, highWater HighWater, cerem
 		return SnapshotV4{}, fmt.Errorf("derive required public artifacts: %w", err)
 	}
 	for _, ref := range public {
+		if retainedRoot != "" {
+			reused, err := stageRetainedPublicArtifact(stage, retainedRoot, contentRef(ref), names)
+			if err != nil {
+				return SnapshotV4{}, fmt.Errorf("reuse public artifact %q: %w", ref.Name, err)
+			}
+			if reused {
+				continue
+			}
+		}
 		if _, err := fetchNamed(objects, stage, contentRef(ref), names); err != nil {
 			return SnapshotV4{}, fmt.Errorf("fetch required public artifact %q: %w", ref.Name, err)
 		}
@@ -306,6 +315,66 @@ func syncV4(objects ObjectStore, verifier VerifierV4, highWater HighWater, cerem
 		history = append(history, position.Digest)
 	}
 	return SnapshotV4{root: root, version: version, head: verified.CheckpointRefs, files: files, structural: structural, inspection: encoded, commitments: commitments, enrollments: enrollments, checked: len(backwards), history: history}, nil
+}
+
+// Reuse applies only to references returned by authenticated checkpoint guidance.
+// It proves local bytes match the signed reference, not remote availability.
+func stageRetainedPublicArtifact(stage, root string, ref state.ContentRef, names fetchedNames) (bool, error) {
+	relative := filepath.FromSlash(ref.Name)
+	if ref.Name == "" || filepath.IsAbs(relative) || filepath.Clean(relative) != relative || relative == "." || relative == ".." || strings.HasPrefix(ref.Name, "../") || strings.Contains(ref.Name, `\`) {
+		return false, errors.New("unsafe retained artifact name")
+	}
+	if previous, ok := names[ref.Name]; ok {
+		if previous != ref {
+			return false, errors.New("conflicting immutable artifact reference")
+		}
+		return true, nil
+	}
+	current := root
+	for _, component := range append([]string{""}, strings.Split(relative, string(filepath.Separator))...) {
+		if component != "" {
+			current = filepath.Join(current, component)
+		}
+		info, err := os.Lstat(current)
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return false, errors.New("retained artifact path contains a symlink")
+		}
+		if current != filepath.Join(root, relative) && !info.IsDir() {
+			return false, errors.New("retained artifact parent is not a directory")
+		}
+		if current == filepath.Join(root, relative) && (!info.Mode().IsRegular() || info.Size() != ref.Size) {
+			return false, errors.New("retained artifact conflicts with signed size or file type")
+		}
+	}
+	input, err := os.Open(current)
+	if err != nil {
+		return false, err
+	}
+	defer input.Close()
+	target := filepath.Join(stage, relative)
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		return false, err
+	}
+	output, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return false, err
+	}
+	_, copyErr := io.Copy(output, io.LimitReader(input, ref.Size+1))
+	closeErr := output.Close()
+	if err := errors.Join(copyErr, closeErr); err != nil {
+		return false, err
+	}
+	if err := verifyLocalRef(ref, target); err != nil {
+		return false, fmt.Errorf("retained artifact conflicts with signed digest: %w", err)
+	}
+	names[ref.Name] = ref
+	return true, nil
 }
 
 func retainVerifiedV4Artifacts(stage, destination string, names fetchedNames) error {
