@@ -45,12 +45,17 @@ func runAWSLoginDockerContext(ctx context.Context, o dockerRoleOptions, command 
 	probeCtx, probeCancel := context.WithTimeout(ctx, 30*time.Second)
 	probe, err := docker(probeCtx, "run", "--rm", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--platform", o.platform, "--entrypoint=/usr/local/bin/relay", o.image, "aws-login-credentials", "--probe")
 	probeCancel()
-	if err != nil || probe != awsLoginSchema {
+	compatible := compatibleAWSLoginProvider(b.Schema, probe)
+	if err != nil || !compatible {
 		return errors.New("this role image does not support renewable AWS logins; use a compatible release for a new ceremony, or retain the frozen release and use its existing credential workflow")
 	}
-	credentials, err := refreshAWSLogin(ctx, b)
-	if err != nil {
-		return err
+	hostGrantMode := len(command) >= 3 && command[0] == "relay" && command[1] == "coordinator" && (command[2] == "grant" || command[2] == "evidence-grant") && b.Schema == awsLoginSchemaV2 && b.StaticIssuer
+	var credentials awsProcessCredentials
+	if !hostGrantMode {
+		credentials, err = refreshAWSLogin(ctx, b)
+		if err != nil {
+			return err
+		}
 	}
 	dir, err := os.MkdirTemp("", "relay-aws-login-")
 	if err != nil {
@@ -68,8 +73,29 @@ func runAWSLoginDockerContext(ctx context.Context, o dockerRoleOptions, command 
 		return err
 	}
 	path := filepath.Join(dir, "current.json")
-	if err = saveJSONAtomic(path, credentials); err != nil {
-		return err
+	if !hostGrantMode {
+		if err = saveJSONAtomic(path, credentials); err != nil {
+			return err
+		}
+	}
+	if hostGrantMode {
+		validationOptions := o
+		validationOptions.credentials = ""
+		validationOptions.awsLoginRuntime = dir
+		validationOptions.awsGrantValidation = true
+		validationArgs, validationErr := dockerRoleArgs(validationOptions, command, os.Getuid(), os.Getgid())
+		if validationErr != nil {
+			return validationErr
+		}
+		validationCtx, validationCancel := context.WithTimeout(ctx, 5*time.Minute)
+		_, validationErr = docker(validationCtx, validationArgs...)
+		validationCancel()
+		if validationErr != nil {
+			return errors.New("trusted role image could not authenticate the AWS grant request")
+		}
+		if err = prepareAWSHostGrant(ctx, b, dir); err != nil {
+			return err
+		}
 	}
 	o.credentials = ""
 	o.awsLoginRuntime = dir
@@ -134,8 +160,11 @@ func runAWSLoginDockerContext(ctx context.Context, o dockerRoleOptions, command 
 	containerID = id
 	runtimeCtx, runtimeCancel := context.WithCancel(ctx)
 	defer runtimeCancel()
-	renewal := make(chan error, 1)
-	go func() { renewal <- maintainAWSLogin(runtimeCtx, b, path, credentials, refreshAWSLogin) }()
+	var renewal chan error
+	if !hostGrantMode {
+		renewal = make(chan error, 1)
+		go func() { renewal <- maintainAWSLogin(runtimeCtx, b, path, credentials, refreshAWSLogin) }()
+	}
 	cmd := exec.CommandContext(runtimeCtx, binary, "--host", endpoint, "start", "--attach", "--interactive", id)
 	cmd.Env = dockerEnvironmentWithoutTargetOverrides()
 	cmd.Stdin = os.Stdin
@@ -147,11 +176,20 @@ func runAWSLoginDockerContext(ctx context.Context, o dockerRoleOptions, command 
 	select {
 	case err = <-finished:
 		runtimeCancel()
-		<-renewal
+		if renewal != nil {
+			<-renewal
+		}
 		return err
 	case err = <-renewal:
 		runtimeCancel()
 		<-finished
 		return err
 	}
+}
+
+func compatibleAWSLoginProvider(bindingSchema, providerSchema string) bool {
+	if bindingSchema == awsLoginSchemaV2 {
+		return providerSchema == awsLoginSchemaV2
+	}
+	return bindingSchema == awsLoginSchema && (providerSchema == awsLoginSchema || providerSchema == awsLoginSchemaV2)
 }

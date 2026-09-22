@@ -15,8 +15,10 @@ reviewed setup helper.
    names, charges and policy changes before typing `CREATE RESOURCES`.
 3. Review and approve the credential configuration. Temporary logins save a
    protected host binding to the selected profile, AWS CLI executable, source
-   files, login cache, account, and principal. Static access keys still save a
-   protected snapshot. Neither option reduces the login's permissions.
+   files, login cache, account, and principal. A non-expiring IAM-user profile
+   saves the same kind of host binding; Relay does not copy its access key.
+   Relay verifies that it can obtain a 12-hour temporary session before saving.
+   Neither option reduces the login's permissions.
 4. Follow **Check storage** before initialization. Provisioning alone does not
    prove access, public delivery, or inbox privacy. These checks ask before writing
    and removing temporary probe objects.
@@ -36,6 +38,33 @@ to 12 hours. When the session ends, log in again **on the coordinator host** wit
 the same profile and identity; no MacBook is needed for renewal while that host
 session remains valid. AWS CLI upgrades require repeating setup to review and
 rebind the executable. See AWS's [login credential documentation](https://docs.aws.amazon.com/sdkref/latest/guide/feature-login-credentials.html).
+
+For asynchronous production ceremonies, a dedicated least-privilege IAM-user
+profile can provide a 12-hour operating window. Its access key remains only in
+the host AWS credential source selected during setup. The host obtains a
+temporary `GetSessionToken` session for coordinator storage actions. When Relay
+issues a participant or evidence grant, the host uses the IAM user directly for
+one `AssumeRole` call with the exact derived inbox prefix and lifetime. The role
+container receives only that expiring scoped result, authenticates the signed
+ceremony request again, and rejects any mismatch. This avoids AWS's one-hour
+role-chaining limit without mounting the IAM-user key in Docker.
+Normal exit removes the temporary runtime directory. After a host crash or
+forced kill, first confirm no `relay-aws-login-*` action container remains,
+then remove its matching mode-0700 `/tmp/relay-aws-login-*` directory; a scoped
+grant inside can remain usable until its displayed expiry.
+
+The IAM user needs the bucket permissions documented below and
+`sts:AssumeRole` only for the configured grant role. Its credentials must be
+eligible for the STS `GetSessionToken` API under the account's MFA and other
+security policies; AWS does not normally authorize that API through an IAM
+permission entry. Treat the access key as long-lived: store it in the protected
+host profile, rotate it under your normal key policy, and repeat Relay setup
+after rotation.
+The role trust policy must name that user and its maximum session duration must
+match the reviewed `grant-role-max-ttl`. Relay defaults that maximum to 12 hours
+for an IAM-user login and to one hour for an assumed-role login. Existing v1
+bindings and frozen role images keep their prior behavior; repeat setup and use
+a release that advertises the v2 AWS-login provider to opt in.
 
 Existing snapshots are unchanged. To opt into renewal, repeat setup with a
 currently logged-in temporary profile, choose **existing resources**, then update
@@ -118,7 +147,9 @@ Relay manually with different `--profile` and `--issuer-profile` values.
 
 An SSO profile is suitable for the included rehearsal, whose grants require
 only a 15-minute minimum upload window. For multi-hour production work, read
-the credential lifetime warning below before choosing the identity type.
+the credential lifetime warning below before choosing the identity type. AWS
+caps a second role assumption from SSO/assumed-role credentials at one hour;
+use the dedicated IAM-user host profile above when a grant must last longer.
 
 ## 2. Run the guided setup
 

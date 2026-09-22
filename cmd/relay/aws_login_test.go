@@ -195,6 +195,87 @@ func TestAWSLoginRefreshBindsExportedIdentity(t *testing.T) {
 		t.Fatal("changed executable accepted")
 	}
 }
+
+func TestAWSIAMUserBindingCreatesTwelveHourTemporarySession(t *testing.T) {
+	b := fakeAWSLogin(t)
+	b.Schema, b.StaticIssuer = awsLoginSchemaV2, true
+	identity, _ := json.Marshal(b.Identity)
+	expires := time.Now().Add(12 * time.Hour).UTC().Format(time.RFC3339)
+	script := `#!/bin/sh
+if test "$1" = configure; then
+ printf '%s' '{"Version":1,"AccessKeyId":"STATICACCESS","SecretAccessKey":"STATICSECRET"}'
+elif test "$5" = sts; then
+ printf '%s' '{"Credentials":{"AccessKeyId":"TEMPACCESS","SecretAccessKey":"TEMPSECRET","SessionToken":"TEMPTOKEN","Expiration":"` + expires + `"}}'
+elif test "$1" = sts; then
+ test "$AWS_ACCESS_KEY_ID" = TEMPACCESS || exit 2
+ test "$AWS_CONFIG_FILE" = /nonexistent || exit 3
+ printf '%s' '` + string(identity) + `'
+else
+ exit 4
+fi
+`
+	if err := os.WriteFile(b.Binary, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	var err error
+	b.SHA256, err = awsBinaryDigest(b.Binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials, err := refreshAWSLogin(context.Background(), b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credentials.AccessKeyId != "TEMPACCESS" || credentials.SessionToken != "TEMPTOKEN" || credentials.Expiration != expires {
+		t.Fatalf("unexpected temporary session: %#v", credentials)
+	}
+}
+
+func TestAWSIAMUserSessionRenewsNearExpiry(t *testing.T) {
+	now := time.Date(2026, 9, 22, 0, 0, 0, 0, time.UTC)
+	b := awsLoginBinding{Schema: awsLoginSchemaV2, StaticIssuer: true}
+	c := syntheticAWSLease(now.Add(12 * time.Hour))
+	delay, expiry := awsLoginRenewalDelay(b, c, now)
+	want := 12*time.Hour - awsStaticLoginRenewalLead
+	if delay != want || !expiry.Equal(now.Add(12*time.Hour)) {
+		t.Fatalf("renewal delay = %s, expiry = %s; want %s", delay, expiry, want)
+	}
+	b.Schema, b.StaticIssuer = awsLoginSchema, false
+	if delay, _ := awsLoginRenewalDelay(b, c, now); delay != time.Minute {
+		t.Fatalf("legacy refresh delay = %s", delay)
+	}
+}
+
+func TestAWSIAMUserRenewalRetriesBeforeSafetyDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		start := time.Now()
+		c := syntheticAWSLease(start.Add(12 * time.Hour))
+		b := awsLoginBinding{Schema: awsLoginSchemaV2, StaticIssuer: true}
+		ctx, cancel := context.WithCancel(context.Background())
+		calls := 0
+		done := make(chan error, 1)
+		go func() {
+			done <- maintainAWSLogin(ctx, b, filepath.Join(t.TempDir(), "current.json"), c, func(context.Context, awsLoginBinding) (awsProcessCredentials, error) {
+				calls++
+				if calls == 1 {
+					return c, errors.New("temporary outage")
+				}
+				next := syntheticAWSLease(time.Now().Add(12 * time.Hour))
+				next.AccessKeyId = "ROTATED"
+				return next, nil
+			})
+		}()
+		time.Sleep(12*time.Hour - awsStaticLoginRenewalLead + 11*time.Second)
+		synctest.Wait()
+		if calls != 2 {
+			t.Fatalf("refresh calls = %d", calls)
+		}
+		cancel()
+		if !errors.Is(<-done, context.Canceled) {
+			t.Fatal("cancellation not propagated")
+		}
+	})
+}
 func TestAWSLoginBindingNeverMounted(t *testing.T) {
 	b := fakeAWSLogin(t)
 	path := filepath.Join(t.TempDir(), "binding")
@@ -225,6 +306,22 @@ func TestAWSLoginBindingNeverMounted(t *testing.T) {
 	}
 	if _, err := dockerRoleArgs(o, []string{"mpc-ceremony", "version"}, 501, 20); err == nil {
 		t.Fatal("proof received renewable credentials")
+	}
+}
+
+func TestAWSLoginProviderCompatibility(t *testing.T) {
+	for _, test := range []struct {
+		binding, provider string
+		want              bool
+	}{
+		{awsLoginSchema, awsLoginSchema, true},
+		{awsLoginSchema, awsLoginSchemaV2, true},
+		{awsLoginSchemaV2, awsLoginSchema, false},
+		{awsLoginSchemaV2, awsLoginSchemaV2, true},
+	} {
+		if got := compatibleAWSLoginProvider(test.binding, test.provider); got != test.want {
+			t.Fatalf("compatibility %s/%s = %v", test.binding, test.provider, got)
+		}
 	}
 }
 func TestAWSLoginDockerCleanup(t *testing.T) {

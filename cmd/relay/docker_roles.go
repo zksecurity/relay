@@ -20,6 +20,7 @@ type dockerRoleOptions struct {
 	r2Parent, r2Control                                                   string
 	recoveryContext                                                       string
 	awsLoginRuntime                                                       string
+	awsGrantValidation                                                    bool
 }
 
 var roleImagePattern = regexp.MustCompile(`^(sha256:[0-9a-f]{64}|[^\s@]+@sha256:[0-9a-f]{64})$`)
@@ -224,7 +225,7 @@ func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]stri
 		{o.work, "/work", false, false}, {o.trust, "/trust", true, false}, {o.keys, "/keys", true, false}, {o.credentials, "/credentials/aws", true, true},
 		{o.r2Parent, "/credentials/r2-parent", true, true}, {o.r2Control, "/credentials/r2-control", true, true},
 		{o.recoveryContext, "/recovery", true, false},
-		{o.awsLoginRuntime, "/credentials/aws-login", true, false},
+		{o.awsLoginRuntime, "/credentials/aws-login", !o.awsGrantValidation, false},
 	} {
 		if mount.source == "" && mount.target != "/work" {
 			continue
@@ -243,6 +244,14 @@ func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]stri
 	}
 	if o.awsLoginRuntime != "" {
 		argv = append(argv, "--env=AWS_CONFIG_FILE=/credentials/aws-login/config")
+		if o.awsGrantValidation {
+			argv = append(argv, "--env="+awsHostGrantValidationEnvironment+"=/credentials/aws-login/request.json")
+		}
+		if _, err := os.Stat(filepath.Join(o.awsLoginRuntime, "host-grant.json")); err == nil {
+			argv = append(argv, "--env="+awsHostGrantEnvironment+"=/credentials/aws-login/host-grant.json")
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, errors.New("cannot inspect protected host-issued AWS grant")
+		}
 	}
 	if o.r2Parent != "" {
 		argv = append(argv, "--env="+r2ParentSecretEnvironment+"_FILE=/credentials/r2-parent")

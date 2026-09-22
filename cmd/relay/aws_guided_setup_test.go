@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const awsSetupIdentity = `{"Account":"123456789012","Arn":"arn:aws:iam::123456789012:user/ceremony"}`
+const awsSetupIdentity = `{"Account":"123456789012","Arn":"arn:aws:iam::123456789012:user/ceremony","UserId":"AIDASYNTHETIC"}`
 const awsSetupSecret = "syntheticSecretNeverInLogs"
 
 func awsSetupFixture(t *testing.T, input string) *coordinatorWizard {
@@ -38,6 +38,8 @@ func awsSetupFixture(t *testing.T, input string) *coordinatorWizard {
 			return []byte("us-east-1\n"), nil
 		case "configure export-credentials --profile test-account --region us-east-1 --format process":
 			return []byte(`{"Version":1,"AccessKeyId":"TESTACCESS","SecretAccessKey":"` + awsSetupSecret + `"}`), nil
+		case "--profile test-account --region us-east-1 sts get-session-token --duration-seconds 43200 --output json":
+			return []byte(`{"Credentials":{"AccessKeyId":"TEMPACCESS","SecretAccessKey":"TEMPSECRET","SessionToken":"TEMPTOKEN","Expiration":"` + time.Now().Add(12*time.Hour).UTC().Format(time.RFC3339) + `"}}`), nil
 		default:
 			t.Fatal("unexpected AWS command", args)
 			return nil, nil
@@ -55,8 +57,8 @@ func TestAWSGuidedExistingStorage(t *testing.T) {
 		t.Fatal("wrong runtime profiles")
 	}
 	raw, err := os.ReadFile(w.d.Credentials)
-	if err != nil || !bytes.Contains(raw, []byte(awsSetupSecret)) {
-		t.Fatal("missing protected credentials", err)
+	if err != nil || bytes.Contains(raw, []byte(awsSetupSecret)) || !bytes.Contains(raw, []byte(awsLoginSchemaV2)) {
+		t.Fatal("missing protected IAM-user host binding or copied static secret", err)
 	}
 	st, _ := os.Stat(w.d.Credentials)
 	if st.Mode().Perm() != 0600 {

@@ -158,7 +158,11 @@ func (w *coordinatorWizard) setupAWS() error {
 				return err
 			}
 		}
-		v["grant-role-max-ttl"], err = w.required("Grant role maximum session duration (1h–12h; assumed-role logins are limited to 1h)", "1h")
+		grantDefault := "1h"
+		if strings.HasPrefix(identity.Arn, "arn:aws:iam::"+identity.Account+":user/") {
+			grantDefault = "12h"
+		}
+		v["grant-role-max-ttl"], err = w.required("Grant role maximum session duration (1h–12h; assumed-role logins are limited to 1h)", grantDefault)
 		if err != nil {
 			return err
 		}
@@ -215,12 +219,28 @@ func (w *coordinatorWizard) setupAWS() error {
 		}
 		credentials = string(encoded)
 	} else {
-		var expiry string
-		credentials, expiry, err = awsSnapshot(raw)
-		if err != nil {
-			return err
+		if exported.SessionToken != "" || !strings.HasPrefix(identity.Arn, "arn:aws:iam::"+identity.Account+":user/") {
+			return errors.New("non-expiring AWS credentials must belong to an IAM user")
 		}
-		fmt.Fprintf(w.output, "A protected static credential snapshot will be saved. Credential expiry: %s. No automatic rotation.\n", expiry)
+		binding, bindErr := newAWSLoginBinding(profile, region, identity)
+		if bindErr != nil {
+			return bindErr
+		}
+		binding.Schema = awsLoginSchemaV2
+		binding.StaticIssuer = true
+		sessionRaw, sessionErr := w.awsSetupCommand("aws", []string{"--profile", profile, "--region", region, "sts", "get-session-token", "--duration-seconds", "43200", "--output", "json"}, nil)
+		if sessionErr != nil {
+			return errors.New("IAM-user login could not obtain a 12-hour temporary coordinator session; check sts:GetSessionToken permission")
+		}
+		if _, sessionErr = parseAWSGetSessionToken(sessionRaw, time.Now()); sessionErr != nil {
+			return sessionErr
+		}
+		encoded, marshalErr := json.Marshal(binding)
+		if marshalErr != nil {
+			return marshalErr
+		}
+		credentials = string(encoded)
+		fmt.Fprintf(w.output, "Renewable 12-hour AWS coordinator sessions and direct scoped grant issuance will use IAM user profile %s on this host. The access key is not copied into Relay settings or Docker.\n", profile)
 	}
 	if err := w.confirm("Save these settings and the displayed credential configuration", "SAVE SETTINGS"); err != nil {
 		return err
@@ -265,6 +285,22 @@ func (w *coordinatorWizard) setupAWS() error {
 	committed = true
 	fmt.Fprintln(w.output, "Settings saved. Next: Check storage to verify current access and public/private delivery. Resource setup alone does not prove these checks passed.")
 	return nil
+}
+
+func parseAWSGetSessionToken(raw []byte, now time.Time) (awsProcessCredentials, error) {
+	var session struct {
+		Credentials struct {
+			AccessKeyID     string `json:"AccessKeyId"`
+			SecretAccessKey string `json:"SecretAccessKey"`
+			SessionToken    string `json:"SessionToken"`
+			Expiration      string `json:"Expiration"`
+		} `json:"Credentials"`
+	}
+	if len(raw) > 64*1024 || json.Unmarshal(raw, &session) != nil {
+		return awsProcessCredentials{}, errAWSLoginInvalid
+	}
+	c := awsProcessCredentials{Version: 1, AccessKeyId: session.Credentials.AccessKeyID, SecretAccessKey: session.Credentials.SecretAccessKey, SessionToken: session.Credentials.SessionToken, Expiration: session.Credentials.Expiration}
+	return parseAWSProcess(mustJSON(c), now, awsLoginReserve)
 }
 
 func awsSnapshot(raw []byte) (string, string, error) {
@@ -313,7 +349,11 @@ func (w *coordinatorWizard) provisionAWS(profile, region, account, arn string) (
 	}
 	// All interpolated values are validated above; no operator-authored shell
 	// or downloaded scripts are executed.
-	fmt.Fprintf(w.output, "AWS account: %s; region: %s\nPublished bucket: %s-%s-published\nPrivate inbox: %s-%s-inbox\nGrant role: %s-inbox-grant (1h maximum)\n", account, region, prefix, account, prefix, account, prefix)
+	grantTTL := "1h"
+	if strings.HasPrefix(arn, "arn:aws:iam::"+account+":user/") {
+		grantTTL = "12h"
+	}
+	fmt.Fprintf(w.output, "AWS account: %s; region: %s\nPublished bucket: %s-%s-published\nPrivate inbox: %s-%s-inbox\nGrant role: %s-inbox-grant (%s maximum)\n", account, region, prefix, account, prefix, account, prefix, grantTTL)
 	fmt.Fprintln(w.output, "This creates or repairs S3 buckets, CloudFront delivery and IAM policies. Existing resources with these names have their policies/settings reapplied; use only dedicated ceremony resources. AWS charges apply. Partial resources remain after failures; there is no automatic retry or rollback. CloudFront may take several minutes. A 1h grant cap also applies to assumed-role logins.")
 	if err := w.confirm("Approve these specific cloud resource changes", "CREATE RESOURCES"); err != nil {
 		return nil, err
@@ -336,7 +376,7 @@ func (w *coordinatorWizard) provisionAWS(profile, region, account, arn string) (
 			return nil, err
 		}
 	}
-	config := fmt.Sprintf("AWS_PROFILE='%s'\nAWS_REGION='%s'\nRESOURCE_PREFIX='%s'\nPUBLISHED_BUCKET=''\nINBOX_BUCKET=''\nGRANT_ROLE_NAME=''\nGRANT_ROLE_MAX_TTL='1h'\nUSE_EXISTING_GRANT_ROLE='no'\nEXPECTED_ACCOUNT='%s'\nEXPECTED_CALLER_ARN='%s'\nCONFIRM_CREATE='yes'\n", profile, region, prefix, account, arn)
+	config := fmt.Sprintf("AWS_PROFILE='%s'\nAWS_REGION='%s'\nRESOURCE_PREFIX='%s'\nPUBLISHED_BUCKET=''\nINBOX_BUCKET=''\nGRANT_ROLE_NAME=''\nGRANT_ROLE_MAX_TTL='%s'\nUSE_EXISTING_GRANT_ROLE='no'\nEXPECTED_ACCOUNT='%s'\nEXPECTED_CALLER_ARN='%s'\nCONFIRM_CREATE='yes'\n", profile, region, prefix, grantTTL, account, arn)
 	configPath := filepath.Join(dir, "approved.env")
 	if err := os.WriteFile(configPath, []byte(config), 0600); err != nil {
 		return nil, err
