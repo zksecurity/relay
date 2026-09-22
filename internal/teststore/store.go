@@ -37,6 +37,7 @@ type object struct {
 	etag, version string
 }
 type Server struct {
+	publicationFault                                                              PublicationFault
 	mu                                                                            sync.Mutex
 	objects                                                                       map[string]object
 	counter                                                                       uint64
@@ -162,6 +163,13 @@ func (s *Server) Execute(r Request) Response {
 	}
 	switch op {
 	case "put-object":
+		if bucket == "published" && m["--if-none-match"] == "*" && s.publicationFault.Attempts != nil {
+			s.publicationFault.Attempts[name]++
+			if s.publicationFault.Armed && s.publicationFault.Successful != "" {
+				s.publicationFault.Failed = true
+				return fail("InjectedPublicationFailure")
+			}
+		}
 		if len(r.Body) > Limit {
 			return fail("EntityTooLarge")
 		}
@@ -175,6 +183,12 @@ func (s *Server) Execute(r Request) Response {
 		h := sha256.Sum256(r.Body)
 		o = object{append([]byte(nil), r.Body...), fmt.Sprintf("\"%x-%d\"", h, s.counter), strconv.FormatUint(s.counter, 10)}
 		s.objects[name] = o
+		if bucket == "published" && m["--if-match"] != "" && s.publicationFault.Attempts != nil {
+			s.publicationFault.RootWrites++
+		}
+		if bucket == "published" && m["--if-none-match"] == "*" && s.publicationFault.Armed && s.publicationFault.Successful == "" {
+			s.publicationFault.Successful = name
+		}
 		return output(metadata(o))
 	case "head-object", "get-object":
 		if !exists {

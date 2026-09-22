@@ -27,15 +27,25 @@ func TestUpgradeApprovalReleaseDefaultsAndValidation(t *testing.T) {
 }
 
 func TestUpgradeReviewedPublishedAssets(t *testing.T) {
+	for _, schema := range []string{upgrade.CleanExitQualificationSchema, upgrade.OnlineCleanExitQualificationSchema} {
+		t.Run(schema, func(t *testing.T) { testUpgradeReviewedPublishedAssets(t, schema) })
+	}
+}
+func testUpgradeReviewedPublishedAssets(t *testing.T, schema string) {
 	s, d := testUpgradeV2(t, "coordinator")
-	d.OnlineImage = d.OriginalImage
+	if schema == upgrade.CleanExitQualificationSchema {
+		d.OnlineImage = d.OriginalImage
+	}
 	testUpgradeV2Report(t, &s, &d)
 	var q upgrade.QualificationV2
 	if err := json.Unmarshal(s.Qualification, &q); err != nil {
 		t.Fatal(err)
 	}
-	q.Schema = upgrade.CleanExitQualificationSchema
+	q.Schema = schema
 	q.Passed = append([]string{}, upgrade.CleanExitQualificationChecks...)
+	if schema == upgrade.OnlineCleanExitQualificationSchema {
+		q.Passed = append([]string{}, upgrade.OnlineCleanExitQualificationChecks...)
+	}
 	predecessor := []byte("test-only predecessor executable")
 	q.Predecessors[d.SourceApp] = "sha256:" + upgradeBytesHash(predecessor)
 	binary, err := os.ReadFile(s.Launcher)

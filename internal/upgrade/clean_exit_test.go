@@ -31,3 +31,37 @@ func TestCleanExitQualificationIsSeparateAndExact(t *testing.T) {
 		t.Fatal("accepted unsupported role")
 	}
 }
+
+func TestOnlineQualificationRequiresItsOwnCompleteEvidence(t *testing.T) {
+	d := fixtureV2()
+	if d.OnlineImage == d.OriginalImage {
+		t.Fatal("fixture must replace online image")
+	}
+	q := QualificationV2{Schema: OnlineCleanExitQualificationSchema, OriginalRelease: d.OriginalRelease, SourceApp: d.SourceApp, TargetApp: d.TargetApp, Role: d.Role, Host: d.Host, Platform: d.Platform, LauncherSHA256: "sha256:" + strings.Repeat("1", 64), OnlineImage: d.OnlineImage, OriginalImage: d.OriginalImage, SigningImage: d.SigningImage, ProofToolSHA256: d.ProofToolSHA256, Predecessors: map[string]string{d.OriginalRelease: "sha256:" + strings.Repeat("2", 64)}, Passed: append([]string{}, OnlineCleanExitQualificationChecks...)}
+	raw, _ := json.Marshal(q)
+	if _, err := VerifyQualification(raw, d); err != nil {
+		t.Fatal(err)
+	}
+	for name, change := range map[string]func(*QualificationV2){
+		"native evidence":      func(q *QualificationV2) { q.Schema = CleanExitQualificationSchema },
+		"missing online tests": func(q *QualificationV2) { q.Passed = CleanExitQualificationChecks },
+		"missing reentry":      func(q *QualificationV2) { q.Passed = q.Passed[:4] },
+		"changed proof":        func(q *QualificationV2) { q.ProofToolSHA256 = "sha256:" + strings.Repeat("9", 64) },
+		"changed signer":       func(q *QualificationV2) { q.SigningImage = q.OriginalImage },
+	} {
+		t.Run(name, func(t *testing.T) {
+			bad := q
+			change(&bad)
+			raw, _ := json.Marshal(bad)
+			if _, err := VerifyQualification(raw, d); err == nil {
+				t.Fatal("accepted mismatched online evidence")
+			}
+		})
+	}
+	d.OnlineImage = d.OriginalImage
+	q.OnlineImage = d.OnlineImage
+	raw, _ = json.Marshal(q)
+	if _, err := VerifyQualification(raw, d); err == nil {
+		t.Fatal("accepted native update as online qualification")
+	}
+}

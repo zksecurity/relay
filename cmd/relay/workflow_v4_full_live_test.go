@@ -53,6 +53,7 @@ type workflowV4LiveUpgradeHook struct {
 	Candidate          string
 	TargetWork         string
 	AfterPhase1        func(*workflowV4LiveRole)
+	Execute            func(string, []string, func(string, []string) error) error
 	OldCalls, NewCalls int
 }
 
@@ -128,9 +129,15 @@ func runLiveFullProviderJourneyWithUpgrade(t *testing.T, awsLive bool, upgradeHo
 				upgradeHook.NewCalls++
 			}
 		}
-		command := exec.Command(binary, args...)
-		command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
-		return command.Run()
+		run := func(binary string, args []string) error {
+			command := exec.Command(binary, args...)
+			command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
+			return command.Run()
+		}
+		if upgradeHook != nil && upgradeHook.Execute != nil {
+			return upgradeHook.Execute(binary, args, run)
+		}
+		return run(binary, args)
 	}
 	t.Cleanup(func() { workflowV4ChildExecutor = previousExecutor })
 	var base access.StorageConfig

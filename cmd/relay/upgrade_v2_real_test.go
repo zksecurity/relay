@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zksecurity/relay/internal/teststore"
 	"github.com/zksecurity/relay/internal/upgrade"
 )
 
@@ -117,9 +118,12 @@ func realUpgradeSelection(t *testing.T, f upgradeRealFixture, p guidedProfile, r
 		q.Predecessors[commit] = "sha256:" + h
 	}
 	s.Qualification, _ = json.Marshal(q)
-	if f.request.QualificationSchema == upgrade.CleanExitQualificationSchema {
-		q.Schema = upgrade.CleanExitQualificationSchema
+	if upgrade.IsCleanExitQualification(f.request.QualificationSchema) {
+		q.Schema = f.request.QualificationSchema
 		q.Passed = append([]string{}, upgrade.CleanExitQualificationChecks...)
+		if q.Schema == upgrade.OnlineCleanExitQualificationSchema {
+			q.Passed = append([]string{}, upgrade.OnlineCleanExitQualificationChecks...)
+		}
 		s.Qualification, _ = json.Marshal(q)
 		inv, err := upgradeV2Inventory(p, d)
 		if err != nil {
@@ -318,7 +322,7 @@ func runRealDraftUpgrade(t *testing.T, f upgradeRealFixture) {
 
 func TestUpgradeRealTwoPhaseJourney(t *testing.T) {
 	f := realUpgradeFixture(t)
-	runUpgradeTwoPhaseJourney(t, f, false)
+	runUpgradeTwoPhaseJourney(t, f, false, nil)
 }
 
 func TestUpgradeRealAWSTwoPhaseJourney(t *testing.T) {
@@ -328,10 +332,10 @@ func TestUpgradeRealAWSTwoPhaseJourney(t *testing.T) {
 	f := realUpgradeFixture(t)
 	t.Setenv("RELAY_UPGRADE_LIVE_PROVIDER", "aws")
 	t.Setenv("RELAY_AWS_LIVE_CREDENTIALS_FILE", freshAWSLiveCredentials(t))
-	runUpgradeTwoPhaseJourney(t, f, false)
+	runUpgradeTwoPhaseJourney(t, f, false, nil)
 }
 
-func runUpgradeTwoPhaseJourney(t *testing.T, f upgradeRealFixture, local bool) {
+func runUpgradeTwoPhaseJourney(t *testing.T, f upgradeRealFixture, local bool, store *teststore.Server) {
 	d := f.request.Declaration
 	// All ordinary live-provider inputs are required, not silently replaced by
 	// local handoffs. Missing inputs skip this opt-in test (never qualify a pair).
@@ -348,6 +352,9 @@ func runUpgradeTwoPhaseJourney(t *testing.T, f upgradeRealFixture, local bool) {
 	t.Setenv("RELAY_V4_LIVE_ONLINE_IMAGE", d.OriginalImage)
 	t.Setenv("RELAY_V4_LIVE_RELAY_BINARY", f.request.Predecessors[d.SourceApp])
 	hook := &workflowV4LiveUpgradeHook{Source: f.request.Predecessors[d.SourceApp], Candidate: f.request.Candidate, LocalStorage: local}
+	if f.request.QualificationSchema == upgrade.OnlineCleanExitQualificationSchema {
+		configureOnlineUpgradeScenario(t, f, hook, store)
+	}
 	hook.AfterPhase1 = func(role *workflowV4LiveRole) {
 		before := map[string]string{}
 		for _, path := range []string{filepath.Join(role.profile.Keys, "identity.json"), filepath.Join(role.profile.Keys, "signing.hex"), filepath.Join(role.profile.Work, "ceremony/public/ceremony.json"), filepath.Join(role.profile.Work, "ceremony/public/ceremony.sig")} {

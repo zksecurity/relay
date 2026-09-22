@@ -206,7 +206,7 @@ func runCeremonyUpgradeV2(args []string) error {
 	if err != nil {
 		return err
 	}
-	if q.Schema != upgrade.CleanExitQualificationSchema {
+	if !upgrade.IsCleanExitQualification(q.Schema) {
 		return errors.New("new updates require completed-step qualification; existing selections remain usable")
 	}
 	if "sha256:"+upgradeBytesHash(report) != d.QualificationSHA256 {

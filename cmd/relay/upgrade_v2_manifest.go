@@ -175,8 +175,8 @@ func runUpgradeManifestsV2(args []string) error {
 // commit and bytes. CI attests approval of reviewed local evidence, not execution
 // of the Mac tests. Target binaries are downloaded, never rebuilt or republished.
 func generateReviewedPublishedUpgrade(d upgrade.DeclarationV2, report []byte, get func(string, string) ([]byte, error)) (map[string][]byte, error) {
-	if !launcherReleaseTag.MatchString("role-images-"+d.TargetApp) || d.Role != "coordinator" || d.OnlineImage != d.OriginalImage {
-		return nil, errors.New("published approval requires an exact native-only coordinator target")
+	if !launcherReleaseTag.MatchString("role-images-"+d.TargetApp) || d.Role != "coordinator" {
+		return nil, errors.New("published approval requires an exact coordinator target")
 	}
 	d.QualificationSHA256 = "sha256:" + upgradeBytesHash(report)
 	if err := d.Validate(); err != nil {
@@ -186,7 +186,7 @@ func generateReviewedPublishedUpgrade(d upgrade.DeclarationV2, report []byte, ge
 	if err != nil {
 		return nil, err
 	}
-	if q.Schema != upgrade.CleanExitQualificationSchema {
+	if !upgrade.IsCleanExitQualification(q.Schema) {
 		return nil, errors.New("reviewed published approval requires completed-step qualification")
 	}
 	asset := "relay-" + strings.ReplaceAll(d.Host, "/", "-")

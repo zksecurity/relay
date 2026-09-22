@@ -188,6 +188,13 @@ func RunQualification(ctx context.Context, request QualificationRequest) (Qualif
 		q.Schema = CleanExitQualificationSchema
 		checks = CleanExitQualificationChecks
 		tests = map[string]string{"completed-step-continuation": "TestUpgradeCleanExitContinuation", "updater-interruption": "TestUpgradeCleanExitInterruption", "unsafe-update-refusal": "TestUpgradeCleanExitRefusal"}
+	} else if request.QualificationSchema == OnlineCleanExitQualificationSchema {
+		if d.Role != "coordinator" || d.OnlineImage == d.OriginalImage {
+			return zero, errors.New("online completed-step qualification requires a changed coordinator online image")
+		}
+		q.Schema = OnlineCleanExitQualificationSchema
+		checks = OnlineCleanExitQualificationChecks
+		tests = map[string]string{"completed-step-continuation": "TestUpgradeCleanExitContinuation", "updater-interruption": "TestUpgradeCleanExitInterruption", "unsafe-update-refusal": "TestUpgradeCleanExitRefusal", "online-runtime-retry": "TestUpgradeOnlineRuntimeRetry", "predecessor-reentry": "TestUpgradeOnlinePredecessorReentry"}
 	} else if request.QualificationSchema != "" && request.QualificationSchema != q.Schema {
 		return zero, errors.New("unknown qualification schema")
 	}

@@ -205,6 +205,16 @@ var QualificationChecks = []string{"full-journey", "mixed-versions", "retained-w
 
 const CleanExitQualificationSchema = "relay-upgrade-qualification/v3"
 
+// OnlineCleanExitQualificationSchema adds online runtime replacement without
+// changing the native-only meaning of existing v3 reports.
+const OnlineCleanExitQualificationSchema = "relay-upgrade-qualification/v4"
+
+func IsCleanExitQualification(schema string) bool {
+	return schema == CleanExitQualificationSchema || schema == OnlineCleanExitQualificationSchema
+}
+
+var OnlineCleanExitQualificationChecks = []string{"completed-step-continuation", "updater-interruption", "unsafe-update-refusal", "online-runtime-retry", "predecessor-reentry"}
+
 var CleanExitQualificationChecks = []string{"completed-step-continuation", "updater-interruption", "unsafe-update-refusal"}
 
 func VerifyQualification(raw []byte, d DeclarationV2) (QualificationV2, error) {
@@ -218,6 +228,11 @@ func VerifyQualification(raw []byte, d DeclarationV2) (QualificationV2, error) {
 			return q, errors.New("clean-exit qualification only covers native-only coordinator updates")
 		}
 		checks = CleanExitQualificationChecks
+	} else if q.Schema == OnlineCleanExitQualificationSchema {
+		if d.Role != "coordinator" || d.OnlineImage == d.OriginalImage {
+			return q, errors.New("online completed-step qualification requires a changed coordinator online image")
+		}
+		checks = OnlineCleanExitQualificationChecks
 	} else if q.Schema != "relay-upgrade-qualification/v2" {
 		return q, errors.New("unknown qualification schema")
 	}

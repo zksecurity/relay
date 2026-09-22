@@ -95,8 +95,11 @@ func TestQualificationRunnerCannotUseUnitTestsAsJourneyEvidence(t *testing.T) {
 	defer cancel()
 	// This real test executable contains no full-journey qualification scenario.
 	// A zero-exit `no tests to run` result must not create a qualification report.
-	q, err := RunQualification(ctx, request)
-	if err == nil || len(q.Passed) != 0 {
-		t.Fatal("missing real scenarios created a passing report", q, err)
+	for _, schema := range []string{"", OnlineCleanExitQualificationSchema} {
+		request.QualificationSchema = schema
+		q, err := RunQualification(ctx, request)
+		if err == nil || len(q.Passed) != 0 {
+			t.Fatal("missing real scenarios created a passing report", schema, q, err)
+		}
 	}
 }

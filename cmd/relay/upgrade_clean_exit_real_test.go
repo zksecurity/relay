@@ -24,7 +24,7 @@ func runCleanExitScenario(t *testing.T, scenario string) {
 	if err := setupReadJSON(os.Getenv("RELAY_UPGRADE_QUALIFICATION_REQUEST"), &request); err != nil {
 		t.Fatal(err)
 	}
-	if request.QualificationSchema != upgrade.CleanExitQualificationSchema {
+	if !upgrade.IsCleanExitQualification(request.QualificationSchema) {
 		t.Fatal("completed-step qualification request required")
 	}
 	t.Setenv("RELAY_UPGRADE_LOCAL_STORAGE", "1")
