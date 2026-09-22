@@ -114,3 +114,10 @@ The explicit `relay role` interface accepts the same role/image/mount settings
 and runs one command without saving it. It requires an already loaded image.
 Older direct native APIs remain for compatibility; guided participant launches
 require a Docker profile and never silently fall back to native contribution.
+
+In the guide's resource menu, `[S]` offers the validated 2-CPU/6-GiB allocation
+only when strict accounting finds enough unclaimed capacity and it fits saved
+limits. This is a snapshot, not a reservation; admission checks again at launch.
+Suggestions are disabled under operator-budget policy or uncertain inventory.
+Larger automatic CPU recommendations require exact-circuit measurements. The
+operator can still explicitly adjust limits using the existing controls.

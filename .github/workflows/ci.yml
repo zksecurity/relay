@@ -431,6 +431,9 @@ jobs:
             docker buildx build --load --target "$role" --build-arg "AWS_CLI_IMAGE=$aws_image" \
               -t "archive-rehearsal-$role" "$RUNNER_TEMP/archive-image"
           done
+          # This job owns the disposable builder. Stop it after image creation
+          # so its unbounded idle service does not obscure ceremony capacity.
+          docker buildx stop
       - name: Run full local ceremony, pack public files, and replay without keys
         env:
           # Pull requests retain real future Quicknet rounds with a short,

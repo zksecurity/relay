@@ -179,3 +179,10 @@ limits. Other production callers of the generic profile runner perform online
 Relay transport/commit commands. Disposable live-test fixture preparation also
 uses the generic runner. Ordinary, contribution and renewable-credential launches
 announce their allocation immediately before starting.
+
+
+Guided suggestions now offer only the released 2/6/4/25 allocation after checking
+strict inventory, host reserves and saved limits. Selection is explicit and
+capacity is rechecked at admission. No suggestion is made for operator-budget
+policy, unknown workloads, insufficient headroom or caps below that validated
+configuration. Higher CPU recommendations still require production measurements.

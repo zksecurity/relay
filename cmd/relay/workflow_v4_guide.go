@@ -469,7 +469,11 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 				ui.message(toneError, "%v\n", err)
 				continue
 			}
-			selected, err := chooseGuidedResources(ui, p.Resources, driver.daemon)
+			suggested, suggestionErr := inspectGuidedResourceSuggestion(p.Resources, driver.client, driver.daemon)
+			if suggestionErr != nil {
+				fmt.Fprintf(ui.output, "No automatic resource suggestion: %v\n", suggestionErr)
+			}
+			selected, err := chooseGuidedResources(ui, p.Resources, driver.daemon, suggested)
 			if err != nil {
 				ui.message(toneError, "%v\n", err)
 				continue
