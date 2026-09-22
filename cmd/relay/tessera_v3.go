@@ -290,15 +290,12 @@ func inspectSetupV3(definition, signature, key []byte, image, platform string) (
 		}
 	}
 	inspector := transcript.Inspector{Executable: "mpc-ceremony", CeremonyPath: "/input/ceremony.json", CeremonySignaturePath: "/input/ceremony.sig", CoordinatorPublicKeyPath: "/input/coordinator.hex", Runner: func(_ string, args ...string) ([]byte, []byte, error) {
-		argv, err := dockerProofInspectionArgs(dir, image, platform, args)
-		if err != nil {
-			return nil, nil, err
-		}
+		argv := dockerProofInspectionArgs(dir, image, platform, args)
 		cmd := exec.Command("docker", argv...)
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
-		err = cmd.Run()
+		err := cmd.Run()
 		return stdout.Bytes(), stderr.Bytes(), err
 	}}
 	return inspector.Definition()

@@ -70,11 +70,7 @@ func runDockerRole(args []string) error {
 	if err != nil {
 		return err
 	}
-	limits, err := loadDockerRuntimeLimits()
-	if err != nil {
-		return err
-	}
-	if err := validateDockerRuntimeCapacity(daemon, limits); err != nil {
+	if err := validateDockerRuntimeCapacity(daemon, proofDockerRuntimeLimits); err != nil {
 		return err
 	}
 	binary, err := exec.LookPath(o.docker)
@@ -117,10 +113,6 @@ func runDockerRoleParticipant(o dockerRoleOptions, args []string) error {
 }
 
 func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]string, error) {
-	runtimeLimits, err := loadDockerRuntimeLimits()
-	if err != nil {
-		return nil, err
-	}
 	if (o.r2Parent != "" || o.r2Control != "") && o.role != "coordinator" {
 		return nil, errors.New("R2 administrative credentials are coordinator-only")
 	}
@@ -219,7 +211,7 @@ func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]stri
 		sources = append(sources, resolved)
 	}
 	argv := []string{"run", "--rm", "--pull=never", "--interactive", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--ulimit=core=0:0", "--user", strconv.Itoa(uid) + ":" + strconv.Itoa(gid), "--platform", o.platform, "--workdir=/work", "--tmpfs=/tmp:rw,nosuid,nodev,noexec,size=256m,mode=1777", "--env=HOME=/tmp", "--env=AWS_EC2_METADATA_DISABLED=true", "--env=AWS_PAGER=", "--env=AWS_CONFIG_FILE=/nonexistent", "--env=AWS_SHARED_CREDENTIALS_FILE=/nonexistent", "--label=org.zksecurity.relay.role=" + o.role}
-	argv = append(argv, runtimeLimits.dockerArgs()...)
+	argv = append(argv, dockerRuntimeArgs()...)
 	if offline {
 		argv = append(argv, "--network=none")
 	} else {

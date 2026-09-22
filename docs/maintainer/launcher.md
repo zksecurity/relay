@@ -27,33 +27,16 @@ during signing. Removing an ordinary role container is not an erasure receipt.
 
 ## Proof runtime limits
 
-Every role-image and participant proof container defaults to two CPUs, a 6 GiB
+Every role-image and participant proof container uses two CPUs, a 6 GiB
 hard memory and swap limit, `GOMAXPROCS=2`, `GOMEMLIMIT=4GiB`, and `GOGC=25`.
 These bounds also cover transcript inspection, coordinator verification and
 sealing, and release signing; a heavy operation cannot bypass them by entering
 through another role command. The Docker host needs at least 6 GiB available to
 the daemon plus memory for the host and other services. Relay retains the exact
 participant create arguments so interruption cleanup continues to identify the
-original bounded container.
-
-Maintainers can tune a host before launching Relay with integer environment
-variables:
-
-```text
-RELAY_DOCKER_RUNTIME_CPUS
-RELAY_DOCKER_RUNTIME_MEMORY_GIB
-RELAY_DOCKER_RUNTIME_GO_MEMORY_GIB
-RELAY_DOCKER_RUNTIME_GOGC
-```
-
-Relay rejects malformed values, fewer than 4 GiB of container memory, disabled
-or extremely infrequent garbage collection, and a Go heap target that leaves
-less than 2 GiB of container headroom. Before proof work it also rejects a
-Docker daemon whose reported CPU/memory capacity is smaller than the requested
-limits or whose cgroup configuration cannot enforce CPU, memory and swap limits.
-Overrides apply to subsequent
-invocations only. Record them in the operator runbook and capacity-test the
-exact circuit before production; raising a limit does not create host capacity.
+original bounded container. Before proof work Relay rejects a Docker daemon
+with less capacity or whose cgroup configuration cannot enforce CPU, memory and
+swap limits. Capacity-test the exact circuit before production.
 
 ## Save an action
 

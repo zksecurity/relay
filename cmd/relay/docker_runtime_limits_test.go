@@ -6,19 +6,8 @@ import (
 	"testing"
 )
 
-func clearDockerRuntimeEnvironment(t *testing.T) {
-	t.Helper()
-	for _, name := range []string{dockerRuntimeCPUsEnvironment, dockerRuntimeMemoryEnvironment, dockerRuntimeGoMemoryEnvironment, dockerRuntimeGoGCEnvironment} {
-		t.Setenv(name, "")
-	}
-}
-
 func TestDockerRuntimeLimitsDefaults(t *testing.T) {
-	clearDockerRuntimeEnvironment(t)
-	limits, err := loadDockerRuntimeLimits()
-	if err != nil {
-		t.Fatal(err)
-	}
+	limits := proofDockerRuntimeLimits
 	want := dockerRuntimeLimits{CPUs: 2, MemoryGiB: 6, GoMemoryGiB: 4, GoGCPercent: 25}
 	if !reflect.DeepEqual(limits, want) {
 		t.Fatalf("limits = %#v, want %#v", limits, want)
@@ -28,41 +17,6 @@ func TestDockerRuntimeLimitsDefaults(t *testing.T) {
 		if !strings.Contains(joined, required) {
 			t.Errorf("runtime arguments missing %q: %s", required, joined)
 		}
-	}
-}
-
-func TestDockerRuntimeLimitsValidatedOverrides(t *testing.T) {
-	clearDockerRuntimeEnvironment(t)
-	t.Setenv(dockerRuntimeCPUsEnvironment, "4")
-	t.Setenv(dockerRuntimeMemoryEnvironment, "12")
-	t.Setenv(dockerRuntimeGoMemoryEnvironment, "9")
-	t.Setenv(dockerRuntimeGoGCEnvironment, "50")
-	limits, err := loadDockerRuntimeLimits()
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := dockerRuntimeLimits{CPUs: 4, MemoryGiB: 12, GoMemoryGiB: 9, GoGCPercent: 50}
-	if !reflect.DeepEqual(limits, want) {
-		t.Fatalf("limits = %#v, want %#v", limits, want)
-	}
-}
-
-func TestDockerRuntimeLimitsRejectUnsafeConfiguration(t *testing.T) {
-	for _, test := range []struct{ name, variable, value string }{
-		{"fractional cpu", dockerRuntimeCPUsEnvironment, "1.5"},
-		{"zero cpu", dockerRuntimeCPUsEnvironment, "0"},
-		{"too little memory", dockerRuntimeMemoryEnvironment, "3"},
-		{"invalid memory", dockerRuntimeMemoryEnvironment, "6g"},
-		{"heap without headroom", dockerRuntimeGoMemoryEnvironment, "5"},
-		{"disabled gc", dockerRuntimeGoGCEnvironment, "-1"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			clearDockerRuntimeEnvironment(t)
-			t.Setenv(test.variable, test.value)
-			if _, err := loadDockerRuntimeLimits(); err == nil {
-				t.Fatal("unsafe runtime configuration accepted")
-			}
-		})
 	}
 }
 
@@ -93,20 +47,12 @@ func TestDockerRuntimeCapacityFailsBeforeProofWork(t *testing.T) {
 }
 
 func TestDockerRoleAndParticipantUseSameRuntimeLimits(t *testing.T) {
-	clearDockerRuntimeEnvironment(t)
 	roleArgs, err := dockerRoleArgs(roleTestOptions(t), []string{"relay", "help"}, 501, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
-	driverArgs, err := (&dockerDriver{platform: "linux/amd64"}).securityArgs(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	runtimeArgs, err := dockerRuntimeArgs()
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := strings.Join(runtimeArgs, " ")
+	driverArgs := (&dockerDriver{platform: "linux/amd64"}).securityArgs(nil)
+	want := strings.Join(dockerRuntimeArgs(), " ")
 	if !strings.Contains(strings.Join(roleArgs, " "), want) {
 		t.Fatalf("role launcher lost runtime limits: %v", roleArgs)
 	}
@@ -116,11 +62,7 @@ func TestDockerRoleAndParticipantUseSameRuntimeLimits(t *testing.T) {
 }
 
 func TestDirectProofInspectionUsesRuntimeLimitsExactlyOnce(t *testing.T) {
-	clearDockerRuntimeEnvironment(t)
-	args, err := dockerProofInspectionArgs("/private/input", "image@sha256:digest", "linux/arm64", []string{"definition", "--ceremony", "/input/ceremony.json"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	args := dockerProofInspectionArgs("/private/input", "image@sha256:digest", "linux/arm64", []string{"definition", "--ceremony", "/input/ceremony.json"})
 	for _, value := range []string{"--cpus", "--memory", "--memory-swap", "GOMAXPROCS=2", "GOMEMLIMIT=4GiB", "GOGC=25"} {
 		count := 0
 		for _, arg := range args {

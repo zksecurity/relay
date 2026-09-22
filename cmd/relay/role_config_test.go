@@ -78,11 +78,7 @@ func TestDockerParticipantNeverExecutesMeasuredHostCompanion(t *testing.T) {
 	if driver.ceremonyBinary != dockerCeremonyBinary {
 		t.Fatalf("Docker execution binary = %q, want fixed %q", driver.ceremonyBinary, dockerCeremonyBinary)
 	}
-	securityArgs, err := driver.securityArgs(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	args := strings.Join(securityArgs, " ")
+	args := strings.Join(driver.securityArgs(nil), " ")
 	if strings.Contains(args, hostTool) || !strings.Contains(args, "--entrypoint "+dockerCeremonyBinary) {
 		t.Fatalf("Docker security arguments did not enforce the fixed entrypoint: %s", args)
 	}

@@ -246,10 +246,7 @@ func (d *dockerDriver) inspectionRunner(executable string, args ...string) ([]by
 	if err != nil {
 		return nil, nil, err
 	}
-	command, err := d.baseRunArgs(true, mounts)
-	if err != nil {
-		return nil, nil, err
-	}
+	command := d.baseRunArgs(true, mounts)
 	command = append(command, d.image)
 	command = append(command, rewritten...)
 	return d.client.Output(command...)
@@ -270,11 +267,7 @@ func (d *dockerDriver) preflight() error {
 	if err := d.authenticateDaemon(); err != nil {
 		return err
 	}
-	runtimeLimits, err := loadDockerRuntimeLimits()
-	if err != nil {
-		return err
-	}
-	if err := validateDockerRuntimeCapacity(d.daemon, runtimeLimits); err != nil {
+	if err := validateDockerRuntimeCapacity(d.daemon, proofDockerRuntimeLimits); err != nil {
 		return err
 	}
 	if _, err := d.swapStatus(); err != nil {
@@ -491,11 +484,7 @@ func (d *dockerDriver) contribution(o roleOpts, pos position, contributedAt time
 		Image: d.image, Platform: d.platform, DaemonID: d.daemon.ID, DaemonEndpoint: d.daemon.Endpoint,
 		HandoffDir: handoff, CreatedAt: receipt.CreatedAt, MountDigest: fmt.Sprintf("sha256:%x", mountDigest), Mounts: append([]dockerMount(nil), mounts...),
 	}
-	createArgs, err := d.baseCreateArgs(mounts)
-	if err != nil {
-		_ = os.RemoveAll(handoff)
-		return nil, err
-	}
+	createArgs := d.baseCreateArgs(mounts)
 	createArgs = append(createArgs,
 		"--name", state.ContainerName,
 		"--label", "org.zksecurity.relay.role=participant-contributor",
@@ -715,10 +704,7 @@ func (d *dockerDriver) erasureCommand(o roleOpts, destroyedAt time.Time) ([]stri
 			mounts[i].ReadOnly = false
 		}
 	}
-	command, err := d.baseRunArgs(true, mounts)
-	if err != nil {
-		return nil, err
-	}
+	command := d.baseRunArgs(true, mounts)
 	command = append(command, d.image)
 	command = append(command, rewritten...)
 	return command, nil
@@ -946,27 +932,19 @@ func (m dockerArtifactRootMount) child(path string) (string, bool, error) {
 	return mapped, true, nil
 }
 
-func (d *dockerDriver) baseRunArgs(remove bool, mounts []dockerMount) ([]string, error) {
+func (d *dockerDriver) baseRunArgs(remove bool, mounts []dockerMount) []string {
 	args := []string{"run"}
 	if remove {
 		args = append(args, "--rm")
 	}
-	security, err := d.securityArgs(mounts)
-	if err != nil {
-		return nil, err
-	}
-	return append(args, security...), nil
+	return append(args, d.securityArgs(mounts)...)
 }
 
-func (d *dockerDriver) baseCreateArgs(mounts []dockerMount) ([]string, error) {
-	security, err := d.securityArgs(mounts)
-	if err != nil {
-		return nil, err
-	}
-	return append([]string{"create"}, security...), nil
+func (d *dockerDriver) baseCreateArgs(mounts []dockerMount) []string {
+	return append([]string{"create"}, d.securityArgs(mounts)...)
 }
 
-func (d *dockerDriver) securityArgs(mounts []dockerMount) ([]string, error) {
+func (d *dockerDriver) securityArgs(mounts []dockerMount) []string {
 	uid, gid := os.Getuid(), os.Getgid()
 	args := []string{
 		"--pull", "never", "--platform", d.platform,
@@ -980,11 +958,7 @@ func (d *dockerDriver) securityArgs(mounts []dockerMount) ([]string, error) {
 		"--workdir", "/tmp",
 		"--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=67108864,mode=700",
 	}
-	runtimeArgs, err := dockerRuntimeArgs()
-	if err != nil {
-		return nil, err
-	}
-	args = append(args, runtimeArgs...)
+	args = append(args, dockerRuntimeArgs()...)
 	for _, mount := range mounts {
 		value := "type=bind,src=" + mount.Source + ",dst=" + mount.Destination
 		if mount.ReadOnly {
@@ -992,7 +966,7 @@ func (d *dockerDriver) securityArgs(mounts []dockerMount) ([]string, error) {
 		}
 		args = append(args, "--mount", value)
 	}
-	return args, nil
+	return args
 }
 
 func (d *dockerDriver) inspectSecurity(containerID string, expected []dockerMount) (dockerSecurityFacts, error) {
@@ -1046,10 +1020,7 @@ func (d *dockerDriver) inspectSecurity(containerID string, expected []dockerMoun
 		return dockerSecurityFacts{}, errors.New("decode contributor Docker inspection")
 	}
 	r := records[0]
-	runtimeLimits, err := loadDockerRuntimeLimits()
-	if err != nil {
-		return dockerSecurityFacts{}, err
-	}
+	runtimeLimits := proofDockerRuntimeLimits
 	memoryBytes := int64(runtimeLimits.MemoryGiB) << 30
 	cpuNano := int64(runtimeLimits.CPUs) * 1_000_000_000
 	goMaxProcs := strconv.Itoa(runtimeLimits.CPUs)
