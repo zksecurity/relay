@@ -196,12 +196,8 @@ func upgradeV2Selected(p guidedProfile, settingsRoot string, checkExecutable boo
 			return zero, zd, false, errors.New("cached target release map changed")
 		}
 	}
-	if "sha256:"+upgradeBytesHash(s.Qualification) != d.QualificationSHA256 {
-		return zero, zd, false, errors.New("qualification report bytes changed")
-	}
-	q, err := upgrade.VerifyQualification(s.Qualification, d)
-	if err != nil || q.LauncherSHA256 != "sha256:"+s.LauncherSHA256 {
-		return zero, zd, false, errors.New("qualification does not cover the selected executable")
+	if _, err := upgradeSelectionEvidence(s, d); err != nil {
+		return zero, zd, false, err
 	}
 	if (len(s.Bindings) == 0 && s.Setup == nil) || s.StartPath != filepath.Join(filepath.Dir(s.Profile.Work), "start.sh") {
 		return zero, zd, false, errors.New("missing frozen inputs or invalid entry point")
@@ -252,12 +248,9 @@ func upgradeV2Activate(s upgradeSelectionV2, expected string) error {
 	if d.OriginalRelease != s.Profile.ReleaseCommit || !upgradeV2ProfileMatches(s.Profile, s.Profile, d) {
 		return errors.New("selection does not bind original profile")
 	}
-	q, err := upgrade.VerifyQualification(s.Qualification, d)
+	evidenceSchema, err := upgradeSelectionEvidence(s, d)
 	if err != nil {
 		return err
-	}
-	if "sha256:"+upgradeBytesHash(s.Qualification) != d.QualificationSHA256 || q.LauncherSHA256 != "sha256:"+s.LauncherSHA256 {
-		return errors.New("selection qualification mismatch")
 	}
 	for _, item := range []struct {
 		raw                 []byte
@@ -309,8 +302,8 @@ func upgradeV2Activate(s upgradeSelectionV2, expected string) error {
 	if err := d.Cover(apps, s.Kinds); err != nil {
 		return err
 	}
-	if upgrade.IsCleanExitQualification(q.Schema) {
-		if err := upgradeRequireCleanExit(s, d, q.Schema); err != nil {
+	if d.OperatorSelected() || upgrade.IsCleanExitQualification(evidenceSchema) {
+		if err := upgradeRequireCleanExit(s, d, evidenceSchema); err != nil {
 			return err
 		}
 		inv, err := upgradeV2Inventory(s.Profile, d)
@@ -500,4 +493,27 @@ func upgradeV2KindForOperation(kind string) (string, error) {
 		return "checkpoint", nil
 	}
 	return "", errors.New("unrecognized retained operation: " + strings.TrimSpace(kind))
+}
+
+// Operator choices carry no qualification report. Historical qualified choices
+// continue to verify their exact evidence on every reopen and repair.
+func upgradeSelectionEvidence(s upgradeSelectionV2, d upgrade.DeclarationV2) (string, error) {
+	if d.OperatorSelected() {
+		if len(s.Qualification) != 0 || s.ApprovalRelease != "" {
+			return "", errors.New("operator selection must not carry compatibility approval")
+		}
+		raw, err := hex.DecodeString(s.LauncherSHA256)
+		if err != nil || len(raw) != sha256.Size {
+			return "", errors.New("operator selection has no executable digest")
+		}
+		return "", nil
+	}
+	q, err := upgrade.VerifyQualification(s.Qualification, d)
+	if err != nil {
+		return "", err
+	}
+	if "sha256:"+upgradeBytesHash(s.Qualification) != d.QualificationSHA256 || q.LauncherSHA256 != "sha256:"+s.LauncherSHA256 {
+		return "", errors.New("selection qualification mismatch")
+	}
+	return q.Schema, nil
 }

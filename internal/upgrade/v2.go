@@ -11,6 +11,12 @@ import (
 
 const SchemaV2 = "relay-upgrade-compatibility/v2"
 
+// OperatorTransitionSchema records a choice, never a compatibility certification.
+// Older readers reject this schema instead of treating it as qualified evidence.
+const OperatorTransitionSchema = "relay-operator-upgrade/v1"
+
+func (d DeclarationV2) OperatorSelected() bool { return d.Schema == OperatorTransitionSchema }
+
 // V2 authorizes one application transition over one original ceremony runtime.
 // It deliberately does not authorize a cryptographic runtime migration.
 type DeclarationV2 struct {
@@ -87,7 +93,7 @@ func validImage(value, role string) bool {
 }
 
 func (d DeclarationV2) Validate() error {
-	if d.Schema != SchemaV2 || !commitPattern.MatchString(d.OriginalRelease) || !commitPattern.MatchString(d.SourceApp) || !commitPattern.MatchString(d.TargetApp) || d.SourceApp == d.TargetApp {
+	if (d.Schema != SchemaV2 && !d.OperatorSelected()) || !commitPattern.MatchString(d.OriginalRelease) || !commitPattern.MatchString(d.SourceApp) || !commitPattern.MatchString(d.TargetApp) || d.SourceApp == d.TargetApp {
 		return errors.New("invalid upgrade release transition")
 	}
 	if !slices.Contains([]string{"darwin/amd64", "darwin/arm64", "linux/amd64", "linux/arm64"}, d.Host) || !slices.Contains([]string{"linux/amd64", "linux/arm64"}, d.Platform) {
@@ -112,13 +118,20 @@ func (d DeclarationV2) Validate() error {
 	default:
 		return errors.New("unsupported upgrade role")
 	}
-	if !validImage(d.OriginalImage, imageRole) || !validImage(d.SigningImage, "relay-role-offline") || !digestPattern.MatchString(d.ProofToolSHA256) || !digestPattern.MatchString(d.QualificationSHA256) {
+	if !validImage(d.OriginalImage, imageRole) || !validImage(d.SigningImage, "relay-role-offline") || !digestPattern.MatchString(d.ProofToolSHA256) {
 		return errors.New("missing immutable runtime or qualification binding")
 	}
 	if d.Protocol != "proof-tool-mpc-ceremony-definition-v4" || d.StorageLayout != "storage-first-v2" || d.ProfileSchema != "relay-guided-role-v1" || d.JournalSchema != "relay-workflow-v4-state-v1" {
 		return errors.New("unsupported upgrade format")
 	}
-	if len(d.Adapters) == 0 || len(d.Adapters) > len(adapterKinds) || len(d.SafePredecessors) == 0 || len(d.SafePredecessors) > 64 {
+	if d.OperatorSelected() {
+		if d.QualificationSHA256 != "" || len(d.SafePredecessors) != 0 {
+			return errors.New("operator selection must not claim qualification or safe predecessor coverage")
+		}
+	} else if !digestPattern.MatchString(d.QualificationSHA256) || len(d.SafePredecessors) == 0 || len(d.SafePredecessors) > 64 {
+		return errors.New("missing or oversized compatibility evidence")
+	}
+	if len(d.Adapters) == 0 || len(d.Adapters) > len(adapterKinds) {
 		return errors.New("missing or oversized compatibility coverage")
 	}
 	seen := map[string]bool{}
@@ -142,7 +155,7 @@ func (d DeclarationV2) Validate() error {
 		}
 		seen[app] = true
 	}
-	if !seen[d.SourceApp] || !seen[d.OriginalRelease] {
+	if !d.OperatorSelected() && (!seen[d.SourceApp] || !seen[d.OriginalRelease]) {
 		return errors.New("original and current applications need safe reentry coverage")
 	}
 	return nil
@@ -155,7 +168,7 @@ func (d DeclarationV2) Cover(priorApps, kinds []string) error {
 		return err
 	}
 	for _, app := range priorApps {
-		if !slices.Contains(d.SafePredecessors, app) {
+		if !d.OperatorSelected() && !slices.Contains(d.SafePredecessors, app) {
 			return fmt.Errorf("no safe reentry coverage for %s", app)
 		}
 	}
@@ -230,6 +243,9 @@ func validateOnlineCleanExitScope(d DeclarationV2) error {
 
 func VerifyQualification(raw []byte, d DeclarationV2) (QualificationV2, error) {
 	var q QualificationV2
+	if d.OperatorSelected() {
+		return q, errors.New("operator selection is not qualification evidence")
+	}
 	if err := decodeCanonical(raw, &q); err != nil {
 		return q, err
 	}
