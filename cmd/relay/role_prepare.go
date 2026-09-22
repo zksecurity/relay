@@ -188,7 +188,29 @@ func (p *rolePreparer) open(role, action string, command []string) error {
 	args = append(args, command...)
 	return p.run(args)
 }
+
+const toolPreparationIncomplete = "tool_preparation_incomplete"
+
 func (p *rolePreparer) images() error {
+	if p.d.Values == nil {
+		p.d.Values = make(map[string]string)
+	}
+	p.d.Values[toolPreparationIncomplete] = "1"
+	if err := p.save(); err != nil {
+		return err
+	}
+	if err := p.prepareImages(); err != nil {
+		return err
+	}
+	delete(p.d.Values, toolPreparationIncomplete)
+	if err := p.save(); err != nil {
+		p.d.Values[toolPreparationIncomplete] = "1"
+		return err
+	}
+	return nil
+}
+
+func (p *rolePreparer) prepareImages() error {
 	if p.d.Role != "upload-station" {
 		if err := p.setup("keygen"); err != nil {
 			return err
@@ -504,6 +526,9 @@ func regularPreparationFile(path string) bool {
 // This is an authored setup order, not a readiness heuristic. A waiting step
 // remains next instead of allowing a later, locally runnable action to jump it.
 func (p *rolePreparer) nextPreparationAction() rolePreparationNext {
+	if p.d.Values[toolPreparationIncomplete] != "" {
+		return rolePreparationNext{"1", "Finish preparing and verifying the approved tools", "Tool preparation did not finish. Resolve the reported error and retry step 1; preserve existing identities and tool receipts."}
+	}
 	profileExists := func(role string) bool {
 		dir, err := guidedDirectory(p.settingsRoot, p.alias(role), role)
 		return err == nil && regularPreparationFile(filepath.Join(dir, "profile.json"))

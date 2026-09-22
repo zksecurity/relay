@@ -3,6 +3,7 @@
 - Add saved CPU and memory limits for ceremony operations, with consistent Docker and Go settings, capacity checks, and an explicit aggregate Relay budget for hosts running other unbounded containers. Running operations keep their original allocation.
 - Preserve allocations across contribution, coordinator, and release-signing recovery. Retain lifecycle timestamps and exact commands so a retry cannot silently become a new operation. Older retained operations keep the released resource defaults.
 - Admit Docker work under a daemon-bound local lock, record created containers before starting them, and reject duplicate or ambiguous retained launches. Show the selected allocation and an elapsed-time heartbeat for guided commands.
+- Keep onboarding at tool preparation after an interrupted or failed setup, even when profiles or identity files already exist. Preserve conflicting receipts and identities for review and retry.
 
 ## Tessera compatibility
 
