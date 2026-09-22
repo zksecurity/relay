@@ -53,6 +53,14 @@ TESSERA_PROOF_TOOL_BINARY=/path/to/approved/mpc-ceremony \
 The optional test creates local rehearsal keys, initializes the exact website
 beacon profile and checks real signatures. Its software image map is synthetic
 test metadata; its output is not an approved release or production ceremony.
+When the pinned binary creates a newer definition schema, these legacy tests fetch
+its exact source commit into a disposable checkout, run the vendor bootstrap, and
+compile a test-only V2 definition author. Git, Go, Bash, and network access to the
+public source/dependencies are then required. The author preserves the generated
+rehearsal software/roster binding and signs fresh V2 bytes; the unchanged pinned
+binary verifies them and rejects tampering. Imported external fixtures are never
+rewritten. The helper is not a verifier or a released ceremony tool.
+
 
 ## Completed ceremony verification
 
