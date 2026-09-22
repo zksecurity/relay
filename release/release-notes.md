@@ -1,20 +1,9 @@
 ## What changed
 
-- Clarify the storage-first role menu prompt: “Choose an action [Enter = save
-  and exit]”. Pressing Enter still exits; type the displayed action number to
-  continue. This avoids presenting Q as a suggested next ceremony action.
-- Show start, one-minute elapsed-time heartbeats, and completion or failure while
-  Relay waits for Phase 1 and Phase 2 contribution computation. The heartbeat
-  indicates elapsed waiting time, not a percentage or proof of forward progress.
-- Show candidate-upload file sizes, staging and retry-verification steps, bytes
-  confirmed in storage, and elapsed heartbeats. Counts advance after complete
-  files are confirmed; the final upload manifest remains last. Upload completion
-  still requires coordinator verification and signed acceptance.
-- Release this fix as `v0.2.1` and require an explicit version check in the
-  maintainer guidance for future user-facing changes.
+- Avoid retransmitting previously verified immutable storage objects when authoritative ETag, version and size still match. Uncertain metadata retains conditional upload and full download verification.
+- Preserve verified upload records after a partially failed publication batch so retries can reuse completed work.
+- Show elapsed progress while authenticating a signed checkpoint before publication.
 
 ## Tessera compatibility
 
-Tessera setup contracts, signed artifacts, role actions and software pins are
-unchanged. This is a prompt clarification only; existing ceremonies keep their
-frozen launcher and its original wording.
+This change preserves setup contracts, signed artifact formats and software pins. Existing frozen ceremonies retain their pinned release. Runtime and AWS improvements are still being prepared and are not included in this draft yet.
