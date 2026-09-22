@@ -41,7 +41,7 @@ func TestPrepareAWSHostGrantUsesStaticProfileAndScopedPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(args)
-	if !strings.Contains(text, "static-issuer") || !strings.Contains(text, config.GrantRoleARN) || !strings.Contains(text, "arn:aws:s3:::inbox-fixture/") || strings.Contains(text, "arn:aws:s3:::public-fixture") {
+	if strings.Contains(text, "--profile") || strings.Contains(text, "static-issuer") || !strings.Contains(text, config.GrantRoleARN) || !strings.Contains(text, "arn:aws:s3:::inbox-fixture/") || strings.Contains(text, "arn:aws:s3:::public-fixture") {
 		t.Fatalf("host assume-role was not exact and scoped: %s", text)
 	}
 	raw, err := os.ReadFile(filepath.Join(runtime, "host-grant.json"))

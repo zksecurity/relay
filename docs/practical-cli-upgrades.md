@@ -1,6 +1,9 @@
 # Practical CLI upgrades (reviewed implementation plan)
 
-Status: implementation draft; end-to-end validation pending. This document does not approve any transition or change a ceremony.
+Historical design notes for the implementation released in v0.4.0. Operators
+should follow the [coordinator upgrade guide](coordinator-upgrade.md).
+The validation scenarios below describe the design, not a certification of every
+release pair.
 
 ## Operator workflow
 
