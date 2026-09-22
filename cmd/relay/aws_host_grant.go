@@ -67,7 +67,12 @@ func prepareAWSHostGrant(ctx context.Context, b awsLoginBinding, dir string) err
 	hostConfig := config
 	hostConfig.IssuerProfile = b.Profile
 	credentials, expires, err := issueAWSWithRunner(hostConfig, request.IdentityID, request.Prefix, time.Duration(request.TTLSeconds)*time.Second, func(args ...string) ([]byte, error) {
-		return awsLoginCommand(ctx, b, &static, args...)
+		// The issuer profile has already been captured and authenticated.
+		// Captured-credential commands deliberately cannot read profile files.
+		if len(args) < 2 || args[0] != "--profile" || args[1] != b.Profile {
+			return nil, errors.New("unexpected issuer profile for host grant")
+		}
+		return awsLoginCommand(ctx, b, &static, args[2:]...)
 	})
 	if err != nil {
 		return fmt.Errorf("issue exact scoped AWS grant from host IAM user: %w", err)
