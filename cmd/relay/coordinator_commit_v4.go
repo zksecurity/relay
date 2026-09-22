@@ -69,7 +69,12 @@ func runCoordinatorCommitV4(args []string) error {
 	checkpointRef := state.ContentRef{Name: checkpointName, SHA256: checkpointProjection.Digest.SHA256, Size: checkpointProjection.Digest.Size}
 	signatureRef := state.ContentRef{Name: signatureName, SHA256: signatureProjection.Digest.SHA256, Size: signatureProjection.Digest.Size}
 	inspector := transcript.Inspector{Executable: ceremonyBinary, CeremonyPath: ceremony, CeremonySignaturePath: ceremonySignature, CoordinatorPublicKeyPath: coordinatorKey, TranscriptRoot: root}
-	child, err := storagefirst.AuthenticateRootChildV4(inspector, checkpointRef, signatureRef, root, checkpoint, signature)
+	var child storagefirst.AuthenticatedRootChild
+	err = runWithProgress("authenticating signed checkpoint before publication", func() error {
+		var authenticateErr error
+		child, authenticateErr = storagefirst.AuthenticateRootChildV4(inspector, checkpointRef, signatureRef, root, checkpoint, signature)
+		return authenticateErr
+	})
 	if err != nil {
 		return err
 	}
@@ -84,8 +89,16 @@ func runCoordinatorCommitV4(args []string) error {
 	// checkpoint is confirmed by a metadata request instead of re-downloading
 	// each earlier artifact on every commit.
 	memo := storagefirst.LoadVerifiedObjects(filepath.Join(filepath.Dir(root), "verified-objects.json"))
-	if err := storagefirst.PublishArtifactsContext(ctx, objects, child.PublicationArtifacts(), root, filepath.Dir(root), memo, storagefirst.DefaultPublishLimits()); err != nil {
-		return err
+	publishErr := storagefirst.PublishArtifactsContext(ctx, objects, child.PublicationArtifacts(), root, filepath.Dir(root), memo, storagefirst.DefaultPublishLimits())
+	// PublishArtifactsContext drains every admitted worker before returning, so
+	// persist any successful immutable uploads even when another artifact
+	// failed. A retry can then authenticate those exact provider versions by
+	// metadata instead of retransmitting their complete bodies.
+	if saveErr := memo.Save(); publishErr != nil || saveErr != nil {
+		if saveErr != nil {
+			saveErr = fmt.Errorf("record verified objects after artifact publication: %w", saveErr)
+		}
+		return errors.Join(publishErr, saveErr)
 	}
 	if err := storagefirst.PublishImmutableContext(ctx, objects, checkpointRef, checkpoint, filepath.Dir(root), memo); err != nil {
 		return fmt.Errorf("publish immutable checkpoint: %w", err)

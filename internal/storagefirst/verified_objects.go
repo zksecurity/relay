@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/zksecurity/relay/internal/state"
@@ -134,9 +135,41 @@ func (v *VerifiedObjects) confirmExistingContext(ctx context.Context, objects Pu
 	return ctx.Err()
 }
 
+// matchesCurrentContext reports whether authoritative current provider
+// metadata is the exact object version this workspace previously downloaded or
+// created and digest-verified. It deliberately avoids a metadata request when
+// the memo has no pinned entry: callers must then keep the conditional-create
+// and full verification path. Operational metadata failures also fall back to
+// that path, while cancellation stops the operation immediately.
+//
+// PublishingStore implementations must return strongly consistent current
+// metadata from HeadVersion. The equality check inherits the provider's object
+// identity guarantees; it never treats existence or size alone as proof.
+func (v *VerifiedObjects) matchesCurrentContext(ctx context.Context, objects PublishingStore, key string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	remembered, ok := v.Verified(key)
+	if !ok || !pinnedVersion(remembered) {
+		return false, nil
+	}
+	current, err := objects.HeadVersion(key)
+	if cancelErr := ctx.Err(); cancelErr != nil {
+		return false, cancelErr
+	}
+	if err != nil || !pinnedVersion(current) {
+		return false, nil
+	}
+	return sameVersion(remembered, current), nil
+}
+
 // pinnedVersion reports whether a version identifies exact bytes strongly
 // enough to skip a re-download: an ETag or a version id, never size alone.
 func pinnedVersion(version store.ObjectVersion) bool {
+	if version.Size < 0 || len(version.ETag) > 1024 || len(version.VersionID) > 1024 ||
+		strings.ContainsAny(version.ETag, "\x00\r\n") || strings.ContainsAny(version.VersionID, "\x00\r\n") {
+		return false
+	}
 	return version.ETag != "" || version.VersionID != ""
 }
 
