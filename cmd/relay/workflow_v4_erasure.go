@@ -112,7 +112,7 @@ func (j *workflowV4Journal) runPreparedErasure(id string, inspector transcript.I
 	if !validDockerLifecycleSchema(receipt.Schema) || receipt.Image != contributor.Image || receipt.Platform != contributor.Platform || !receipt.RemovalVerified || receipt.ExitCode != 0 || !validContainerID(receipt.ContainerID) || !verifiedDaemonFacts(receipt.Daemon) || !verifiedLifecycleFacts(receipt.Schema, receipt.Security) || !verifiedHostSwapStatus(runtime.GOOS, receipt.HostSwapStatus) || receipt.ParticipantConfirmation != "CLEANUP PRECAUTIONS CONFIRMED" || confirmErr != nil || confirmed.IsZero() || receipt.ErasureDestroyedAt != flags["--destroyed-at"] {
 		return errors.New("cleanup requires the original verified lifecycle and recorded confirmation/time")
 	}
-	d := &dockerDriver{image: p.Runtime.Image, platform: p.Runtime.Platform, definition: paths["--ceremony"], definitionSig: paths["--ceremony-signature"], coordinatorKey: paths["--coordinator-public-key-file"], signingKey: paths["--participant-signing-key"], client: client, daemon: receipt.Daemon}
+	d := &dockerDriver{runtimeLimits: p.Runtime.Resources, image: p.Runtime.Image, platform: p.Runtime.Platform, definition: paths["--ceremony"], definitionSig: paths["--ceremony-signature"], coordinatorKey: paths["--coordinator-public-key-file"], signingKey: paths["--participant-signing-key"], client: client, daemon: receipt.Daemon}
 	if err := validateLocalDockerEndpoint(receipt.Daemon.Endpoint); err != nil {
 		return err
 	}

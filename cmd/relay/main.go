@@ -46,6 +46,8 @@ func main() {
 		err = runDiagnostics(os.Args[2:])
 	case "verify-ceremony":
 		err = runVerifyCeremony(os.Args[2:])
+	case "resources":
+		err = runResourcePolicy(os.Args[2:])
 	case "role":
 		err = runDockerRole(os.Args[2:])
 	case "coordinator":
@@ -92,6 +94,7 @@ func main() {
 
 func usage() {
 	fmt.Fprint(os.Stderr, `usage:
+  relay resources [--docker-cli PATH]
   relay pack-ceremony --manifest FILE --root PUBLIC_DIR --out FRESH_ZIP
   relay verify-ceremony --archive FILE [--max-expanded-bytes N] [--mpc-ceremony PATH]
   relay ceremony setup NAME --role ROLE [saved launcher settings] -- TOOL ARGS...

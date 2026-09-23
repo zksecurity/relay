@@ -92,6 +92,7 @@ func TestSetupV2RealSignedRoundtrip(t *testing.T) {
 	if binary == "" {
 		t.Skip("requires pinned proof tool")
 	}
+	requirePinnedTesseraProof(t, binary)
 	var err error
 	artifacts := map[string][]byte{}
 	dir := t.TempDir()
@@ -148,6 +149,7 @@ func TestSetupV2RealSignedRoundtrip(t *testing.T) {
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("initialize website profile: %v %s", err, output)
 		}
+		out = authorLegacyTesseraDefinition(t, binary, out, filepath.Join(root, "keys", "coordinator.ed25519.private.hex"))
 		for kind, name := range map[string]string{"definition": "ceremony.json", "definition-signature": "ceremony.sig", "coordinator-key": "coordinator-public-key.hex"} {
 			artifacts[kind], err = os.ReadFile(filepath.Join(out, name))
 			if err != nil {

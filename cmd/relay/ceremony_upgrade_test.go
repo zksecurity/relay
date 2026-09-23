@@ -114,7 +114,7 @@ func TestUpgradeRuntimeDispatch(t *testing.T) {
 	t.Cleanup(func() { workflowV4ChildExecutor = previous })
 	var got []string
 	workflowV4ChildExecutor = func(args []string) error { got = append([]string(nil), args...); return nil }
-	p := guidedProfile{Role: "coordinator", Image: "original", UpgradeOnlineImage: "replacement", Work: "/work", Credentials: "/private/credentials"}
+	p := guidedProfile{Role: "coordinator", Image: "original", UpgradeOnlineImage: "replacement", Work: t.TempDir(), Credentials: "/private/credentials"}
 	if err := runWorkflowV4ProfileCommand(p, []string{"relay", "coordinator", "commit-v4"}, true); err != nil {
 		t.Fatal(err)
 	}

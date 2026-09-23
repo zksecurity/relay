@@ -29,17 +29,17 @@ produce an instruction to republish. Coordinator trust anchors are never fetched
 from the same inventory they authenticate.
 
 The finalization stage offers `finalize rehearsal-evidence` for the exact tiny
-circuit. It generates a real proof from public golden inputs; production uses its
-matching external proof process. The released final verifier remains authoritative.
+and K11 test circuits. It generates a real proof from public golden inputs;
+the ownership circuit uses its matching external proof process. The final
+verifier remains authoritative.
 
 ## Dependency release gate
 
-This branch requires the companion proof-tool custody/signing/tiny-proof changes.
-The currently pinned proof-tool release does not contain those commands. Do not
-merge/release this CLI branch until that proof-tool change has passed review and
-produced a protected-main release, then update `release/role-images.json` with its
-exact URLs and checksums. Run the real role-image command checks and the private
-Tessera integration status on the exact final CLI commit. Do not point live
-Tessera at a local build, synthetic manifest, moving release, or unreviewed pin.
+`release/role-images.json` pins proof-tool release
+`mpc-ci-57fecbf6eec76e30e0e4e487242293320d64349b` with exact URLs and
+checksums. Relay release qualification still requires real role-image command
+checks and the private Tessera integration status on the exact final CLI commit.
+Do not point live Tessera at a local build, synthetic manifest, moving release,
+or unreviewed pin.
 
 Saved workflows and frozen ceremonies are never silently migrated to this recipe.

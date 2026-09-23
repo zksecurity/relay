@@ -154,6 +154,7 @@ func verifyCeremonyArchive(archive string, maxBytes int64, run publicVerifyRunne
 			if result.ReleaseManifestSHA256 != releaseManifestSHA {
 				return errors.New("production approval refers to another release")
 			}
+			report.Checks[index].Detail = "GO verified for signed circuit " + definition.KeyVersion
 		}
 		report.Checks[index].Status = "passed"
 		return nil

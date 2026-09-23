@@ -160,8 +160,9 @@ flowchart LR
   B --> Q
 ```
 
-The tiny rehearsal uses Relay's built-in real proof-evidence generator.
-Production uses the circuit's reviewed public-evidence process. Auditors and
+The tiny and K11 test circuits use Relay's built-in real proof-evidence generator,
+including when selected for a production-mode ceremony. The ownership circuit
+uses its reviewed public-evidence process. Auditors and
 observers are expected to be independently operated, but software verifies
 their enrolled keys and signed records—not human or organizational independence.
 
@@ -182,8 +183,9 @@ flowchart LR
 
 The signed release must exist before a production decision can bind and verify
 it. Cryptographic signing alone is not authorization: a verified production GO
-decision authorizes distribution and use. A rehearsal authenticates that this
-decision is not applicable, but it is never a production approval.
+decision authorizes distribution and use of the exact signed circuit and
+release. GO for a test circuit does not authorize ownership-proof use. A
+rehearsal-mode run authenticates that this decision is not applicable.
 
 The upload station imports the final signer's public enrollment, never their
 private key. Upload or Tessera notification still does not prove coordinator

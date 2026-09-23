@@ -2,7 +2,12 @@ package main
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,13 +25,27 @@ func TestCoordinatorCurrentCircuitModes(t *testing.T) {
 		{"production", "ownership-destination-v3", true},
 		{"rehearsal", "ownership-destination-v3", true},
 		{"rehearsal", "rehearsal-tiny-v1", true},
-		{"production", "rehearsal-tiny-v1", false},
+		{"production", "rehearsal-tiny-v1", true},
+		{"production", "rehearsal-k11-v1", true},
+		{"rehearsal", "rehearsal-k11-v1", true},
 		{"production", "ownership-destination-v2", false},
 		{"rehearsal", "ownership-destination-v2", false},
 	} {
 		t.Run(tc.mode+"/"+tc.circuit, func(t *testing.T) {
 			w := setupFixture(t)
 			w.d.Mode, w.d.Circuit = tc.mode, tc.circuit
+			if tc.mode == "production" {
+				pub, _, err := ed25519.GenerateKey(rand.Reader)
+				if err != nil {
+					t.Fatal(err)
+				}
+				hash := sha256.Sum256(pub)
+				second := setupIdentity{"participant2", "participant2", "participant2-key", hex.EncodeToString(pub), fmt.Sprintf("sha256:%x", hash)}
+				w.d.Identities.Roster = append(w.d.Identities.Roster, setupParticipant{second})
+				w.d.Policy.Phase1.Participants = append(w.d.Policy.Phase1.Participants, "participant2")
+				w.d.Policy.Phase2.Participants = append(w.d.Policy.Phase2.Participants, "participant2")
+				w.d.Policy.Phase1.Minimum, w.d.Policy.Phase2.Minimum = 2, 2
+			}
 			if err := w.d.validate(); (err == nil) != tc.allowed {
 				t.Fatalf("validation: %v", err)
 			}

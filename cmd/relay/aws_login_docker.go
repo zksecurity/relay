@@ -40,13 +40,39 @@ func runAWSLoginDockerContext(ctx context.Context, o dockerRoleOptions, command 
 		err := cmd.Run()
 		return strings.TrimSpace(out.data.String()), err
 	}
+	limits, err := resolvedDockerRuntimeLimits(o.runtimeLimits)
+	if err != nil {
+		return err
+	}
+	admissionClient := osDockerCommandClient{binary: binary, host: endpoint}
+	// Short probe/validation runs keep admission held for their full lifetime.
+	// Cancellation releases the client lock, while any surviving bounded
+	// container remains visible to subsequent capacity accounting.
+	boundedRun := func(runCtx context.Context, args ...string) (output string, result error) {
+		facts, err := inspectDockerDaemon(admissionClient, "explicit-host", endpoint)
+		if err != nil {
+			return "", err
+		}
+		lock, err := acquireDockerCapacity(admissionClient, facts, limits)
+		if err != nil {
+			return "", err
+		}
+		defer func() { result = errors.Join(result, lock.release()) }()
+		return docker(runCtx, args...)
+	}
 	// Probe without any role mounts or credentials. Old frozen images cannot run
 	// the provider; fail before creating the actual action container.
 	probeCtx, probeCancel := context.WithTimeout(ctx, 30*time.Second)
-	probe, err := docker(probeCtx, "run", "--rm", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--platform", o.platform, "--entrypoint=/usr/local/bin/relay", o.image, "aws-login-credentials", "--probe")
+	probeArgs := []string{"run", "--rm", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--platform", o.platform, "--entrypoint=/usr/local/bin/relay", "--label=org.zksecurity.relay.role=credential-probe"}
+	probeArgs = append(probeArgs, limits.dockerArgs()...)
+	probeArgs = append(probeArgs, o.image, "aws-login-credentials", "--probe")
+	probe, err := boundedRun(probeCtx, probeArgs...)
 	probeCancel()
 	compatible := compatibleAWSLoginProvider(b.Schema, probe)
-	if err != nil || !compatible {
+	if err != nil {
+		return fmt.Errorf("check renewable credential provider: %w", err)
+	}
+	if !compatible {
 		return errors.New("this role image does not support renewable AWS logins; use a compatible release for a new ceremony, or retain the frozen release and use its existing credential workflow")
 	}
 	hostGrantMode := len(command) >= 3 && command[0] == "relay" && command[1] == "coordinator" && (command[2] == "grant" || command[2] == "evidence-grant") && b.Schema == awsLoginSchemaV2 && b.StaticIssuer
@@ -88,7 +114,7 @@ func runAWSLoginDockerContext(ctx context.Context, o dockerRoleOptions, command 
 			return validationErr
 		}
 		validationCtx, validationCancel := context.WithTimeout(ctx, 5*time.Minute)
-		_, validationErr = docker(validationCtx, validationArgs...)
+		_, validationErr = boundedRun(validationCtx, validationArgs...)
 		validationCancel()
 		if validationErr != nil {
 			return errors.New("trusted role image could not authenticate the AWS grant request")
@@ -116,6 +142,15 @@ func runAWSLoginDockerContext(ctx context.Context, o dockerRoleOptions, command 
 			createArgs = append(createArgs, arg)
 		}
 	}
+	facts, err := inspectDockerDaemon(admissionClient, "explicit-host", endpoint)
+	if err != nil {
+		return err
+	}
+	admission, err := acquireDockerCapacity(admissionClient, facts, limits)
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, admission.release()) }()
 	created := false
 	var containerID string
 	defer func() {
@@ -158,6 +193,12 @@ func runAWSLoginDockerContext(ctx context.Context, o dockerRoleOptions, command 
 	}
 	created = true
 	containerID = id
+	// The actual created action now carries the capacity claim. Keep its
+	// existing owner-label cleanup and credential renewal lifecycle unchanged.
+	if err := admission.release(); err != nil {
+		return err
+	}
+
 	runtimeCtx, runtimeCancel := context.WithCancel(ctx)
 	defer runtimeCancel()
 	var renewal chan error
@@ -165,6 +206,7 @@ func runAWSLoginDockerContext(ctx context.Context, o dockerRoleOptions, command 
 		renewal = make(chan error, 1)
 		go func() { renewal <- maintainAWSLogin(runtimeCtx, b, path, credentials, refreshAWSLogin) }()
 	}
+	limits.announceStart()
 	cmd := exec.CommandContext(runtimeCtx, binary, "--host", endpoint, "start", "--attach", "--interactive", id)
 	cmd.Env = dockerEnvironmentWithoutTargetOverrides()
 	cmd.Stdin = os.Stdin

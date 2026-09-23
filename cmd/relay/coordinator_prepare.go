@@ -154,8 +154,8 @@ func (d coordinatorDraft) validate() error {
 	if d.Mode != "rehearsal" && d.Mode != "production" {
 		return errors.New("choose rehearsal or production explicitly")
 	}
-	if d.Circuit != "ownership-destination-v3" && !(d.Mode == "rehearsal" && d.Circuit == "rehearsal-tiny-v1") {
-		return errors.New("this release supports ownership-destination-v3, or rehearsal-tiny-v1 in rehearsal mode only; preserve older drafts and use their original release for interrupted or initialized ceremonies")
+	if !supportedCeremonyCircuit(d.Circuit) {
+		return errors.New("this release supports ownership-destination-v3, rehearsal-tiny-v1 and rehearsal-k11-v1; preserve older drafts and use their original release for interrupted or initialized ceremonies")
 	}
 	seenID, seenKey, seenPub := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	identities := []setupIdentity{d.Identities.Coordinator, d.Identities.ReleaseSigner}
@@ -188,6 +188,9 @@ func (d coordinatorDraft) validate() error {
 	for _, phase := range []setupPhase{d.Policy.Phase1, d.Policy.Phase2} {
 		if phase.Minimum < 1 || phase.Minimum > len(phase.Participants) || phase.Minimum > 255 {
 			return errors.New("phase minimum must be between 1 and its scheduled participant count (at most 255)")
+		}
+		if d.Mode == "production" && (len(phase.Participants) < 2 || phase.Minimum != len(phase.Participants)) {
+			return errors.New("production mode requires at least two participants and every scheduled contribution in each phase")
 		}
 		seen := map[string]bool{}
 		for _, id := range phase.Participants {
@@ -519,22 +522,25 @@ func (w *coordinatorWizard) summary() {
 }
 
 func (w *coordinatorWizard) basics() error {
-	mode, err := w.choose("Ceremony mode", w.d.Mode, []setupChoice{{"rehearsal", "Rehearsal — test only"}, {"production", "Production — real ceremony"}})
+	mode, err := w.choose("Ceremony mode", w.d.Mode, []setupChoice{{"rehearsal", "Rehearsal — test policy"}, {"production", "Production mode — strict ceremony controls"}})
 	if err != nil {
 		return err
 	}
-	circuit, err := w.choose("Circuit", w.d.Circuit, []setupChoice{{"ownership-destination-v3", "Ownership destination v3 — production circuit"}, {"rehearsal-tiny-v1", "Tiny test circuit — rehearsal only"}})
+	circuit, err := w.choose("Circuit", w.d.Circuit, []setupChoice{{"ownership-destination-v3", "Ownership destination v3 — production proof circuit (K21)"}, {"rehearsal-tiny-v1", "Tiny test circuit (K3) — test statement"}, {"rehearsal-k11-v1", "K11 test circuit — test statement"}})
 	if err != nil {
 		return err
 	}
 	if mode != "rehearsal" && mode != "production" {
 		return errors.New("invalid mode")
 	}
-	if circuit != "ownership-destination-v3" && !(mode == "rehearsal" && circuit == "rehearsal-tiny-v1") {
-		return errors.New("tiny circuit is rehearsal-only")
+	if !supportedCeremonyCircuit(circuit) {
+		return errors.New("unsupported ceremony circuit")
 	}
 	if w.localAction != nil && (mode != "rehearsal" || circuit != "rehearsal-tiny-v1") {
 		return errors.New("this local test build only permits rehearsal / rehearsal-tiny-v1")
+	}
+	if mode == "production" && ceremonyTestCircuit(circuit) {
+		fmt.Fprintln(w.output, "This uses production-mode participation and witnessing rules with a test statement. GO may approve this exact circuit's ceremony, but its keys cannot produce an ownership proof.")
 	}
 	w.d.Mode, w.d.Circuit = mode, circuit
 	return w.save()

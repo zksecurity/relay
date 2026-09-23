@@ -94,7 +94,7 @@ func runWorkflowV4FinalReleaseLifecycle(ui *coordinatorWizard, snapshot storagef
 		if err != nil {
 			return err
 		}
-		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "record-final-release", outputDir, command); err != nil {
 			return err
 		}
 	} else if err != nil {

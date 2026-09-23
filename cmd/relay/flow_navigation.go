@@ -187,7 +187,7 @@ func (f *roleFlow) menu() error {
 			f.ui.message(toneWarning, "Waiting: %v\n", err)
 		}
 		if hidden {
-			fmt.Fprintln(f.ui.output, "Production decision actions hidden: not applicable to this authenticated rehearsal.")
+			fmt.Fprintln(f.ui.output, "Production decision actions hidden: authenticated rehearsal mode.")
 		}
 		selected := f.firstUnfinishedRequiredTask(stage, hidden)
 		label := "Review requirements before opening the next area"

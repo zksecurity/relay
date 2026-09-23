@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -122,5 +124,42 @@ func TestWorkflowV4ReleaseSignerRecognizesProofToolPackageLayout(t *testing.T) {
 	}
 	if !progress.PackageReady {
 		t.Fatal("complete proof-tool release package was not recognized")
+	}
+}
+
+func TestReleaseReviewRetryKeepsTimestampAndAllocation(t *testing.T) {
+	p := guidedProfile{Work: t.TempDir(), Trust: t.TempDir(), Keys: t.TempDir(), Image: "approved-image", Platform: "linux/amd64", Role: "release-signer", Resources: &dockerRuntimeLimits{CPUs: 6, MemoryGiB: 6, GoMemoryGiB: 4, GoGCPercent: 25}}
+	signer := p
+	signer.Role = "decision-signer"
+	head := pairV4Test("review-head")
+	if _, err := ensureWorkflowV4ResourceOrigin(p.Work, head, true); err != nil {
+		t.Fatal(err)
+	}
+	report := filepath.Join(p.Work, "review.json")
+	first := time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC)
+	previous := workflowV4ChildExecutor
+	defer func() { workflowV4ChildExecutor = previous }()
+	interrupted := errors.New("interrupted before output")
+	var commands [][]string
+	workflowV4ChildExecutor = func(args []string) error {
+		commands = append(commands, append([]string(nil), args...))
+		return interrupted
+	}
+	for _, now := range []time.Time{first, first.Add(time.Hour)} {
+		stamp, err := retainedWorkflowV4LifecycleTime(p, head, "release-review", report, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd, err := workflowV4ReleaseReviewCommand(p, signer, head, report, stamp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := runWorkflowV4LifecycleCommand(p, head, "release-review", report, cmd); !errors.Is(err, interrupted) {
+			t.Fatal(err)
+		}
+		p.Resources.CPUs = 4
+	}
+	if len(commands) != 2 || !reflect.DeepEqual(commands[0], commands[1]) || commandValue(commands[1], "cpus") != "6" || commandValue(commands[1], "released-at") != first.Format(time.RFC3339Nano) {
+		t.Fatal("release review retry changed invocation")
 	}
 }

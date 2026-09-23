@@ -303,7 +303,7 @@ func runLiveFullProviderJourneyWithUpgrade(t *testing.T, awsLive bool, upgradeHo
 			// Transfer public enrollment only; the signer never gets an upload grant.
 			source := filepath.Join(releaseSigner.profile.Work, "my-enrollment")
 			ui := workflowV4LiveUI("I\n" + source + "\nVERIFY AND RECORD ENROLLMENT\nQ\n")
-			if err := runWorkflowV4GuideLoop(coordinator.profile, coordinator.signer, coordinator.identity, protocol, coordinator.journal, config, coordinator.inspector, workflowV4LiveDockerCLI(t), nil, ui, func() (storagefirst.SnapshotV4, error) {
+			if err := runWorkflowV4GuideLoop(t.TempDir(), coordinator.profile, coordinator.signer, coordinator.identity, protocol, coordinator.journal, config, coordinator.inspector, workflowV4LiveDockerCLI(t), nil, ui, func() (storagefirst.SnapshotV4, error) {
 				return coordinator.journal.syncV4(objects, coordinator.inspector, workflowV4LiveDockerCLI(t))
 			}); err != nil {
 				t.Fatal(err)
@@ -379,7 +379,7 @@ func completeWorkflowV4LiveRelease(t *testing.T, objects store.Client, protocol 
 	// Exercise the coordinator's public export and the signer's offline import.
 	exported := filepath.Join(coordinator.profile.Work, fmt.Sprintf("offline-review-snapshot-%d", time.Now().UnixNano()))
 	ui := workflowV4LiveUI("E\n" + exported + "\nQ\n")
-	if err := runWorkflowV4GuideLoop(coordinator.profile, coordinator.signer, coordinator.identity, protocol, coordinator.journal, config, coordinator.inspector, workflowV4LiveDockerCLI(t), nil, ui, func() (storagefirst.SnapshotV4, error) {
+	if err := runWorkflowV4GuideLoop(t.TempDir(), coordinator.profile, coordinator.signer, coordinator.identity, protocol, coordinator.journal, config, coordinator.inspector, workflowV4LiveDockerCLI(t), nil, ui, func() (storagefirst.SnapshotV4, error) {
 		return coordinator.journal.syncV4(objects, coordinator.inspector, workflowV4LiveDockerCLI(t))
 	}); err != nil {
 		t.Fatal(err)
@@ -389,7 +389,7 @@ func completeWorkflowV4LiveRelease(t *testing.T, objects store.Client, protocol 
 		t.Fatal(err)
 	}
 	ui = workflowV4LiveUI("1\nSIGN RELEASE PACKAGE\nQ\n")
-	if err := runWorkflowV4GuideLoop(releaseSigner.profile, releaseSigner.signer, releaseSigner.identity, protocol, releaseSigner.journal, access.StorageConfig{}, releaseSigner.inspector, workflowV4LiveDockerCLI(t), nil, ui, func() (storagefirst.SnapshotV4, error) {
+	if err := runWorkflowV4GuideLoop(t.TempDir(), releaseSigner.profile, releaseSigner.signer, releaseSigner.identity, protocol, releaseSigner.journal, access.StorageConfig{}, releaseSigner.inspector, workflowV4LiveDockerCLI(t), nil, ui, func() (storagefirst.SnapshotV4, error) {
 		return releaseSigner.journal.syncV4(offlineObjects, releaseSigner.inspector, workflowV4LiveDockerCLI(t))
 	}); err != nil {
 		t.Fatal(err)
@@ -403,7 +403,7 @@ func completeWorkflowV4LiveRelease(t *testing.T, objects store.Client, protocol 
 		t.Fatal(err)
 	}
 	ui = workflowV4LiveUI("U\n" + returned + "\n" + grantPath + "\nUPLOAD RELEASE PACKAGE\nQ\n")
-	if err := runWorkflowV4GuideLoop(coordinator.profile, coordinator.signer, coordinator.identity, protocol, coordinator.journal, config, coordinator.inspector, workflowV4LiveDockerCLI(t), nil, ui, func() (storagefirst.SnapshotV4, error) {
+	if err := runWorkflowV4GuideLoop(t.TempDir(), coordinator.profile, coordinator.signer, coordinator.identity, protocol, coordinator.journal, config, coordinator.inspector, workflowV4LiveDockerCLI(t), nil, ui, func() (storagefirst.SnapshotV4, error) {
 		return coordinator.journal.syncV4(objects, coordinator.inspector, workflowV4LiveDockerCLI(t))
 	}); err != nil {
 		t.Fatal(err)
@@ -890,7 +890,7 @@ func runWorkflowV4LiveTurn(t *testing.T, objects store.Client, protocol transcri
 	// Its saved Phase 1 profile must work for both phases without test mutation.
 	dockerCLI := workflowV4LiveDockerCLI(t)
 	ui := workflowV4LiveUI("1\nCONTRIBUTE\n1\nCLEANUP PRECAUTIONS CONFIRMED\n1\n" + grantPath + "\nUPLOAD CANDIDATE\nQ\n")
-	if err := runWorkflowV4GuideLoop(participant.profile, participant.signer, participant.identity, protocol, participant.journal, config, participant.inspector, dockerCLI, participant.participant, ui, func() (storagefirst.SnapshotV4, error) {
+	if err := runWorkflowV4GuideLoop(t.TempDir(), participant.profile, participant.signer, participant.identity, protocol, participant.journal, config, participant.inspector, dockerCLI, participant.participant, ui, func() (storagefirst.SnapshotV4, error) {
 		return participant.journal.syncV4(objects, participant.inspector, dockerCLI)
 	}); err != nil {
 		t.Fatal(err)

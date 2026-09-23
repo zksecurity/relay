@@ -84,3 +84,75 @@ func TestDirectProofInspectionUsesRuntimeLimitsExactlyOnce(t *testing.T) {
 		t.Fatalf("image/command boundary changed: %v", args)
 	}
 }
+
+func TestSavedDockerRuntimeLimitsFailClosed(t *testing.T) {
+	legacy, err := resolvedDockerRuntimeLimits(nil)
+	if err != nil || legacy != proofDockerRuntimeLimits {
+		t.Fatalf("legacy allocation: %v %v", legacy, err)
+	}
+	selected := dockerRuntimeLimits{CPUs: 6, MemoryGiB: 6, GoMemoryGiB: 4, GoGCPercent: 25}
+	got, err := resolvedDockerRuntimeLimits(&selected)
+	if err != nil || got != selected {
+		t.Fatalf("saved allocation: %v %v", got, err)
+	}
+	for _, change := range []func(*dockerRuntimeLimits){
+		func(l *dockerRuntimeLimits) { l.CPUs = 0 },
+		func(l *dockerRuntimeLimits) { l.CPUs = 1025 },
+		func(l *dockerRuntimeLimits) { l.MemoryGiB = 2 },
+		func(l *dockerRuntimeLimits) { l.MemoryGiB = 65537 },
+		func(l *dockerRuntimeLimits) { l.GoMemoryGiB = 5 },
+		func(l *dockerRuntimeLimits) { l.GoGCPercent = 0 },
+	} {
+		bad := selected
+		change(&bad)
+		if _, err := resolvedDockerRuntimeLimits(&bad); err == nil {
+			t.Fatalf("invalid saved allocation accepted: %+v", bad)
+		}
+	}
+}
+
+func TestDockerRoleUsesSelectedAllocation(t *testing.T) {
+	o := roleTestOptions(t)
+	o.runtimeLimits = &dockerRuntimeLimits{CPUs: 6, MemoryGiB: 6, GoMemoryGiB: 4, GoGCPercent: 25}
+	args, err := dockerRoleArgs(o, []string{"relay", "help"}, 501, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--cpus 6") || !strings.Contains(joined, "GOMAXPROCS=6") || strings.Contains(joined, "GOMAXPROCS=2") {
+		t.Fatalf("wrong selected allocation: %s", joined)
+	}
+	o.runtimeLimits.GoMemoryGiB = 6
+	if _, err := dockerRoleArgs(o, []string{"relay", "help"}, 501, 20); err == nil {
+		t.Fatal("accepted memory target without headroom")
+	}
+}
+
+func TestDockerRuntimeReceiptMatchesSavedAllocation(t *testing.T) {
+	limits := dockerRuntimeLimits{CPUs: 6, MemoryGiB: 6, GoMemoryGiB: 4, GoGCPercent: 25}
+	facts := dockerSecurityFacts{RuntimeLimitsVerified: true, CPULimitNano: 6_000_000_000,
+		MemoryLimitBytes: 6 << 30, MemorySwapLimitBytes: 6 << 30, GoMaxProcs: "6", GoMemoryLimit: "4GiB", GoGCPercent: "25"}
+	if !limits.matchesSecurityFacts(facts) {
+		t.Fatal("saved allocation rejected")
+	}
+	for _, change := range []func(*dockerSecurityFacts){
+		func(f *dockerSecurityFacts) { f.RuntimeLimitsVerified = false },
+		func(f *dockerSecurityFacts) { f.CPULimitNano = 2_000_000_000 },
+		func(f *dockerSecurityFacts) { f.MemoryLimitBytes = 8 << 30 },
+		func(f *dockerSecurityFacts) { f.MemorySwapLimitBytes = 8 << 30 },
+		func(f *dockerSecurityFacts) { f.GoMaxProcs = "2" },
+		func(f *dockerSecurityFacts) { f.GoMemoryLimit = "5GiB" },
+		func(f *dockerSecurityFacts) { f.GoGCPercent = "100" },
+	} {
+		altered := facts
+		change(&altered)
+		if limits.matchesSecurityFacts(altered) {
+			t.Fatalf("changed resource evidence accepted: %+v", altered)
+		}
+	}
+	later := limits
+	later.CPUs = 4
+	if later.matchesSecurityFacts(facts) {
+		t.Fatal("later preferences accepted for earlier operation")
+	}
+}

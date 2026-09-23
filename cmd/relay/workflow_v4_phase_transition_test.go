@@ -36,18 +36,29 @@ func (m guidePhaseObjects) GetVersionedAtMost(key, local string, maximum int64) 
 
 type guidePhaseVerifier struct {
 	discovery  transcript.CheckpointDiscoveryV4
+	history    map[string]transcript.CheckpointDiscoveryV4
 	inspection transcript.CheckpointInspectionV4
 	metadata   transcript.EnrollmentMetadataInspectionV4
 }
 
-func (v guidePhaseVerifier) DiscoverCheckpointV4(_, _, _ string) (transcript.CheckpointDiscoveryV4, error) {
+func (v guidePhaseVerifier) DiscoverCheckpointV4(_, record, _ string) (transcript.CheckpointDiscoveryV4, error) {
+	if v.history != nil {
+		raw, err := os.ReadFile(record)
+		if err != nil {
+			return transcript.CheckpointDiscoveryV4{}, err
+		}
+		if discovery, ok := v.history[string(raw)]; ok {
+			return discovery, nil
+		}
+		return transcript.CheckpointDiscoveryV4{}, errors.New("unknown fixture checkpoint")
+	}
 	return v.discovery, nil
 }
 func (v guidePhaseVerifier) CheckpointGuidanceV4(_, _, _ string) (transcript.CheckpointInspectionV4, transcript.EnrollmentMetadataInspectionV4, error) {
 	return v.inspection, v.metadata, nil
 }
 
-func guidePhaseSnapshot(t *testing.T, protocol transcript.DefinitionProtocol, b workflowV4Binding, phase string) storagefirst.SnapshotV4 {
+func guidePhaseSnapshot(t *testing.T, protocol transcript.DefinitionProtocol, b workflowV4Binding, phase string, deliveryStatus ...string) storagefirst.SnapshotV4 {
 	t.Helper()
 	objects := guidePhaseObjects{}
 	ref := func(name, contents string) transcript.ArtifactRef {
@@ -75,7 +86,16 @@ func guidePhaseSnapshot(t *testing.T, protocol transcript.DefinitionProtocol, b 
 		current = p2
 	}
 	scope := transcript.ContributionScopeV4{CeremonyID: b.CeremonyID, Phase: phase, Index: 1, ParticipantID: b.IdentityID, ParentHeadID: current.HeadRecordID}
-	c.Deliveries = []transcript.DeliverySlotV4{{Kind: "candidate", Scope: scope, AttemptID: strings.Repeat("a", 32), Status: "allocated"}}
+	status := "allocated"
+	if len(deliveryStatus) > 0 {
+		status = deliveryStatus[0]
+	}
+	if status == "retired" {
+		c.Sequence = 2 // Allocation at sequence 1 was retired in this checkpoint.
+		previous := pair("checkpoints/phase1-allocation")
+		c.PreviousCheckpoint = &previous
+	}
+	c.Deliveries = []transcript.DeliverySlotV4{{Kind: "candidate", Scope: scope, AttemptID: strings.Repeat("a", 32), Status: status}}
 	enrollment := pair("enrollments/participant")
 	v := guidePhaseVerifier{
 		discovery:  transcript.CheckpointDiscoveryV4{Schema: "proof-tool-mpc-checkpoint-discovery-v4", Depth: "signed-checkpoint-discovery", CheckpointRefs: head},
@@ -83,8 +103,28 @@ func guidePhaseSnapshot(t *testing.T, protocol transcript.DefinitionProtocol, b 
 		metadata:   transcript.EnrollmentMetadataInspectionV4{Schema: "proof-tool-mpc-enrollment-metadata-v4", Depth: "committed-enrollment-signatures", EnrollmentSignaturesVerified: true, Metadata: transcript.EnrollmentMetadataV4{CeremonyID: b.CeremonyID, Checkpoint: head}},
 	}
 	v.discovery.Discovery.CeremonyID = b.CeremonyID
+	v.discovery.Discovery.Sequence = c.Sequence
 	v.discovery.Discovery.VerificationDependencies = []transcript.ArtifactRef{}
 	v.discovery.Discovery.Enrollment = &enrollment
+	if status == "retired" {
+		allocation := *c.PreviousCheckpoint
+		initial := pair("checkpoints/phase1-initial")
+		v.discovery.Discovery.PreviousCheckpoint = &allocation
+		v.history = map[string]transcript.CheckpointDiscoveryV4{string(objects[store.Key(head.Record.Digest.SHA256)]): v.discovery}
+		for _, prior := range []struct {
+			refs     transcript.SignedArtifactRefs
+			sequence uint64
+			previous *transcript.SignedArtifactRefs
+		}{{allocation, 1, &initial}, {initial, 0, nil}} {
+			discovery := v.discovery
+			discovery.CheckpointRefs = prior.refs
+			discovery.Discovery.Sequence = prior.sequence
+			discovery.Discovery.PreviousCheckpoint = prior.previous
+			discovery.Discovery.Enrollment = nil
+			v.history[string(objects[store.Key(prior.refs.Record.Digest.SHA256)])] = discovery
+		}
+		v.inspection.Commitments.Turns = []transcript.TurnCommitmentV4{{Scope: scope, Allocations: []transcript.CandidateAllocationV4{{CheckpointSequence: 1, Checkpoint: allocation, AttemptID: c.Deliveries[0].AttemptID, AllocatedAt: "2026-09-16T00:00:00Z"}}}}
+	}
 	for _, e := range protocol.Definition.Journey.RequiredEnrollments {
 		if e.Identity.ID == b.IdentityID {
 			v.metadata.Metadata.Enrollments = []transcript.CommittedEnrollmentMetadataV4{{Refs: enrollment, Enrollment: transcript.EnrollmentInspection{Role: e.Role, RoleIndex: e.RoleIndex, Identity: e.Identity}}}
@@ -155,7 +195,7 @@ func TestWorkflowV4GuidePhaseTransition(t *testing.T) {
 		want        []string
 	}{
 		{"refresh", "R\nQ\n", []storagefirst.SnapshotV4{phase1, phase2}, false, []string{"phase1 turn 1", "phase2 turn 1", "Verify the signed allocation and contribute"}},
-		{"restart", "1\nCANCEL\nQ\n", []storagefirst.SnapshotV4{phase2, phase2}, false, []string{"phase2 turn 1", "Proof-tool will verify this exact allocation"}},
+		{"restart", "1\nCANCEL\nQ\n", []storagefirst.SnapshotV4{phase2, phase2}, false, []string{"phase2 turn 1", "Authenticate this assigned input"}},
 		{"failed-refresh", "R\n1\nQ\n", []storagefirst.SnapshotV4{phase1, phase2, phase2}, true, []string{"Storage synchronization failed", "No role action is available"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -171,7 +211,7 @@ func TestWorkflowV4GuidePhaseTransition(t *testing.T) {
 			var out bytes.Buffer
 			ui := coordinatorWizard{input: bufio.NewReader(strings.NewReader(tc.input)), output: &out}
 			calls := 0
-			err = runWorkflowV4GuideLoop(p, guidedProfile{}, setupIdentity{ID: b.IdentityID}, protocol, j, access.StorageConfig{}, transcript.Inspector{}, "/unused/docker", &loaded, &ui, func() (storagefirst.SnapshotV4, error) {
+			err = runWorkflowV4GuideLoop(t.TempDir(), p, guidedProfile{}, setupIdentity{ID: b.IdentityID}, protocol, j, access.StorageConfig{}, transcript.Inspector{}, "/unused/docker", &loaded, &ui, func() (storagefirst.SnapshotV4, error) {
 				if calls >= len(tc.snapshots) {
 					t.Fatal("unexpected refresh")
 				}
@@ -224,7 +264,7 @@ func TestWorkflowV4GuidePhaseOnlyRosters(t *testing.T) {
 				}
 				var out bytes.Buffer
 				ui := coordinatorWizard{input: bufio.NewReader(strings.NewReader("Q\n")), output: &out}
-				err = runWorkflowV4GuideLoop(p, guidedProfile{}, setupIdentity{ID: b.IdentityID}, protocol, j, access.StorageConfig{}, transcript.Inspector{}, "/unused/docker", &saved, &ui, func() (storagefirst.SnapshotV4, error) { return snapshot, nil })
+				err = runWorkflowV4GuideLoop(t.TempDir(), p, guidedProfile{}, setupIdentity{ID: b.IdentityID}, protocol, j, access.StorageConfig{}, transcript.Inspector{}, "/unused/docker", &saved, &ui, func() (storagefirst.SnapshotV4, error) { return snapshot, nil })
 				j.close()
 				if err != nil {
 					t.Fatal(err)
@@ -235,6 +275,37 @@ func TestWorkflowV4GuidePhaseOnlyRosters(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The snapshot synchronizer in this test stubs the native signature verifier.
+// It exercises the participant guide's action boundary after a previously
+// allocated attempt has been retired by an authenticated checkpoint.
+func TestWorkflowV4GuideRetiredAllocationWaitsForReplacement(t *testing.T) {
+	protocol, binding := workflowV4TestBinding(t)
+	protocol.Definition.Phase1Participants = []string{binding.IdentityID}
+	protocol.Definition.Phase2Participants = []string{binding.IdentityID}
+	profile, participant := guidePhaseProfile(t, binding)
+	snapshot := guidePhaseSnapshot(t, protocol, binding, "phase1", "retired")
+	view, err := snapshot.TurnV4(protocol, "phase1", binding.IdentityID)
+	if err != nil || view.Stage != storagefirst.TurnReallocateV4 || view.CandidateAttempt != nil {
+		t.Fatalf("retired turn = %+v, %v", view, err)
+	}
+	j, err := openWorkflowV4Journal(protocol, binding.Definition, binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer j.close()
+	var output bytes.Buffer
+	ui := coordinatorWizard{input: bufio.NewReader(strings.NewReader("Q\n")), output: &output}
+	if err := runWorkflowV4GuideLoop(t.TempDir(), profile, guidedProfile{}, setupIdentity{ID: binding.IdentityID}, protocol, j, access.StorageConfig{}, transcript.Inspector{}, "/unused/docker", &participant, &ui, func() (storagefirst.SnapshotV4, error) { return snapshot, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "1) ") || !strings.Contains(output.String(), "must allocate a replacement") {
+		t.Fatalf("retired attempt offered a participant action: %s", output.String())
+	}
+	if len(j.state.Operations) != 0 {
+		t.Fatal("retired attempt created local work")
 	}
 }
 
@@ -259,7 +330,7 @@ func TestWorkflowV4GuidePreservesEarlierPhasePendingWork(t *testing.T) {
 			before, _ := json.Marshal(j.state)
 			var out bytes.Buffer
 			ui := coordinatorWizard{input: bufio.NewReader(strings.NewReader("1\nQ\n")), output: &out}
-			err = runWorkflowV4GuideLoop(p, guidedProfile{}, setupIdentity{ID: b.IdentityID}, protocol, j, access.StorageConfig{}, transcript.Inspector{}, "/unused/docker", &saved, &ui, func() (storagefirst.SnapshotV4, error) { return snapshot, nil })
+			err = runWorkflowV4GuideLoop(t.TempDir(), p, guidedProfile{}, setupIdentity{ID: b.IdentityID}, protocol, j, access.StorageConfig{}, transcript.Inspector{}, "/unused/docker", &saved, &ui, func() (storagefirst.SnapshotV4, error) { return snapshot, nil })
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -272,7 +343,7 @@ func TestWorkflowV4GuidePreservesEarlierPhasePendingWork(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = runWorkflowV4ParticipantAction(&ui, j, snapshot, protocol, active, access.StorageConfig{}, transcript.Inspector{}, "/unused/docker", view, workflowV4ParticipantProgress{})
+			err = runWorkflowV4ParticipantAction(&ui, j, snapshot, protocol, active, access.StorageConfig{}, transcript.Inspector{}, "/unused/docker", view, workflowV4ParticipantProgress{}, nil)
 			if err == nil || !strings.Contains(err.Error(), "another participant turn") {
 				t.Fatalf("pending action dispatched: %v", err)
 			}

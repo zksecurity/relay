@@ -7,5 +7,8 @@ retain their original validation. Other release and production checks still appl
 Multiple identities controlled by one operator do not establish independence.
 
 Relay pins the compatible proof-tool release at commit
-`80f1692778e2d34813f0c9b20d3b7ddb3fec392b`.
+`57fecbf6eec76e30e0e4e487242293320d64349b`.
+For production-mode ceremonies, a verified GO decision binds the exact signed
+circuit and release. The tiny and K11 test circuits may receive GO for their own
+ceremony, but their keys do not prove ownership.
 Tessera setup contracts remain unchanged.

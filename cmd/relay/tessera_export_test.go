@@ -204,15 +204,16 @@ func TestTesseraRealSignedSetup(t *testing.T) {
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("init: %v %s", err, output)
 	}
+	definitionRoot := authorLegacyTesseraDefinition(t, binary, filepath.Join(root, "public"), filepath.Join(root, "keys", "coordinator.ed25519.private.hex"))
 	read := func(name string) []byte {
-		raw, err := os.ReadFile(filepath.Join(root, "public", name))
+		raw, err := os.ReadFile(filepath.Join(definitionRoot, name))
 		if err != nil {
 			t.Fatal(err)
 		}
 		return raw
 	}
 	definition, signature, key := read("ceremony.json"), read("ceremony.sig"), bytes.TrimSpace(read("coordinator-public-key.hex"))
-	inspector := transcript.Inspector{Executable: binary, CeremonyPath: filepath.Join(root, "public/ceremony.json"), CeremonySignaturePath: filepath.Join(root, "public/ceremony.sig"), CoordinatorPublicKeyPath: filepath.Join(root, "public/coordinator-public-key.hex")}
+	inspector := transcript.Inspector{Executable: binary, CeremonyPath: filepath.Join(definitionRoot, "ceremony.json"), CeremonySignaturePath: filepath.Join(definitionRoot, "ceremony.sig"), CoordinatorPublicKeyPath: filepath.Join(definitionRoot, "coordinator-public-key.hex")}
 	inspected, err := inspector.Definition()
 	if err != nil {
 		t.Fatal(err)

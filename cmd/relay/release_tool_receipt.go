@@ -121,15 +121,29 @@ func (p *rolePreparer) prepareToolReceipt() error {
 			return err
 		}
 		client := osDockerCommandClient{binary: "docker"}
-		_, endpoint, err := resolveDockerEndpoint(client)
+		contextName, endpoint, err := resolveDockerEndpoint(client)
 		if err != nil {
 			return err
 		}
 		if err := validateLocalDockerEndpoint(endpoint); err != nil {
 			return err
 		}
-		args := []string{"run", "--rm", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--ulimit=core=0:0", "--platform", profile.Platform, "--entrypoint=/usr/local/bin/relay", profile.Image, "ceremony", "inspect-tools"}
-		raw, stderr, err := client.BindHost(endpoint).Output(args...)
+		driver := dockerDriver{runtimeLimits: profile.Resources, image: profile.Image, platform: profile.Platform, client: client.BindHost(endpoint)}
+		driver.daemon, err = inspectDockerDaemon(driver.client, contextName, endpoint)
+		if err != nil {
+			return err
+		}
+		if err := ensureGuidedResourcePolicy(&p.ui, driver.client, driver.daemon); err != nil {
+			return err
+		}
+		limits, err := resolvedDockerRuntimeLimits(profile.Resources)
+		if err != nil {
+			return err
+		}
+		args := []string{"run", "--rm", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--ulimit=core=0:0", "--platform", profile.Platform, "--entrypoint=/usr/local/bin/relay"}
+		args = append(args, limits.dockerArgs()...)
+		args = append(args, profile.Image, "ceremony", "inspect-tools")
+		raw, stderr, err := driver.admittedInspectionOutput(args)
 		if err != nil {
 			return fmt.Errorf("inspect approved image tools: %w: %s", err, stderr)
 		}

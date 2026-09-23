@@ -385,6 +385,14 @@ func prepareAndCommitWorkflowV4Enrollment(snapshot storagefirst.SnapshotV4, prot
 		return err
 	}
 	command := []string{"mpc-ceremony", "checkpoint", "record-v4", "--ceremony", ceremony, "--ceremony-signature", ceremonySig, "--coordinator-public-key-file", coordinatorKey, "--artifact-root", artifactRoot, "--checkpoint", headRecord, "--checkpoint-signature", headSignature, "--transition", "enrollment-recorded", "--record", record, "--record-signature", signature, "--evidence", disclosure, "--coordinator-signing-key", "/keys/signing.hex", "--out-dir", out}
+	// This invocation owns a newly created staging attempt. At an older
+	// workspace's migration boundary, retain the released allocation even
+	// though this attempt has fresh output paths.
+	limits, err := workflowV4LifecycleNewLimits(signer, snapshot.Head())
+	if err != nil {
+		return err
+	}
+	signer.Resources = &limits
 	if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
 		return err
 	}

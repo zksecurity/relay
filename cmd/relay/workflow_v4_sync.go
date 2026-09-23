@@ -63,7 +63,7 @@ func (j *workflowV4Journal) syncV4(objects storagefirst.ObjectStore, trust trans
 			return nil, nil, err
 		}
 		command := append(child.baseRunArgs(true, mounts), child.image)
-		return child.client.Output(append(command, rewritten...)...)
+		return child.admittedInspectionOutput(append(command, rewritten...))
 	}
 	trust.Executable = "mpc-ceremony"
 	highWater, err := state.OpenWorkspaceHighWater(b.Work, b.CeremonyID)

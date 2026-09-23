@@ -114,7 +114,7 @@ func upgradeV2Inventory(p guidedProfile, d upgrade.DeclarationV2) (upgradeInvent
 		if first == "workflow-v4" {
 			parts := strings.Split(rel, "/")
 			if len(parts) > 1 {
-				known := map[string]bool{"state.json": true, "coordinator": true, "release": true, "beacons": true, "scopes": true, "commits": true, "inputs": true, "results": true, "temporary": true, "staging": true, ".relay-workspace.lock": true}
+				known := map[string]bool{"resources": true, "role-launches": true, "state.json": true, "coordinator": true, "release": true, "beacons": true, "scopes": true, "commits": true, "inputs": true, "results": true, "temporary": true, "staging": true, ".relay-workspace.lock": true}
 				name := parts[1]
 				if !known[name] && !(len(parts) == 2 && strings.HasSuffix(name, ".json") && (strings.HasPrefix(name, "contributor-") || strings.HasPrefix(name, "execution-"))) {
 					return fmt.Errorf("unknown retained workflow state %q", name)
@@ -130,16 +130,56 @@ func upgradeV2Inventory(p guidedProfile, d upgrade.DeclarationV2) (upgradeInvent
 		if !e.Type().IsRegular() {
 			return errors.New("nonregular retained workspace input")
 		}
+		parts := strings.Split(rel, "/")
+		if len(parts) > 1 && parts[0] == "workflow-v4" && (parts[1] == "resources" || parts[1] == "role-launches") {
+			if len(parts) != 3 {
+				return errors.New("unexpected nested resource recovery state")
+			}
+			if err := validateUpgradeResourceRecord(path, parts[1], parts[2]); err != nil {
+				return err
+			}
+		}
 		if len(inv.Files) >= 100000 {
 			return errors.New("upgrade inventory exceeds file limit")
+		}
+		if rel == "workflow-v4/coordinator/resource-origin.json" {
+			var origin workflowV4ResourceOrigin
+			if err := readWorkflowV4JSON(path, &origin); err != nil {
+				return err
+			}
+			if err := validateWorkflowV4ResourceOrigin(origin); err != nil {
+				return err
+			}
+		}
+		if strings.HasPrefix(rel, "workflow-v4/coordinator/lifecycle/") {
+			var step workflowV4LifecycleStep
+			if err := readWorkflowV4JSON(path, &step); err != nil {
+				return err
+			}
+			if err := validateWorkflowV4LifecycleStep(step, p.Work); err != nil {
+				return err
+			}
+			if rel != "workflow-v4/coordinator/lifecycle/"+lifecycleStepDigest(step.Predecessor, step.Step)+".json" {
+				return errors.New("lifecycle step filename does not match operation")
+			}
 		}
 		if strings.HasSuffix(rel, "-intent.json") && strings.HasPrefix(rel, "workflow-v4/coordinator/") {
 			var intent workflowV4CoordinatorIntent
 			if err := readWorkflowV4JSON(path, &intent); err != nil {
 				return err
 			}
-			if intent.Schema != workflowV4CoordinatorIntentSchema {
+			if intent.Schema != workflowV4CoordinatorIntentSchema && intent.Schema != workflowV4CoordinatorResourceIntentSchema {
 				return errors.New("unknown coordinator intent")
+			}
+			if intent.Schema == workflowV4CoordinatorResourceIntentSchema {
+				if intent.Resources == nil {
+					return errors.New("coordinator intent is missing retained resources")
+				}
+				if err := intent.Resources.validate(); err != nil {
+					return err
+				}
+			} else if intent.Resources != nil {
+				return errors.New("legacy intent has unexpected resources")
 			}
 			if intent.Action != "allocate" && intent.Action != "accept" && intent.Action != "reject" {
 				return errors.New("unsupported coordinator intent action")
@@ -199,3 +239,32 @@ func upgradeV2Inventory(p guidedProfile, d upgrade.DeclarationV2) (upgradeInvent
 }
 
 func (i upgradeInventory) digest() string { raw, _ := json.Marshal(i); return upgradeBytesHash(raw) }
+
+func validateUpgradeResourceRecord(path, kind, name string) error {
+	digest := strings.TrimSuffix(name, ".json")
+	if !strings.HasSuffix(name, ".json") || !sha256HexPattern.MatchString(digest) {
+		return errors.New("invalid resource recovery filename")
+	}
+	switch kind {
+	case "resources":
+		var record workflowV4CommandResources
+		if err := readWorkflowV4JSON(path, &record); err != nil {
+			return err
+		}
+		if record.Schema != "relay-command-resources-v1" || record.CommandDigest != digest {
+			return errors.New("resource recovery binding mismatch")
+		}
+		return record.Limits.validate()
+	case "role-launches":
+		var record dockerRoleLaunchRecord
+		if err := readWorkflowV4JSON(path, &record); err != nil {
+			return err
+		}
+		if record.Schema != "relay-role-launch-v1" || record.DaemonID == "" || record.Name != "relay-role-"+digest[:32] || (record.ContainerID != "" && !validContainerID(record.ContainerID)) || !strings.HasPrefix(record.ArgsDigest, "sha256:") || !sha256HexPattern.MatchString(strings.TrimPrefix(record.ArgsDigest, "sha256:")) {
+			return errors.New("invalid retained role launch record")
+		}
+		return nil
+	default:
+		return errors.New("unknown resource recovery record")
+	}
+}

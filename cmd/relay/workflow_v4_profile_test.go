@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -74,6 +75,16 @@ func TestWorkflowV4ParticipantProfileBinding(t *testing.T) {
 	c.DockerCLI = "docker"
 	if _, err := workflowV4ProfileBinding(p, signer, protocol, id, &c); err != nil {
 		t.Fatal(err)
+	}
+	before, err := workflowV4ProfileBinding(p, signer, protocol, id, &c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Resources = &dockerRuntimeLimits{CPUs: 6, MemoryGiB: 6, GoMemoryGiB: 4, GoGCPercent: 25}
+	signer.Resources = p.Resources
+	after, err := workflowV4ProfileBinding(p, signer, protocol, id, &c)
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatal("new resource preferences changed the legacy workspace binding", err)
 	}
 	// Profiles created before #57 recorded the measured host companion here.
 	// Preserve them without rewriting or requiring that historical host file.
