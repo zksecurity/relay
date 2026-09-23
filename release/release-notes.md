@@ -1,7 +1,9 @@
 ## What changed
 
-- Relay v0.5.2 makes the V5 production GO/NO-GO decision available from the existing coordinator, auditor, and final-signer ceremony menus after the signed final release. Each signer reviews exact staged evidence and signs through the pinned offline proof-tool; the coordinator can prepare the canonical decision and verify the required signature threshold from the same menu. Rehearsals and earlier ceremony formats retain their existing behavior.
+- The V5 coordinator guide now generates the fixed public ownership proof during finalization, then reuses authenticated preliminary keys for release preparation. The final candidate still receives an independent full replay.
+- The V4/V5 upload-station guide now verifies and uploads the release signer's public package without a signing key. After a signed NO-GO, the coordinator can prepare a closed public trial archive and the upload station can verify, publish, and read it back under a content-addressed test prefix. This path creates no approved production pointer.
+- Fresh V5 decisions are written into the public evidence tree, and idle guide menus no longer report an operation as still running.
 
 ## Tessera compatibility
 
-The setup contracts and proof-tool pin are unchanged. This is a Relay-only menu and documentation change; it does not change signed ceremony files or the release and deployment selection process. Existing frozen ceremonies remain on their pinned release.
+The setup contracts and signed ceremony formats are unchanged. This release pins proof-tool commit `8471106bcb796b88302e898f30377c6dfe0161b8` and packages its public finalization-evidence helper in the online role image. Existing frozen ceremonies remain on their pinned release. The NO-GO trial publication lane does not implement official GO promotion or authorize production ownership keys.
