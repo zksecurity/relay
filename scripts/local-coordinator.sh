@@ -27,8 +27,10 @@ case "$action" in
     config="$REPO_DIR/release/role-images.json"
     url=$(jq -er --arg key "linux_$arch" '.mpc[$key].url' "$config")
     expected=$(jq -er --arg key "linux_$arch" '.mpc[$key].sha256' "$config")
+    evidence_url=$(jq -er --arg key "linux_$arch" '.mpc_evidence[$key].url' "$config")
+    evidence_expected=$(jq -er --arg key "linux_$arch" '.mpc_evidence[$key].sha256' "$config")
     base=$(jq -er '.aws_cli_image' "$config")
-    [[ "$url" == https://github.com/zksecurity/proof-tool/releases/download/* && "$expected" =~ ^[0-9a-f]{64}$ && "$base" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] || {
+    [[ "$url" == https://github.com/zksecurity/proof-tool/releases/download/* && "$expected" =~ ^[0-9a-f]{64}$ && "$evidence_url" == https://github.com/zksecurity/proof-tool/releases/download/* && "$evidence_expected" =~ ^[0-9a-f]{64}$ && "$(basename "$(dirname "$url")")" == "$(basename "$(dirname "$evidence_url")")" && "$base" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]] || {
       printf 'Invalid pinned build inputs.\n' >&2; exit 1;
     }
     docker info >/dev/null
@@ -49,6 +51,9 @@ case "$action" in
     curl --proto '=https' --tlsv1.2 --fail --location --show-error "$url" --output "$test_root/build/mpc-ceremony"
     actual=$(shasum -a 256 "$test_root/build/mpc-ceremony")
     [[ "${actual%% *}" == "$expected" ]] || { printf 'proof-tool checksum mismatch; stopped.\n' >&2; exit 1; }
+    curl --proto '=https' --tlsv1.2 --fail --location --show-error "$evidence_url" --output "$test_root/build/mpc-finalization-evidence"
+    actual=$(shasum -a 256 "$test_root/build/mpc-finalization-evidence")
+    [[ "${actual%% *}" == "$evidence_expected" ]] || { printf 'public evidence helper checksum mismatch; stopped.\n' >&2; exit 1; }
     cp "$REPO_DIR/docker/roles/Dockerfile" "$test_root/build/Dockerfile"
     cp "$REPO_DIR/release/ceremony-policy.json" "$test_root/ceremony-policy.json"
     docker build --platform "linux/$arch" --target online --build-arg "AWS_CLI_IMAGE=$base" \
