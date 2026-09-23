@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -130,6 +132,7 @@ func verifyCeremonyArchive(archive string, maxBytes int64, run publicVerifyRunne
 			Command               string `json:"command"`
 			CeremonyID            string `json:"ceremony_id"`
 			ReleaseManifestSHA256 string `json:"release_manifest_sha256"`
+			ReleaseID             string `json:"release_id"`
 			Decision              string `json:"decision"`
 		}
 		if e = json.Unmarshal(raw, &result); e != nil {
@@ -151,8 +154,12 @@ func verifyCeremonyArchive(archive string, maxBytes int64, run publicVerifyRunne
 			if result.Decision != "GO" {
 				return errors.New("production decision is not GO")
 			}
-			if result.ReleaseManifestSHA256 != releaseManifestSHA {
-				return errors.New("production approval refers to another release")
+			if result.ReleaseManifestSHA256 != "" {
+				if result.ReleaseManifestSHA256 != releaseManifestSHA {
+					return errors.New("production approval refers to another release")
+				}
+			} else if err := matchCheckpointDecisionRelease(p(m.Decision.Record), p(m.Decision.EvidenceRoot), result.ReleaseID, releaseManifestSHA); err != nil {
+				return err
 			}
 			report.Checks[index].Detail = "GO verified for signed circuit " + definition.KeyVersion
 		}
@@ -188,6 +195,45 @@ func verifyCeremonyArchive(archive string, maxBytes int64, run publicVerifyRunne
 	}
 	report.Passed = true
 	return report, nil
+}
+
+// V4/V5 decisions bind a final release checkpoint instead of carrying a
+// manifest digest in the CLI result. The decision verifier authenticates the
+// package at evidenceRoot/final/release; require its manifest to be the same
+// one that the archive's separately verified keys-dir supplied.
+func matchCheckpointDecisionRelease(decisionPath, evidenceRoot, releaseID, verifiedManifestSHA string) error {
+	if !strings.HasPrefix(releaseID, "sha256:") || !sha256HexPattern.MatchString(strings.TrimPrefix(releaseID, "sha256:")) {
+		return errors.New("decision verifier did not identify the final release")
+	}
+	raw, err := os.ReadFile(decisionPath)
+	if err != nil {
+		return err
+	}
+	var decision struct {
+		Schema  string `json:"schema"`
+		Release struct {
+			ReleaseID string `json:"release_id"`
+		} `json:"release"`
+	}
+	if err := json.Unmarshal(raw, &decision); err != nil {
+		return err
+	}
+	if (decision.Schema != "proof-tool-mpc-production-decision-v4" && decision.Schema != "proof-tool-mpc-production-decision-v5") || decision.Release.ReleaseID != releaseID {
+		return errors.New("decision verifier release identity differs from signed V4/V5 decision")
+	}
+	f, err := os.Open(filepath.Join(evidenceRoot, "final", "release", "manifest.json"))
+	if err != nil {
+		return fmt.Errorf("decision release manifest: %w", err)
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return err
+	}
+	if "sha256:"+hex.EncodeToString(h.Sum(nil)) != verifiedManifestSHA {
+		return errors.New("production approval refers to another release")
+	}
+	return nil
 }
 
 var _ io.Writer = (*limitedVerificationOutput)(nil)

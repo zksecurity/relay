@@ -66,9 +66,12 @@ of the website snapshot, and the truth of website reports are not established.
 
 ## Availability and compatibility
 
-Requires the proof-tool `replay` command and `release_manifest_sha256` in release and
-decision verification output. This is PR code until compatible protected-main releases
-are reviewed, built and provisioned. Existing frozen ceremonies pin exact software;
+Requires the proof-tool `replay` command and `release_manifest_sha256` in release
+verification output. Historical decisions report that same digest. V4/V5 decisions
+report a `release_id` and authenticate a final release checkpoint; Relay also hashes
+that checkpoint's `final/release/manifest.json` and requires it to match the separately
+verified release manifest. Compatible protected-main releases must be reviewed, built
+and provisioned. Existing frozen ceremonies pin exact software;
 new verifier code cannot silently substitute for the historical binary. An archive
 made with an older binary may therefore be unsupported for this unsigned replay path.
 Never loosen that pin, sign a new audit, or regenerate the frozen ceremony to pass.
