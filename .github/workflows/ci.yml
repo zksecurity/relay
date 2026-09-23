@@ -420,6 +420,15 @@ jobs:
             --repo zksecurity/proof-tool \
             --signer-workflow zksecurity/proof-tool/.github/workflows/publish-mpc-ceremony-release.yml \
             --source-ref refs/heads/main --source-digest "$commit" --deny-self-hosted-runners
+          evidence_url=$(jq -r .mpc_evidence.linux_amd64.url release/role-images.json)
+          evidence_expected=$(jq -r .mpc_evidence.linux_amd64.sha256 release/role-images.json)
+          test "$(basename "$(dirname "$evidence_url")")" = "$tag"
+          curl --proto '=https' --tlsv1.2 -fsSL "$evidence_url" -o "$RUNNER_TEMP/archive-image/mpc-finalization-evidence"
+          printf '%s  %s\n' "$evidence_expected" "$RUNNER_TEMP/archive-image/mpc-finalization-evidence" | sha256sum --check --strict
+          gh attestation verify "$RUNNER_TEMP/archive-image/mpc-finalization-evidence" \
+            --repo zksecurity/proof-tool \
+            --signer-workflow zksecurity/proof-tool/.github/workflows/publish-mpc-ceremony-release.yml \
+            --source-ref refs/heads/main --source-digest "$commit" --deny-self-hosted-runners
           git clone --no-checkout https://github.com/zksecurity/proof-tool.git "$RUNNER_TEMP/archive-proof-source"
           git -C "$RUNNER_TEMP/archive-proof-source" checkout --detach "$commit"
           (cd "$RUNNER_TEMP/archive-proof-source" && bash scripts/bootstrap-vendor.sh)

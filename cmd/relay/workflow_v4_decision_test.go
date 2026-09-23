@@ -89,6 +89,34 @@ func TestWorkflowV4DecisionSigningUsesOfflineProfileAndPreservesOutput(t *testin
 	}
 }
 
+func TestWorkflowV4FreshDecisionUsesPublicEvidenceTree(t *testing.T) {
+	work, trust, keys := t.TempDir(), t.TempDir(), t.TempDir()
+	decisionDir := filepath.Join(work, "ceremony", "public", "decision")
+	if err := os.MkdirAll(decisionDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(decisionDir, "decision.json"), []byte(`{"ceremony_id":"ceremony-test","decision":"NO-GO"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	profile := guidedProfile{Role: "release-signer", Work: work, Trust: trust, Keys: keys, ReleaseCommit: strings.Repeat("a", 40)}
+	signer := guidedProfile{Role: "decision-signer", Work: work, Trust: trust, Keys: keys, ReleaseCommit: profile.ReleaseCommit, Image: "example.test/offline@sha256:" + strings.Repeat("b", 64), Platform: "linux/amd64"}
+	protocol := transcript.DefinitionProtocol{DefinitionSchema: "proof-tool-mpc-ceremony-definition-v5", Definition: transcript.Definition{Mode: "production", CeremonyID: "ceremony-test"}}
+	previous := workflowV4ChildExecutor
+	defer func() { workflowV4ChildExecutor = previous }()
+	var launch []string
+	workflowV4ChildExecutor = func(args []string) error { launch = append([]string(nil), args...); return nil }
+	ui := &coordinatorWizard{input: bufio.NewReader(strings.NewReader("2\nSIGN DECISION\n")), output: &bytes.Buffer{}}
+	if err := runWorkflowV4DecisionMenu(ui, profile, signer, setupIdentity{ID: "release-signer-test"}, protocol); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(launch, " ")
+	for _, part := range []string{"--decision /work/ceremony/public/decision/decision.json", "--evidence-root /work/ceremony/public", "--out /work/ceremony/public/decision/release-signer.sig"} {
+		if !strings.Contains(joined, part) {
+			t.Fatalf("fresh public decision launch lacks %q: %s", part, joined)
+		}
+	}
+}
+
 func TestWorkflowV4DecisionRejectsWrongCeremonyBeforeSigning(t *testing.T) {
 	work := t.TempDir()
 	if err := os.Mkdir(filepath.Join(work, "decision-evidence"), 0o700); err != nil {

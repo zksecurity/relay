@@ -11,6 +11,7 @@ ENTRYPOINT ["/usr/local/bin/mpc-ceremony"]
 FROM ${AWS_CLI_IMAGE} AS online
 COPY --chmod=0555 relay /usr/local/bin/relay
 COPY --chmod=0555 mpc-ceremony /usr/local/bin/mpc-ceremony
+COPY --chmod=0555 mpc-finalization-evidence /usr/local/bin/mpc-finalization-evidence
 ENV AWS_EC2_METADATA_DISABLED=true AWS_PAGER=""
 USER 65532:65532
 WORKDIR /work

@@ -8,10 +8,13 @@ For a V5 production ceremony, reopen your installer-created `start.sh`, choose
 GO/NO-GO decision** after importing or refreshing the signed final release.
 The action is absent for rehearsal mode and before the final release. It uses
 the ceremony's already prepared, pinned offline signing image and existing key.
-Place the exact `decision.json` and complete `decision-evidence/` in your role's
-work folder. The coordinator can first prepare `decision.json` from a reviewed
-`decision-draft.json` in that folder. After signing, transfer only public
-signatures; the coordinator's **D** action verifies the full required signature
+For a fresh V5 run, place reviewed public evidence under
+`work/ceremony/public/decision/evidence/`. The coordinator prepares
+`work/ceremony/public/decision/decision.json` from a reviewed
+`work/decision-draft.json`; the same public tree is the verifier's evidence
+root. Existing work-root decisions keep their prior paths for recovery.
+After signing, transfer only public signatures; the coordinator's **D** action
+verifies the full required signature
 set. A saved signature alone does not establish a verified GO decision.
 
 - [ ] Complete [installation](../install.md) and prepare the offline image.

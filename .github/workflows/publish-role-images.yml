@@ -96,16 +96,23 @@ jobs:
             (.mpc.linux_amd64.url | test("^https://")) and
             (.mpc.linux_amd64.sha256 | test("^[0-9a-f]{64}$")) and
             (.mpc.linux_arm64.url | test("^https://")) and
-            (.mpc.linux_arm64.sha256 | test("^[0-9a-f]{64}$"))
+            (.mpc.linux_arm64.sha256 | test("^[0-9a-f]{64}$")) and
+            (.mpc_evidence.linux_amd64.url | test("^https://github.com/zksecurity/proof-tool/releases/download/mpc-ci-[0-9a-f]{40}/mpc-finalization-evidence$")) and
+            (.mpc_evidence.linux_amd64.sha256 | test("^[0-9a-f]{64}$")) and
+            (.mpc_evidence.linux_arm64.url | test("^https://github.com/zksecurity/proof-tool/releases/download/mpc-ci-[0-9a-f]{40}/mpc-finalization-evidence-linux-arm64$")) and
+            (.mpc_evidence.linux_arm64.sha256 | test("^[0-9a-f]{64}$")) and
+            ([.mpc.linux_amd64.url, .mpc.linux_arm64.url, .mpc_evidence.linux_amd64.url, .mpc_evidence.linux_arm64.url] | map(capture("mpc-ci-(?<commit>[0-9a-f]{40})").commit) | unique | length == 1)
           ' release/role-images.json >/dev/null
           case "$PLATFORM" in
             linux/amd64) key=linux_amd64 ;;
             linux/arm64) key=linux_arm64 ;;
             *) exit 1 ;;
           esac
-          printf 'mpc_url=%s\nmpc_sha256=%s\naws_cli_image=%s\n' \
+          printf 'mpc_url=%s\nmpc_sha256=%s\nevidence_url=%s\nevidence_sha256=%s\naws_cli_image=%s\n' \
             "$(jq -r ".mpc.$key.url" release/role-images.json)" \
             "$(jq -r ".mpc.$key.sha256" release/role-images.json)" \
+            "$(jq -r ".mpc_evidence.$key.url" release/role-images.json)" \
+            "$(jq -r ".mpc_evidence.$key.sha256" release/role-images.json)" \
             "$(jq -r '.aws_cli_image' release/role-images.json)" >> "$GITHUB_OUTPUT"
 
       - name: Stage exact architecture inputs
@@ -114,6 +121,8 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
           MPC_URL: ${{ steps.inputs.outputs.mpc_url }}
           MPC_SHA256: ${{ steps.inputs.outputs.mpc_sha256 }}
+          EVIDENCE_URL: ${{ steps.inputs.outputs.evidence_url }}
+          EVIDENCE_SHA256: ${{ steps.inputs.outputs.evidence_sha256 }}
         run: |
           set -euo pipefail
           [[ "$MPC_URL" =~ ^https:// ]] && [[ "$MPC_SHA256" =~ ^[0-9a-f]{64}$ ]]
@@ -124,7 +133,10 @@ jobs:
           curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error "$MPC_URL" \
             --output image-context/mpc-ceremony
           printf '%s  %s\n' "$MPC_SHA256" image-context/mpc-ceremony | sha256sum --check --strict
-          chmod 0555 image-context/relay image-context/mpc-ceremony
+          curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error "$EVIDENCE_URL" \
+            --output image-context/mpc-finalization-evidence
+          printf '%s  %s\n' "$EVIDENCE_SHA256" image-context/mpc-finalization-evidence | sha256sum --check --strict
+          chmod 0555 image-context/relay image-context/mpc-ceremony image-context/mpc-finalization-evidence
           cp docker/roles/Dockerfile image-context/roles.Dockerfile
           cp docker/ceremony-tool/Dockerfile image-context/contributor.Dockerfile
 

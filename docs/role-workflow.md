@@ -71,8 +71,11 @@ production-mode run must satisfy that decision for its exact signed circuit;
 test-circuit GO does not authorize ownership-proof use.
 For V5 production ceremonies, accountable coordinator, auditor, and final
 signer roles see a separate **D — Production GO/NO-GO decision** action after
-the authenticated final release. Stage the exact decision and evidence in the
-role work folder, review them, and use the prepared offline signing image.
+the authenticated final release. For a fresh V5 run, put reviewed public
+evidence under `work/ceremony/public/decision/evidence`; the guide prepares
+`decision/decision.json` and role signatures in that same public tree. It
+continues to recognize decisions already started in the older work-root layout.
+Review the exact statement and use the prepared offline signing image.
 The coordinator verifies all required signatures there; menu progress or a
 signature file alone is not release authorization. See the
 [decision instructions](tasks/decision.md).
@@ -83,7 +86,7 @@ the host is an optional extra precaution unless ceremony policy requires it.
 Signing is bound to the displayed bytes. Online observer images receive no keys.
 
 Storage provisioning, public identity exchange, other operational-record authoring,
-public-proof generation and actual observations remain
+and actual observations remain
 explicit external tasks. The guide explains their handoffs and verifies
 returned artifacts where commands exist. It never fabricates observations,
 independence, signatures or approval.

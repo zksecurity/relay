@@ -45,7 +45,7 @@ func validateWorkflowV4LifecycleStep(s workflowV4LifecycleStep, work string) err
 		return errors.New("invalid retained lifecycle step")
 	}
 	switch s.Step {
-	case "finalize-preliminary", "finalize-complete", "prepare-evidence-bundle", "sign-evidence-bundle", "record-release-review", "rehearsal-evidence", "record-final-candidate", "seal-phase1", "record-phase1-seal", "derive-phase2", "record-phase2-genesis", "close-phase1", "close-phase2", "record-phase1-closure", "record-phase2-closure", "beacon-phase1", "beacon-phase2", "record-phase1-beacon", "record-phase2-beacon", "record-final-release", "release-review", "sign-release":
+	case "finalize-preliminary", "finalize-complete", "prepare-evidence-bundle", "sign-evidence-bundle", "record-release-review", "rehearsal-evidence", "ownership-evidence", "record-final-candidate", "seal-phase1", "record-phase1-seal", "derive-phase2", "record-phase2-genesis", "close-phase1", "close-phase2", "record-phase1-closure", "record-phase2-closure", "beacon-phase1", "beacon-phase2", "record-phase1-beacon", "record-phase2-beacon", "record-final-release", "release-review", "sign-release":
 	default:
 		return errors.New("unknown retained lifecycle step")
 	}
@@ -128,7 +128,7 @@ func runWorkflowV4LifecycleCommand(profile guidedProfile, head transcript.Signed
 	if err != nil {
 		return err
 	}
-	if len(command) < 2 || command[0] != "mpc-ceremony" {
+	if len(command) < 2 || (command[0] != "mpc-ceremony" && !(step == "ownership-evidence" && command[0] == "mpc-finalization-evidence" && profile.Role == "coordinator")) {
 		return errors.New("lifecycle step requires a proof-tool command")
 	}
 	if len(saved.Command) == 0 {

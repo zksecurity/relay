@@ -665,22 +665,9 @@ func executeGuidedChild(args []string) error {
 	}
 	finished := make(chan struct{})
 	defer close(finished)
-	started := time.Now()
-	go func() {
-		ticker := time.NewTicker(time.Minute)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				fmt.Fprintf(os.Stderr, "Operation still running (%s elapsed); waiting for command completion.\n", time.Since(started).Round(time.Second))
-				if usage := guidedRoleUsageSnapshot(args); usage != "" {
-					fmt.Fprintf(os.Stderr, "Operation resource usage: %s.\n", usage)
-				}
-			case <-finished:
-				return
-			}
-		}
-	}()
+	// A child may be an interactive guide waiting at a menu for hours. Its
+	// actual operations report progress at their execution boundary; elapsed
+	// time for the whole child would mislabel idle time as active work.
 	go func() {
 		for {
 			select {
