@@ -69,6 +69,13 @@ audit and release commands. These checks—not menu progress—establish validit
 A rehearsal-mode run does not use the production GO/NO-GO decision. A
 production-mode run must satisfy that decision for its exact signed circuit;
 test-circuit GO does not authorize ownership-proof use.
+For V5 production ceremonies, accountable coordinator, auditor, and final
+signer roles see a separate **D — Production GO/NO-GO decision** action after
+the authenticated final release. Stage the exact decision and evidence in the
+role work folder, review them, and use the prepared offline signing image.
+The coordinator verifies all required signatures there; menu progress or a
+signature file alone is not release authorization. See the
+[decision instructions](tasks/decision.md).
 
 Witness and mirror receipt signing uses a separately prepared network-disabled
 image. Review your exact record and confirm your own observations. Disconnecting

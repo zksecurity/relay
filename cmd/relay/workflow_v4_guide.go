@@ -260,6 +260,7 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 		var recommendation storagefirst.TurnRecommendationV4
 		lifecycleAction := ""
 		actionLabel := ""
+		decisionAvailable := false
 		pending, err := j.pending()
 		if err != nil {
 			return err
@@ -276,6 +277,7 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 			if c.Definition != binding.Definition {
 				return errors.New("backend definition differs from this role's authenticated definition")
 			}
+			decisionAvailable = workflowV4DecisionAvailable(protocol, c, p.Role)
 			if p.Role == "coordinator" || p.Role == "release-signer" {
 				if _, err := ensureWorkflowV4ResourceOrigin(p.Work, snapshot.Head(), j.state.ResourcePolicyVersion == 1); err != nil {
 					return err
@@ -442,6 +444,9 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 		} else {
 			fmt.Fprintln(ui.output, "[R] Refresh from storage\n[Q] Save and exit")
 		}
+		if decisionAvailable {
+			fmt.Fprintln(ui.output, "[D] Production GO/NO-GO decision (separate from release signing)")
+		}
 		limits, limitsErr := resolvedDockerRuntimeLimits(p.Resources)
 		if limitsErr != nil {
 			return limitsErr
@@ -453,6 +458,15 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 			return err
 		}
 		switch strings.ToUpper(strings.TrimSpace(answer)) {
+		case "D":
+			if !decisionAvailable {
+				fmt.Fprintln(ui.output, "A signed final release in an authenticated V5 production ceremony is required.")
+				continue
+			}
+			if err := runWorkflowV4DecisionMenu(ui, p, signer, identity, protocol); err != nil {
+				ui.message(toneError, "Production decision action stopped: %v\nRetained files were preserved; no signing is automatically repeated.\n", err)
+			}
+			continue
 		case "B":
 			driver := &dockerDriver{client: osDockerCommandClient{binary: cli}}
 			if err := driver.authenticateDaemon(); err != nil {

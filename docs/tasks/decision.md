@@ -3,6 +3,17 @@
 Use your existing eligible coordinator, auditor, or final-parameter-signer
 identity. This task does not create a new ceremony identity.
 
+For a V5 production ceremony, reopen your installer-created `start.sh`, choose
+**Open ceremony operations and progress**, then choose **D — Production
+GO/NO-GO decision** after importing or refreshing the signed final release.
+The action is absent for rehearsal mode and before the final release. It uses
+the ceremony's already prepared, pinned offline signing image and existing key.
+Place the exact `decision.json` and complete `decision-evidence/` in your role's
+work folder. The coordinator can first prepare `decision.json` from a reviewed
+`decision-draft.json` in that folder. After signing, transfer only public
+signatures; the coordinator's **D** action verifies the full required signature
+set. A saved signature alone does not establish a verified GO decision.
+
 - [ ] Complete [installation](../install.md) and prepare the offline image.
 - [ ] Receive the exact decision draft, evidence inventory, coordinator key,
       and the pinned proof-tool decision-signing recipe.
@@ -10,8 +21,10 @@ identity. This task does not create a new ceremony identity.
       statement. Another person's approval is not your decision.
 - [ ] Authorize your key to sign only the unchanged tool-generated statement.
 
-Before disconnecting, save the reviewed command. The placeholder must be
-replaced with the entire pinned proof-tool command and its container paths:
+For earlier workflows and recovery, the separate one-command action remains
+available. Before disconnecting, save the reviewed command. The placeholder
+must be replaced with the entire pinned proof-tool command and its container
+paths:
 
 ```bash
 "$RELAY" ceremony setup "$ACTION" --role decision-signer \
@@ -32,3 +45,7 @@ Retain the verification output and coordinator's final verified decision.
 If the evidence is incomplete, the statement changes, or signing is interrupted,
 pause and preserve the output. Do not reformat signed bytes or copy another
 person's signature as your own authorization.
+The V5 menu records a signing attempt before using the key. If an attempt is
+interrupted without a complete signature, inspect the retained work; retrying
+the same exact decision requires a separate explicit confirmation. A changed
+decision or an existing output cannot be retried over the retained attempt.
