@@ -160,8 +160,9 @@ flowchart LR
   B --> Q
 ```
 
-The tiny rehearsal uses Relay's built-in real proof-evidence generator.
-Production uses the circuit's reviewed public-evidence process. Auditors and
+The tiny and K11 test circuits use Relay's built-in real proof-evidence generator,
+including when selected for a production-mode ceremony. The ownership circuit
+uses its reviewed public-evidence process. Auditors and
 observers are expected to be independently operated, but software verifies
 their enrolled keys and signed records—not human or organizational independence.
 

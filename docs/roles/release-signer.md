@@ -29,8 +29,10 @@ or an online upload profile onto the signing machine.
   witness/mirror evidence, incidents, and contribution-bound cleanup statements.
 - Supply the evidence paths when prompted and require verification to pass.
 - Authorize signing only the exact verified release manifest.
-- Independently verify the signed release and complete any required production
-  decision. A tiny rehearsal does not satisfy production decision requirements.
+- Independently verify the signed release and complete the production decision
+  when the signed ceremony uses production mode. Rehearsal mode does not require
+  this decision. A GO for a tiny or K11 test circuit approves only its exact
+  signed circuit and release; those keys do not prove ownership.
 - Transfer only the signed public output to the separate
   [upload station](../tasks/upload.md). Keep your private key offline.
 
