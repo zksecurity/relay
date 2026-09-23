@@ -1,7 +1,7 @@
 ## What changed
 
-- Verify public archives containing V4/V5 production GO decisions. Those decisions bind a final release checkpoint instead of reporting a manifest digest; Relay now checks that the approved checkpoint contains the same manifest as the release it independently verified and replayed.
+- Add the V5 production GO/NO-GO decision to the existing coordinator, auditor, and final-signer ceremony menus after the signed final release. Each signer reviews exact staged evidence and signs through the pinned offline proof-tool; the coordinator can prepare the canonical decision and verify the required signature threshold from the same menu. Rehearsals and earlier ceremony formats retain their existing behavior.
 
 ## Tessera compatibility
 
-The setup contracts and proof-tool pin are unchanged. This fixes public verification of V4/V5 ceremony archives and does not change signed ceremony files, existing frozen ceremonies, or the release and deployment selection process.
+The setup contracts and proof-tool pin are unchanged. This is a Relay-only menu and documentation change; it does not change signed ceremony files or the release and deployment selection process. Existing frozen ceremonies remain on their pinned release.
