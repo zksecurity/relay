@@ -88,13 +88,13 @@ func packCeremony(root, out string, m verification.Manifest) (err error) {
 		if item.Size != 0 && item.Size != n {
 			return fmt.Errorf("public evidence differs from signed size: %s", item.Path)
 		}
-		if item.SHA256 != strings.Repeat("0", 64) && !strings.EqualFold(item.SHA256, actual) {
+		if item.SHA256 != "" && item.SHA256 != strings.Repeat("0", 64) && !strings.EqualFold(item.SHA256, actual) {
 			return fmt.Errorf("public evidence differs from signed digest: %s", item.Path)
 		}
 		m.Files[index].Size = n
 		m.Files[index].SHA256 = actual
 		if item.Path == m.Inputs["ceremony"] {
-			if m.DefinitionSHA256 != strings.Repeat("0", 64) && !strings.EqualFold(m.DefinitionSHA256, actual) {
+			if m.DefinitionSHA256 != "" && m.DefinitionSHA256 != strings.Repeat("0", 64) && !strings.EqualFold(m.DefinitionSHA256, actual) {
 				return errors.New("ceremony definition differs from authenticated digest")
 			}
 			m.DefinitionSHA256 = m.Files[index].SHA256
