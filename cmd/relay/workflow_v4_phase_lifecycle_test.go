@@ -238,11 +238,19 @@ func TestWorkflowV4FinalizeCommandsUseCompleteAuthenticatedReplay(t *testing.T) 
 		"--phase2-chain /work/ceremony/public/" + state.Progress.Phase2.Chain.Record.Name,
 		"--phase2-beacon /work/ceremony/public/" + state.Progress.Phase2Beacon.Record.Name,
 		"--public-evidence /work/ceremony/public/final/public-finalization-evidence.json",
+		"--preliminary-keys-dir /work/ceremony/public/final/preliminary",
 		"--out-dir /work/ceremony/public/final/candidate",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("finalize command %q lacks %q", joined, want)
 		}
+	}
+	publicProof, err := workflowV4OwnershipEvidenceCommand(state.CeremonyID, online, filepath.Join(work, "ceremony", "public", "final", "preliminary"), evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(publicProof, " "); !strings.Contains(got, "mpc-finalization-evidence --keys-dir /work/ceremony/public/final/preliminary") || !strings.Contains(got, "--coordinator-public-key-file /trust/setup-coordinator.hex") || !strings.Contains(got, "--out /work/ceremony/public/final/public-finalization-evidence.json") {
+		t.Fatalf("ownership evidence command has wrong custody or output paths: %q", got)
 	}
 }
 

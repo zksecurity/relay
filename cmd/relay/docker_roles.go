@@ -171,8 +171,8 @@ func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]stri
 	if uid <= 0 || gid < 0 {
 		return nil, errors.New("run the launcher as a non-root operator")
 	}
-	if len(command) == 0 || (command[0] != "relay" && command[0] != "mpc-ceremony" && !(command[0] == "aws" && o.role == "coordinator")) {
-		return nil, errors.New("command must start with relay or mpc-ceremony (coordinators may also run aws)")
+	if len(command) == 0 || (command[0] != "relay" && command[0] != "mpc-ceremony" && !(command[0] == "aws" && o.role == "coordinator") && !(command[0] == "mpc-finalization-evidence" && o.role == "coordinator")) {
+		return nil, errors.New("command must start with relay or mpc-ceremony (coordinators may also run aws or mpc-finalization-evidence)")
 	}
 	if offline && command[0] != "mpc-ceremony" {
 		return nil, errors.New("offline roles run mpc-ceremony only; use a separate upload station for Relay")

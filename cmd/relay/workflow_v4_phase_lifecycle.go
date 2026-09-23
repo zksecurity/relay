@@ -302,15 +302,25 @@ func runWorkflowV4FinalizeLifecycle(ui *coordinatorWizard, snapshot storagefirst
 	}
 	publicEvidence := filepath.Join(finalRoot, "public-finalization-evidence.json")
 	if !regularPreparationFile(publicEvidence) {
-		if !ceremonyTestCircuit(protocol.Definition.KeyVersion) {
-			return fmt.Errorf("public proof evidence is required before finalization; place the reviewed public artifact at %s and retry", publicEvidence)
-		}
-		command, err := workflowV4RehearsalEvidenceCommand(state.CeremonyID, online, signer, preliminary, publicEvidence)
-		if err != nil {
-			return err
-		}
-		if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "rehearsal-evidence", publicEvidence, command); err != nil {
-			return err
+		if ceremonyTestCircuit(protocol.Definition.KeyVersion) {
+			command, err := workflowV4RehearsalEvidenceCommand(state.CeremonyID, online, signer, preliminary, publicEvidence)
+			if err != nil {
+				return err
+			}
+			if err := runWorkflowV4LifecycleCommand(signer, snapshot.Head(), "rehearsal-evidence", publicEvidence, command); err != nil {
+				return err
+			}
+		} else {
+			fmt.Fprintln(ui.output, "Generating public proof evidence with the repository's fixed test wallet. This checks the reconstructed ownership keys; it is not a proof from your wallet.")
+			command, err := workflowV4OwnershipEvidenceCommand(state.CeremonyID, online, preliminary, publicEvidence)
+			if err != nil {
+				return err
+			}
+			keyless := online
+			keyless.Keys = ""
+			if err := runWorkflowV4LifecycleCommand(keyless, snapshot.Head(), "ownership-evidence", publicEvidence, command); err != nil {
+				return err
+			}
 		}
 	}
 	candidate := filepath.Join(finalRoot, "candidate")
@@ -389,7 +399,11 @@ func workflowV4FinalizeCommand(state transcript.CheckpointStateV4, online, signe
 		if err != nil {
 			return nil, err
 		}
-		command = append(command, "--public-evidence", evidence, "--finalized-at", at.UTC().Format(time.RFC3339Nano))
+		preliminary, err := pathWithin(signer.Work, filepath.Join(filepath.Dir(outputDir), "preliminary"), "/work")
+		if err != nil {
+			return nil, err
+		}
+		command = append(command, "--public-evidence", evidence, "--preliminary-keys-dir", preliminary, "--finalized-at", at.UTC().Format(time.RFC3339Nano))
 	default:
 		return nil, errors.New("unsupported finalization action")
 	}
@@ -452,6 +466,22 @@ func workflowV4RehearsalEvidenceCommand(ceremonyID string, online, signer guided
 		return nil, err
 	}
 	return []string{"mpc-ceremony", "finalize", "rehearsal-evidence", "--keys-dir", keys, "--coordinator-public-key-file", coordinatorKey, "--ceremony-id", ceremonyID, "--out", out}, nil
+}
+
+func workflowV4OwnershipEvidenceCommand(ceremonyID string, online guidedProfile, preliminary, output string) ([]string, error) {
+	keys, err := pathWithin(online.Work, preliminary, "/work")
+	if err != nil {
+		return nil, err
+	}
+	out, err := pathWithin(online.Work, output, "/work")
+	if err != nil {
+		return nil, err
+	}
+	coordinatorKey, err := pathWithin(online.Trust, filepath.Join(online.Trust, "setup-coordinator.hex"), "/trust")
+	if err != nil {
+		return nil, err
+	}
+	return []string{"mpc-finalization-evidence", "--keys-dir", keys, "--coordinator-public-key-file", coordinatorKey, "--ceremony-id", ceremonyID, "--out", out}, nil
 }
 
 func runWorkflowV4SealPhase1Lifecycle(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, online, signer guidedProfile) error {

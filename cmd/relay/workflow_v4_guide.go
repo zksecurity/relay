@@ -58,6 +58,9 @@ func workflowV4RouteHint(p guidedProfile) (bool, error) {
 }
 
 func runWorkflowV4Guide(p guidedProfile, settingsRoot string) error {
+	if p.Role == "upload-station" {
+		return runWorkflowV4UploadStationGuide(p)
+	}
 	if p.Role != "coordinator" && p.Role != "participant" && p.Role != "release-signer" && p.Role != "auditor" {
 		return errors.New("this V4 role journey is not connected yet; no legacy actions were opened")
 	}
@@ -446,6 +449,9 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 		}
 		if decisionAvailable {
 			fmt.Fprintln(ui.output, "[D] Production GO/NO-GO decision (separate from release signing)")
+			if p.Role == "coordinator" {
+				fmt.Fprintln(ui.output, "[P] Verify signed NO-GO decision and pack a public trial archive")
+			}
 		}
 		limits, limitsErr := resolvedDockerRuntimeLimits(p.Resources)
 		if limitsErr != nil {
@@ -458,6 +464,14 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 			return err
 		}
 		switch strings.ToUpper(strings.TrimSpace(answer)) {
+		case "P":
+			if !decisionAvailable || p.Role != "coordinator" {
+				fmt.Fprintln(ui.output, "A signed final release and coordinator role are required.")
+				continue
+			}
+			if err := runWorkflowV4PrepareTrialArchive(ui, p, snapshot, protocol); err != nil {
+				ui.message(toneError, "Trial archive preparation stopped: %v\n", err)
+			}
 		case "D":
 			if !decisionAvailable {
 				fmt.Fprintln(ui.output, "A signed final release in an authenticated V5 production ceremony is required.")

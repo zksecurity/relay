@@ -271,6 +271,9 @@ func TestReleaseImageToolReceipt(t *testing.T) {
 	if measured.Relay.VerifiedPath != "/usr/local/bin/relay" || measured.MPCCeremony.VerifiedPath != "/usr/local/bin/mpc-ceremony" {
 		t.Fatal("unexpected installed tool paths")
 	}
+	if out, err := exec.Command("docker", "run", "--rm", "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--platform", "linux/"+runtime.GOARCH, "--entrypoint=/bin/sh", image, "-c", "test -x /usr/local/bin/mpc-finalization-evidence").CombinedOutput(); err != nil {
+		t.Fatalf("published online image lacks the checked public-evidence helper: %v: %s", err, out)
+	}
 	// The supervisor's host-side tool location is not a Docker executable path.
 	driver := dockerDriver{ceremonyBinary: "/host-only/approved-tools/mpc-ceremony", image: image, platform: "linux/" + runtime.GOARCH, client: osDockerCommandClient{binary: "docker"}}
 	if stdout, stderr, err := driver.inspectionRunner(driver.ceremonyBinary, "help", "inspect", "definition"); err != nil {

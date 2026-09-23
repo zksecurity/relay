@@ -200,4 +200,15 @@ func TestPackSelectsOnlyExplicitPublicFiles(t *testing.T) {
 	if err := packCeremony(extracted, archive, m); err == nil {
 		t.Fatal("existing archive overwritten")
 	}
+	for _, item := range m.Files {
+		if item.Path == m.Inputs["ceremony"] {
+			if err := os.WriteFile(filepath.Join(extracted, filepath.FromSlash(item.Path)), []byte("changed definition"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+	if err := packCeremony(extracted, filepath.Join(t.TempDir(), "changed.zip"), m); err == nil {
+		t.Fatal("changed file accepted despite the signed archive inventory")
+	}
 }

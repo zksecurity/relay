@@ -44,8 +44,16 @@ func runWorkflowV4DecisionMenu(ui *coordinatorWizard, online, signer guidedProfi
 		return err
 	}
 	common := []string{"--ceremony", ceremony, "--ceremony-signature", ceremonySig, "--coordinator-public-key-file", coordinatorKey}
-	decisionHost := filepath.Join(online.Work, "decision.json")
-	evidenceHost := filepath.Join(online.Work, "decision-evidence")
+	decisionHost := filepath.Join(base, "decision", "decision.json")
+	evidenceHost := base
+	legacyDecision := filepath.Join(online.Work, "decision.json")
+	if regularPreparationFile(legacyDecision) && !regularPreparationFile(decisionHost) {
+		// Preserve the location of decisions already started with an older
+		// guide. Fresh decisions live directly in the public evidence tree so
+		// the reviewed package is ready for exact archive export.
+		decisionHost = legacyDecision
+		evidenceHost = filepath.Join(online.Work, "decision-evidence")
+	}
 	fmt.Fprintln(ui.output, "Production decision for the exact signed release. Review the decision and complete evidence before signing.")
 	if online.Role == "coordinator" {
 		fmt.Fprintln(ui.output, "1) Prepare a canonical decision from decision-draft.json\n2) Review evidence and sign my decision\n3) Verify all required decision signatures\n0) Back")
@@ -66,6 +74,9 @@ func runWorkflowV4DecisionMenu(ui *coordinatorWizard, online, signer guidedProfi
 		draftHost := filepath.Join(online.Work, "decision-draft.json")
 		if _, err := readTesseraRegularFile(draftHost, 16<<20, false); err != nil {
 			return fmt.Errorf("reviewed decision draft: %w", err)
+		}
+		if err := os.MkdirAll(filepath.Dir(decisionHost), 0o700); err != nil {
+			return err
 		}
 		if err := requireFreshDecisionOutput(decisionHost); err != nil {
 			return err
@@ -92,11 +103,19 @@ func runWorkflowV4DecisionMenu(ui *coordinatorWizard, online, signer guidedProfi
 		if role == "release-signer" {
 			role = "release_signer"
 		}
-		outName := "decision-" + online.Role + ".sig"
+		outName := online.Role + ".sig"
 		if online.Role == "auditor" {
-			outName = "decision-auditor-" + identity.ID + ".sig"
+			outName = "auditor-" + identity.ID + ".sig"
 		}
-		outHost := filepath.Join(online.Work, outName)
+		outDir := filepath.Dir(decisionHost)
+		if decisionHost == legacyDecision {
+			outDir = online.Work
+			outName = "decision-" + online.Role + ".sig"
+			if online.Role == "auditor" {
+				outName = "decision-auditor-" + identity.ID + ".sig"
+			}
+		}
+		outHost := filepath.Join(outDir, outName)
 		if err := requireFreshDecisionOutput(outHost); err != nil {
 			return err
 		}
