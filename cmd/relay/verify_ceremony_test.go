@@ -124,6 +124,58 @@ func TestProductionApprovalMustBeGOAndMatchVerifiedRelease(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckpointDecisionReleaseBinding(t *testing.T) {
+	root := t.TempDir()
+	evidence := filepath.Join(root, "evidence")
+	manifest := filepath.Join(evidence, "final", "release", "manifest.json")
+	if err := os.MkdirAll(filepath.Dir(manifest), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, []byte("release A"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	decisionPath := filepath.Join(root, "decision.json")
+	releaseID := "sha256:" + strings.Repeat("a", 64)
+	writeDecision := func(schema, id string) {
+		t.Helper()
+		raw, err := json.Marshal(map[string]any{"schema": schema, "release": map[string]string{"release_id": id}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(decisionPath, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeDecision("proof-tool-mpc-production-decision-v5", releaseID)
+	h := sha256.Sum256([]byte("release A"))
+	matching := "sha256:" + hex.EncodeToString(h[:])
+	if err := matchCheckpointDecisionRelease(decisionPath, evidence, releaseID, matching); err != nil {
+		t.Fatalf("matching V5 release rejected: %v", err)
+	}
+	for _, tc := range []struct {
+		name, schema, recordID, resultID, manifestHash string
+	}{
+		{"spliced release", "proof-tool-mpc-production-decision-v5", releaseID, releaseID, "sha256:" + strings.Repeat("b", 64)},
+		{"wrong release ID", "proof-tool-mpc-production-decision-v5", releaseID, "sha256:" + strings.Repeat("c", 64), matching},
+		{"malformed release ID", "proof-tool-mpc-production-decision-v5", releaseID, "bad", matching},
+		{"unsupported schema", "proof-tool-mpc-production-decision-v3", releaseID, releaseID, matching},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			writeDecision(tc.schema, tc.recordID)
+			if err := matchCheckpointDecisionRelease(decisionPath, evidence, tc.resultID, tc.manifestHash); err == nil {
+				t.Fatal("mismatched decision release accepted")
+			}
+		})
+	}
+	writeDecision("proof-tool-mpc-production-decision-v5", releaseID)
+	if err := os.Remove(manifest); err != nil {
+		t.Fatal(err)
+	}
+	if err := matchCheckpointDecisionRelease(decisionPath, evidence, releaseID, matching); err == nil {
+		t.Fatal("missing decision release manifest accepted")
+	}
+}
 func TestPackSelectsOnlyExplicitPublicFiles(t *testing.T) {
 	extracted, m, err := verification.Extract(verificationFixture(t), 1<<20)
 	if err != nil {
