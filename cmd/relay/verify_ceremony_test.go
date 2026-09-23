@@ -212,3 +212,28 @@ func TestPackSelectsOnlyExplicitPublicFiles(t *testing.T) {
 		t.Fatal("changed file accepted despite the signed archive inventory")
 	}
 }
+
+func TestPackFillsUnboundManifestHashes(t *testing.T) {
+	extracted, m, err := verification.Extract(verificationFixture(t), 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(extracted)
+	m.DefinitionSHA256 = ""
+	for i := range m.Files {
+		m.Files[i].Size = 0
+		m.Files[i].SHA256 = ""
+	}
+	archive := filepath.Join(t.TempDir(), "public.zip")
+	if err := packCeremony(extracted, archive, m); err != nil {
+		t.Fatal(err)
+	}
+	root, packed, err := verification.Extract(archive, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(root)
+	if packed.DefinitionSHA256 == "" || len(packed.Files) != len(m.Files) {
+		t.Fatal("packer did not bind the selected public inventory")
+	}
+}
