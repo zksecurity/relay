@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -48,7 +49,7 @@ func workflowV4TestBinding(t *testing.T) (transcript.DefinitionProtocol, workflo
 	for _, class := range []string{"online", "signer", "contributor"} {
 		b.Runtimes[class] = workflowV4Runtime{Image: "example.test/role@sha256:" + strings.Repeat("d", 64), Platform: "linux/arm64", Mounts: map[string]string{"/work": work, "/trust": trust, "/keys": keys}}
 	}
-	p := transcript.DefinitionProtocol{DefinitionSchema: "proof-tool-mpc-ceremony-definition-v4", StorageWorkflow: "storage-first-v2", ReleaseVerification: "coordinator-full-replay-v1"}
+	p := transcript.DefinitionProtocol{DefinitionSchema: "proof-tool-mpc-ceremony-definition-v5", StorageWorkflow: "storage-first-v2", ReleaseVerification: "coordinator-full-replay-v1"}
 	p.Definition.CeremonyID = b.CeremonyID
 	p.DefinitionRefs = b.Definition
 	p.Definition.Journey = &transcript.DefinitionJourney{Schema: "proof-tool-mpc-definition-journey-v2", ObserverRequirementSource: "signed-policy"}
@@ -221,6 +222,49 @@ func TestWorkflowV4JournalRestartDoesNotReplay(t *testing.T) {
 	// Even removing outputs cannot cause a second computation of this turn.
 	if err := j.prepare(next); err == nil || !strings.Contains(err.Error(), "already has a computation") {
 		t.Fatal("allowed recomputation")
+	}
+}
+
+func TestWorkflowV4JournalEntropyBeforeOutputCannotRegenerate(t *testing.T) {
+	protocol, binding := workflowV4TestBinding(t)
+	j, err := openWorkflowV4Journal(protocol, binding.Definition, binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := workflowV4TestPlan(t, binding)
+	if err := j.prepare(plan); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.runPrepared(plan.ID, func(workflowV4OperationPlan) error {
+		var entropy [32]byte
+		if _, err := rand.Read(entropy[:]); err != nil {
+			return err
+		}
+		return errors.New("interrupted after entropy and before output creation")
+	}); err == nil {
+		t.Fatal("lost interruption after entropy")
+	}
+	if _, err := os.Lstat(plan.Outputs[0]); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected no output at entropy interruption: %v", err)
+	}
+	if err := j.close(); err != nil {
+		t.Fatal(err)
+	}
+	j, err = openWorkflowV4Journal(protocol, binding.Definition, binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer j.close()
+	op, err := j.pending()
+	if err != nil || op == nil || op.Status != "running" {
+		t.Fatalf("durable started state = %+v, %v", op, err)
+	}
+	called := false
+	if err := j.runPrepared(plan.ID, func(workflowV4OperationPlan) error { called = true; return nil }); err == nil || called {
+		t.Fatal("regenerated after entropy despite absent output")
+	}
+	if err := j.abandonPrepared(plan.ID); err == nil {
+		t.Fatal("abandoned ambiguous started contribution")
 	}
 }
 

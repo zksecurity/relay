@@ -29,7 +29,7 @@ func turnFixtureV4(t *testing.T, phase string) (SnapshotV4, transcript.Definitio
 	}{{"coordinator", "coord", 1}, {"release-signer", "signer", 1}, {"participant", "p1", 1}, {"participant", "p2", 2}} {
 		d.Journey.RequiredEnrollments = append(d.Journey.RequiredEnrollments, transcript.ExpectedEnrollment{Role: entry.role, RoleIndex: entry.index, Identity: transcript.PublicIdentity{ID: entry.id, KeyID: "key-" + entry.id, PublicKeyFingerprint: "fingerprint-" + entry.id}})
 	}
-	p := transcript.DefinitionProtocol{DefinitionSchema: "proof-tool-mpc-ceremony-definition-v4", StorageWorkflow: "storage-first-v2", ReleaseVerification: "coordinator-full-replay-v1", Definition: d}
+	p := transcript.DefinitionProtocol{DefinitionSchema: "proof-tool-mpc-ceremony-definition-v5", StorageWorkflow: "storage-first-v2", ReleaseVerification: "coordinator-full-replay-v1", Definition: d}
 	c := transcript.CheckpointStateV4{CeremonyID: id, Deliveries: []transcript.DeliverySlotV4{}, Progress: transcript.CheckpointProgressV4{Phase1: transcript.CheckpointPhaseState{Phase: "phase1", HeadRecordID: head}}}
 	if phase == "phase2" {
 		c.Progress.Phase2 = &transcript.CheckpointPhaseState{Phase: "phase2", HeadRecordID: head}

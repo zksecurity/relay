@@ -37,7 +37,7 @@ func TestWorkflowV4RoutingIsIrrevocable(t *testing.T) {
 			t.Fatal("downgraded existing V4 workspace", err)
 		}
 	}
-	for _, data := range []string{`{`, `{"schema":"future-format"}`, `{"schema":"proof-tool-mpc-ceremony-definition-v4","schema":"proof-tool-mpc-ceremony-definition-v3"}`} {
+	for _, data := range []string{`{`, `{"schema":"future-format"}`, `{"schema":"proof-tool-mpc-ceremony-definition-v5","schema":"proof-tool-mpc-ceremony-definition-v3"}`} {
 		p := guidedProfile{Work: t.TempDir()}
 		path := filepath.Join(p.Work, "ceremony", "public", "ceremony.json")
 		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {

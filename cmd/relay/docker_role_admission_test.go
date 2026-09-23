@@ -49,6 +49,11 @@ func TestDockerRoleAdmissionRetainsCreatedIdentity(t *testing.T) {
 	if record.ContainerID != id || !strings.HasPrefix(record.Name, "relay-role-") {
 		t.Fatal("role identity not recorded")
 	}
+	guidedArgs := append([]string{"role", "--role", o.role, "--image", o.image, "--platform", o.platform, "--work", o.work, "--trust", o.trust, "--keys", o.keys, "--"}, command...)
+	usageRecord, _, ok := guidedRoleUsageRecord(guidedArgs)
+	if !ok || usageRecord != records[0] {
+		t.Fatalf("guided usage selected %q, want the exact admitted role record %q", usageRecord, records[0])
+	}
 	if _, err := prepareAdmittedDockerRole(fake, facts, o, command, argv); err == nil || !strings.Contains(err.Error(), "retained role container") {
 		t.Fatal("duplicate role allowed", err)
 	}

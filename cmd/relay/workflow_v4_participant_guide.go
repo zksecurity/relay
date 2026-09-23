@@ -159,7 +159,7 @@ func runWorkflowV4ParticipantAction(ui *coordinatorWizard, j *workflowV4Journal,
 	case "submit-your-enrollment":
 		return runWorkflowV4ParticipantEnrollment(ui, snapshot, protocol, participant, config, inspector)
 	case "contribute":
-		if err := ui.confirm("Proof-tool will verify this exact allocation and input snapshot before generating randomness", "CONTRIBUTE"); err != nil {
+		if err := ui.confirm("Authenticate this assigned input, create your contribution and check it", "CONTRIBUTE"); err != nil {
 			return err
 		}
 		plan, scopeFile, err := prepareWorkflowV4Contribution(snapshot, protocol, j.state.Marker.Binding, participant, time.Now().UTC())

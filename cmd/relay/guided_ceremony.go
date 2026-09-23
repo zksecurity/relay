@@ -673,6 +673,9 @@ func executeGuidedChild(args []string) error {
 			select {
 			case <-ticker.C:
 				fmt.Fprintf(os.Stderr, "Operation still running (%s elapsed); waiting for command completion.\n", time.Since(started).Round(time.Second))
+				if usage := guidedRoleUsageSnapshot(args); usage != "" {
+					fmt.Fprintf(os.Stderr, "Operation resource usage: %s.\n", usage)
+				}
 			case <-finished:
 				return
 			}

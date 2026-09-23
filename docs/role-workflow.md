@@ -66,7 +66,9 @@ Offline release signing remains network-isolated; disconnect the host too.
 
 The guide runs existing verification, contribution, acceptance, phase-transition,
 audit and release commands. These checks—not menu progress—establish validity.
-A tiny rehearsal cannot satisfy the production GO/NO-GO evidence gates.
+A rehearsal-mode run does not use the production GO/NO-GO decision. A
+production-mode run must satisfy that decision for its exact signed circuit;
+test-circuit GO does not authorize ownership-proof use.
 
 Witness and mirror receipt signing uses a separately prepared network-disabled
 image. Review your exact record and confirm your own observations. Disconnecting

@@ -54,6 +54,23 @@ func TestRunWithProgressReportsFailure(t *testing.T) {
 	}
 }
 
+func TestRunWithProgressSnapshotReportsActualUsage(t *testing.T) {
+	originalInterval, originalOutput := progressHeartbeatInterval, progressOutput
+	t.Cleanup(func() { progressHeartbeatInterval, progressOutput = originalInterval, originalOutput })
+	progressHeartbeatInterval = time.Millisecond
+	var output bytes.Buffer
+	progressOutput = &output
+	if err := runWithProgressSnapshot("phase2 contribution", func() error {
+		time.Sleep(5 * time.Millisecond)
+		return nil
+	}, func() string { return "actual CPU 11.0%; memory 240MiB / 6GiB" }); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "actual CPU 11.0%; memory 240MiB / 6GiB") {
+		t.Fatalf("usage snapshot absent: %s", output.String())
+	}
+}
+
 func TestFormatBytes(t *testing.T) {
 	for _, test := range []struct {
 		size int64

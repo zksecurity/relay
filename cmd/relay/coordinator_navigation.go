@@ -52,7 +52,7 @@ func (w *coordinatorWizard) nextPreparationAction() preparationNext {
 		}
 		return preparationNext{"12", "Open ceremony operations and progress", "Continue with the coordinator workflow. Enrollment files are present but this menu has not verified them; operations recheck the relevant evidence."}
 	}
-	if (d.Mode != "rehearsal" && d.Mode != "production") || (d.Circuit != "ownership-destination-v3" && !(d.Mode == "rehearsal" && d.Circuit == "rehearsal-tiny-v1")) {
+	if (d.Mode != "rehearsal" && d.Mode != "production") || !supportedCeremonyCircuit(d.Circuit) {
 		return preparationNext{"1", "Basics: choose ceremony mode and circuit", "A signed definition must identify the ceremony mode and circuit."}
 	}
 	if d.Identities.Coordinator.check() != nil {

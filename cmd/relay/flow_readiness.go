@@ -57,7 +57,7 @@ func (f *roleFlow) readiness(task flowTask) flowReadiness {
 			return r
 		}
 		if mode == "not-applicable" {
-			r.Requirement, r.Status = "Not applicable", "Authenticated rehearsal"
+			r.Requirement, r.Status = "Not applicable", "Authenticated rehearsal mode"
 			return r
 		}
 	}

@@ -469,7 +469,7 @@ func TestCoordinatorInitializationRequiresConsentAndFreezesOnFailure(t *testing.
 			if err := os.MkdirAll(root, 0700); err != nil {
 				return err
 			}
-			return os.WriteFile(filepath.Join(root, "ceremony.json"), []byte(`{"schema":"proof-tool-mpc-ceremony-definition-v4"}`), 0600)
+			return os.WriteFile(filepath.Join(root, "ceremony.json"), []byte(`{"schema":"proof-tool-mpc-ceremony-definition-v5"}`), 0600)
 		}
 		return nil
 	}
@@ -503,7 +503,7 @@ func TestCoordinatorInitializationUsesProofToolAndExternalTrust(t *testing.T) {
 			if err := os.MkdirAll(root, 0700); err != nil {
 				return err
 			}
-			return os.WriteFile(filepath.Join(root, "ceremony.json"), []byte(`{"schema":"proof-tool-mpc-ceremony-definition-v4"}`), 0600)
+			return os.WriteFile(filepath.Join(root, "ceremony.json"), []byte(`{"schema":"proof-tool-mpc-ceremony-definition-v5"}`), 0600)
 		}
 		return nil
 	}

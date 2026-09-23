@@ -3,32 +3,26 @@
 Status: implementation in progress; not release qualification.
 
 Resource selection is local execution policy. It must not change signed ceremony
-inputs, approved proof-tool identities, or mathematical verification. The first
-Relay release retains the current proof-tool pins. Proof-tool optimizations ship
-separately, followed by a Relay release updating those pins for a new ceremony.
+inputs, approved proof-tool identities, or mathematical verification. Proof-tool optimizations ship
+first, followed by one Relay release updating the pins and integrating resource/UI
+changes for a new ceremony.
 
 ## Agreed PR and release order
 
-1. Ship a Relay-only PR and release first, provisionally v0.5.0. Include eligible
-   launcher, resource-allocation, UI, and recovery fixes without changing
-   `release/role-images.json` proof-tool pins or requiring new proof-tool behavior.
-   Qualify compatibility before using a CLI upgrade between current-ceremony
-   operations; never replace or restart its running computation.
-2. Ship the proof-tool optimization PR and protected-main release separately.
-   This includes removing redundant verification inside proof-tool. Verify the
-   published immutable assets, both architecture checksums, and attestations
-   before Relay consumes them.
-3. Ship a separate Relay PR and release, provisionally v0.6.0, updating the
-   proof-tool pins to those verified assets and qualifying their integration.
-   Use this combination for a freshly frozen ceremony. Retain the old releases
-   and proof-tool identities for existing frozen ceremonies.
+Updated operator decision: two release stages, superseding the previous
+Relay-only → proof-tool → Relay pin-update sequence.
 
-These are three separately reviewable PR/release stages, in that order. Version
-numbers are provisional: check unused tags and the final scope against
-`release-versions.md` before reserving them. If the first stage includes substantive
-new resource-management features, the repository policy calls for a minor bump;
-adjust the proposed numbers while preserving this sequence. Publication and
-Tessera activation retain their normal protected release and compatibility gates.
+1. Publish the proof-tool optimization release first, after protected-main checks,
+   both architecture checksums and attestations. Persistent key caching is deferred.
+2. Ship one Relay PR/release that updates `release/role-images.json` to those exact
+   verified assets and includes compatible resource-allocation, UI and integration
+   changes. Qualify the full V5 ceremony workflow and required cross-repository
+   gates before release. No separate Relay-only release retaining old pins is planned.
+
+Choose version numbers from final scope and `release-versions.md`; earlier
+provisional v0.5.0/v0.6.0 two-release numbering is superseded. Start a fresh ceremony
+with the approved released pairing; never replace its active computation's tools.
+This is release ordering, not permission to publish during documentation work.
 
 ## Selection and recovery
 
@@ -186,3 +180,17 @@ strict inventory, host reserves and saved limits. Selection is explicit and
 capacity is rechecked at admission. No suggestion is made for operator-budget
 policy, unknown workloads, insufficient headroom or caps below that validated
 configuration. Higher CPU recommendations still require production measurements.
+
+## Deferred optimization integration
+
+Persistent coordinator calculation caching is outside the current release. Do not
+add cache mounts, MAC-key setup, cache controls or saved-key status messages in
+Relay. Existing upload memo and workflow journal are retained; they are not the
+deferred calculation cache. Cache-specific memory/recovery qualification does not
+block the no-cache resource/UI integration.
+
+Standalone direct-CLI durable attempt tracking is also deferred. Preserve Relay's
+journal-before-launch protection and validate interrupted-generation/recovery
+behavior. Do not advertise standalone crash-safe retry guarantees or treat missing
+output as proof that randomness was never generated. Resource admission and memory
+qualification for current operations remain mandatory.

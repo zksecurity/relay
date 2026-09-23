@@ -17,6 +17,12 @@ var (
 // The operation's own stdout and stderr remain untouched, so proof-tool's real
 // replay counters continue to appear between these messages.
 func runWithProgress(label string, operation func() error) error {
+	return runWithProgressSnapshot(label, operation, nil)
+}
+
+// sample reports actual usage when the launched runtime exposes it. Sampling
+// is advisory and never changes the result of a ceremony operation.
+func runWithProgressSnapshot(label string, operation func() error, sample func() string) error {
 	started := time.Now()
 	writeProgress(label, "started", started, 0)
 
@@ -30,6 +36,11 @@ func runWithProgress(label string, operation func() error) error {
 			select {
 			case now := <-ticker.C:
 				writeProgress(label, "still running", now, now.Sub(started))
+				if sample != nil {
+					if usage := sample(); usage != "" {
+						fmt.Fprintf(progressOutput, "[%s] %s: %s\n", now.UTC().Format(time.RFC3339), label, usage)
+					}
+				}
 			case <-stop:
 				return
 			}

@@ -58,10 +58,10 @@ func verificationFixture(t *testing.T, decision ...bool) string {
 }
 func TestPublicVerificationStages(t *testing.T) {
 	for _, tc := range []struct {
-		name, mode, fail string
-		want             bool
-		last             string
-	}{{"rehearsal", "rehearsal", "", true, "not-applicable"}, {"production-needs-approval", "production", "", false, "missing-evidence"}, {"replay-fails", "rehearsal", "replay", false, "not-run"}} {
+		name, mode, keyVersion, fail string
+		want                         bool
+		last                         string
+	}{{"rehearsal", "rehearsal", "rehearsal-tiny-v1", "", true, "not-applicable"}, {"production-tiny-needs-approval", "production", "rehearsal-tiny-v1", "", false, "missing-evidence"}, {"production-k11-needs-approval", "production", "rehearsal-k11-v1", "", false, "missing-evidence"}, {"production-needs-approval", "production", "ownership-destination-v3", "", false, "missing-evidence"}, {"replay-fails", "rehearsal", "rehearsal-tiny-v1", "replay", false, "not-run"}} {
 		t.Run(tc.name, func(t *testing.T) {
 			calls := []string{}
 			runner := func(args ...string) ([]byte, error) {
@@ -75,7 +75,7 @@ func TestPublicVerificationStages(t *testing.T) {
 				}
 				r := map[string]any{"schema": "proof-tool-mpc-command-result-v1", "ok": true, "command": command, "release_manifest_sha256": "sha256:" + strings.Repeat("b", 64), "ceremony_id": "sha256:" + strings.Repeat("a", 64)}
 				if command == "inspect definition" {
-					r["definition_inspection"] = map[string]any{"schema": "proof-tool-mpc-definition-inspection-v1", "ceremony_id": "sha256:" + strings.Repeat("a", 64), "mode": tc.mode, "r1cs": map[string]any{"name": "circuit.r1cs", "digest": map[string]any{"sha256": strings.Repeat("a", 64), "blake2b256": strings.Repeat("b", 64), "size": 1}}, "phase1_participants": []string{"a"}, "phase2_participants": []string{"a"}}
+					r["definition_inspection"] = map[string]any{"schema": "proof-tool-mpc-definition-inspection-v1", "ceremony_id": "sha256:" + strings.Repeat("a", 64), "mode": tc.mode, "key_version": tc.keyVersion, "r1cs": map[string]any{"name": "circuit.r1cs", "digest": map[string]any{"sha256": strings.Repeat("a", 64), "blake2b256": strings.Repeat("b", 64), "size": 1}}, "phase1_participants": []string{"a"}, "phase2_participants": []string{"a"}}
 				}
 				return json.Marshal(r)
 			}
@@ -95,9 +95,9 @@ func TestPublicVerificationStages(t *testing.T) {
 
 func TestProductionApprovalMustBeGOAndMatchVerifiedRelease(t *testing.T) {
 	for _, tc := range []struct {
-		name, decision, hash string
-		pass                 bool
-	}{{"go", "GO", strings.Repeat("b", 64), true}, {"no-go", "NO-GO", strings.Repeat("b", 64), false}, {"other-release", "GO", strings.Repeat("c", 64), false}} {
+		name, keyVersion, decision, hash string
+		pass                             bool
+	}{{"ownership-go", "ownership-destination-v3", "GO", strings.Repeat("b", 64), true}, {"tiny-go", "rehearsal-tiny-v1", "GO", strings.Repeat("b", 64), true}, {"k11-go", "rehearsal-k11-v1", "GO", strings.Repeat("b", 64), true}, {"no-go", "rehearsal-tiny-v1", "NO-GO", strings.Repeat("b", 64), false}, {"other-release", "rehearsal-k11-v1", "GO", strings.Repeat("c", 64), false}} {
 		t.Run(tc.name, func(t *testing.T) {
 			runner := func(args ...string) ([]byte, error) {
 				command := args[0]
@@ -106,7 +106,7 @@ func TestProductionApprovalMustBeGOAndMatchVerifiedRelease(t *testing.T) {
 				}
 				r := map[string]any{"schema": "proof-tool-mpc-command-result-v1", "ok": true, "command": command, "ceremony_id": "sha256:" + strings.Repeat("a", 64), "release_manifest_sha256": "sha256:" + strings.Repeat("b", 64)}
 				if command == "inspect definition" {
-					r["definition_inspection"] = map[string]any{"schema": "proof-tool-mpc-definition-inspection-v1", "ceremony_id": "sha256:" + strings.Repeat("a", 64), "mode": "production", "phase1_participants": []string{"a"}, "phase2_participants": []string{"a"}, "r1cs": map[string]any{"name": "circuit.r1cs", "digest": map[string]any{"sha256": strings.Repeat("a", 64), "blake2b256": strings.Repeat("b", 64), "size": 1}}}
+					r["definition_inspection"] = map[string]any{"schema": "proof-tool-mpc-definition-inspection-v1", "ceremony_id": "sha256:" + strings.Repeat("a", 64), "mode": "production", "key_version": tc.keyVersion, "phase1_participants": []string{"a"}, "phase2_participants": []string{"a"}, "r1cs": map[string]any{"name": "circuit.r1cs", "digest": map[string]any{"sha256": strings.Repeat("a", 64), "blake2b256": strings.Repeat("b", 64), "size": 1}}}
 				}
 				if command == "decision verify" {
 					r["decision"] = tc.decision
@@ -117,6 +117,9 @@ func TestProductionApprovalMustBeGOAndMatchVerifiedRelease(t *testing.T) {
 			report, err := verifyCeremonyArchive(verificationFixture(t, true), 1<<20, runner)
 			if report.Passed != tc.pass || (err == nil) != tc.pass {
 				t.Fatalf("%+v: %v", report, err)
+			}
+			if tc.pass && !strings.Contains(report.Checks[4].Detail, tc.keyVersion) {
+				t.Fatalf("GO report omitted signed circuit %q: %+v", tc.keyVersion, report.Checks[4])
 			}
 		})
 	}

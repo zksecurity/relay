@@ -1131,7 +1131,7 @@ func (f *roleFlow) advance() error {
 			return err
 		}
 		if requirement == "not-applicable" {
-			fmt.Fprintln(f.ui.output, "Production decision omitted: the authenticated definition selects rehearsal mode. This is not a production authorization.")
+			fmt.Fprintln(f.ui.output, "Production decision omitted: the authenticated definition selects rehearsal mode.")
 			f.state.Stage++
 			return f.save()
 		}
@@ -1241,7 +1241,7 @@ func (f *roleFlow) stageMenu() error {
 			fmt.Fprintf(f.ui.output, "\n%d) %s [%s]\n   Why: %s\n   Status: %s\n", n+1, task.Label, kind, taskWhy(task, readiness), status)
 		}
 		if decisionState == "not-applicable" {
-			fmt.Fprintln(f.ui.output, "Production decision actions hidden: not applicable to this authenticated rehearsal.")
+			fmt.Fprintln(f.ui.output, "Production decision actions hidden: authenticated rehearsal mode.")
 		}
 		nextLabel := "Review role completion and retention"
 		if f.state.Stage+1 < len(f.stages) {

@@ -220,7 +220,7 @@ func workflowV4CoordinatorActionLabel(recommendation storagefirst.TurnRecommenda
 	case "recover-candidate-download":
 		return "Preserve the unverifiable download and fetch this attempt again"
 	case "verify-and-accept-candidate":
-		return "Replay, verify and accept the exact candidate"
+		return "Check this contribution against the accepted input and accept the exact candidate"
 	case "review-and-reject-candidate":
 		return "Review the received candidate and reject it if appropriate"
 	}
@@ -353,7 +353,7 @@ func runWorkflowV4CoordinatorAcceptance(ui *coordinatorWizard, snapshot storagef
 	if err != nil {
 		return err
 	}
-	if err := ui.confirm("Replay the contribution mathematics, verify the exact five files and publish acceptance", "VERIFY AND ACCEPT"); err != nil {
+	if err := ui.confirm("Check this contribution against the accepted input, verify the exact five files and publish acceptance", "VERIFY AND ACCEPT"); err != nil {
 		return err
 	}
 	if err := validateWorkflowV4CandidateFetchReceipt(progress.CandidateDir, view.Scope, view.CandidateAttempt.AttemptID); err != nil {

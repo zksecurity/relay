@@ -22,6 +22,22 @@ func TestProductionDecisionCannotBeSkippedAsOptional(t *testing.T) {
 	}
 }
 
+func TestProductionModeTestCircuitRequiresGODecision(t *testing.T) {
+	for _, keyVersion := range []string{"rehearsal-tiny-v1", "rehearsal-k11-v1"} {
+		f := flowFixture(t)
+		f.stages = []flowStage{decisionFlow("coordinator")}
+		f.definition = func() (transcript.Definition, error) {
+			return transcript.Definition{Mode: "production", KeyVersion: keyVersion}, nil
+		}
+		if err := f.advance(); err == nil || !strings.Contains(err.Error(), "Prepare the canonical") {
+			t.Fatalf("%s skipped required decision: %v", keyVersion, err)
+		}
+		if f.state.Stage != 0 {
+			t.Fatalf("%s advanced without decision", keyVersion)
+		}
+	}
+}
+
 func TestProductionDecisionMenuMarksEveryDecisionActionRequired(t *testing.T) {
 	f := flowFixture(t)
 	f.stages = []flowStage{decisionFlow("coordinator")}

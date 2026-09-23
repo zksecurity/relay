@@ -30,8 +30,12 @@ Action numbers stay stable. Choosing another action never bypasses its checks.
 
 1. Choose **Basics**: explicitly select rehearsal or production and the circuit.
    Select from the numbered choices; no internal names need to be typed.
-   `rehearsal-tiny-v1` is only for testing; `ownership-destination-v3` is the
-   supported production circuit.
+   `ownership-destination-v3` is the K21 ownership proof circuit.
+   `rehearsal-tiny-v1` (K3) and `rehearsal-k11-v1` (K11) prove test statements.
+   They can exercise production-mode participation and witnessing and receive
+   GO for their exact signed test circuit, but cannot produce ownership proofs.
+   The K11 domain is 2,048,
+   which is 1/1,024 of the K21 domain.
 2. Generate your coordinator identity, or keep your existing keypair.
    The helper assigns an ID automatically; you only enter a public display name.
    Send only `identity.json` to the ceremony roles through your agreed channel.

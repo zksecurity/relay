@@ -182,8 +182,9 @@ flowchart LR
 
 The signed release must exist before a production decision can bind and verify
 it. Cryptographic signing alone is not authorization: a verified production GO
-decision authorizes distribution and use. A rehearsal authenticates that this
-decision is not applicable, but it is never a production approval.
+decision authorizes distribution and use of the exact signed circuit and
+release. GO for a test circuit does not authorize ownership-proof use. A
+rehearsal-mode run authenticates that this decision is not applicable.
 
 The upload station imports the final signer's public enrollment, never their
 private key. Upload or Tessera notification still does not prove coordinator
