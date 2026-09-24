@@ -351,19 +351,14 @@ func runCeremonyUpgradeV2(args []string) error {
 		if err != nil {
 			return err
 		}
+		if err := upgradeV2BindAuthenticatedProtocol(&d, protocol.DefinitionSchema); err != nil {
+			return err
+		}
 		if d.OperatorSelected() {
-			// The signed, pinned definition selects the actual protocol. The
-			// placeholder used for preliminary asset checks grants no authority.
-			d.Protocol = protocol.DefinitionSchema
-			if err := d.Validate(); err != nil {
-				return err
-			}
 			raw, err = json.Marshal(d)
 			if err != nil {
 				return err
 			}
-		} else if d.Protocol != protocol.DefinitionSchema {
-			return errors.New("upgrade declaration differs from the authenticated ceremony protocol")
 		}
 		if err := upgradeV2CheckApprovedProof(driver.definition, p.Platform, d.ProofToolSHA256); err != nil {
 			return err
@@ -479,6 +474,19 @@ func runCeremonyUpgradeV2(args []string) error {
 		return err
 	}
 	return upgradeV2FinishStart(s)
+}
+
+func upgradeV2BindAuthenticatedProtocol(d *upgrade.DeclarationV2, actual string) error {
+	if !d.OperatorSelected() {
+		if d.Protocol != actual {
+			return errors.New("upgrade declaration differs from the authenticated ceremony protocol")
+		}
+		return nil
+	}
+	// Preliminary asset checks use a V4 placeholder. Only the signed,
+	// pinned definition selects the protocol recorded in the upgrade.
+	d.Protocol = actual
+	return d.Validate()
 }
 
 // Call only after signature authentication by the original proof-tool.

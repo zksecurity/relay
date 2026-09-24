@@ -60,6 +60,27 @@ func testUpgradeV2(t *testing.T, role string) (upgradeSelectionV2, upgrade.Decla
 	return s, d
 }
 
+func TestUpgradeV2BindsAuthenticatedV5CoordinatorProtocol(t *testing.T) {
+	_, reviewed := testUpgradeV2(t, "coordinator")
+	const v5 = "proof-tool-mpc-ceremony-definition-v5"
+	if err := upgradeV2BindAuthenticatedProtocol(&reviewed, v5); err == nil {
+		t.Fatal("reviewed V4 declaration accepted for authenticated V5 ceremony")
+	}
+	operator := reviewed
+	operator.Schema = upgrade.OperatorTransitionSchema
+	operator.QualificationSHA256 = ""
+	operator.SafePredecessors = nil
+	if err := upgradeV2BindAuthenticatedProtocol(&operator, v5); err != nil {
+		t.Fatalf("V5 coordinator selection rejected: %v", err)
+	}
+	if operator.Protocol != v5 {
+		t.Fatal("operator selection did not retain authenticated V5 protocol")
+	}
+	if err := upgradeV2BindAuthenticatedProtocol(&operator, "unknown-protocol"); err == nil {
+		t.Fatal("unsupported authenticated protocol accepted")
+	}
+}
+
 func TestUpgradeV2PreservesInterruptedContributionAndHighWater(t *testing.T) {
 	s, d := testUpgradeV2(t, "participant")
 	protocol, b := workflowV4TestBinding(t)
