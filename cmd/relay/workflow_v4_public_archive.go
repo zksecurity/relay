@@ -240,6 +240,9 @@ func runWorkflowV4PrepareTrialArchive(ui *coordinatorWizard, online guidedProfil
 		if !workflowV4ArchiveMatchesExpected(retainedManifest, m) {
 			return errors.New("retained public archive differs from the authenticated decision or final release")
 		}
+		if err := workflowV4ArchivePlaceholdersMatchCurrent(retainedManifest, m, root); err != nil {
+			return fmt.Errorf("retained public archive differs from current public handoff: %w", err)
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	} else {
@@ -318,6 +321,33 @@ func workflowV4ArchiveMatchesExpected(actual, expected verification.Manifest) bo
 		}
 	}
 	return true
+}
+
+// Decision handoff and coordinator-key entries have no checkpoint digest, so a
+// retained ZIP must still match their current local bytes before reuse.
+func workflowV4ArchivePlaceholdersMatchCurrent(actual, expected verification.Manifest, currentRoot string) error {
+	archived := make(map[string]verification.File, len(actual.Files))
+	for _, file := range actual.Files {
+		archived[file.Path] = file
+	}
+	for _, file := range expected.Files {
+		if file.SHA256 != workflowV4ZeroSHA256 {
+			continue
+		}
+		if !strings.HasPrefix(file.Path, workflowV4ArchivePrefix) || !verification.SafePath(file.Path) {
+			return fmt.Errorf("invalid public handoff path %q", file.Path)
+		}
+		current := filepath.Join(currentRoot, filepath.FromSlash(strings.TrimPrefix(file.Path, workflowV4ArchivePrefix)))
+		raw, err := readTesseraRegularFile(current, 16<<20, false)
+		if err != nil {
+			return err
+		}
+		want, ok := archived[file.Path]
+		if !ok || want.Size != int64(len(raw)) || want.SHA256 != workflowV4DigestBytes(raw) {
+			return fmt.Errorf("public handoff file changed after archive packing: %s", file.Path)
+		}
+	}
+	return nil
 }
 
 // The public inventory starts with references returned by the approved

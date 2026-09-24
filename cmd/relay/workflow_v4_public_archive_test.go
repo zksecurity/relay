@@ -35,6 +35,32 @@ func TestWorkflowV4RetainedArchiveMustMatchCurrentSignedInventory(t *testing.T) 
 	}
 }
 
+func TestWorkflowV4RetainedArchiveRejectsChangedPublicHandoffBytes(t *testing.T) {
+	for _, name := range []string{"decision/decision.json", "decision/coordinator.sig", "decision/evidence/report.json", "coordinator-public-key.hex"} {
+		t.Run(name, func(t *testing.T) {
+			current := t.TempDir()
+			local := filepath.Join(current, filepath.FromSlash(name))
+			if err := os.MkdirAll(filepath.Dir(local), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(local, []byte("new public bytes"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			path := workflowV4ArchivePrefix + name
+			expected := verification.Manifest{Files: []verification.File{{Path: path, SHA256: workflowV4ZeroSHA256}}}
+			actual := verification.Manifest{Files: []verification.File{{Path: path, Size: int64(len("old public bytes")), SHA256: workflowV4DigestBytes([]byte("old public bytes"))}}}
+			if err := workflowV4ArchivePlaceholdersMatchCurrent(actual, expected, current); err == nil {
+				t.Fatal("retained archive accepted old public bytes")
+			}
+			actual.Files[0].Size = int64(len("new public bytes"))
+			actual.Files[0].SHA256 = workflowV4DigestBytes([]byte("new public bytes"))
+			if err := workflowV4ArchivePlaceholdersMatchCurrent(actual, expected, current); err != nil {
+				t.Fatalf("retained archive rejected matching public bytes: %v", err)
+			}
+		})
+	}
+}
+
 func TestWorkflowV4DecisionArchiveInventoryIsClosed(t *testing.T) {
 	root := t.TempDir()
 	decision := filepath.Join(root, "decision")

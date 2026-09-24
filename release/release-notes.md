@@ -20,6 +20,8 @@ checkpoint after final release.
   remains important because there is no separate upload host.
 - Coordinator upgrade admission now binds an authenticated V5 definition to a
   V5 upgrade record; other roles do not gain V5 upgrade admission.
+- Reusing a retained public archive now checks that decision files, signatures,
+  evidence, and the coordinator public key still match the current handoff.
 
 ## Tessera compatibility
 
