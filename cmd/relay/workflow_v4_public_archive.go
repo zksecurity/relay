@@ -21,6 +21,24 @@ import (
 const workflowV4ArchivePrefix = "ceremony/public/"
 const workflowV4ZeroSHA256 = "0000000000000000000000000000000000000000000000000000000000000000"
 
+// Trust files and proof-tool public exports may differ by a final newline.
+// Compare the decoded key, while rejecting malformed or wrong-length inputs.
+func sameCoordinatorPublicKey(a, b []byte) bool {
+	decode := func(raw []byte) ([]byte, error) {
+		value, err := hex.DecodeString(strings.TrimSpace(string(raw)))
+		if err != nil || len(value) != 32 {
+			return nil, errors.New("invalid coordinator public key")
+		}
+		return value, nil
+	}
+	first, err := decode(a)
+	if err != nil {
+		return false
+	}
+	second, err := decode(b)
+	return err == nil && bytes.Equal(first, second)
+}
+
 // Only proof-tool-verified decision references are eligible for the archive.
 // An extra file in the decision handoff is an error, not an implicit sidecar.
 func workflowV4DecisionArchiveFiles(root string) ([]string, []string, error) {
@@ -157,7 +175,7 @@ func runWorkflowV4PrepareTrialArchive(ui *coordinatorWizard, online guidedProfil
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(trustedKey, publicKey) {
+	if !sameCoordinatorPublicKey(trustedKey, publicKey) {
 		return errors.New("public archive coordinator key differs from the authenticated local trust anchor")
 	}
 	// This verifier checks the exact decision, release, evidence and required
