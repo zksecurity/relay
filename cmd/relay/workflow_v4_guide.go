@@ -450,7 +450,8 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 		if decisionAvailable {
 			fmt.Fprintln(ui.output, "[D] Production GO/NO-GO decision (separate from release signing)")
 			if p.Role == "coordinator" {
-				fmt.Fprintln(ui.output, "[P] Verify signed NO-GO decision and pack a public trial archive")
+				fmt.Fprintln(ui.output, "[P] Verify signed decision and pack its exact public archive")
+				fmt.Fprintln(ui.output, "[V] Independently read back an officially published GO release")
 			}
 		}
 		limits, limitsErr := resolvedDockerRuntimeLimits(p.Resources)
@@ -464,13 +465,21 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 			return err
 		}
 		switch strings.ToUpper(strings.TrimSpace(answer)) {
+		case "V":
+			if !decisionAvailable || p.Role != "coordinator" {
+				fmt.Fprintln(ui.output, "A signed final release and coordinator role are required.")
+				continue
+			}
+			if err := runWorkflowV4CoordinatorGoReadback(ui, p, protocol); err != nil {
+				ui.message(toneError, "Official GO readback stopped: %v\n", err)
+			}
 		case "P":
 			if !decisionAvailable || p.Role != "coordinator" {
 				fmt.Fprintln(ui.output, "A signed final release and coordinator role are required.")
 				continue
 			}
 			if err := runWorkflowV4PrepareTrialArchive(ui, p, snapshot, protocol); err != nil {
-				ui.message(toneError, "Trial archive preparation stopped: %v\n", err)
+				ui.message(toneError, "Public archive preparation stopped: %v\n", err)
 			}
 		case "D":
 			if !decisionAvailable {

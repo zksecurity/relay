@@ -910,6 +910,30 @@ terminal outcome, and one review checkpoint cannot accept both GO and NO-GO.
 In plain language: changing any final file requires a new review and a new
 approval.
 
+### Relay-only publication for frozen V5 releases
+
+The released V5 proof-tool validates a signed GO after final release but
+forbids a terminal decision checkpoint at that point. Relay's compatibility
+publication path therefore keeps that proof-tool and final-release checkpoint
+unchanged. The coordinator uses the pinned proof-tool to verify the exact GO,
+packs a closed public archive, and signs a separate `relay-go-publication-v1`
+record binding the ceremony, final checkpoint digest, exact decision digest,
+release ID, archive digest, and official storage destination. The keyless
+upload station checks all of those bindings and re-runs proof-tool's release
+and decision verification before publishing. It conditionally creates the
+content-addressed archive and one fixed, create-only ceremony pointer; an
+existing pointer is a successful retry only if its bytes are identical.
+
+The coordinator and any public verifier independently download that pointer
+and archive from the trusted official URL and compare their bytes. This
+record is a separate publication authority, not a proof-tool checkpoint or a
+change to the signed ceremony definition. A GO archive without a matching
+official pointer is a valid signed decision but not a verified publication.
+This compatibility path does not claim a proof-tool `ReleasePublished`
+checkpoint. It requires a qualified Relay coordinator and upload-station
+release, and a trusted official storage origin. The planned checkpoint-native
+protocol below remains a future protocol revision.
+
 If the decision is **NO-GO**, Relay may preserve a privacy-checked archive in
 protected storage for investigation, but it never publishes the final proving
 parameters as an approved release.

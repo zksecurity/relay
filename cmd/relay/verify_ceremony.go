@@ -39,6 +39,7 @@ type publicVerifyRunner func(args ...string) ([]byte, error)
 func runVerifyCeremony(args []string) error {
 	f := flag.NewFlagSet("verify-ceremony", flag.ContinueOnError)
 	archive := f.String("archive", "", "public verification ZIP downloaded from Tessera")
+	publishedBaseURL := f.String("published-base-url", "", "trusted official public storage URL; verifies approved publication as well as the signed archive")
 	tool := f.String("mpc-ceremony", "mpc-ceremony", "locally installed proof tool; must match this release's pin")
 	maxBytes := f.Int64("max-expanded-bytes", 64<<30, "maximum extracted bytes (raise explicitly for larger production archives)")
 	if err := f.Parse(args); err != nil {
@@ -64,7 +65,7 @@ func runVerifyCeremony(args []string) error {
 		}
 		return out.Bytes(), nil
 	}
-	report, err := verifyCeremonyArchive(*archive, *maxBytes, run)
+	report, err := verifyCeremonyArchiveWithPublication(*archive, *maxBytes, run, *publishedBaseURL)
 	if encodeErr := json.NewEncoder(os.Stdout).Encode(report); encodeErr != nil {
 		return encodeErr
 	}
@@ -81,9 +82,19 @@ func (b *limitedVerificationOutput) Write(p []byte) (int, error) {
 	return b.Buffer.Write(p)
 }
 func verifyCeremonyArchive(archive string, maxBytes int64, run publicVerifyRunner) (report verificationReport, err error) {
+	return verifyCeremonyArchiveWithPublication(archive, maxBytes, run, "")
+}
+
+func verifyCeremonyArchiveWithPublication(archive string, maxBytes int64, run publicVerifyRunner, publishedBaseURL string) (report verificationReport, err error) {
 	report = verificationReport{Schema: "ceremony-verification-report-v1", Trust: "Ceremony identity and public keys supplied by the website hosting this archive.", Limits: []string{"Secret deletion and entropy quality", "Physical offline signing and host integrity", "Independence of people controlling different keys", "Truth of website progress claims beyond signed protocol evidence", "Whether this website snapshot is the latest"}}
+	if publishedBaseURL == "" {
+		report.Limits = append(report.Limits, "Official publication was not checked; supply an independently trusted --published-base-url")
+	}
 	for _, name := range []string{"archive-integrity", "definition", "release", "full-replay", "production-approval"} {
 		report.Checks = append(report.Checks, verificationCheck{Name: name, Status: "not-run"})
+	}
+	if publishedBaseURL != "" {
+		report.Checks = append(report.Checks, verificationCheck{Name: "official-publication", Status: "not-run"})
 	}
 	fail := func(index int, e error) (verificationReport, error) {
 		report.Checks[index].Status = "failed"
@@ -192,6 +203,13 @@ func verifyCeremonyArchive(archive string, maxBytes int64, run publicVerifyRunne
 		if e = check(4, []string{"decision", "verify"}, decision); e != nil {
 			return fail(4, e)
 		}
+	}
+	if publishedBaseURL != "" {
+		if e := workflowV4VerifyPublishedGo(root, m, archive, publishedBaseURL); e != nil {
+			return fail(5, e)
+		}
+		report.Checks[5].Status = "passed"
+		report.Checks[5].Detail = "The official pointer and published archive match the exact signed GO."
 	}
 	report.Passed = true
 	return report, nil

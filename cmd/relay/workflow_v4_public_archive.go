@@ -199,8 +199,16 @@ func runWorkflowV4PrepareTrialArchive(ui *coordinatorWizard, online guidedProfil
 	if err := json.Unmarshal(raw, &outcome); err != nil {
 		return err
 	}
-	if outcome.Decision != "NO-GO" {
-		return errors.New("this publication path is only for a signed NO-GO trial; GO promotion requires its separate terminal checkpoint")
+	if outcome.Decision != "NO-GO" && outcome.Decision != "GO" {
+		return errors.New("verified production decision has no supported outcome")
+	}
+	var binding struct {
+		Release struct {
+			ReleaseID string `json:"release_id"`
+		} `json:"release"`
+	}
+	if err := json.Unmarshal(raw, &binding); err != nil {
+		return err
 	}
 	m, err := workflowV4PublicArchiveManifest(snapshot, protocol, decisionFiles, signatures)
 	if err != nil {
@@ -210,13 +218,21 @@ func runWorkflowV4PrepareTrialArchive(ui *coordinatorWizard, online guidedProfil
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	out := filepath.Join(dir, "no-go-trial-ceremony.zip")
+	name := "no-go-trial-ceremony.zip"
+	if outcome.Decision == "GO" {
+		name = "go-ceremony.zip"
+	}
+	out := filepath.Join(dir, name)
 	if _, err := os.Lstat(out); err == nil {
-		return errors.New("a trial archive already exists; preserve and inspect it before retrying")
+		return errors.New("a public archive already exists; preserve and inspect it before retrying")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if err := ui.confirm("Pack only the authenticated public files and signed NO-GO decision into a trial archive", "PACK NO-GO TRIAL"); err != nil {
+	phrase := "PACK NO-GO TRIAL"
+	if outcome.Decision == "GO" {
+		phrase = "PACK GO RELEASE"
+	}
+	if err := ui.confirm("Pack only the authenticated public files and exact signed decision into a public archive", phrase); err != nil {
 		return err
 	}
 	if err := packCeremony(online.Work, out, m); err != nil {
@@ -226,7 +242,36 @@ func runWorkflowV4PrepareTrialArchive(ui *coordinatorWizard, online guidedProfil
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(ui.output, "Signed NO-GO trial archive: %s\nSHA-256: %s\nTransfer this public ZIP to the upload station. It must never be presented as an approved production release.\n", out, digest)
+	if outcome.Decision == "NO-GO" {
+		fmt.Fprintf(ui.output, "Signed NO-GO trial archive: %s\nSHA-256: %s\nTransfer this public ZIP to the upload station. It must never be presented as an approved production release.\n", out, digest)
+		return nil
+	}
+	config, err := loadStorageConfig(filepath.Join(online.Work, "ceremony", "config", "relay-storage.json"))
+	if err != nil || config.CeremonyID != protocol.Definition.CeremonyID || config.Provider != "aws" {
+		return errors.New("GO publication requires matching reviewed AWS storage settings")
+	}
+	if err := config.Validate(); err != nil {
+		return err
+	}
+	seed, err := readTesseraSeed(filepath.Join(online.Keys, "signing.hex"))
+	if err != nil {
+		return err
+	}
+	defer zeroTessera(seed)
+	key, err := hex.DecodeString(strings.TrimSpace(string(trustedKey)))
+	if err != nil {
+		return err
+	}
+	record := workflowV4GoPublicationFor(protocol.Definition.CeremonyID, snapshot.Head().Record.Digest.SHA256, workflowV4DigestBytes(raw), binding.Release.ReleaseID, digest, config.PublishedBucket, config.PublishedBaseURL)
+	signed, err := workflowV4SignGoPublication(record, seed, key)
+	if err != nil {
+		return err
+	}
+	pointer := filepath.Join(dir, "go-publication.json")
+	if err := writeTesseraFresh(pointer, signed, 0o600); err != nil {
+		return err
+	}
+	fmt.Fprintf(ui.output, "Signed GO archive: %s\nSHA-256: %s\nPublication authorization: %s\nTransfer both public files to the upload station. No release has been published yet.\n", out, digest, pointer)
 	return nil
 }
 

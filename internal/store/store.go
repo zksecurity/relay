@@ -156,6 +156,18 @@ func (c Client) Get(key, localPath string) error {
 }
 
 func (c Client) getPublic(key, localPath string) error {
+	return c.getPublicAtMost(key, localPath, -1)
+}
+
+// GetPublicAtMost bounds an untrusted public read before any verifier opens it.
+func (c Client) GetPublicAtMost(key, localPath string, maximum int64) error {
+	if c.PublicBaseURL == "" || maximum < 0 || maximum > 1<<40 {
+		return errors.New("invalid bounded public download")
+	}
+	return c.getPublicAtMost(key, localPath, maximum)
+}
+
+func (c Client) getPublicAtMost(key, localPath string, maximum int64) error {
 	if key == "" || path.Clean(key) != key || strings.HasPrefix(key, "../") || strings.Contains(key, `\`) {
 		return fmt.Errorf("unsafe public object key %q", key)
 	}
@@ -177,6 +189,9 @@ func (c Client) getPublic(key, localPath string) error {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 		return fmt.Errorf("GET %s: HTTP %s", key, response.Status)
 	}
+	if maximum >= 0 && response.ContentLength > maximum {
+		return errors.New("public object exceeds the approved download size")
+	}
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o700); err != nil {
 		return err
 	}
@@ -184,12 +199,21 @@ func (c Client) getPublic(key, localPath string) error {
 	if err != nil {
 		return err
 	}
-	_, copyErr := io.Copy(file, response.Body)
+	var count int64
+	var copyErr error
+	if maximum >= 0 {
+		count, copyErr = io.Copy(file, io.LimitReader(response.Body, maximum+1))
+	} else {
+		count, copyErr = io.Copy(file, response.Body)
+	}
 	closeErr := file.Close()
-	if copyErr != nil || closeErr != nil {
+	if copyErr != nil || closeErr != nil || maximum >= 0 && count > maximum {
 		_ = os.Remove(localPath)
 		if copyErr != nil {
 			return copyErr
+		}
+		if maximum >= 0 && count > maximum {
+			return errors.New("public object exceeds the approved download size")
 		}
 		return closeErr
 	}
