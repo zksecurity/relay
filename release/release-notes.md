@@ -1,4 +1,4 @@
-## What changed
+## What changed since v0.5.2
 
 - The V5 coordinator guide now generates the fixed public ownership proof during finalization, then reuses authenticated preliminary keys for release preparation. The final candidate still receives an independent full replay.
 - The V4/V5 upload-station guide now verifies and uploads the release signer's public package without a signing key. After a signed NO-GO, the coordinator can prepare a closed public trial archive and the upload station can verify, publish, and read it back under a content-addressed test prefix. This path creates no approved production pointer.
