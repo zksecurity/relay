@@ -22,17 +22,13 @@ import (
 // unchanged. Its already-signed GO is verified by that same pinned proof-tool;
 // the separate coordinator-signed pointer commits one official destination.
 func runWorkflowV4PublishGo(ui *coordinatorWizard, online guidedProfile, config access.StorageConfig, protocol transcript.DefinitionProtocol, snapshot storagefirst.SnapshotV4) error {
-	if online.Role != "upload-station" || protocol.Definition.Mode != "production" || protocol.DefinitionSchema != "proof-tool-mpc-ceremony-definition-v5" || config.CeremonyID != protocol.Definition.CeremonyID || config.Provider != "aws" || config.CoordinatorProfile == "" {
-		return errors.New("GO publication requires the matching V5 AWS upload-station workspace")
+	if online.Role != "coordinator" || !workflowV4CoordinatorDirectRelease(protocol) || config.CeremonyID != protocol.Definition.CeremonyID || config.Provider != "aws" || config.CoordinatorProfile == "" {
+		return errors.New("GO publication requires the matching V5 AWS coordinator workspace")
 	}
-	uploadProfile, err := workflowV4GoUploadProfile(config)
-	if err != nil {
-		return err
-	}
-	archive := filepath.Join(online.Work, "go-ceremony.zip")
+	archive := filepath.Join(online.Work, "workflow-v4", "publication", "go-ceremony.zip")
 	info, err := os.Lstat(archive)
 	if err != nil || !info.Mode().IsRegular() {
-		return errors.New("place the coordinator's regular GO archive in this upload workspace")
+		return errors.New("prepare the coordinator's regular GO archive before publication")
 	}
 	digest, err := workflowV4ArchiveSHA256(archive)
 	if err != nil {
@@ -71,15 +67,15 @@ func runWorkflowV4PublishGo(ui *coordinatorWizard, online guidedProfile, config 
 	if err != nil {
 		return err
 	}
-	trustedKey, err := readTesseraRegularFile(filepath.Join(online.Trust, "coordinator-public-key.hex"), 4096, false)
+	trustedKey, err := readTesseraRegularFile(filepath.Join(online.Trust, "setup-coordinator.hex"), 4096, false)
 	if err != nil || !sameCoordinatorPublicKey(archivedKey, trustedKey) {
-		return errors.New("GO archive coordinator key differs from this station's trusted key")
+		return errors.New("GO archive coordinator key differs from the coordinator's trusted key")
 	}
 	key, err := hex.DecodeString(strings.TrimSpace(string(trustedKey)))
 	if err != nil {
 		return err
 	}
-	rawPointer, err := readTesseraRegularFile(filepath.Join(online.Work, "go-publication.json"), 16<<20, false)
+	rawPointer, err := readTesseraRegularFile(filepath.Join(online.Work, "workflow-v4", "publication", "go-publication.json"), 16<<20, false)
 	if err != nil {
 		return err
 	}
@@ -115,7 +111,7 @@ func runWorkflowV4PublishGo(ui *coordinatorWizard, online guidedProfile, config 
 	proof := online
 	proof.Work, proof.Keys, proof.Credentials = root, "", ""
 	p := func(name string) string { return "/work/" + name }
-	common := []string{"--ceremony", p(manifest.Inputs["ceremony"]), "--ceremony-signature", p(manifest.Inputs["ceremony-signature"]), "--coordinator-public-key-file", "/trust/coordinator-public-key.hex"}
+	common := []string{"--ceremony", p(manifest.Inputs["ceremony"]), "--ceremony-signature", p(manifest.Inputs["ceremony-signature"]), "--coordinator-public-key-file", "/trust/setup-coordinator.hex"}
 	release := append([]string{"mpc-ceremony", "release", "verify"}, common...)
 	release = append(release, "--keys-dir", p(manifest.Inputs["keys-dir"]), "--manifest-public-key-file", p(manifest.Inputs["manifest-public-key-file"]), "--signature-key-id", manifest.ReleaseKeyID)
 	if err := runWorkflowV4ProfileCommand(proof, release, false); err != nil {
@@ -129,7 +125,7 @@ func runWorkflowV4PublishGo(ui *coordinatorWizard, online guidedProfile, config 
 	if err := runWorkflowV4ProfileCommand(proof, verify, false); err != nil {
 		return fmt.Errorf("verify exact GO and required signatures: %w", err)
 	}
-	objects := store.Client{Profile: uploadProfile, Region: config.Region, Endpoint: config.Endpoint, Bucket: config.PublishedBucket}
+	objects := store.Client{Profile: config.CoordinatorProfile, Region: config.Region, Endpoint: config.Endpoint, Bucket: config.PublishedBucket}
 	public := store.Client{PublicBaseURL: config.PublishedBaseURL}
 	if err := ui.confirm("Publish only the exact signed GO archive and the one fixed approved-release pointer", "PUBLISH APPROVED GO"); err != nil {
 		return err
@@ -162,19 +158,8 @@ func runWorkflowV4PublishGo(ui *coordinatorWizard, online guidedProfile, config 
 	if err := workflowV4GoPointerReadback(public, record.PointerKey, rawPointer, online.Work); err != nil {
 		return err
 	}
-	fmt.Fprintf(ui.output, "Published exact GO archive and approved pointer: %s/%s\nThe coordinator must independently read back this official release.\n", strings.TrimSuffix(record.PublishedBaseURL, "/"), record.PointerKey)
+	fmt.Fprintf(ui.output, "Published exact GO archive and approved pointer: %s/%s\nRun the coordinator's independent official readback action next.\n", strings.TrimSuffix(record.PublishedBaseURL, "/"), record.PointerKey)
 	return nil
-}
-
-// This profile is installed on the upload station, not sent in the public
-// ceremony storage configuration. Cloud IAM must restrict it to the exact
-// archive and approved pointer keys named by the signed authorization.
-func workflowV4GoUploadProfile(config access.StorageConfig) (string, error) {
-	profile := strings.TrimSpace(os.Getenv("RELAY_GO_UPLOAD_PROFILE"))
-	if profile == "" || profile == config.CoordinatorProfile || strings.ContainsAny(profile, " \t\r\n/\\") {
-		return "", errors.New("GO upload requires RELAY_GO_UPLOAD_PROFILE set to a separate restricted AWS profile; never use the coordinator profile")
-	}
-	return profile, nil
 }
 
 func workflowV4GoPointerReadback(public store.Client, key string, expected []byte, work string) error {

@@ -13,6 +13,7 @@ import (
 	"github.com/zksecurity/relay/internal/access"
 	"github.com/zksecurity/relay/internal/storagefirst"
 	"github.com/zksecurity/relay/internal/transcript"
+	"github.com/zksecurity/relay/internal/verification"
 )
 
 func runWorkflowV4FinalReleaseLifecycle(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, online, signer guidedProfile) error {
@@ -34,6 +35,46 @@ func runWorkflowV4FinalReleaseLifecycle(ui *coordinatorWizard, snapshot storagef
 	root := filepath.Join(online.Work, "ceremony", "public")
 	releaseDir := filepath.Join(root, "final", "release")
 	grantPath := ""
+	directPackageVerified := false
+	if _, err := os.Lstat(releaseDir); errors.Is(err, os.ErrNotExist) {
+		// V5 can receive the offline signer's public package directly. Existing
+		// grant/inbox work still follows its original recovery path.
+		if workflowV4CoordinatorDirectRelease(protocol) {
+			hasGrant, grantErr := workflowV4RetainedReleaseGrantExists(online.Work)
+			if grantErr != nil {
+				return grantErr
+			}
+			imported := workflowV4CoordinatorReleaseImportPath(online.Work)
+			if info, importErr := os.Lstat(imported); importErr == nil {
+				if hasGrant {
+					return errors.New("both a release grant and direct import are retained; resolve the older handoff before recording release")
+				}
+				if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+					return errors.New("retained signed release import is not a real directory")
+				}
+				if err := workflowV4VerifyClosedReleasePackage(online, imported, expected.Identity.KeyID); err != nil {
+					return fmt.Errorf("verify imported signed release package: %w", err)
+				}
+				directPackageVerified = true
+				if err := ui.confirm("Record the exact imported signed release package and frozen coordinator review", "VERIFY AND RECORD RELEASE"); err != nil {
+					return err
+				}
+				if err := os.MkdirAll(filepath.Dir(releaseDir), 0o700); err != nil {
+					return err
+				}
+				if err := os.Rename(imported, releaseDir); err != nil {
+					return err
+				}
+				if err := syncDirectory(filepath.Dir(releaseDir)); err != nil {
+					return err
+				}
+			} else if !errors.Is(importErr, os.ErrNotExist) {
+				return importErr
+			} else if !hasGrant {
+				return errors.New("import the signer's public release package with coordinator action U before recording final release")
+			}
+		}
+	}
 	if _, err := os.Lstat(releaseDir); errors.Is(err, os.ErrNotExist) {
 		grant, retainedPath, err := workflowV4CurrentReleaseGrant(snapshot, protocol, config, online.Work, expected.Identity.ID, time.Now().UTC())
 		if err != nil {
@@ -74,6 +115,12 @@ func runWorkflowV4FinalReleaseLifecycle(ui *coordinatorWizard, snapshot storagef
 		}
 	} else if err != nil {
 		return err
+	} else if workflowV4CoordinatorDirectRelease(protocol) {
+		if !directPackageVerified {
+			if err := workflowV4VerifyClosedReleasePackage(online, releaseDir, expected.Identity.KeyID); err != nil {
+				return fmt.Errorf("verify retained release package: %w", err)
+			}
+		}
 	} else if err := runWorkflowV4VerifyReleasePackage(online, releaseDir, expected.Identity.KeyID); err != nil {
 		return fmt.Errorf("verify retained release package: %w", err)
 	}
@@ -109,6 +156,64 @@ func runWorkflowV4FinalReleaseLifecycle(ui *coordinatorWizard, snapshot storagef
 		fmt.Fprintln(ui.output, "Final signed release checkpoint recorded. Public publication remains a separate action.")
 	}
 	return nil
+}
+
+func workflowV4CoordinatorDirectRelease(protocol transcript.DefinitionProtocol) bool {
+	return protocol.DefinitionSchema == "proof-tool-mpc-ceremony-definition-v5" && protocol.Definition.Mode == "production"
+}
+
+func workflowV4CoordinatorReleaseImportPath(work string) string {
+	return filepath.Join(work, "workflow-v4", "coordinator", "release", "import")
+}
+
+// A direct handoff must contain exactly the public files named by the
+// signer's checksum inventory. This prevents a copied private or unrelated
+// file from being moved into the coordinator's public release directory.
+func workflowV4VerifyClosedReleasePackage(online guidedProfile, dir, keyID string) error {
+	if err := runWorkflowV4VerifyReleasePackage(online, dir, keyID); err != nil {
+		return err
+	}
+	_, sources, _, err := workflowV4ReleaseFiles(dir)
+	if err != nil {
+		return err
+	}
+	raw, err := readTesseraRegularFile(filepath.Join(dir, workflowV4ReleaseChecksumsFile), 16<<20, false)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n")
+	if len(lines)+1 != len(sources) || len(lines) > 2048 {
+		return errors.New("signed release checksum inventory differs from the public package")
+	}
+	seen := make(map[string]bool, len(lines))
+	for _, line := range lines {
+		digest, name, ok := strings.Cut(line, "  ")
+		if !ok || !verification.SafePath(name) || !sha256HexPattern.MatchString(digest) || name == workflowV4ReleaseChecksumsFile || seen[name] {
+			return errors.New("signed release checksum inventory has an invalid or repeated file")
+		}
+		seen[name] = true
+		ref, present := sources[name]
+		if !present || ref.SHA256 != "sha256:"+digest {
+			return fmt.Errorf("signed release checksum differs for %q", name)
+		}
+	}
+	return nil
+}
+
+func workflowV4RetainedReleaseGrantExists(work string) (bool, error) {
+	entries, err := os.ReadDir(filepath.Join(work, "workflow-v4", "coordinator", "release", "grants"))
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func workflowV4FinalReleaseEvidence(paths map[string]string) ([]string, error) {
@@ -251,5 +356,8 @@ func runWorkflowV4VerifyReleasePackage(online guidedProfile, releaseDir, keyID s
 		return err
 	}
 	command := []string{"mpc-ceremony", "release", "verify", "--ceremony", ceremony, "--ceremony-signature", ceremonySig, "--coordinator-public-key-file", coordinatorKey, "--keys-dir", keys, "--manifest-public-key-file", publicKey, "--signature-key-id", keyID}
-	return runWorkflowV4ProfileCommand(online, command, false)
+	proof := online
+	proof.Keys = ""
+	proof.Credentials = ""
+	return runWorkflowV4ProfileCommand(proof, command, false)
 }

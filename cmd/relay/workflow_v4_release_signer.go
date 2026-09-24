@@ -69,6 +69,9 @@ func runWorkflowV4ReleaseSignerAction(ui *coordinatorWizard, snapshot storagefir
 	if !progress.PackageReady {
 		return runWorkflowV4ReleaseSigning(ui, snapshot, online, signer, expected, progress)
 	}
+	if workflowV4CoordinatorDirectRelease(protocol) {
+		return errors.New("transfer the signed public package to the coordinator's online workspace; the signing host must stay offline")
+	}
 	return errors.New("transfer the signed public package to the separate online upload workspace; the signing host must stay offline")
 }
 

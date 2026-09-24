@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -227,27 +228,50 @@ func runWorkflowV4PrepareTrialArchive(ui *coordinatorWizard, online guidedProfil
 		name = "go-ceremony.zip"
 	}
 	out := filepath.Join(dir, name)
-	if _, err := os.Lstat(out); err == nil {
-		return errors.New("a public archive already exists; preserve and inspect it before retrying")
+	if info, err := os.Lstat(out); err == nil {
+		if !info.Mode().IsRegular() {
+			return errors.New("retained public archive is not a regular file")
+		}
+		retainedRoot, retainedManifest, err := verification.Extract(out, 1<<40)
+		if err != nil {
+			return fmt.Errorf("retained public archive is incomplete or changed; preserve it for review: %w", err)
+		}
+		defer os.RemoveAll(retainedRoot)
+		if !workflowV4ArchiveMatchesExpected(retainedManifest, m) {
+			return errors.New("retained public archive differs from the authenticated decision or final release")
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
-	}
-	phrase := "PACK NO-GO TRIAL"
-	if outcome.Decision == "GO" {
-		phrase = "PACK GO RELEASE"
-	}
-	if err := ui.confirm("Pack only the authenticated public files and exact signed decision into a public archive", phrase); err != nil {
-		return err
-	}
-	if err := packCeremony(online.Work, out, m); err != nil {
-		return err
+	} else {
+		phrase := "PACK NO-GO TRIAL"
+		if outcome.Decision == "GO" {
+			phrase = "PACK GO RELEASE"
+		}
+		if err := ui.confirm("Pack only the authenticated public files and exact signed decision into a public archive", phrase); err != nil {
+			return err
+		}
+		temporary, err := os.MkdirTemp(dir, ".archive-pack-*")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(temporary)
+		packed := filepath.Join(temporary, name)
+		if err := packCeremony(online.Work, packed, m); err != nil {
+			return err
+		}
+		if err := os.Link(packed, out); err != nil {
+			return fmt.Errorf("retain complete public archive without replacement: %w", err)
+		}
+		if err := syncDirectory(dir); err != nil {
+			return err
+		}
 	}
 	digest, err := workflowV4ArchiveSHA256(out)
 	if err != nil {
 		return err
 	}
 	if outcome.Decision == "NO-GO" {
-		fmt.Fprintf(ui.output, "Signed NO-GO trial archive: %s\nSHA-256: %s\nTransfer this public ZIP to the upload station. It must never be presented as an approved production release.\n", out, digest)
+		fmt.Fprintf(ui.output, "Signed NO-GO trial archive: %s\nSHA-256: %s\nChoose T to publish this exact trial archive. It must never be presented as an approved production release.\n", out, digest)
 		return nil
 	}
 	config, err := loadStorageConfig(filepath.Join(online.Work, "ceremony", "config", "relay-storage.json"))
@@ -272,11 +296,28 @@ func runWorkflowV4PrepareTrialArchive(ui *coordinatorWizard, online guidedProfil
 		return err
 	}
 	pointer := filepath.Join(dir, "go-publication.json")
-	if err := writeTesseraFresh(pointer, signed, 0o600); err != nil {
+	if err := setupWriteBytesNewOrExact(pointer, signed, 0o600); err != nil {
 		return err
 	}
-	fmt.Fprintf(ui.output, "Signed GO archive: %s\nSHA-256: %s\nPublication authorization: %s\nTransfer both public files to the upload station. No release has been published yet.\n", out, digest, pointer)
+	fmt.Fprintf(ui.output, "Signed GO archive: %s\nSHA-256: %s\nPublication authorization: %s\nChoose G to publish these exact files, then V for official readback. No release has been published yet.\n", out, digest, pointer)
 	return nil
+}
+
+func workflowV4ArchiveMatchesExpected(actual, expected verification.Manifest) bool {
+	if actual.Schema != expected.Schema || actual.CeremonyID != expected.CeremonyID || actual.DefinitionSHA256 != expected.DefinitionSHA256 || actual.ReleaseKeyID != expected.ReleaseKeyID || !reflect.DeepEqual(actual.Inputs, expected.Inputs) || !reflect.DeepEqual(actual.Decision, expected.Decision) || len(actual.Files) != len(expected.Files) {
+		return false
+	}
+	want := make(map[string]verification.File, len(expected.Files))
+	for _, file := range expected.Files {
+		want[file.Path] = file
+	}
+	for _, file := range actual.Files {
+		reference, ok := want[file.Path]
+		if !ok || reference.SHA256 != workflowV4ZeroSHA256 && (reference.SHA256 != file.SHA256 || reference.Size != file.Size) {
+			return false
+		}
+	}
+	return true
 }
 
 // The public inventory starts with references returned by the approved

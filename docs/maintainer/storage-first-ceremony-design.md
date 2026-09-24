@@ -919,13 +919,13 @@ unchanged. The coordinator uses the pinned proof-tool to verify the exact GO,
 packs a closed public archive, and signs a separate `relay-go-publication-v1`
 record binding the ceremony, final checkpoint record and signature paths and
 digest, exact decision digest, release ID, archive digest, and official storage
-destination. The keyless upload station checks that the signed GO decision
-approves that same authenticated final checkpoint and re-runs proof-tool's
-release and decision verification before publishing. It uses a separate AWS
-profile whose IAM policy must be restricted to the exact signed archive and
-pointer keys; this policy requires independent qualification. The station
-conditionally creates the content-addressed archive and one fixed, create-only ceremony pointer; an
-existing pointer is a successful retry only if its bytes are identical.
+destination. The coordinator receives and verifies the release signer's public
+package directly, then rechecks that the signed GO approves the authenticated
+final checkpoint. Before publication it re-runs proof-tool's release and
+decision verification without mounting its signing key. It uses its configured
+AWS profile to conditionally create the content-addressed archive and one
+fixed, create-only ceremony pointer. An existing pointer is a successful retry
+only if its bytes are identical.
 
 The coordinator and any public verifier independently download that pointer
 and archive from the trusted official URL and compare their bytes. A public
@@ -935,10 +935,11 @@ This record is a separate publication authority, not a proof-tool checkpoint or 
 change to the signed ceremony definition. A GO archive without a matching
 official pointer is a valid signed decision but not a verified publication.
 This compatibility path does not claim a proof-tool `ReleasePublished`
-checkpoint. It requires a qualified Relay coordinator and upload-station
-release, a trusted official storage origin, and independently trusted ceremony
-identity and coordinator key. The planned checkpoint-native protocol below
-remains a future protocol revision.
+checkpoint. It requires a qualified Relay coordinator release, a trusted
+official storage origin, and independently trusted ceremony identity and
+coordinator key. This path no longer supplies a separate upload host's check;
+an independent public verifier should check the official publication. The
+planned checkpoint-native protocol below remains a future protocol revision.
 
 If the decision is **NO-GO**, Relay may preserve a privacy-checked archive in
 protected storage for investigation, but it never publishes the final proving

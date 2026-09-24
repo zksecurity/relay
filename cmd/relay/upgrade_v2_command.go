@@ -351,6 +351,20 @@ func runCeremonyUpgradeV2(args []string) error {
 		if err != nil {
 			return err
 		}
+		if d.OperatorSelected() {
+			// The signed, pinned definition selects the actual protocol. The
+			// placeholder used for preliminary asset checks grants no authority.
+			d.Protocol = protocol.DefinitionSchema
+			if err := d.Validate(); err != nil {
+				return err
+			}
+			raw, err = json.Marshal(d)
+			if err != nil {
+				return err
+			}
+		} else if d.Protocol != protocol.DefinitionSchema {
+			return errors.New("upgrade declaration differs from the authenticated ceremony protocol")
+		}
 		if err := upgradeV2CheckApprovedProof(driver.definition, p.Platform, d.ProofToolSHA256); err != nil {
 			return err
 		}

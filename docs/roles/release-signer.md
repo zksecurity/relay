@@ -33,8 +33,8 @@ or an online upload profile onto the signing machine.
   when the signed ceremony uses production mode. Rehearsal mode does not require
   this decision. A GO for a tiny or K11 test circuit approves only its exact
   signed circuit and release; those keys do not prove ownership.
-- Transfer only the signed public output to the separate
-  [upload station](../tasks/upload.md). Keep your private key offline.
+- Transfer only the signed public output to the coordinator for
+  [verification and publication](../tasks/upload.md). Keep your private key offline.
 
 Cleanup statements do not prove physical erasure or exclude host/VM remnants.
 

@@ -6,7 +6,34 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/zksecurity/relay/internal/verification"
 )
+
+func TestWorkflowV4RetainedArchiveMustMatchCurrentSignedInventory(t *testing.T) {
+	expected := verification.Manifest{
+		Schema: verification.Schema, CeremonyID: "sha256:" + strings.Repeat("a", 64), DefinitionSHA256: strings.Repeat("b", 64), ReleaseKeyID: "signer",
+		Inputs:   map[string]string{"ceremony": "ceremony/public/ceremony.json"},
+		Decision: &verification.Decision{Record: "ceremony/public/decision/decision.json", Signatures: []string{"ceremony/public/decision/coordinator.sig"}, EvidenceRoot: "ceremony/public/decision/evidence"},
+		Files:    []verification.File{{Path: "ceremony/public/ceremony.json", Size: 10, SHA256: strings.Repeat("b", 64)}, {Path: "ceremony/public/decision/decision.json", SHA256: workflowV4ZeroSHA256}},
+	}
+	actual := expected
+	actual.Files = append([]verification.File(nil), expected.Files...)
+	actual.Files[1].Size = 20
+	actual.Files[1].SHA256 = strings.Repeat("c", 64)
+	if !workflowV4ArchiveMatchesExpected(actual, expected) {
+		t.Fatal("exact signed files with filled decision digest rejected")
+	}
+	actual.Files[0].SHA256 = strings.Repeat("d", 64)
+	if workflowV4ArchiveMatchesExpected(actual, expected) {
+		t.Fatal("changed signed ceremony file accepted")
+	}
+	actual.Files[0] = expected.Files[0]
+	actual.Decision = &verification.Decision{Record: "ceremony/public/decision/other.json"}
+	if workflowV4ArchiveMatchesExpected(actual, expected) {
+		t.Fatal("archive for another decision accepted")
+	}
+}
 
 func TestWorkflowV4DecisionArchiveInventoryIsClosed(t *testing.T) {
 	root := t.TempDir()

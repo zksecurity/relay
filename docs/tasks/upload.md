@@ -1,61 +1,58 @@
-# Upload already signed evidence
+# Hand off the signed release and publish the decision
 
-This station transports signed public output. It never receives a signer's key.
+For a V5 production ceremony using this Relay release, the coordinator handles
+the release signer's public package and final publication. There is no upload
+station to install or operate. The release signer remains on a separate,
+disconnected signing host and transfers **only** its signed public package.
 
-## Start or resume
+## Receive the release signer's package
 
-Complete [installation](../install.md), choosing **upload-station**, then run
-your installer-created `start.sh`. For an existing installation, run
-`./scripts/role.sh` from your authenticated source checkout.
+1. Finish the signed release-review checkpoint. Give its authenticated public
+   snapshot to the release signer through the agreed offline handoff.
+2. After signing, copy the complete public release-package directory into a
+   fresh folder **inside the coordinator's work directory**. Never copy the
+   signer's `signing.hex`, profile, or private recovery material.
+3. In the coordinator's `start.sh`, choose **Open ceremony operations and
+   progress**, then **U — Import the offline signer's returned public release
+   package**. Give the absolute path to that fresh folder. Relay runs the pinned
+   proof-tool release verification, checks that the public package contains
+   exactly its checksum-listed files, and retains it without replacement.
+4. Choose the next coordinator action to verify the retained package and record
+   the signed final-release checkpoint. An import alone is not acceptance or
+   public publication.
 
-Follow [role onboarding](../role-onboarding.md): prepare the online image,
-import the public ceremony/enrollment files, and create the release Phase 2
-profile. Skip identity generation: this station must not hold signing keys.
+V5 ceremonies with a release upload grant already retained keep their original
+grant and private-inbox recovery path. Resolve that work before attempting a
+direct import; Relay refuses both handoffs at once. Older V4 ceremonies keep
+their original upload-station journey.
 
-Choose **Continue the ceremony workflow**. The V4/V5 guide authenticates the
-published checkpoint without a signing identity or key mount.
+## Publish a signed production decision
 
-## Verify, upload, and hand off
+After the exact final-release checkpoint is recorded and all required decision
+signatures are verified, the coordinator chooses **P**. Relay re-verifies the
+signed decision and packs the exact public archive. For GO, it also signs
+`go-publication.json`, binding the final checkpoint, decision, archive hash,
+and official destination. A retained complete archive and record can be
+rechecked and reused after an interruption; mismatched bytes stop the action.
 
-1. Receive the exact signed release package at `work/release`, preserving its
-   directory contents. Receive the private release upload grant separately.
-2. Choose **1**. Relay verifies the signed package, current authenticated
-   checkpoint, final signer assignment, grant scope and destination before it
-   uploads to the private inbox. The coordinator must fetch and verify the
-   result before recording the final release.
-3. For an explicitly signed **NO-GO trial**, the coordinator can choose **P**
-   after decision verification to pack the exact public inventory. Transfer its
-   ZIP to `work/no-go-trial-ceremony.zip` and choose **3** at this station. Relay
-   checks the closed archive inventory against the signed checkpoint, verifies
-   the release and NO-GO signatures, then publishes to a content-addressed
-   trial prefix and reads the bytes back. It creates no approved-release pointer.
-4. For a fully signed **GO**, the coordinator chooses **P** to verify and pack
-   `go-ceremony.zip` and sign `go-publication.json`. Transfer both public files
-   into this station's work folder and choose **4**. The station independently
-   verifies the archive, final checkpoint, release, GO signers, coordinator
-   signature, and destination. It uploads the archive without replacing an
-   existing object, reads it back, then creates the one fixed approved pointer.
-   An existing pointer is accepted only when its bytes match exactly. The
-   coordinator then chooses **V** to read back the official pointer and archive
-   independently. Until the pointer is verified, the GO is signed but its
-   publication is not established.
+- For **GO**, choose **G**. Relay rechecks the archive, signed GO, release,
+  final checkpoint and destination using the pinned proof-tool. It uses the
+  coordinator's configured AWS profile to create the content-addressed
+  archive and one fixed, create-only approved pointer. Existing objects count
+  as a retry only after exact public readback. Then choose **V** for a separate
+  coordinator readback using the approved Docker image.
+- For an explicitly signed **NO-GO trial**, choose **T**. Relay verifies and
+  publishes the exact trial archive and notice under a content-addressed trial
+  prefix. It creates no approved-production pointer.
 
-Before choosing **4**, install an AWS profile on this station with a different
-credential from the coordinator profile. Grant it `s3:PutObject` and multipart
-upload permissions only for the exact `archive_key` and `pointer_key` in the
-coordinator-signed `go-publication.json`, in its `published_bucket`. Deny writes
-to `state/*`, other ceremonies, and every other published key. Set
-`RELAY_GO_UPLOAD_PROFILE` to that local profile name when launching the guide.
-Relay refuses the coordinator profile for GO uploads. Verify the IAM policy
-and access denial independently before production use; a different profile
-name alone does not prove restricted cloud permissions.
+The coordinator now performs the upload as well as the readback. Those checks
+establish exact published bytes; they do not establish an independent machine
+or operator. Before production use, review the coordinator credential's bucket
+permissions and obtain an independent public verification of the published
+release. Never infer official publication from a signed GO archive alone.
 
-The Relay-only GO lane is an explicit alternative for a frozen V5 proof-tool
-that cannot append a decision checkpoint after final release. It keeps
-proof-tool as the verifier of the signed GO, and uses a coordinator-signed
-publication record outside that checkpoint chain. It currently supports AWS
-publication. The public verifier must be given the independently trusted
-official URL:
+An external verifier needs the independently trusted public storage URL,
+ceremony ID, and coordinator public key:
 
 ```bash
 relay verify-ceremony --archive go-ceremony.zip \
@@ -64,24 +61,20 @@ relay verify-ceremony --archive go-ceremony.zip \
   --expected-coordinator-public-key-file /path/to/trusted-coordinator-public-key.hex
 ```
 
-The URL, ceremony ID and coordinator key must come from independently trusted
-ceremony information, not from the archive. The verifier downloads the official
-pointer and archive and checks their exact bytes. A signed GO archive checked without this URL establishes
-the signatures and proofs, but does not establish official publication. The
-JSON report says `"officially_published": true` only after that official
-pointer and archive have been checked.
+The JSON report says `"officially_published": true` only after the verifier
+authenticates the official pointer, archive, signed decision and final-release
+checkpoint. Keep the public evidence and logs for the agreed retention period.
 
-The current `ceremony upgrade` command applies only to an existing coordinator
-workspace. An existing upload station must use a freshly installed matching
-Relay release and authenticate the same signed definition and coordinator key
-before taking action. This transition needs an end-to-end qualification run
-before use with an already frozen ceremony.
+## Upgrading a ceremony already in progress
 
-Transport success is not evidence acceptance. Retain the public evidence and
-logs according to the agreed retention procedure.
+An initialized v0.6.0 coordinator can select a new published coordinator
+release **between completed operations**, including before Phase 2. Follow the
+[coordinator upgrade guide](../coordinator-upgrade.md) from the new launcher.
+The signed definition, identities, circuit, proof-tool pin, participant images,
+and release-signer image remain unchanged. Do not change frozen files or start a
+new ceremony. The participant and release signer can continue on their original
+releases. A target release must be qualified against the exact source release
+and current ceremony state before a real upgrade.
 
-## If something fails
-
-Keep the signed files unchanged. Review the error and grant expiry before
-retrying through [workflow recovery](../role-workflow.md#recovery).
-This station has no participant-style candidate-resume command.
+If an action or upload is unfinished, resolve it with the current release
+before upgrading. Keep the original installation and `.relay-upgrades` records.

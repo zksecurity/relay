@@ -86,7 +86,7 @@ func runWorkflowV4UploadStationGuide(p guidedProfile) error {
 		fmt.Fprintf(ui.output, "Authenticated ceremony: %s\nSigned checkpoint: %s\n", protocol.Definition.CeremonyID, stateView.Transition.Kind)
 		fmt.Fprintln(ui.output, "1) Verify and upload the release signer's public package\n2) Show required handoff")
 		if stateView.Progress.FinalRelease != nil {
-			fmt.Fprintln(ui.output, "3) Verify and publish a signed NO-GO trial archive\n4) Verify and publish an approved GO release")
+			fmt.Fprintln(ui.output, "3) Verify and publish a signed NO-GO trial archive")
 		}
 		fmt.Fprintln(ui.output, "0) Save and exit")
 		choice, err := ui.ask("Choose upload-station action", "1")
@@ -97,19 +97,12 @@ func runWorkflowV4UploadStationGuide(p guidedProfile) error {
 		case "0":
 			return nil
 		case "2":
-			fmt.Fprintf(ui.output, "Place the complete signed public release package at %s. Import the coordinator's private release upload grant through your private handoff. After a signed NO-GO, place the public trial ZIP at %s. After a signed GO, place go-ceremony.zip and go-publication.json in this work folder. This station never receives a signing key.\n", filepath.Join(p.Work, "release"), filepath.Join(p.Work, "no-go-trial-ceremony.zip"))
+			fmt.Fprintf(ui.output, "For an older retained grant handoff, place the complete signed public release package at %s and import its private grant. For an older signed NO-GO trial, place the public ZIP at %s. New V5 GO publication runs in the coordinator workspace. This station never receives a signing key.\n", filepath.Join(p.Work, "release"), filepath.Join(p.Work, "no-go-trial-ceremony.zip"))
 		case "3":
 			if stateView.Progress.FinalRelease == nil {
 				return errors.New("a signed final release is required before trial publication")
 			}
 			if err := runWorkflowV4PublishNoGoTrial(&ui, p, config, protocol, snapshot); err != nil {
-				return err
-			}
-		case "4":
-			if stateView.Progress.FinalRelease == nil {
-				return errors.New("a signed final release is required before GO publication")
-			}
-			if err := runWorkflowV4PublishGo(&ui, p, config, protocol, snapshot); err != nil {
 				return err
 			}
 		case "1":

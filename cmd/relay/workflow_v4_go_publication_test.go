@@ -13,25 +13,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zksecurity/relay/internal/access"
 	"github.com/zksecurity/relay/internal/store"
 	"github.com/zksecurity/relay/internal/transcript"
 	"github.com/zksecurity/relay/internal/verification"
 )
-
-func TestWorkflowV4GoUploadRejectsCoordinatorProfile(t *testing.T) {
-	config := access.StorageConfig{CoordinatorProfile: "coordinator"}
-	for _, value := range []string{"", "coordinator", "bad profile"} {
-		t.Setenv("RELAY_GO_UPLOAD_PROFILE", value)
-		if _, err := workflowV4GoUploadProfile(config); err == nil {
-			t.Fatalf("accepted unsafe GO upload profile %q", value)
-		}
-	}
-	t.Setenv("RELAY_GO_UPLOAD_PROFILE", "go-publisher")
-	if profile, err := workflowV4GoUploadProfile(config); err != nil || profile != "go-publisher" {
-		t.Fatalf("restricted uploader profile rejected: %q %v", profile, err)
-	}
-}
 
 func syntheticGoDecision(t *testing.T, releaseID string, checkpoint, signature []byte) []byte {
 	t.Helper()

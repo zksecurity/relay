@@ -72,6 +72,9 @@ func workflowV4CoordinatorLifecycleAction(state transcript.CheckpointStateV4, _ 
 			return workflowV4Review, "Assemble and sign the exact operational evidence bundle for release review", nil
 		}
 		if state.Progress.ReleaseReview != nil && state.Progress.FinalRelease == nil {
+			if workflowV4CoordinatorDirectRelease(protocol) {
+				return workflowV4Release, "Verify and record the imported release signer's public package", nil
+			}
 			return workflowV4Release, "Issue the release signer upload grant or verify and record the returned signed package", nil
 		}
 	}
