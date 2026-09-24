@@ -1,6 +1,6 @@
 ## What changed
 
-This minor release adds a Relay-only GO publication path for V5 ceremonies
+This release adds a Relay-only GO publication path for V5 ceremonies
 whose pinned proof-tool can verify a signed decision but cannot add a decision
 checkpoint after final release.
 
