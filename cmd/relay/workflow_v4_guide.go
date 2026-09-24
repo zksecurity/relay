@@ -470,6 +470,7 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 			fmt.Fprintln(ui.output, "[D] Production GO/NO-GO decision (separate from release signing)")
 			if p.Role == "coordinator" {
 				fmt.Fprintln(ui.output, "[P] Verify signed decision and pack its exact public archive")
+				fmt.Fprintln(ui.output, "[A] Review and sign GO publication authorization (network-disabled container)")
 				fmt.Fprintln(ui.output, "[G] Publish prepared signed GO and approved pointer")
 				fmt.Fprintln(ui.output, "[T] Publish prepared NO-GO trial archive")
 				fmt.Fprintln(ui.output, "[V] Independently read back an officially published GO release")
@@ -486,6 +487,14 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 			return err
 		}
 		switch strings.ToUpper(strings.TrimSpace(answer)) {
+		case "A":
+			if !decisionAvailable || p.Role != "coordinator" {
+				fmt.Fprintln(ui.output, "A signed final release and coordinator role are required.")
+				continue
+			}
+			if err := runWorkflowV4AuthorizeGo(ui, p, snapshot, protocol); err != nil {
+				ui.message(toneError, "GO authorization stopped: %v\nRetained files were preserved for review.\n", err)
+			}
 		case "G":
 			if !decisionAvailable || p.Role != "coordinator" {
 				fmt.Fprintln(ui.output, "A signed final release and coordinator role are required.")

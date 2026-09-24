@@ -4,8 +4,9 @@ This release adds a Relay-only GO publication path for V5 ceremonies
 whose pinned proof-tool can verify a signed decision but cannot add a decision
 checkpoint after final release.
 
-- The coordinator verifies the exact GO with the pinned proof-tool, packs the
-  closed public archive, and signs a publication record for one destination.
+- The coordinator verifies the exact GO with the pinned proof-tool and packs the
+  closed public archive. A separate menu action reviews the exact hashes and
+  destination, then signs a publication record in a network-disabled container.
 - The coordinator receives the signer's exact public package directly, checks
   its closed inventory, and records the final release without a new upload
   station. It re-verifies the release, decision, final checkpoint, archive, and

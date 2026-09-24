@@ -135,6 +135,10 @@ func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]stri
 	if err != nil {
 		return nil, err
 	}
+	goSigning := len(command) >= 3 && command[0] == "relay" && command[1] == "coordinator" && command[2] == "sign-go-publication"
+	if goSigning && (len(command) != 3 || o.role != "coordinator" || o.work == "" || o.trust == "" || o.keys == "" || o.credentials != "" || o.r2Parent != "" || o.r2Control != "" || o.recoveryContext != "" || o.awsLoginRuntime != "") {
+		return nil, errors.New("GO publication signing requires only coordinator work, trust and keys; no credentials or network")
+	}
 	if (o.r2Parent != "" || o.r2Control != "") && o.role != "coordinator" {
 		return nil, errors.New("R2 administrative credentials are coordinator-only")
 	}
@@ -234,7 +238,7 @@ func dockerRoleArgs(o dockerRoleOptions, command []string, uid, gid int) ([]stri
 	}
 	argv := []string{"run", "--rm", "--pull=never", "--interactive", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--ulimit=core=0:0", "--user", strconv.Itoa(uid) + ":" + strconv.Itoa(gid), "--platform", o.platform, "--workdir=/work", "--tmpfs=/tmp:rw,nosuid,nodev,noexec,size=256m,mode=1777", "--env=HOME=/tmp", "--env=AWS_EC2_METADATA_DISABLED=true", "--env=AWS_PAGER=", "--env=AWS_CONFIG_FILE=/nonexistent", "--env=AWS_SHARED_CREDENTIALS_FILE=/nonexistent", "--label=org.zksecurity.relay.role=" + o.role}
 	argv = append(argv, limits.dockerArgs()...)
-	if offline {
+	if offline || goSigning {
 		argv = append(argv, "--network=none")
 	} else {
 		argv = append(argv, "--network=bridge")

@@ -66,6 +66,71 @@ func TestWorkflowV4GoPublicationBindsExactReleaseAndDestination(t *testing.T) {
 	}
 }
 
+func TestGoPublicationSigningRetainsExactAuthorization(t *testing.T) {
+	seed := bytes.Repeat([]byte{7}, ed25519.SeedSize)
+	key := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
+	dir := t.TempDir()
+	trust := filepath.Join(t.TempDir(), "coordinator.hex")
+	private := filepath.Join(t.TempDir(), "signing.hex")
+	if err := os.WriteFile(trust, []byte(hex.EncodeToString(key)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(private, []byte(hex.EncodeToString(seed)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record := workflowV4GoPublicationFor("sha256:"+strings.Repeat("a", 64), "sha256:"+strings.Repeat("b", 64), "ceremony/public/checkpoints/final/checkpoint.json", "ceremony/public/checkpoints/final/checkpoint.sig", strings.Repeat("c", 64), "sha256:"+strings.Repeat("d", 64), strings.Repeat("e", 64), "published-bucket", "https://ceremony.example")
+	input, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputPath := filepath.Join(dir, "go-publication-input.json")
+	if err := os.WriteFile(inputPath, input, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := signGoPublicationFiles(dir, trust, private); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(dir, "go-publication.json")
+	first, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := workflowV4VerifyGoPublication(first, key); err != nil || got != record {
+		t.Fatalf("wrong signed record: %+v %v", got, err)
+	}
+	if err := signGoPublicationFiles(dir, trust, private); err != nil {
+		t.Fatalf("exact retry failed: %v", err)
+	}
+	if got, err := os.ReadFile(output); err != nil || !bytes.Equal(got, first) {
+		t.Fatal("exact retry replaced signed bytes")
+	}
+	changed := record
+	changed.PublishedBucket = "other-bucket"
+	changedInput, _ := json.Marshal(changed)
+	if err := os.WriteFile(inputPath, changedInput, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := signGoPublicationFiles(dir, trust, private); err == nil {
+		t.Fatal("changed destination replaced retained authorization")
+	}
+	if got, err := os.ReadFile(output); err != nil || !bytes.Equal(got, first) {
+		t.Fatal("failed retry changed signed bytes")
+	}
+	if err := os.Remove(output); err != nil {
+		t.Fatal(err)
+	}
+	otherSeed := bytes.Repeat([]byte{8}, ed25519.SeedSize)
+	if err := os.WriteFile(private, []byte(hex.EncodeToString(otherSeed)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := signGoPublicationFiles(dir, trust, private); err == nil {
+		t.Fatal("wrong coordinator key signed publication")
+	}
+	if _, err := os.Stat(output); !os.IsNotExist(err) {
+		t.Fatal("wrong key created authorization")
+	}
+}
+
 func TestWorkflowV4OfficialGoReadbackBindsPointerAndArchive(t *testing.T) {
 	seed := bytes.Repeat([]byte{7}, ed25519.SeedSize)
 	key := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)

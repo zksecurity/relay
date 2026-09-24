@@ -30,10 +30,14 @@ their original upload-station journey.
 
 After the exact final-release checkpoint is recorded and all required decision
 signatures are verified, the coordinator chooses **P**. Relay re-verifies the
-signed decision and packs the exact public archive. For GO, it also signs
-`go-publication.json`, binding the final checkpoint, decision, archive hash,
-and official destination. A retained complete archive and record can be
-rechecked and reused after an interruption; mismatched bytes stop the action.
+signed decision and packs the exact public archive without using the
+coordinator's signing key. For GO, choose **A** next. Relay shows the ceremony,
+release, final checkpoint, decision and archive hashes, and exact storage
+destination. After a separate `SIGN GO PUBLICATION` confirmation, the upgraded
+Relay image signs `go-publication.json` in a network-disabled container with no
+storage credentials. This authorization is separate from the signed GO decision.
+A retained complete archive and authorization can be rechecked and reused
+after an interruption; mismatched bytes stop the action.
 
 - For **GO**, choose **G**. Relay rechecks the archive, signed GO, release,
   final checkpoint and destination using the pinned proof-tool. It uses the

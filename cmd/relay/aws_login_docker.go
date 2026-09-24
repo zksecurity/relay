@@ -19,7 +19,7 @@ const awsLoginRuntimeConfig = "[profile relay-coordinator]\ncredential_process =
 const awsLoginOwnerLabel = "org.zksecurity.relay.aws-login"
 
 func awsCredentialCommand(o dockerRoleOptions, command []string) bool {
-	return o.role == "coordinator" && len(command) > 0 && (command[0] == "aws" || len(command) >= 3 && command[0] == "relay" && command[1] == "coordinator")
+	return o.role == "coordinator" && len(command) > 0 && (command[0] == "aws" || len(command) >= 3 && command[0] == "relay" && command[1] == "coordinator" && command[2] != "sign-go-publication")
 }
 
 // This runtime owns exactly one named container. The login cache and binding

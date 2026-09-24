@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/zksecurity/relay/internal/verification"
@@ -119,4 +121,50 @@ func workflowV4GoPublicationFor(ceremonyID, checkpointSHA, checkpointPath, check
 func workflowV4DigestBytes(raw []byte) string {
 	h := sha256.Sum256(raw)
 	return fmt.Sprintf("%x", h[:])
+}
+
+// This command is launched only with the upgraded Relay image. The role
+// launcher gives it no network or cloud credentials; the frozen proof-tool
+// image and signed ceremony definition remain unchanged.
+func runCoordinatorSignGoPublication(args []string) error {
+	if len(args) != 0 {
+		return errors.New("sign-go-publication takes no arguments")
+	}
+	return signGoPublicationFiles(filepath.Join("/work", "workflow-v4", "publication"), "/trust/setup-coordinator.hex", "/keys/signing.hex")
+}
+
+func signGoPublicationFiles(dir, trustPath, seedPath string) error {
+	raw, err := readTesseraRegularFile(filepath.Join(dir, "go-publication-input.json"), 16<<20, false)
+	if err != nil {
+		return err
+	}
+	var record workflowV4GoPublication
+	if err := json.Unmarshal(raw, &record); err != nil {
+		return err
+	}
+	canonical, err := json.Marshal(record)
+	if err != nil || !bytes.Equal(raw, canonical) {
+		return errors.New("GO publication input is not canonical")
+	}
+	if err := record.validate(); err != nil {
+		return err
+	}
+	trusted, err := readTesseraRegularFile(trustPath, 4096, false)
+	if err != nil {
+		return err
+	}
+	key, err := hex.DecodeString(strings.TrimSpace(string(trusted)))
+	if err != nil {
+		return err
+	}
+	seed, err := readTesseraSeed(seedPath)
+	if err != nil {
+		return err
+	}
+	defer zeroTessera(seed)
+	signed, err := workflowV4SignGoPublication(record, seed, key)
+	if err != nil {
+		return err
+	}
+	return setupWriteBytesNewOrExact(filepath.Join(dir, "go-publication.json"), signed, os.FileMode(0o600))
 }

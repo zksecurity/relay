@@ -208,6 +208,8 @@ func runCoordinator(args []string) error {
 		return runCoordinatorFetchEnrollmentV4(args[1:])
 	case "fetch-release-v4":
 		return runCoordinatorFetchReleaseV4(args[1:])
+	case "sign-go-publication":
+		return runCoordinatorSignGoPublication(args[1:])
 	default:
 		return fmt.Errorf("unknown coordinator command %q", args[0])
 	}
