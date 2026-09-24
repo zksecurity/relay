@@ -93,7 +93,11 @@ func runWorkflowV4DecisionMenu(ui *coordinatorWizard, online, signer guidedProfi
 			return err
 		}
 		command := append([]string{"mpc-ceremony", "decision", "prepare"}, common...)
-		command = append(command, "--draft", draft, "--out", out)
+		evidence, err := pathWithin(signer.Work, evidenceHost, "/work")
+		if err != nil {
+			return err
+		}
+		command = append(command, "--draft", draft, "--evidence-root", evidence, "--out", out)
 		return runWorkflowV4ProfileCommand(signer, command, false)
 	case "2":
 		if err := requireDecisionEvidence(decisionHost, evidenceHost, protocol.Definition.CeremonyID, ui); err != nil {

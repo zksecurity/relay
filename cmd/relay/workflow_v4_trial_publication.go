@@ -78,7 +78,7 @@ func runWorkflowV4PublishNoGoTrial(ui *coordinatorWizard, online guidedProfile, 
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(archivedKey, trustedKey) {
+	if !sameCoordinatorPublicKey(archivedKey, trustedKey) {
 		return errors.New("archive coordinator key differs from the independently trusted key")
 	}
 	// Verify the complete signed release and decision in the approved image.
@@ -156,13 +156,12 @@ func publishWorkflowV4TrialNotice(objects, public store.Client, key string, noti
 	if err := objects.PutNoReplace(key, name); err != nil && !errors.Is(err, store.ErrExists) {
 		return fmt.Errorf("trial notice upload uncertain; inspect the object before retrying: %w", err)
 	}
-	readback, err := os.CreateTemp(work, ".trial-notice-readback-*")
+	readbackDir, err := os.MkdirTemp(work, ".trial-notice-readback-*")
 	if err != nil {
 		return err
 	}
-	readbackName := readback.Name()
-	readback.Close()
-	defer os.Remove(readbackName)
+	defer os.RemoveAll(readbackDir)
+	readbackName := filepath.Join(readbackDir, "README.txt")
 	if err := public.Get(key, readbackName); err != nil {
 		return err
 	}
@@ -203,16 +202,12 @@ func publishWorkflowV4LargeTrialArchive(objects, public store.Client, config acc
 }
 
 func checkWorkflowV4TrialReadback(public store.Client, key, digest, work string) error {
-	f, err := os.CreateTemp(work, ".trial-readback-*")
+	dir, err := os.MkdirTemp(work, ".trial-readback-*")
 	if err != nil {
 		return err
 	}
-	name := f.Name()
-	if err := f.Close(); err != nil {
-		os.Remove(name)
-		return err
-	}
-	defer os.Remove(name)
+	defer os.RemoveAll(dir)
+	name := filepath.Join(dir, "ceremony.zip")
 	var downloadErr error
 	for attempt := 0; attempt < 5; attempt++ {
 		if downloadErr = public.Get(key, name); downloadErr == nil {

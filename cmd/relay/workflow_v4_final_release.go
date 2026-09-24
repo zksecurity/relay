@@ -242,9 +242,9 @@ func runWorkflowV4VerifyReleasePackage(online guidedProfile, releaseDir, keyID s
 	if err != nil {
 		return err
 	}
-	keyName := "setup-coordinator.hex"
-	if online.Role == "release-signer" {
-		keyName = "coordinator-public-key.hex"
+	keyName := "coordinator-public-key.hex"
+	if online.Role == "coordinator" {
+		keyName = "setup-coordinator.hex"
 	}
 	coordinatorKey, err := pathWithin(online.Trust, filepath.Join(online.Trust, keyName), "/trust")
 	if err != nil {
