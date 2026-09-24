@@ -180,7 +180,15 @@ func (c Client) getPublicAtMost(key, localPath string, maximum int64) error {
 	if err != nil {
 		return err
 	}
-	response, err := http.DefaultClient.Do(request)
+	client := http.DefaultClient
+	if maximum >= 0 {
+		// The caller supplies an independently trusted official origin. A
+		// redirect cannot move that authority to another host or path.
+		bounded := *client
+		bounded.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		client = &bounded
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return err
 	}
