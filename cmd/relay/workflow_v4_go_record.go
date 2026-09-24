@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -123,9 +122,9 @@ func workflowV4DigestBytes(raw []byte) string {
 	return fmt.Sprintf("%x", h[:])
 }
 
-// This command is launched only with the upgraded Relay image. The role
-// launcher gives it no network or cloud credentials; the frozen proof-tool
-// image and signed ceremony definition remain unchanged.
+// The role launcher runs this command in the approved online Relay image with
+// no network or cloud credentials. The frozen proof-tool and signed ceremony
+// definition remain unchanged.
 func runCoordinatorSignGoPublication(args []string) error {
 	if len(args) != 0 {
 		return errors.New("sign-go-publication takes no arguments")
@@ -166,5 +165,5 @@ func signGoPublicationFiles(dir, trustPath, seedPath string) error {
 	if err != nil {
 		return err
 	}
-	return setupWriteBytesNewOrExact(filepath.Join(dir, "go-publication.json"), signed, os.FileMode(0o600))
+	return setupWriteBytesNewOrExact(filepath.Join(dir, "go-publication.json"), signed, 0o600)
 }
