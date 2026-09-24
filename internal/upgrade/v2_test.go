@@ -11,6 +11,18 @@ func fixtureV2() DeclarationV2 {
 	return DeclarationV2{Schema: SchemaV2, OriginalRelease: a, SourceApp: a, TargetApp: strings.Repeat("b", 40), Role: "coordinator", Host: "darwin/arm64", Platform: "linux/arm64", OriginalImage: "ghcr.io/zksecurity/relay/relay-role-online@sha256:" + strings.Repeat("c", 64), SigningImage: "ghcr.io/zksecurity/relay/relay-role-offline@sha256:" + strings.Repeat("d", 64), OnlineImage: "ghcr.io/zksecurity/relay/relay-role-online@sha256:" + strings.Repeat("e", 64), ProofToolSHA256: "sha256:" + strings.Repeat("f", 64), QualificationSHA256: "sha256:" + strings.Repeat("1", 64), Protocol: "proof-tool-mpc-ceremony-definition-v4", StorageLayout: "storage-first-v2", ProfileSchema: "relay-guided-role-v1", JournalSchema: "relay-workflow-v4-state-v1", Adapters: []string{"inspect-v1", "checkpoint-cas-v4-v1"}, SafePredecessors: []string{a}}
 }
 
+func TestV5CoordinatorUpgradePreservesProtocolBoundary(t *testing.T) {
+	d := fixtureV2()
+	d.Protocol = "proof-tool-mpc-ceremony-definition-v5"
+	if err := d.Validate(); err != nil {
+		t.Fatalf("V5 coordinator upgrade rejected: %v", err)
+	}
+	d.Role = "auditor"
+	if err := d.Validate(); err == nil {
+		t.Fatal("V5 non-coordinator upgrade accepted without a qualified role journey")
+	}
+}
+
 func TestV2RejectsUnsupportedAndAmbiguousAuthority(t *testing.T) {
 	d := fixtureV2()
 	raw, _ := json.Marshal(d)

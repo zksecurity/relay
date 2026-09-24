@@ -351,7 +351,11 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 						ui.message(toneError, "Retained release-signer work could not be verified: %v\nNo operation was repeated.\n", err)
 					} else if releaseProgress.PackageReady {
 						actionLabel = ""
-						fmt.Fprintf(ui.output, "Transfer only the signed public package directory to the coordinator's online upload workspace: %s\nKeep your signing key offline.\n", releaseProgress.PackageDir)
+						if workflowV4CoordinatorDirectRelease(protocol) {
+							fmt.Fprintf(ui.output, "Transfer only the signed public package directory to the coordinator's online workspace: %s\nKeep your signing key offline.\n", releaseProgress.PackageDir)
+						} else {
+							fmt.Fprintf(ui.output, "Transfer only the signed public package directory to the online upload workspace: %s\nKeep your signing key offline.\n", releaseProgress.PackageDir)
+						}
 					} else {
 						actionLabel = "Review and sign the exact coordinator-reviewed release package"
 					}
@@ -424,6 +428,17 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 				if err != nil {
 					return err
 				}
+				if lifecycleAction == workflowV4Release && workflowV4CoordinatorDirectRelease(protocol) {
+					_, importErr := os.Lstat(workflowV4CoordinatorReleaseImportPath(p.Work))
+					_, releaseErr := os.Lstat(filepath.Join(p.Work, "ceremony", "public", "final", "release"))
+					hasGrant, grantErr := workflowV4RetainedReleaseGrantExists(p.Work)
+					if grantErr != nil {
+						return grantErr
+					}
+					if errors.Is(importErr, os.ErrNotExist) && errors.Is(releaseErr, os.ErrNotExist) && !hasGrant {
+						actionLabel = ""
+					}
+				}
 			}
 			printWorkflowV4Status(ui.output, p.Role, c, turn, pending, time.Now().UTC())
 			if recommendation.Reason != "" {
@@ -439,7 +454,11 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 				fmt.Fprintln(ui.output, "[I] Import the offline signer's public enrollment")
 			}
 			if c, e := snapshot.State(); e == nil && c.Progress.ReleaseReview != nil && c.Progress.FinalRelease == nil {
-				fmt.Fprintln(ui.output, "[U] Upload the offline signer's returned public release package")
+				if workflowV4CoordinatorDirectRelease(protocol) {
+					fmt.Fprintln(ui.output, "[U] Import the offline signer's returned public release package")
+				} else {
+					fmt.Fprintln(ui.output, "[U] Upload the offline signer's returned public release package")
+				}
 			}
 		}
 		if p.Role == "release-signer" {
@@ -450,7 +469,11 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 		if decisionAvailable {
 			fmt.Fprintln(ui.output, "[D] Production GO/NO-GO decision (separate from release signing)")
 			if p.Role == "coordinator" {
-				fmt.Fprintln(ui.output, "[P] Verify signed NO-GO decision and pack a public trial archive")
+				fmt.Fprintln(ui.output, "[P] Verify signed decision and pack its exact public archive")
+				fmt.Fprintln(ui.output, "[A] Review and sign GO publication authorization (network-disabled container)")
+				fmt.Fprintln(ui.output, "[G] Publish prepared signed GO and approved pointer")
+				fmt.Fprintln(ui.output, "[T] Publish prepared NO-GO trial archive")
+				fmt.Fprintln(ui.output, "[V] Independently read back an officially published GO release")
 			}
 		}
 		limits, limitsErr := resolvedDockerRuntimeLimits(p.Resources)
@@ -464,13 +487,46 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 			return err
 		}
 		switch strings.ToUpper(strings.TrimSpace(answer)) {
+		case "A":
+			if !decisionAvailable || p.Role != "coordinator" {
+				fmt.Fprintln(ui.output, "A signed final release and coordinator role are required.")
+				continue
+			}
+			if err := runWorkflowV4AuthorizeGo(ui, p, snapshot, protocol); err != nil {
+				ui.message(toneError, "GO authorization stopped: %v\nRetained files were preserved for review.\n", err)
+			}
+		case "G":
+			if !decisionAvailable || p.Role != "coordinator" {
+				fmt.Fprintln(ui.output, "A signed final release and coordinator role are required.")
+				continue
+			}
+			if err := runWorkflowV4PublishGo(ui, p, config, protocol, snapshot); err != nil {
+				ui.message(toneError, "GO publication stopped: %v\nRetained files were preserved; inspect them before retrying.\n", err)
+			}
+		case "T":
+			if !decisionAvailable || p.Role != "coordinator" {
+				fmt.Fprintln(ui.output, "A signed final release and coordinator role are required.")
+				continue
+			}
+			if err := runWorkflowV4PublishNoGoTrial(ui, p, config, protocol, snapshot); err != nil {
+				ui.message(toneError, "NO-GO trial publication stopped: %v\nRetained files were preserved; inspect them before retrying.\n", err)
+			}
+		case "V":
+			if !decisionAvailable || p.Role != "coordinator" {
+				fmt.Fprintln(ui.output, "A signed final release and coordinator role are required.")
+				continue
+			}
+			verifierDriver := dockerDriver{runtimeLimits: p.Resources, image: p.Image, platform: p.Platform, ceremonyBinary: dockerCeremonyBinary, client: osDockerCommandClient{binary: cli}}
+			if err := runWorkflowV4CoordinatorGoReadback(ui, p, verifierDriver, protocol, snapshot); err != nil {
+				ui.message(toneError, "Official GO readback stopped: %v\n", err)
+			}
 		case "P":
 			if !decisionAvailable || p.Role != "coordinator" {
 				fmt.Fprintln(ui.output, "A signed final release and coordinator role are required.")
 				continue
 			}
 			if err := runWorkflowV4PrepareTrialArchive(ui, p, snapshot, protocol); err != nil {
-				ui.message(toneError, "Trial archive preparation stopped: %v\n", err)
+				ui.message(toneError, "Public archive preparation stopped: %v\n", err)
 			}
 		case "D":
 			if !decisionAvailable {

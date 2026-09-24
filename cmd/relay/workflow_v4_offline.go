@@ -270,9 +270,59 @@ func runWorkflowV4OfflineHandoff(ui *coordinatorWizard, action string, snapshot 
 		if _, err := pathWithin(online.Work, source, "/work"); err != nil {
 			return err
 		}
+		if workflowV4CoordinatorDirectRelease(protocol) {
+			return runWorkflowV4ImportReleasePackage(ui, online, source, expected.Identity.KeyID)
+		}
 		return runWorkflowV4ReleaseUpload(ui, snapshot, protocol, config, online, expected.Identity.ID, expected.Identity.KeyID, workflowV4ReleaseSignerProgress{PackageReady: true, PackageDir: source})
 	}
 	return errors.New("unknown public handoff")
+}
+
+func runWorkflowV4ImportReleasePackage(ui *coordinatorWizard, online guidedProfile, source, keyID string) error {
+	if online.Role != "coordinator" {
+		return errors.New("direct signed release import requires the coordinator")
+	}
+	if _, err := pathWithin(online.Work, source, "/work"); err != nil {
+		return err
+	}
+	if err := requireOfflineRealPath(source); err != nil {
+		return err
+	}
+	info, err := os.Lstat(source)
+	if err != nil || !info.IsDir() {
+		return errors.New("signed release handoff must be a real public package directory")
+	}
+	if hasGrant, err := workflowV4RetainedReleaseGrantExists(online.Work); err != nil {
+		return err
+	} else if hasGrant {
+		return errors.New("a retained release upload grant exists; resolve its original handoff before importing another package")
+	}
+	destination := workflowV4CoordinatorReleaseImportPath(online.Work)
+	if source == destination || strings.HasPrefix(destination, source+string(filepath.Separator)) || strings.HasPrefix(source, destination+string(filepath.Separator)) {
+		return errors.New("signed release handoff overlaps the retained import directory")
+	}
+	if _, err := os.Lstat(destination); err == nil {
+		return errors.New("a signed release import is already retained; verify it or resolve the existing work before another import")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := workflowV4VerifyClosedReleasePackage(online, source, keyID); err != nil {
+		return fmt.Errorf("verify signer's exact public package: %w", err)
+	}
+	if err := ui.confirm("Retain this verified public release package for final-release checkpoint recording", "IMPORT SIGNED RELEASE"); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return err
+	}
+	if err := os.Rename(source, destination); err != nil {
+		return fmt.Errorf("move verified package into coordinator workspace: %w", err)
+	}
+	if err := syncDirectory(filepath.Dir(destination)); err != nil {
+		return err
+	}
+	fmt.Fprintf(ui.output, "Verified signed public release package retained at %s. Choose the coordinator's next action to record the final-release checkpoint.\n", destination)
+	return nil
 }
 
 func requireOfflineRealPath(path string) error {

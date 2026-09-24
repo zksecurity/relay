@@ -19,20 +19,23 @@ import (
 	"github.com/zksecurity/relay/internal/verification"
 )
 
-// This public trial lane deliberately has no approved-release pointer. GO
-// promotion still requires the terminal decision and publication checkpoints
-// specified by the protocol design.
+// This public trial lane deliberately has no approved-release pointer.
 func runWorkflowV4PublishNoGoTrial(ui *coordinatorWizard, online guidedProfile, config access.StorageConfig, protocol transcript.DefinitionProtocol, snapshot storagefirst.SnapshotV4) error {
-	if online.Role != "upload-station" || protocol.Definition.Mode != "production" || protocol.DefinitionSchema != "proof-tool-mpc-ceremony-definition-v5" || config.CeremonyID != protocol.Definition.CeremonyID {
-		return errors.New("NO-GO trial publication requires the exact authenticated V5 upload-station workspace")
+	if (online.Role != "coordinator" && online.Role != "upload-station") || !workflowV4CoordinatorDirectRelease(protocol) || config.CeremonyID != protocol.Definition.CeremonyID {
+		return errors.New("NO-GO trial publication requires the exact authenticated V5 ceremony workspace")
 	}
 	if config.Provider != "aws" || config.CoordinatorProfile == "" || config.PublishedBucket == "" {
 		return errors.New("this trial publication lane requires configured AWS test-bucket access")
 	}
 	archive := filepath.Join(online.Work, "no-go-trial-ceremony.zip")
+	keyName := "coordinator-public-key.hex"
+	if online.Role == "coordinator" {
+		archive = filepath.Join(online.Work, "workflow-v4", "publication", "no-go-trial-ceremony.zip")
+		keyName = "setup-coordinator.hex"
+	}
 	info, err := os.Lstat(archive)
 	if err != nil || !info.Mode().IsRegular() {
-		return errors.New("place the coordinator's regular public trial ZIP in this upload workspace first")
+		return errors.New("prepare the coordinator's regular public trial ZIP before publication")
 	}
 	digest, err := workflowV4ArchiveSHA256(archive)
 	if err != nil {
@@ -74,7 +77,7 @@ func runWorkflowV4PublishNoGoTrial(ui *coordinatorWizard, online guidedProfile, 
 	if err != nil {
 		return err
 	}
-	trustedKey, err := readTesseraRegularFile(filepath.Join(online.Trust, "coordinator-public-key.hex"), 4096, false)
+	trustedKey, err := readTesseraRegularFile(filepath.Join(online.Trust, keyName), 4096, false)
 	if err != nil {
 		return err
 	}
@@ -89,7 +92,7 @@ func runWorkflowV4PublishNoGoTrial(ui *coordinatorWizard, online guidedProfile, 
 	proof.Keys = ""
 	proof.Credentials = ""
 	path := func(name string) string { return "/work/" + name }
-	common := []string{"--ceremony", path(manifest.Inputs["ceremony"]), "--ceremony-signature", path(manifest.Inputs["ceremony-signature"]), "--coordinator-public-key-file", "/trust/coordinator-public-key.hex"}
+	common := []string{"--ceremony", path(manifest.Inputs["ceremony"]), "--ceremony-signature", path(manifest.Inputs["ceremony-signature"]), "--coordinator-public-key-file", "/trust/" + keyName}
 	release := append([]string{"mpc-ceremony", "release", "verify"}, common...)
 	release = append(release, "--keys-dir", path(manifest.Inputs["keys-dir"]), "--manifest-public-key-file", path(manifest.Inputs["manifest-public-key-file"]), "--signature-key-id", manifest.ReleaseKeyID)
 	if err := runWorkflowV4ProfileCommand(proof, release, false); err != nil {

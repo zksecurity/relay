@@ -27,18 +27,22 @@ type verificationCheck struct {
 	Detail string `json:"detail,omitempty"`
 }
 type verificationReport struct {
-	Schema     string              `json:"schema"`
-	CeremonyID string              `json:"ceremony_id"`
-	Passed     bool                `json:"passed"`
-	Trust      string              `json:"trust"`
-	Checks     []verificationCheck `json:"checks"`
-	Limits     []string            `json:"not_established"`
+	Schema              string              `json:"schema"`
+	CeremonyID          string              `json:"ceremony_id"`
+	Passed              bool                `json:"passed"`
+	OfficiallyPublished bool                `json:"officially_published"`
+	Trust               string              `json:"trust"`
+	Checks              []verificationCheck `json:"checks"`
+	Limits              []string            `json:"not_established"`
 }
 type publicVerifyRunner func(args ...string) ([]byte, error)
 
 func runVerifyCeremony(args []string) error {
 	f := flag.NewFlagSet("verify-ceremony", flag.ContinueOnError)
 	archive := f.String("archive", "", "public verification ZIP downloaded from Tessera")
+	publishedBaseURL := f.String("published-base-url", "", "trusted official public storage URL; verifies approved publication as well as the signed archive")
+	expectedCeremonyID := f.String("expected-ceremony-id", "", "independently trusted ceremony ID for official GO publication")
+	expectedCoordinatorKey := f.String("expected-coordinator-public-key-file", "", "independently trusted coordinator public key for official GO publication")
 	tool := f.String("mpc-ceremony", "mpc-ceremony", "locally installed proof tool; must match this release's pin")
 	maxBytes := f.Int64("max-expanded-bytes", 64<<30, "maximum extracted bytes (raise explicitly for larger production archives)")
 	if err := f.Parse(args); err != nil {
@@ -46,6 +50,17 @@ func runVerifyCeremony(args []string) error {
 	}
 	if *archive == "" || f.NArg() != 0 {
 		return errors.New("--archive is required")
+	}
+	var trustedKey []byte
+	var err error
+	if *publishedBaseURL != "" {
+		if *expectedCeremonyID == "" || *expectedCoordinatorKey == "" {
+			return errors.New("official GO verification requires --expected-ceremony-id and --expected-coordinator-public-key-file from an independent source")
+		}
+		trustedKey, err = readTesseraRegularFile(*expectedCoordinatorKey, 4096, false)
+		if err != nil {
+			return err
+		}
 	}
 	// This pin is compiled into the installed CLI, never supplied by the archive.
 	measured, err := measuredReleaseTools(*tool)
@@ -64,7 +79,7 @@ func runVerifyCeremony(args []string) error {
 		}
 		return out.Bytes(), nil
 	}
-	report, err := verifyCeremonyArchive(*archive, *maxBytes, run)
+	report, err := verifyCeremonyArchiveWithPublicationTrusted(*archive, *maxBytes, run, *publishedBaseURL, *expectedCeremonyID, trustedKey)
 	if encodeErr := json.NewEncoder(os.Stdout).Encode(report); encodeErr != nil {
 		return encodeErr
 	}
@@ -81,10 +96,41 @@ func (b *limitedVerificationOutput) Write(p []byte) (int, error) {
 	return b.Buffer.Write(p)
 }
 func verifyCeremonyArchive(archive string, maxBytes int64, run publicVerifyRunner) (report verificationReport, err error) {
-	report = verificationReport{Schema: "ceremony-verification-report-v1", Trust: "Ceremony identity and public keys supplied by the website hosting this archive.", Limits: []string{"Secret deletion and entropy quality", "Physical offline signing and host integrity", "Independence of people controlling different keys", "Truth of website progress claims beyond signed protocol evidence", "Whether this website snapshot is the latest"}}
+	return verifyCeremonyArchiveWithPublication(archive, maxBytes, run, "")
+}
+
+func verifyCeremonyArchiveWithPublication(archive string, maxBytes int64, run publicVerifyRunner, publishedBaseURL string) (report verificationReport, err error) {
+	return verifyCeremonyArchiveWithPublicationTrusted(archive, maxBytes, run, publishedBaseURL, "", nil)
+}
+
+func verifyCeremonyArchiveWithPublicationTrusted(archive string, maxBytes int64, run publicVerifyRunner, publishedBaseURL, expectedCeremonyID string, expectedKey []byte) (report verificationReport, err error) {
+	root, m, e := verification.Extract(archive, maxBytes)
+	if e != nil {
+		report = newVerificationReport(publishedBaseURL)
+		report.Checks[0].Status = "failed"
+		report.Checks[0].Detail = e.Error()
+		return report, e
+	}
+	defer os.RemoveAll(root)
+	return verifyExtractedCeremonyArchiveWithPublicationTrusted(root, m, archive, run, publishedBaseURL, expectedCeremonyID, expectedKey)
+}
+
+func newVerificationReport(publishedBaseURL string) verificationReport {
+	report := verificationReport{Schema: "ceremony-verification-report-v1", Trust: "Ceremony identity and public keys supplied by the website hosting this archive.", Limits: []string{"Secret deletion and entropy quality", "Physical offline signing and host integrity", "Independence of people controlling different keys", "Truth of website progress claims beyond signed protocol evidence", "Whether this website snapshot is the latest"}}
+	if publishedBaseURL == "" {
+		report.Limits = append(report.Limits, "Official publication was not checked; supply an independently trusted --published-base-url")
+	}
 	for _, name := range []string{"archive-integrity", "definition", "release", "full-replay", "production-approval"} {
 		report.Checks = append(report.Checks, verificationCheck{Name: name, Status: "not-run"})
 	}
+	if publishedBaseURL != "" {
+		report.Checks = append(report.Checks, verificationCheck{Name: "official-publication", Status: "not-run"})
+	}
+	return report
+}
+
+func verifyExtractedCeremonyArchiveWithPublicationTrusted(root string, m verification.Manifest, archive string, run publicVerifyRunner, publishedBaseURL, expectedCeremonyID string, expectedKey []byte) (report verificationReport, err error) {
+	report = newVerificationReport(publishedBaseURL)
 	fail := func(index int, e error) (verificationReport, error) {
 		report.Checks[index].Status = "failed"
 		if errors.Is(e, os.ErrNotExist) || strings.Contains(e.Error(), "missing evidence") {
@@ -93,14 +139,16 @@ func verifyCeremonyArchive(archive string, maxBytes int64, run publicVerifyRunne
 		report.Checks[index].Detail = e.Error()
 		return report, e
 	}
-	root, m, e := verification.Extract(archive, maxBytes)
-	if e != nil {
-		return fail(0, e)
-	}
-	defer os.RemoveAll(root)
 	report.CeremonyID = m.CeremonyID
 	report.Checks[0].Status = "passed"
 	p := func(name string) string { return filepath.Join(root, filepath.FromSlash(name)) }
+	if publishedBaseURL != "" && (expectedCeremonyID != "" || len(expectedKey) != 0) {
+		key, keyErr := readTesseraRegularFile(p(m.Inputs["coordinator-public-key-file"]), 4096, false)
+		if keyErr != nil || expectedCeremonyID != m.CeremonyID || !sameCoordinatorPublicKey(key, expectedKey) {
+			return fail(0, errors.New("official GO archive differs from independently trusted ceremony ID or coordinator key"))
+		}
+		report.Trust = "Ceremony ID and coordinator key independently supplied by verifier; official storage URL supplied separately."
+	}
 	trust := []string{"--ceremony", p(m.Inputs["ceremony"]), "--ceremony-signature", p(m.Inputs["ceremony-signature"]), "--coordinator-public-key-file", p(m.Inputs["coordinator-public-key-file"])}
 	inspector := transcript.Inspector{CeremonyPath: p(m.Inputs["ceremony"]), CeremonySignaturePath: p(m.Inputs["ceremony-signature"]), CoordinatorPublicKeyPath: p(m.Inputs["coordinator-public-key-file"]), Runner: func(_ string, args ...string) ([]byte, []byte, error) {
 		if len(args) >= 2 && args[0] == "--format" {
@@ -192,6 +240,14 @@ func verifyCeremonyArchive(archive string, maxBytes int64, run publicVerifyRunne
 		if e = check(4, []string{"decision", "verify"}, decision); e != nil {
 			return fail(4, e)
 		}
+	}
+	if publishedBaseURL != "" {
+		if e := workflowV4VerifyPublishedGo(root, m, archive, publishedBaseURL, run); e != nil {
+			return fail(5, e)
+		}
+		report.Checks[5].Status = "passed"
+		report.Checks[5].Detail = "The official pointer and published archive match the exact signed GO."
+		report.OfficiallyPublished = true
 	}
 	report.Passed = true
 	return report, nil

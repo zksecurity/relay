@@ -6,7 +6,60 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/zksecurity/relay/internal/verification"
 )
+
+func TestWorkflowV4RetainedArchiveMustMatchCurrentSignedInventory(t *testing.T) {
+	expected := verification.Manifest{
+		Schema: verification.Schema, CeremonyID: "sha256:" + strings.Repeat("a", 64), DefinitionSHA256: strings.Repeat("b", 64), ReleaseKeyID: "signer",
+		Inputs:   map[string]string{"ceremony": "ceremony/public/ceremony.json"},
+		Decision: &verification.Decision{Record: "ceremony/public/decision/decision.json", Signatures: []string{"ceremony/public/decision/coordinator.sig"}, EvidenceRoot: "ceremony/public/decision/evidence"},
+		Files:    []verification.File{{Path: "ceremony/public/ceremony.json", Size: 10, SHA256: strings.Repeat("b", 64)}, {Path: "ceremony/public/decision/decision.json", SHA256: workflowV4ZeroSHA256}},
+	}
+	actual := expected
+	actual.Files = append([]verification.File(nil), expected.Files...)
+	actual.Files[1].Size = 20
+	actual.Files[1].SHA256 = strings.Repeat("c", 64)
+	if !workflowV4ArchiveMatchesExpected(actual, expected) {
+		t.Fatal("exact signed files with filled decision digest rejected")
+	}
+	actual.Files[0].SHA256 = strings.Repeat("d", 64)
+	if workflowV4ArchiveMatchesExpected(actual, expected) {
+		t.Fatal("changed signed ceremony file accepted")
+	}
+	actual.Files[0] = expected.Files[0]
+	actual.Decision = &verification.Decision{Record: "ceremony/public/decision/other.json"}
+	if workflowV4ArchiveMatchesExpected(actual, expected) {
+		t.Fatal("archive for another decision accepted")
+	}
+}
+
+func TestWorkflowV4RetainedArchiveRejectsChangedPublicHandoffBytes(t *testing.T) {
+	for _, name := range []string{"decision/decision.json", "decision/coordinator.sig", "decision/evidence/report.json", "coordinator-public-key.hex"} {
+		t.Run(name, func(t *testing.T) {
+			current := t.TempDir()
+			local := filepath.Join(current, filepath.FromSlash(name))
+			if err := os.MkdirAll(filepath.Dir(local), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(local, []byte("new public bytes"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			path := workflowV4ArchivePrefix + name
+			expected := verification.Manifest{Files: []verification.File{{Path: path, SHA256: workflowV4ZeroSHA256}}}
+			actual := verification.Manifest{Files: []verification.File{{Path: path, Size: int64(len("old public bytes")), SHA256: workflowV4DigestBytes([]byte("old public bytes"))}}}
+			if err := workflowV4ArchivePlaceholdersMatchCurrent(actual, expected, current); err == nil {
+				t.Fatal("retained archive accepted old public bytes")
+			}
+			actual.Files[0].Size = int64(len("new public bytes"))
+			actual.Files[0].SHA256 = workflowV4DigestBytes([]byte("new public bytes"))
+			if err := workflowV4ArchivePlaceholdersMatchCurrent(actual, expected, current); err != nil {
+				t.Fatalf("retained archive rejected matching public bytes: %v", err)
+			}
+		})
+	}
+}
 
 func TestWorkflowV4DecisionArchiveInventoryIsClosed(t *testing.T) {
 	root := t.TempDir()

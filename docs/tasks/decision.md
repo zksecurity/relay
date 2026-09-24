@@ -41,8 +41,8 @@ On the disconnected signing machine:
 ```
 
 Success produces the exact decision file and your detached signature.
-Transfer only these public files and approved evidence to the
-[upload station](upload.md). Keep the private key offline.
+Transfer only these public files and approved evidence to the coordinator for
+[publication](upload.md). Keep the private key offline.
 Retain the verification output and coordinator's final verified decision.
 
 If the evidence is incomplete, the statement changes, or signing is interrupted,

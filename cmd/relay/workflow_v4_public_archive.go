@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -199,8 +200,20 @@ func runWorkflowV4PrepareTrialArchive(ui *coordinatorWizard, online guidedProfil
 	if err := json.Unmarshal(raw, &outcome); err != nil {
 		return err
 	}
-	if outcome.Decision != "NO-GO" {
-		return errors.New("this publication path is only for a signed NO-GO trial; GO promotion requires its separate terminal checkpoint")
+	if outcome.Decision != "NO-GO" && outcome.Decision != "GO" {
+		return errors.New("verified production decision has no supported outcome")
+	}
+	var binding struct {
+		Release struct {
+			ReleaseID              string                        `json:"release_id"`
+			FinalReleaseCheckpoint transcript.SignedArtifactRefs `json:"final_release_checkpoint"`
+		} `json:"release"`
+	}
+	if err := json.Unmarshal(raw, &binding); err != nil {
+		return err
+	}
+	if outcome.Decision == "GO" && binding.Release.FinalReleaseCheckpoint != snapshot.Head() {
+		return errors.New("signed GO decision approves a different final-release checkpoint")
 	}
 	m, err := workflowV4PublicArchiveManifest(snapshot, protocol, decisionFiles, signatures)
 	if err != nil {
@@ -210,23 +223,195 @@ func runWorkflowV4PrepareTrialArchive(ui *coordinatorWizard, online guidedProfil
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	out := filepath.Join(dir, "no-go-trial-ceremony.zip")
-	if _, err := os.Lstat(out); err == nil {
-		return errors.New("a trial archive already exists; preserve and inspect it before retrying")
+	name := "no-go-trial-ceremony.zip"
+	if outcome.Decision == "GO" {
+		name = "go-ceremony.zip"
+	}
+	out := filepath.Join(dir, name)
+	if info, err := os.Lstat(out); err == nil {
+		if !info.Mode().IsRegular() {
+			return errors.New("retained public archive is not a regular file")
+		}
+		retainedRoot, retainedManifest, err := verification.Extract(out, 1<<40)
+		if err != nil {
+			return fmt.Errorf("retained public archive is incomplete or changed; preserve it for review: %w", err)
+		}
+		defer os.RemoveAll(retainedRoot)
+		if !workflowV4ArchiveMatchesExpected(retainedManifest, m) {
+			return errors.New("retained public archive differs from the authenticated decision or final release")
+		}
+		if err := workflowV4ArchivePlaceholdersMatchCurrent(retainedManifest, m, root); err != nil {
+			return fmt.Errorf("retained public archive differs from current public handoff: %w", err)
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
-	}
-	if err := ui.confirm("Pack only the authenticated public files and signed NO-GO decision into a trial archive", "PACK NO-GO TRIAL"); err != nil {
-		return err
-	}
-	if err := packCeremony(online.Work, out, m); err != nil {
-		return err
+	} else {
+		phrase := "PACK NO-GO TRIAL"
+		if outcome.Decision == "GO" {
+			phrase = "PACK GO RELEASE"
+		}
+		if err := ui.confirm("Pack only the authenticated public files and exact signed decision into a public archive", phrase); err != nil {
+			return err
+		}
+		temporary, err := os.MkdirTemp(dir, ".archive-pack-*")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(temporary)
+		packed := filepath.Join(temporary, name)
+		if err := packCeremony(online.Work, packed, m); err != nil {
+			return err
+		}
+		if err := os.Link(packed, out); err != nil {
+			return fmt.Errorf("retain complete public archive without replacement: %w", err)
+		}
+		if err := syncDirectory(dir); err != nil {
+			return err
+		}
 	}
 	digest, err := workflowV4ArchiveSHA256(out)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(ui.output, "Signed NO-GO trial archive: %s\nSHA-256: %s\nTransfer this public ZIP to the upload station. It must never be presented as an approved production release.\n", out, digest)
+	if outcome.Decision == "NO-GO" {
+		fmt.Fprintf(ui.output, "NO-GO trial archive: %s\nSHA-256: %s\nChoose T to publish this exact trial archive. It must never be presented as an approved production release.\n", out, digest)
+		return nil
+	}
+	fmt.Fprintf(ui.output, "GO archive: %s\nSHA-256: %s\nChoose A to review and sign its publication authorization. No coordinator key was used to pack this archive.\n", out, digest)
+	return nil
+}
+
+func runWorkflowV4AuthorizeGo(ui *coordinatorWizard, online guidedProfile, snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol) error {
+	if online.Role != "coordinator" || protocol.Definition.Mode != "production" || protocol.DefinitionSchema != "proof-tool-mpc-ceremony-definition-v5" {
+		return errors.New("GO publication authorization requires a V5 production coordinator")
+	}
+	dir := filepath.Join(online.Work, "workflow-v4", "publication")
+	archive := filepath.Join(dir, "go-ceremony.zip")
+	if info, err := os.Lstat(archive); err != nil || !info.Mode().IsRegular() {
+		return errors.New("pack the GO archive with P before signing its publication authorization")
+	}
+	// Recheck the exact signed decision and retained archive before presenting
+	// the record for signing. This never creates another archive here.
+	if err := runWorkflowV4PrepareTrialArchive(ui, online, snapshot, protocol); err != nil {
+		return err
+	}
+	raw, err := readTesseraRegularFile(filepath.Join(online.Work, "ceremony", "public", "decision", "decision.json"), 16<<20, false)
+	if err != nil {
+		return err
+	}
+	var binding struct {
+		Decision string `json:"decision"`
+		Release  struct {
+			ReleaseID string `json:"release_id"`
+		} `json:"release"`
+	}
+	if err := json.Unmarshal(raw, &binding); err != nil || binding.Decision != "GO" {
+		return errors.New("GO publication authorization requires an exact signed GO decision")
+	}
+	digest, err := workflowV4ArchiveSHA256(archive)
+	if err != nil {
+		return err
+	}
+	config, err := loadStorageConfig(filepath.Join(online.Work, "ceremony", "config", "relay-storage.json"))
+	if err != nil || config.CeremonyID != protocol.Definition.CeremonyID || config.Provider != "aws" {
+		return errors.New("GO publication requires matching reviewed AWS storage settings")
+	}
+	if err := config.Validate(); err != nil {
+		return err
+	}
+	if online.Keys == "" || online.Trust == "" || online.Image == "" {
+		return errors.New("GO authorization requires the coordinator key, trust anchor, and approved Relay image")
+	}
+	trustedKey, err := readTesseraRegularFile(filepath.Join(online.Trust, "setup-coordinator.hex"), 4096, false)
+	if err != nil {
+		return err
+	}
+	key, err := hex.DecodeString(strings.TrimSpace(string(trustedKey)))
+	if err != nil {
+		return err
+	}
+	record := workflowV4GoPublicationFor(protocol.Definition.CeremonyID, snapshot.Head().Record.Digest.SHA256, workflowV4ArchivePrefix+snapshot.Head().Record.Name, workflowV4ArchivePrefix+snapshot.Head().Signature.Name, workflowV4DigestBytes(raw), binding.Release.ReleaseID, digest, config.PublishedBucket, config.PublishedBaseURL)
+	if err := record.validate(); err != nil {
+		return err
+	}
+	pointer := filepath.Join(dir, "go-publication.json")
+	if signed, err := readTesseraRegularFile(pointer, 16<<20, false); err == nil {
+		retained, err := workflowV4VerifyGoPublication(signed, key)
+		if err != nil || retained != record {
+			return errors.New("retained GO publication authorization differs from the exact reviewed release")
+		}
+		fmt.Fprintf(ui.output, "Existing exact GO publication authorization verified: %s\nChoose G to publish.\n", pointer)
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	fmt.Fprintf(ui.output, "Review GO publication authorization:\nCeremony: %s\nRelease: %s\nFinal checkpoint: %s\nDecision SHA-256: %s\nArchive SHA-256: %s\nArchive destination: %s/%s\nApproved pointer: %s/%s\nPublic origin: %s\n", record.CeremonyID, record.ReleaseID, record.CheckpointSHA256, record.DecisionSHA256, record.ArchiveSHA256, record.PublishedBucket, record.ArchiveKey, record.PublishedBucket, record.PointerKey, record.PublishedBaseURL)
+	if err := ui.confirm("Use the coordinator's private key in a network-disabled container to sign this exact publication authorization", "SIGN GO PUBLICATION"); err != nil {
+		return err
+	}
+	input, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	if err := setupWriteBytesNewOrExact(filepath.Join(dir, "go-publication-input.json"), input, 0o600); err != nil {
+		return err
+	}
+	if err := runWorkflowV4ProfileCommand(online, []string{"relay", "coordinator", "sign-go-publication"}, false); err != nil {
+		return err
+	}
+	signed, err := readTesseraRegularFile(pointer, 16<<20, false)
+	if err != nil {
+		return err
+	}
+	actual, err := workflowV4VerifyGoPublication(signed, key)
+	if err != nil || actual != record {
+		return errors.New("signed GO publication authorization differs from the reviewed record")
+	}
+	fmt.Fprintf(ui.output, "Signed GO publication authorization: %s\nChoose G to publish these exact files, then V for official readback.\n", pointer)
+	return nil
+}
+
+func workflowV4ArchiveMatchesExpected(actual, expected verification.Manifest) bool {
+	if actual.Schema != expected.Schema || actual.CeremonyID != expected.CeremonyID || actual.DefinitionSHA256 != expected.DefinitionSHA256 || actual.ReleaseKeyID != expected.ReleaseKeyID || !reflect.DeepEqual(actual.Inputs, expected.Inputs) || !reflect.DeepEqual(actual.Decision, expected.Decision) || len(actual.Files) != len(expected.Files) {
+		return false
+	}
+	want := make(map[string]verification.File, len(expected.Files))
+	for _, file := range expected.Files {
+		want[file.Path] = file
+	}
+	for _, file := range actual.Files {
+		reference, ok := want[file.Path]
+		if !ok || reference.SHA256 != workflowV4ZeroSHA256 && (reference.SHA256 != file.SHA256 || reference.Size != file.Size) {
+			return false
+		}
+	}
+	return true
+}
+
+// Decision handoff and coordinator-key entries have no checkpoint digest, so a
+// retained ZIP must still match their current local bytes before reuse.
+func workflowV4ArchivePlaceholdersMatchCurrent(actual, expected verification.Manifest, currentRoot string) error {
+	archived := make(map[string]verification.File, len(actual.Files))
+	for _, file := range actual.Files {
+		archived[file.Path] = file
+	}
+	for _, file := range expected.Files {
+		if file.SHA256 != workflowV4ZeroSHA256 {
+			continue
+		}
+		if !strings.HasPrefix(file.Path, workflowV4ArchivePrefix) || !verification.SafePath(file.Path) {
+			return fmt.Errorf("invalid public handoff path %q", file.Path)
+		}
+		current := filepath.Join(currentRoot, filepath.FromSlash(strings.TrimPrefix(file.Path, workflowV4ArchivePrefix)))
+		raw, err := readTesseraRegularFile(current, 16<<20, false)
+		if err != nil {
+			return err
+		}
+		want, ok := archived[file.Path]
+		if !ok || want.Size != int64(len(raw)) || want.SHA256 != workflowV4DigestBytes(raw) {
+			return fmt.Errorf("public handoff file changed after archive packing: %s", file.Path)
+		}
+	}
 	return nil
 }
 

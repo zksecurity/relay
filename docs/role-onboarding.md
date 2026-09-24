@@ -80,8 +80,9 @@ Private grants are delivered separately only to their named recipient.
 
 - Final-parameter signers prepare images online, then disconnect before key
   generation and signing. Skip transport-profile creation.
-- Upload stations import the final signer's public enrollment; they never
-  generate or receive a private signing key. Inapplicable menu options are hidden.
+- An upload station is needed only by older pinned workflows or retained
+  private-inbox handoffs. Current V5 coordinator publication does not require
+  a new upload-station installation.
 - Participants run computation through the host supervisor, not a nested Docker
   controller. Linux requires native Docker and disabled swap.
 - [Advanced profile reference](maintainer/profiles.md) explains the underlying

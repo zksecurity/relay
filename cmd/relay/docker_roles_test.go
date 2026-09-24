@@ -232,6 +232,42 @@ func TestDockerRoleMountsAndArguments(t *testing.T) {
 	}
 }
 
+func TestGoPublicationSigningUsesOnlyOfflineCoordinatorMounts(t *testing.T) {
+	o := roleTestOptions(t)
+	o.trust = privateRoleTestDir(t)
+	o.keys = privateRoleTestDir(t)
+	command := []string{"relay", "coordinator", "sign-go-publication"}
+	args, err := dockerRoleArgs(o, command, 501, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(args, " ")
+	for _, required := range []string{"--network=none", "dst=/work", "dst=/trust,readonly", "dst=/keys,readonly", "--read-only", "--cap-drop=ALL"} {
+		if !strings.Contains(joined, required) {
+			t.Fatalf("signing container missing %s", required)
+		}
+	}
+	if strings.Contains(joined, "--network=bridge") || strings.Contains(joined, "dst=/credentials/") || awsCredentialCommand(o, command) {
+		t.Fatal("GO publication signing received network or cloud credentials")
+	}
+	for _, change := range []func(*dockerRoleOptions){
+		func(o *dockerRoleOptions) { o.credentials = filepath.Join(t.TempDir(), "aws") },
+		func(o *dockerRoleOptions) { o.r2Parent = filepath.Join(t.TempDir(), "r2") },
+		func(o *dockerRoleOptions) { o.awsLoginRuntime = t.TempDir() },
+		func(o *dockerRoleOptions) { o.keys = "" },
+		func(o *dockerRoleOptions) { o.role = "witness" },
+	} {
+		changed := o
+		change(&changed)
+		if _, err := dockerRoleArgs(changed, command, 501, 20); err == nil {
+			t.Fatal("unsafe GO signing container accepted")
+		}
+	}
+	if _, err := dockerRoleArgs(o, append(command, "--unexpected"), 501, 20); err == nil {
+		t.Fatal("GO signing accepted extra arguments")
+	}
+}
+
 func TestDockerRoleParticipantDoesNotFallback(t *testing.T) {
 	o := dockerRoleOptions{role: "participant"}
 	if err := runDockerRoleParticipant(o, []string{"run"}); err == nil {

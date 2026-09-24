@@ -12,6 +12,14 @@ Participants and release signers can keep their current versions for a
 coordinator-only fix. Their contributor and signing images remain pinned, as do
 the signed definition, circuit, proof-tool, identities and existing progress.
 
+For a V5 ceremony started on v0.6.0 and still before Phase 2, finish the
+current Phase 1 operation before upgrading. The new coordinator release can
+later receive the signer's public release package and publish the final
+decision without installing an upload station. Qualification of the exact
+v0.6.0-to-target release pair and the full guided continuation is required
+before applying that change to an ongoing production ceremony. Do not use the
+new launcher as a substitute for the `ceremony upgrade` command below.
+
 ## 1. Finish the current operation and save
 
 Wait for any upload, acceptance or publication to finish. Resolve interrupted
@@ -26,14 +34,15 @@ and installer-created `start.sh` path. Do not initialize another ceremony.
 ## 2. Download and verify the new launcher
 
 Choose an exact published version from [Relay releases](https://github.com/zksecurity/relay/releases).
-This Bash example uses v0.4.0; substitute the version you intend to install.
+This Bash example uses v0.6.2 after it is published; substitute the exact
+version you intend to install.
 Use `relay-darwin-arm64` for Apple Silicon, `relay-darwin-amd64` for Intel Mac,
 `relay-linux-amd64` for x86 Linux or `relay-linux-arm64` for ARM Linux.
 GitHub CLI (`gh`) must be available.
 
 ```bash
 set -euo pipefail
-version=v0.4.0
+version=v0.6.2
 binary=relay-darwin-arm64
 upgrade_dir="$HOME/.local/share/relay/upgrades/$version"
 mkdir -p "$HOME/.local/share/relay/upgrades"

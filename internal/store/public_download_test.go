@@ -79,6 +79,26 @@ func TestLargePublicDownloadCancelsStalls(t *testing.T) {
 	}
 }
 
+func TestOfficialPublicDownloadCancelsStalledBody(t *testing.T) {
+	shortPublicIdle(t)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("partial"))
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	output := filepath.Join(t.TempDir(), "official")
+	start := time.Now()
+	err := (Client{PublicBaseURL: server.URL, httpClient: server.Client()}).GetPublicAtMost("approved/example/release.json", output, 1024)
+	if err == nil || time.Since(start) > 2*time.Second {
+		t.Fatalf("stalled official read was not cancelled: %v", err)
+	}
+	if _, err := os.Stat(output); !os.IsNotExist(err) {
+		t.Fatalf("partial official read retained: %v", err)
+	}
+}
+
 func TestPublicDownloadParentCancellationRemovesPartial(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

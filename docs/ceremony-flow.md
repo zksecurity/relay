@@ -35,7 +35,8 @@ flowchart LR
 
 Witness and mirror public identities may be created earlier, but their numbered
 setup and enrollment bind the initialized ceremony and therefore happen next.
-The upload station has no signing identity or enrollment of its own.
+The V5 coordinator publication path has no upload-station role. Older pinned
+workflows may retain their original keyless upload station.
 
 ## 2. Distribute the ceremony, enroll roles, and publish Phase 1
 
@@ -44,7 +45,7 @@ flowchart LR
   C["Coordinator"]
   R["Every key-owning ceremony role: independently authenticate coordinator key; VERIFY definition; review and sign enrollment"]
   V["Coordinator: VERIFY every required enrollment and observer minimum"]
-  O["Participants, witnesses, mirrors, auditors, and upload station: import public storage settings and prepare profiles"]
+  O["Participants, witnesses, mirrors, and auditors: import public storage settings and prepare profiles"]
   G["Coordinator: publish and VERIFY the initial Phase 1 state"]
   C -->|"PUBLIC HANDOFF: ceremony.json + ceremony.sig + coordinator-public-key.hex"| R
   R -->|"PUBLIC HANDOFF: complete my-enrollment folder"| V
@@ -173,8 +174,8 @@ flowchart LR
   C["Coordinator: hand off candidate, signed audits, and verified signed operational bundle"]
   S["Final-parameter signer: on disconnected host, independently VERIFY and cryptographically sign public release"]
   D["Production only: accountable roles VERIFY complete evidence, sign one GO/NO-GO decision, and VERIFY its threshold"]
-  U["Keyless upload station: independently VERIFY signed public release, then upload"]
-  V["Coordinator and archive custodians: VERIFY publication; retain public archive; retire temporary access"]
+  U["Coordinator: VERIFY returned signed release, then publish exact decision and archive"]
+  V["Coordinator and independent public verifiers: VERIFY publication; retain public archive"]
   C -->|"PUBLIC OFFLINE HANDOFF: candidate + evidence"| S
   S -->|"PUBLIC HANDOFF: signed release"| D
   D -->|"GO authorizes production distribution/use"| U
@@ -187,9 +188,10 @@ decision authorizes distribution and use of the exact signed circuit and
 release. GO for a test circuit does not authorize ownership-proof use. A
 rehearsal-mode run authenticates that this decision is not applicable.
 
-The upload station imports the final signer's public enrollment, never their
-private key. Upload or Tessera notification still does not prove coordinator
-acceptance, archive verification, or authorization to use the parameters.
+The coordinator receives the final signer's public package, never their
+private key. Import, upload, or Tessera notification still does not prove
+archive verification or authorization to use the parameters. Older V4
+ceremonies retain their original upload-station journey.
 
 ## Role index
 
@@ -201,7 +203,6 @@ acceptance, archive verification, or authorization to use the parameters.
 | Mirror | Retain every accepted contribution head and sign matching receipts |
 | Auditor | Independently replay both phases and sign an audit report |
 | Final-parameter signer (`release-signer`) | On a disconnected host, independently verify and sign the public release |
-| Upload station | Without a signing key, verify and upload approved signed public output |
 
 For exact operational instructions and recovery rules, continue with the
 [guided role workflow](role-workflow.md) and the guide for your assigned role.

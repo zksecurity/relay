@@ -156,6 +156,18 @@ func (c Client) Get(key, localPath string) error {
 }
 
 func (c Client) getPublic(key, localPath string) error {
+	return c.getPublicAtMost(key, localPath, -1)
+}
+
+// GetPublicAtMost bounds an untrusted public read before any verifier opens it.
+func (c Client) GetPublicAtMost(key, localPath string, maximum int64) error {
+	if c.PublicBaseURL == "" || maximum < 0 || maximum > 1<<40 {
+		return errors.New("invalid bounded public download")
+	}
+	return c.getPublicAtMost(key, localPath, maximum)
+}
+
+func (c Client) getPublicAtMost(key, localPath string, maximum int64) error {
 	if key == "" || path.Clean(key) != key || strings.HasPrefix(key, "../") || strings.Contains(key, `\`) {
 		return fmt.Errorf("unsafe public object key %q", key)
 	}
@@ -164,18 +176,46 @@ func (c Client) getPublic(key, localPath string) error {
 		return errors.New("invalid public base URL")
 	}
 	base.Path = strings.TrimSuffix(base.Path, "/") + "/" + key
-	request, err := http.NewRequestWithContext(c.operationContext(), http.MethodGet, base.String(), nil) // #nosec G107 -- base is operator configuration validated as HTTPS.
+	ctx := c.operationContext()
+	var cancel context.CancelFunc
+	var idle *time.Timer
+	if maximum >= 0 {
+		ctx, cancel = context.WithTimeout(ctx, publicReadBudget(maximum))
+		defer cancel()
+		idle = time.AfterFunc(publicReadTimeout, cancel)
+		defer idle.Stop()
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base.String(), nil) // #nosec G107 -- base is operator configuration validated as HTTPS.
 	if err != nil {
 		return err
 	}
-	response, err := http.DefaultClient.Do(request)
+	client := http.DefaultClient
+	if c.httpClient != nil {
+		client = c.httpClient
+	}
+	if maximum >= 0 {
+		// The caller supplies an independently trusted official origin. A
+		// redirect cannot move that authority to another host or path.
+		bounded := *client
+		bounded.Timeout = publicReadBudget(maximum)
+		bounded.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		client = &bounded
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return err
 	}
 	defer response.Body.Close()
+	body := io.Reader(response.Body)
+	if idle != nil {
+		body = publicProgressReader{reader: body, timer: idle}
+	}
 	if response.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+		_, _ = io.Copy(io.Discard, io.LimitReader(body, 4096))
 		return fmt.Errorf("GET %s: HTTP %s", key, response.Status)
+	}
+	if maximum >= 0 && response.ContentLength > maximum {
+		return errors.New("public object exceeds the approved download size")
 	}
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o700); err != nil {
 		return err
@@ -184,12 +224,24 @@ func (c Client) getPublic(key, localPath string) error {
 	if err != nil {
 		return err
 	}
-	_, copyErr := io.Copy(file, response.Body)
+	var count int64
+	var copyErr error
+	if maximum >= 0 {
+		count, copyErr = io.Copy(file, io.LimitReader(body, maximum+1))
+	} else {
+		count, copyErr = io.Copy(file, body)
+	}
 	closeErr := file.Close()
-	if copyErr != nil || closeErr != nil {
+	if copyErr == nil && maximum >= 0 {
+		copyErr = ctx.Err()
+	}
+	if copyErr != nil || closeErr != nil || maximum >= 0 && count > maximum {
 		_ = os.Remove(localPath)
 		if copyErr != nil {
 			return copyErr
+		}
+		if maximum >= 0 && count > maximum {
+			return errors.New("public object exceeds the approved download size")
 		}
 		return closeErr
 	}
