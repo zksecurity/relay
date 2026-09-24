@@ -13,15 +13,43 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zksecurity/relay/internal/access"
 	"github.com/zksecurity/relay/internal/store"
+	"github.com/zksecurity/relay/internal/transcript"
 	"github.com/zksecurity/relay/internal/verification"
 )
+
+func TestWorkflowV4GoUploadRejectsCoordinatorProfile(t *testing.T) {
+	config := access.StorageConfig{CoordinatorProfile: "coordinator"}
+	for _, value := range []string{"", "coordinator", "bad profile"} {
+		t.Setenv("RELAY_GO_UPLOAD_PROFILE", value)
+		if _, err := workflowV4GoUploadProfile(config); err == nil {
+			t.Fatalf("accepted unsafe GO upload profile %q", value)
+		}
+	}
+	t.Setenv("RELAY_GO_UPLOAD_PROFILE", "go-publisher")
+	if profile, err := workflowV4GoUploadProfile(config); err != nil || profile != "go-publisher" {
+		t.Fatalf("restricted uploader profile rejected: %q %v", profile, err)
+	}
+}
+
+func syntheticGoDecision(t *testing.T, releaseID string, checkpoint, signature []byte) []byte {
+	t.Helper()
+	ref := func(name string, raw []byte) map[string]any {
+		return map[string]any{"name": name, "digest": map[string]any{"sha256": "sha256:" + workflowV4DigestBytes(raw), "size": len(raw)}}
+	}
+	raw, err := json.Marshal(map[string]any{"decision": "GO", "release": map[string]any{"release_id": releaseID, "final_release_checkpoint": map[string]any{"record": ref("checkpoints/final/checkpoint.json", checkpoint), "signature": ref("checkpoints/final/checkpoint.sig", signature)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
 
 func TestWorkflowV4GoPublicationBindsExactReleaseAndDestination(t *testing.T) {
 	seed := bytes.Repeat([]byte{7}, ed25519.SeedSize)
 	key := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
 	ceremony := "sha256:" + strings.Repeat("a", 64)
-	record := workflowV4GoPublicationFor(ceremony, "sha256:"+strings.Repeat("b", 64), strings.Repeat("c", 64), "sha256:"+strings.Repeat("d", 64), strings.Repeat("e", 64), "published-bucket", "https://ceremony.example")
+	record := workflowV4GoPublicationFor(ceremony, "sha256:"+strings.Repeat("b", 64), "ceremony/public/checkpoints/final/checkpoint.json", "ceremony/public/checkpoints/final/checkpoint.sig", strings.Repeat("c", 64), "sha256:"+strings.Repeat("d", 64), strings.Repeat("e", 64), "published-bucket", "https://ceremony.example")
 	raw, err := workflowV4SignGoPublication(record, seed, key)
 	if err != nil {
 		t.Fatal(err)
@@ -74,27 +102,40 @@ func TestWorkflowV4OfficialGoReadbackBindsPointerAndArchive(t *testing.T) {
 	}
 	decisionName := "ceremony/public/decision/decision.json"
 	releaseID := "sha256:" + strings.Repeat("d", 64)
-	decision, _ := json.Marshal(map[string]any{"decision": "GO", "release": map[string]any{"release_id": releaseID}})
+	ceremony := "sha256:" + strings.Repeat("a", 64)
+	checkpoint := []byte(`{"transition":{"kind":"final-release-recorded"},"progress":{"final_release":{}}}`)
+	signature := []byte("synthetic signature")
+	checkpointSHA := workflowV4DigestBytes(checkpoint)
+	checkpointName := "ceremony/public/checkpoints/final/checkpoint.json"
+	signatureName := "ceremony/public/checkpoints/final/checkpoint.sig"
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(root, checkpointName)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, checkpointName), checkpoint, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, signatureName), signature, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	decision := syntheticGoDecision(t, releaseID, checkpoint, signature)
 	if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(decisionName)), decision, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ceremony := "sha256:" + strings.Repeat("a", 64)
-	checkpointSHA := strings.Repeat("b", 64)
-	manifest := verification.Manifest{CeremonyID: ceremony, Inputs: map[string]string{"coordinator-public-key-file": keyName}, Decision: &verification.Decision{Record: decisionName}, Files: []verification.File{{Path: "ceremony/public/checkpoints/final/checkpoint.json", SHA256: checkpointSHA}}}
+	manifest := verification.Manifest{CeremonyID: ceremony, Inputs: map[string]string{"coordinator-public-key-file": keyName, "ceremony": keyName, "ceremony-signature": keyName}, Decision: &verification.Decision{Record: decisionName}, Files: []verification.File{{Path: checkpointName, SHA256: checkpointSHA}, {Path: signatureName}}}
 	var pointer []byte
 	var server *httptest.Server
 	server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/" + workflowV4GoPointerKey(ceremony):
 			_, _ = w.Write(pointer)
-		case "/" + workflowV4GoPublicationFor(ceremony, checkpointSHA, workflowV4DigestBytes(decision), releaseID, archiveSHA, "bucket", server.URL).ArchiveKey:
+		case "/" + workflowV4GoPublicationFor(ceremony, checkpointSHA, "ceremony/public/checkpoints/final/checkpoint.json", "ceremony/public/checkpoints/final/checkpoint.sig", workflowV4DigestBytes(decision), releaseID, archiveSHA, "bucket", server.URL).ArchiveKey:
 			_, _ = w.Write([]byte("synthetic public archive"))
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer server.Close()
-	record := workflowV4GoPublicationFor(ceremony, checkpointSHA, workflowV4DigestBytes(decision), releaseID, archiveSHA, "bucket", server.URL)
+	record := workflowV4GoPublicationFor(ceremony, checkpointSHA, "ceremony/public/checkpoints/final/checkpoint.json", "ceremony/public/checkpoints/final/checkpoint.sig", workflowV4DigestBytes(decision), releaseID, archiveSHA, "bucket", server.URL)
 	pointer, err = workflowV4SignGoPublication(record, seed, key)
 	if err != nil {
 		t.Fatal(err)
@@ -102,8 +143,30 @@ func TestWorkflowV4OfficialGoReadbackBindsPointerAndArchive(t *testing.T) {
 	previous := http.DefaultClient
 	http.DefaultClient = server.Client()
 	defer func() { http.DefaultClient = previous }()
-	if err := workflowV4VerifyPublishedGo(root, manifest, archive, server.URL); err != nil {
+	run := func(args ...string) ([]byte, error) {
+		return json.Marshal(map[string]any{"schema": "proof-tool-mpc-command-result-v1", "ok": true, "command": "checkpoint verify-stored-v4", "ceremony_id": ceremony, "checkpoint_inspection_v4": map[string]any{"schema": "proof-tool-mpc-checkpoint-inspection-v4", "depth": "checkpoint-structure", "checkpoint": map[string]any{"transition": map[string]any{"kind": "final-release-recorded"}, "progress": map[string]any{"final_release": map[string]any{}}}}})
+	}
+	if err := workflowV4VerifyPublishedGo(root, manifest, archive, server.URL, run); err != nil {
 		t.Fatal(err)
+	}
+	var bound struct {
+		Release struct {
+			FinalReleaseCheckpoint transcript.SignedArtifactRefs `json:"final_release_checkpoint"`
+		} `json:"release"`
+	}
+	if err := json.Unmarshal(decision, &bound); err != nil {
+		t.Fatal(err)
+	}
+	otherHead := bound.Release.FinalReleaseCheckpoint
+	otherHead.Record.Digest.SHA256 = "sha256:" + strings.Repeat("f", 64)
+	if err := workflowV4MatchGoDecisionCheckpoint(root, record, otherHead); err == nil {
+		t.Fatal("GO for a forked final checkpoint accepted")
+	}
+	nonfinal := func(args ...string) ([]byte, error) {
+		return json.Marshal(map[string]any{"schema": "proof-tool-mpc-command-result-v1", "ok": true, "command": "checkpoint verify-stored-v4", "ceremony_id": ceremony, "checkpoint_inspection_v4": map[string]any{"schema": "proof-tool-mpc-checkpoint-inspection-v4", "depth": "checkpoint-structure", "checkpoint": map[string]any{"transition": map[string]any{"kind": "phase2-closed"}, "progress": map[string]any{"final_release": map[string]any{}}}}})
+	}
+	if err := workflowV4VerifyPublishedGo(root, manifest, archive, server.URL, nonfinal); err == nil {
+		t.Fatal("non-final checkpoint accepted for official GO")
 	}
 	wrongOrigin := record
 	wrongOrigin.PublishedBaseURL = "https://another.example"
@@ -112,7 +175,7 @@ func TestWorkflowV4OfficialGoReadbackBindsPointerAndArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	pointer = wrongPointer
-	if err := workflowV4VerifyPublishedGo(root, manifest, archive, server.URL); err == nil {
+	if err := workflowV4VerifyPublishedGo(root, manifest, archive, server.URL, run); err == nil {
 		t.Fatal("pointer for another public origin accepted")
 	}
 	pointer, err = workflowV4SignGoPublication(record, seed, key)
@@ -123,7 +186,7 @@ func TestWorkflowV4OfficialGoReadbackBindsPointerAndArchive(t *testing.T) {
 	if err := os.WriteFile(archive, []byte("different archive"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := workflowV4VerifyPublishedGo(root, manifest, archive, server.URL); err == nil {
+	if err := workflowV4VerifyPublishedGo(root, manifest, archive, server.URL, run); err == nil {
 		t.Fatalf("changed archive %x accepted", wrong)
 	}
 }
@@ -145,12 +208,13 @@ func TestVerifyCeremonyReportsOfficialGoOnlyForMatchingPointer(t *testing.T) {
 	key := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
 	ceremony := "sha256:" + strings.Repeat("a", 64)
 	releaseID := "sha256:" + strings.Repeat("d", 64)
-	decision, _ := json.Marshal(map[string]any{"decision": "GO", "release": map[string]any{"release_id": releaseID}})
 	checkpoint := []byte("synthetic final release checkpoint")
+	signature := []byte("synthetic checkpoint signature")
+	decision := syntheticGoDecision(t, releaseID, checkpoint, signature)
 	checkpointSHA := workflowV4DigestBytes(checkpoint)
 	root := t.TempDir()
 	manifest := verification.Manifest{Schema: verification.Schema, CeremonyID: ceremony, ReleaseKeyID: "release-key", Inputs: map[string]string{}, Decision: &verification.Decision{Record: "decision.json", Signatures: []string{"decision.sig"}, EvidenceRoot: "evidence"}, DefinitionSHA256: workflowV4ZeroSHA256}
-	files := map[string][]byte{"decision.json": decision, "decision.sig": []byte("synthetic signature"), "evidence/file": []byte("synthetic evidence"), "ceremony/public/checkpoints/final/checkpoint.json": checkpoint}
+	files := map[string][]byte{"decision.json": decision, "decision.sig": []byte("synthetic signature"), "evidence/file": []byte("synthetic evidence"), "ceremony/public/checkpoints/final/checkpoint.json": checkpoint, "ceremony/public/checkpoints/final/checkpoint.sig": signature}
 	for _, input := range verification.RequiredInputs {
 		name := "data/" + input
 		if input == "transcript-root" || input == "keys-dir" {
@@ -184,6 +248,16 @@ func TestVerifyCeremonyReportsOfficialGoOnlyForMatchingPointer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	extracted, extractedManifest, err := verification.Extract(archive, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(extracted)
+	verifier := workflowV4GoVerifierDriver(dockerDriver{}, extracted, extractedManifest)
+	checkpointArgs := []string{"--format", "json", "checkpoint", "verify-stored-v4", "--ceremony", filepath.Join(extracted, filepath.FromSlash(extractedManifest.Inputs["ceremony"])), "--ceremony-signature", filepath.Join(extracted, filepath.FromSlash(extractedManifest.Inputs["ceremony-signature"])), "--coordinator-public-key-file", filepath.Join(extracted, filepath.FromSlash(extractedManifest.Inputs["coordinator-public-key-file"])), "--artifact-root", filepath.Join(extracted, "ceremony", "public"), "--checkpoint", filepath.Join(extracted, "ceremony", "public", "checkpoints", "final", "checkpoint.json"), "--checkpoint-signature", filepath.Join(extracted, "ceremony", "public", "checkpoints", "final", "checkpoint.sig")}
+	if _, _, err := verifier.rewriteReadOnlyArgs(checkpointArgs); err != nil {
+		t.Fatalf("pinned Docker verifier rejects extracted GO archive: %v", err)
+	}
 	var pointer []byte
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/release.json") {
@@ -195,7 +269,7 @@ func TestVerifyCeremonyReportsOfficialGoOnlyForMatchingPointer(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	record := workflowV4GoPublicationFor(ceremony, checkpointSHA, workflowV4DigestBytes(decision), releaseID, archiveSHA, "published", server.URL)
+	record := workflowV4GoPublicationFor(ceremony, checkpointSHA, "ceremony/public/checkpoints/final/checkpoint.json", "ceremony/public/checkpoints/final/checkpoint.sig", workflowV4DigestBytes(decision), releaseID, archiveSHA, "published", server.URL)
 	pointer, err = workflowV4SignGoPublication(record, seed, key)
 	if err != nil {
 		t.Fatal(err)
@@ -215,11 +289,21 @@ func TestVerifyCeremonyReportsOfficialGoOnlyForMatchingPointer(t *testing.T) {
 		if command == "decision verify" {
 			result["decision"] = "GO"
 		}
+		if command == "checkpoint verify-stored-v4" {
+			result["checkpoint_inspection_v4"] = map[string]any{"schema": "proof-tool-mpc-checkpoint-inspection-v4", "depth": "checkpoint-structure", "checkpoint": map[string]any{"transition": map[string]any{"kind": "final-release-recorded"}, "progress": map[string]any{"final_release": map[string]any{}}}}
+		}
 		return json.Marshal(result)
 	}
 	report, err := verifyCeremonyArchiveWithPublication(archive, 1<<20, runner, server.URL)
 	if err != nil || !report.Passed || len(report.Checks) != 6 || report.Checks[5].Status != "passed" {
 		t.Fatalf("official GO was not verified: %+v %v", report, err)
+	}
+	wrongKey := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{8}, ed25519.SeedSize)).Public().(ed25519.PublicKey)
+	if report, err := verifyCeremonyArchiveWithPublicationTrusted(archive, 1<<20, runner, server.URL, ceremony, []byte(hex.EncodeToString(wrongKey))); err == nil || report.Passed {
+		t.Fatal("untrusted coordinator key accepted for official GO")
+	}
+	if report, err := verifyCeremonyArchiveWithPublicationTrusted(archive, 1<<20, runner, server.URL, "sha256:"+strings.Repeat("f", 64), []byte(hex.EncodeToString(key))); err == nil || report.Passed {
+		t.Fatal("untrusted ceremony ID accepted for official GO")
 	}
 	pointer = []byte(`{"record":"different"}`)
 	report, err = verifyCeremonyArchiveWithPublication(archive, 1<<20, runner, server.URL)

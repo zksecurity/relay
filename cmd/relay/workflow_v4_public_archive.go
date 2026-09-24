@@ -204,11 +204,15 @@ func runWorkflowV4PrepareTrialArchive(ui *coordinatorWizard, online guidedProfil
 	}
 	var binding struct {
 		Release struct {
-			ReleaseID string `json:"release_id"`
+			ReleaseID              string                        `json:"release_id"`
+			FinalReleaseCheckpoint transcript.SignedArtifactRefs `json:"final_release_checkpoint"`
 		} `json:"release"`
 	}
 	if err := json.Unmarshal(raw, &binding); err != nil {
 		return err
+	}
+	if outcome.Decision == "GO" && binding.Release.FinalReleaseCheckpoint != snapshot.Head() {
+		return errors.New("signed GO decision approves a different final-release checkpoint")
 	}
 	m, err := workflowV4PublicArchiveManifest(snapshot, protocol, decisionFiles, signatures)
 	if err != nil {
@@ -262,7 +266,7 @@ func runWorkflowV4PrepareTrialArchive(ui *coordinatorWizard, online guidedProfil
 	if err != nil {
 		return err
 	}
-	record := workflowV4GoPublicationFor(protocol.Definition.CeremonyID, snapshot.Head().Record.Digest.SHA256, workflowV4DigestBytes(raw), binding.Release.ReleaseID, digest, config.PublishedBucket, config.PublishedBaseURL)
+	record := workflowV4GoPublicationFor(protocol.Definition.CeremonyID, snapshot.Head().Record.Digest.SHA256, workflowV4ArchivePrefix+snapshot.Head().Record.Name, workflowV4ArchivePrefix+snapshot.Head().Signature.Name, workflowV4DigestBytes(raw), binding.Release.ReleaseID, digest, config.PublishedBucket, config.PublishedBaseURL)
 	signed, err := workflowV4SignGoPublication(record, seed, key)
 	if err != nil {
 		return err

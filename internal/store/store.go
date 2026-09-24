@@ -176,15 +176,28 @@ func (c Client) getPublicAtMost(key, localPath string, maximum int64) error {
 		return errors.New("invalid public base URL")
 	}
 	base.Path = strings.TrimSuffix(base.Path, "/") + "/" + key
-	request, err := http.NewRequestWithContext(c.operationContext(), http.MethodGet, base.String(), nil) // #nosec G107 -- base is operator configuration validated as HTTPS.
+	ctx := c.operationContext()
+	var cancel context.CancelFunc
+	var idle *time.Timer
+	if maximum >= 0 {
+		ctx, cancel = context.WithTimeout(ctx, publicReadBudget(maximum))
+		defer cancel()
+		idle = time.AfterFunc(publicReadTimeout, cancel)
+		defer idle.Stop()
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base.String(), nil) // #nosec G107 -- base is operator configuration validated as HTTPS.
 	if err != nil {
 		return err
 	}
 	client := http.DefaultClient
+	if c.httpClient != nil {
+		client = c.httpClient
+	}
 	if maximum >= 0 {
 		// The caller supplies an independently trusted official origin. A
 		// redirect cannot move that authority to another host or path.
 		bounded := *client
+		bounded.Timeout = publicReadBudget(maximum)
 		bounded.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 		client = &bounded
 	}
@@ -193,8 +206,12 @@ func (c Client) getPublicAtMost(key, localPath string, maximum int64) error {
 		return err
 	}
 	defer response.Body.Close()
+	body := io.Reader(response.Body)
+	if idle != nil {
+		body = publicProgressReader{reader: body, timer: idle}
+	}
 	if response.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+		_, _ = io.Copy(io.Discard, io.LimitReader(body, 4096))
 		return fmt.Errorf("GET %s: HTTP %s", key, response.Status)
 	}
 	if maximum >= 0 && response.ContentLength > maximum {
@@ -210,11 +227,14 @@ func (c Client) getPublicAtMost(key, localPath string, maximum int64) error {
 	var count int64
 	var copyErr error
 	if maximum >= 0 {
-		count, copyErr = io.Copy(file, io.LimitReader(response.Body, maximum+1))
+		count, copyErr = io.Copy(file, io.LimitReader(body, maximum+1))
 	} else {
-		count, copyErr = io.Copy(file, response.Body)
+		count, copyErr = io.Copy(file, body)
 	}
 	closeErr := file.Close()
+	if copyErr == nil && maximum >= 0 {
+		copyErr = ctx.Err()
+	}
 	if copyErr != nil || closeErr != nil || maximum >= 0 && count > maximum {
 		_ = os.Remove(localPath)
 		if copyErr != nil {

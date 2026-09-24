@@ -470,7 +470,8 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 				fmt.Fprintln(ui.output, "A signed final release and coordinator role are required.")
 				continue
 			}
-			if err := runWorkflowV4CoordinatorGoReadback(ui, p, protocol); err != nil {
+			verifierDriver := dockerDriver{runtimeLimits: p.Resources, image: p.Image, platform: p.Platform, ceremonyBinary: dockerCeremonyBinary, client: osDockerCommandClient{binary: cli}}
+			if err := runWorkflowV4CoordinatorGoReadback(ui, p, verifierDriver, protocol, snapshot); err != nil {
 				ui.message(toneError, "Official GO readback stopped: %v\n", err)
 			}
 		case "P":

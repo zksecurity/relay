@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"path"
 	"strings"
+
+	"github.com/zksecurity/relay/internal/verification"
 )
 
 const workflowV4GoPublicationSchema = "relay-go-publication-v1"
@@ -19,16 +21,18 @@ const workflowV4GoPublicationDomain = "relay-go-publication-v1\n"
 // The coordinator signs the exact destination and archive bytes. Proof-tool
 // continues to verify the underlying GO decision and its required signers.
 type workflowV4GoPublication struct {
-	Schema           string `json:"schema"`
-	CeremonyID       string `json:"ceremony_id"`
-	CheckpointSHA256 string `json:"checkpoint_sha256"`
-	DecisionSHA256   string `json:"decision_sha256"`
-	ReleaseID        string `json:"release_id"`
-	ArchiveSHA256    string `json:"archive_sha256"`
-	ArchiveKey       string `json:"archive_key"`
-	PointerKey       string `json:"pointer_key"`
-	PublishedBucket  string `json:"published_bucket"`
-	PublishedBaseURL string `json:"published_base_url"`
+	Schema                  string `json:"schema"`
+	CeremonyID              string `json:"ceremony_id"`
+	CheckpointSHA256        string `json:"checkpoint_sha256"`
+	CheckpointPath          string `json:"checkpoint_path"`
+	CheckpointSignaturePath string `json:"checkpoint_signature_path"`
+	DecisionSHA256          string `json:"decision_sha256"`
+	ReleaseID               string `json:"release_id"`
+	ArchiveSHA256           string `json:"archive_sha256"`
+	ArchiveKey              string `json:"archive_key"`
+	PointerKey              string `json:"pointer_key"`
+	PublishedBucket         string `json:"published_bucket"`
+	PublishedBaseURL        string `json:"published_base_url"`
 }
 
 type workflowV4SignedGoPublication struct {
@@ -48,6 +52,9 @@ func (r workflowV4GoPublication) validate() error {
 		if !sha256HexPattern.MatchString(value) {
 			return errors.New("invalid GO publication digest")
 		}
+	}
+	if !strings.HasPrefix(r.CheckpointPath, "ceremony/public/checkpoints/") || !strings.HasPrefix(r.CheckpointSignaturePath, "ceremony/public/checkpoints/") || !verification.SafePath(r.CheckpointPath) || !verification.SafePath(r.CheckpointSignaturePath) || r.CheckpointPath == r.CheckpointSignaturePath {
+		return errors.New("invalid GO publication checkpoint paths")
 	}
 	if !strings.HasPrefix(r.ReleaseID, "sha256:") || !sha256HexPattern.MatchString(strings.TrimPrefix(r.ReleaseID, "sha256:")) || r.PointerKey != workflowV4GoPointerKey(r.CeremonyID) || r.ArchiveKey != path.Join(path.Dir(r.PointerKey), "archives", r.ArchiveSHA256, "ceremony.zip") {
 		return errors.New("GO publication does not bind the final release or fixed destination")
@@ -104,9 +111,9 @@ func workflowV4VerifyGoPublication(raw, trustedKey []byte) (workflowV4GoPublicat
 	return signed.Record, nil
 }
 
-func workflowV4GoPublicationFor(ceremonyID, checkpointSHA, decisionSHA, releaseID, archiveSHA, bucket, baseURL string) workflowV4GoPublication {
+func workflowV4GoPublicationFor(ceremonyID, checkpointSHA, checkpointPath, checkpointSignaturePath, decisionSHA, releaseID, archiveSHA, bucket, baseURL string) workflowV4GoPublication {
 	pointer := workflowV4GoPointerKey(ceremonyID)
-	return workflowV4GoPublication{Schema: workflowV4GoPublicationSchema, CeremonyID: ceremonyID, CheckpointSHA256: strings.TrimPrefix(checkpointSHA, "sha256:"), DecisionSHA256: decisionSHA, ReleaseID: releaseID, ArchiveSHA256: archiveSHA, ArchiveKey: path.Join(path.Dir(pointer), "archives", archiveSHA, "ceremony.zip"), PointerKey: pointer, PublishedBucket: bucket, PublishedBaseURL: baseURL}
+	return workflowV4GoPublication{Schema: workflowV4GoPublicationSchema, CeremonyID: ceremonyID, CheckpointSHA256: strings.TrimPrefix(checkpointSHA, "sha256:"), CheckpointPath: checkpointPath, CheckpointSignaturePath: checkpointSignaturePath, DecisionSHA256: decisionSHA, ReleaseID: releaseID, ArchiveSHA256: archiveSHA, ArchiveKey: path.Join(path.Dir(pointer), "archives", archiveSHA, "ceremony.zip"), PointerKey: pointer, PublishedBucket: bucket, PublishedBaseURL: baseURL}
 }
 
 func workflowV4DigestBytes(raw []byte) string {

@@ -40,6 +40,16 @@ published checkpoint without a signing identity or key mount.
    independently. Until the pointer is verified, the GO is signed but its
    publication is not established.
 
+Before choosing **4**, install an AWS profile on this station with a different
+credential from the coordinator profile. Grant it `s3:PutObject` and multipart
+upload permissions only for the exact `archive_key` and `pointer_key` in the
+coordinator-signed `go-publication.json`, in its `published_bucket`. Deny writes
+to `state/*`, other ceremonies, and every other published key. Set
+`RELAY_GO_UPLOAD_PROFILE` to that local profile name when launching the guide.
+Relay refuses the coordinator profile for GO uploads. Verify the IAM policy
+and access denial independently before production use; a different profile
+name alone does not prove restricted cloud permissions.
+
 The Relay-only GO lane is an explicit alternative for a frozen V5 proof-tool
 that cannot append a decision checkpoint after final release. It keeps
 proof-tool as the verifier of the signed GO, and uses a coordinator-signed
@@ -49,13 +59,17 @@ official URL:
 
 ```bash
 relay verify-ceremony --archive go-ceremony.zip \
-  --published-base-url https://YOUR-TRUSTED-PUBLIC-ORIGIN
+  --published-base-url https://YOUR-TRUSTED-PUBLIC-ORIGIN \
+  --expected-ceremony-id sha256:YOUR-TRUSTED-CEREMONY-ID \
+  --expected-coordinator-public-key-file /path/to/trusted-coordinator-public-key.hex
 ```
 
-The URL comes from the operator's trusted ceremony information, not from the
-archive. The verifier downloads the official pointer and archive and checks
-their exact bytes. A signed GO archive checked without this URL establishes
-the signatures and proofs, but does not establish official publication.
+The URL, ceremony ID and coordinator key must come from independently trusted
+ceremony information, not from the archive. The verifier downloads the official
+pointer and archive and checks their exact bytes. A signed GO archive checked without this URL establishes
+the signatures and proofs, but does not establish official publication. The
+JSON report says `"officially_published": true` only after that official
+pointer and archive have been checked.
 
 The current `ceremony upgrade` command applies only to an existing coordinator
 workspace. An existing upload station must use a freshly installed matching

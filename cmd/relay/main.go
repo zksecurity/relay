@@ -96,7 +96,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `usage:
   relay resources [--docker-cli PATH]
   relay pack-ceremony --manifest FILE --root PUBLIC_DIR --out FRESH_ZIP
-  relay verify-ceremony --archive FILE [--published-base-url TRUSTED_URL] [--max-expanded-bytes N] [--mpc-ceremony PATH]
+  relay verify-ceremony --archive FILE [--published-base-url TRUSTED_URL --expected-ceremony-id ID --expected-coordinator-public-key-file KEY] [--max-expanded-bytes N] [--mpc-ceremony PATH]
   relay ceremony setup NAME --role ROLE [saved launcher settings] -- TOOL ARGS...
   relay ceremony open NAME --role ROLE [--grant FILE] [--resume-candidate DIR]
   relay ceremony open NAME --role ROLE --action ACTION [-- TOOL ARGS...]
