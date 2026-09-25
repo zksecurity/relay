@@ -8,15 +8,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
+	"github.com/zksecurity/relay/internal/storagefirst"
 	"github.com/zksecurity/relay/internal/transcript"
 )
 
 // The V5 decision is a separate authorization after the signed release. The
 // proof-tool, not menu progress or file presence, validates its exact evidence
 // and required signer threshold.
-func runWorkflowV4DecisionMenu(ui *coordinatorWizard, online, signer guidedProfile, identity setupIdentity, protocol transcript.DefinitionProtocol) error {
+func runWorkflowV4DecisionMenu(ui *coordinatorWizard, online, signer guidedProfile, identity setupIdentity, protocol transcript.DefinitionProtocol, snapshot *storagefirst.SnapshotV4) error {
 	if protocol.DefinitionSchema != "proof-tool-mpc-ceremony-definition-v5" || protocol.Definition.Mode != "production" {
 		return errors.New("the authenticated ceremony is not a V5 production ceremony")
 	}
@@ -56,7 +59,7 @@ func runWorkflowV4DecisionMenu(ui *coordinatorWizard, online, signer guidedProfi
 	}
 	fmt.Fprintln(ui.output, "Production decision for the exact signed release. Review the decision and complete evidence before signing.")
 	if online.Role == "coordinator" {
-		fmt.Fprintln(ui.output, "1) Prepare a canonical decision from decision-draft.json\n2) Review evidence and sign my decision\n3) Verify all required decision signatures\n0) Back")
+		fmt.Fprintln(ui.output, "1) Answer review questions and prepare the decision\n2) Review evidence and sign my decision\n3) Verify required signatures and pack the archive\n4) Send the decision packet through AWS\n5) Fetch the release signer's public signature from AWS\n6) Prepare my existing reviewed V5 draft (recovery)\n0) Back")
 	} else {
 		fmt.Fprintln(ui.output, "2) Review evidence and sign my decision\n0) Back")
 	}
@@ -68,6 +71,11 @@ func runWorkflowV4DecisionMenu(ui *coordinatorWizard, online, signer guidedProfi
 	case "", "0":
 		return nil
 	case "1":
+		if online.Role != "coordinator" || snapshot == nil || decisionHost == legacyDecision {
+			return errors.New("the guided decision requires a synchronized V5 coordinator and the canonical decision tree")
+		}
+		return runWorkflowV4GuidedDecision(ui, online, signer, identity, protocol, *snapshot, common, decisionHost, evidenceHost)
+	case "6":
 		if online.Role != "coordinator" {
 			return errors.New("only the coordinator prepares the canonical decision")
 		}
@@ -165,27 +173,45 @@ func runWorkflowV4DecisionMenu(ui *coordinatorWizard, online, signer guidedProfi
 		}
 		command := append([]string{"mpc-ceremony", "decision", "verify"}, common...)
 		command = append(command, "--decision", decision, "--evidence-root", evidence)
-		fmt.Fprintln(ui.output, "Enter every accountable signer's signature path inside this role's work folder. Press Enter after the last one. The proof-tool checks the exact required set, including any auditors.")
 		count := 0
-		for {
-			path, err := ui.ask(fmt.Sprintf("Signature file %d (absolute path, blank when done)", count+1), "")
+		if snapshot != nil && workflowV4GuidedDecisionActive(online.Work) {
+			_, signatures, err := workflowV4DecisionArchiveFiles(evidenceHost)
 			if err != nil {
 				return err
 			}
-			if path == "" {
-				break
+			fmt.Fprintln(ui.output, "Checking the retained public signatures:")
+			for _, name := range signatures {
+				path := filepath.Join(evidenceHost, filepath.FromSlash(name))
+				fmt.Fprintln(ui.output, " ", path)
+				mapped, err := pathWithin(signer.Work, path, "/work")
+				if err != nil {
+					return err
+				}
+				command = append(command, "--signature", mapped)
+				count++
 			}
-			if _, err := readTesseraRegularFile(path, 16<<20, false); err != nil {
-				return fmt.Errorf("decision signature: %w", err)
-			}
-			mapped, err := pathWithin(signer.Work, path, "/work")
-			if err != nil {
-				return err
-			}
-			command = append(command, "--signature", mapped)
-			count++
-			if count > 64 {
-				return errors.New("too many decision signatures")
+		} else {
+			fmt.Fprintln(ui.output, "Enter every accountable signer's signature path inside this role's work folder. Press Enter after the last one. The proof-tool checks the exact required set, including any auditors.")
+			for {
+				path, err := ui.ask(fmt.Sprintf("Signature file %d (absolute path, blank when done)", count+1), "")
+				if err != nil {
+					return err
+				}
+				if path == "" {
+					break
+				}
+				if _, err := readTesseraRegularFile(path, 16<<20, false); err != nil {
+					return fmt.Errorf("decision signature: %w", err)
+				}
+				mapped, err := pathWithin(signer.Work, path, "/work")
+				if err != nil {
+					return err
+				}
+				command = append(command, "--signature", mapped)
+				count++
+				if count > 64 {
+					return errors.New("too many decision signatures")
+				}
 			}
 		}
 		if count == 0 {
@@ -194,11 +220,29 @@ func runWorkflowV4DecisionMenu(ui *coordinatorWizard, online, signer guidedProfi
 		if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
 			return err
 		}
+		if snapshot != nil && workflowV4GuidedDecisionActive(online.Work) {
+			return runWorkflowV4PrepareTrialArchive(ui, online, *snapshot, protocol)
+		}
 		fmt.Fprintln(ui.output, "The pinned proof-tool verified the exact decision, evidence, and required signatures. Retain this verification result before release authorization.")
 		return nil
+	case "4":
+		if online.Role != "coordinator" || snapshot == nil {
+			return errors.New("only a synchronized coordinator can send a decision packet")
+		}
+		return runWorkflowV4PublishDecisionHandoff(ui, online, protocol, *snapshot)
+	case "5":
+		if online.Role != "coordinator" || snapshot == nil {
+			return errors.New("only the coordinator can fetch a returned decision signature")
+		}
+		return runWorkflowV4FetchDecisionSignature(ui, online, protocol, *snapshot)
 	default:
 		return errors.New("unknown decision action")
 	}
+}
+
+func workflowV4GuidedDecisionActive(work string) bool {
+	_, err := os.Lstat(filepath.Join(work, "workflow-v4", "decision", "intent.json"))
+	return !errors.Is(err, os.ErrNotExist)
 }
 
 type decisionSigningAttempt struct {
@@ -272,5 +316,40 @@ func requireDecisionEvidence(decisionPath, evidenceRoot, ceremonyID string, ui *
 	}
 	digest := sha256.Sum256(raw)
 	fmt.Fprintf(ui.output, "Decision: %s\nCeremony: %s\nExact decision SHA-256: %s\nReview: %s\nEvidence: %s\n", view.Decision, view.CeremonyID, hex.EncodeToString(digest[:]), decisionPath, evidenceRoot)
+	var detail struct {
+		Gates []workflowV4DecisionGate `json:"gates"`
+	}
+	if err := json.Unmarshal(raw, &detail); err != nil || (len(detail.Gates) != 0 && len(detail.Gates) != 13) {
+		return errors.New("canonical decision does not contain all V5 gates")
+	}
+	seen := make(map[string]bool)
+	paths := make([]string, 0)
+	for _, gate := range detail.Gates {
+		fmt.Fprintf(ui.output, "Gate %s: %s. %s\n", gate.Gate, gate.Status, gate.Rationale)
+		for _, ref := range gate.Evidence {
+			if !strings.HasPrefix(ref.Name, "decision/evidence/") || filepath.Clean(ref.Name) != ref.Name || strings.Contains(ref.Name, "\\") {
+				return errors.New("unsafe decision review evidence path")
+			}
+			path := filepath.Join(evidenceRoot, filepath.FromSlash(ref.Name))
+			got, size, err := workflowV4FileSHA256(path, 16<<20)
+			if err != nil || got != ref.Digest.SHA256 || size != ref.Digest.Size {
+				return fmt.Errorf("decision review evidence differs: %s", ref.Name)
+			}
+			fmt.Fprintf(ui.output, "  %s (%s)\n", path, got)
+			if !seen[path] {
+				seen[path] = true
+				paths = append(paths, path)
+			}
+		}
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		content, err := readTesseraRegularFile(path, 16<<20, false)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(ui.output, "\n--- %s ---\n%s\n--- end ---\n", path, content)
+	}
+	fmt.Fprintln(ui.output, "The reports contain attributed human claims. The pinned proof-tool checks the exact evidence and signatures; it cannot decide whether those claims are true. Withhold your signature if any answer or finding is inaccurate or insufficient.")
 	return nil
 }

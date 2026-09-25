@@ -14,7 +14,10 @@ import (
 )
 
 func TestWorkflowV4DirectReleaseImportClosesInventoryAndRetainsExistingWork(t *testing.T) {
-	work := t.TempDir()
+	work, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	source := filepath.Join(work, "handoff", "release")
 	if err := os.MkdirAll(source, 0o700); err != nil {
 		t.Fatal(err)

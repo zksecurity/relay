@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,7 +68,7 @@ func TestWorkflowV4DecisionSigningUsesOfflineProfileAndPreservesOutput(t *testin
 	var launch []string
 	workflowV4ChildExecutor = func(args []string) error { launch = append([]string(nil), args...); return nil }
 	ui := &coordinatorWizard{input: bufio.NewReader(strings.NewReader("2\nSIGN DECISION\n")), output: &bytes.Buffer{}}
-	if err := runWorkflowV4DecisionMenu(ui, profile, signer, setupIdentity{ID: "release-signer-test"}, protocol); err != nil {
+	if err := runWorkflowV4DecisionMenu(ui, profile, signer, setupIdentity{ID: "release-signer-test"}, protocol, nil); err != nil {
 		t.Fatal(err)
 	}
 	joined := strings.Join(launch, " ")
@@ -81,7 +82,7 @@ func TestWorkflowV4DecisionSigningUsesOfflineProfileAndPreservesOutput(t *testin
 	}
 	launch = nil
 	ui = &coordinatorWizard{input: bufio.NewReader(strings.NewReader("2\n")), output: &bytes.Buffer{}}
-	if err := runWorkflowV4DecisionMenu(ui, profile, signer, setupIdentity{ID: "release-signer-test"}, protocol); err == nil || !strings.Contains(err.Error(), "already exists") {
+	if err := runWorkflowV4DecisionMenu(ui, profile, signer, setupIdentity{ID: "release-signer-test"}, protocol, nil); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("retained signature was not protected: %v", err)
 	}
 	if launch != nil {
@@ -106,7 +107,7 @@ func TestWorkflowV4FreshDecisionUsesPublicEvidenceTree(t *testing.T) {
 	var launch []string
 	workflowV4ChildExecutor = func(args []string) error { launch = append([]string(nil), args...); return nil }
 	ui := &coordinatorWizard{input: bufio.NewReader(strings.NewReader("2\nSIGN DECISION\n")), output: &bytes.Buffer{}}
-	if err := runWorkflowV4DecisionMenu(ui, profile, signer, setupIdentity{ID: "release-signer-test"}, protocol); err != nil {
+	if err := runWorkflowV4DecisionMenu(ui, profile, signer, setupIdentity{ID: "release-signer-test"}, protocol, nil); err != nil {
 		t.Fatal(err)
 	}
 	joined := strings.Join(launch, " ")
@@ -129,8 +130,8 @@ func TestWorkflowV5DecisionPreparePassesPublicEvidenceRoot(t *testing.T) {
 	defer func() { workflowV4ChildExecutor = previous }()
 	var launch []string
 	workflowV4ChildExecutor = func(args []string) error { launch = append([]string(nil), args...); return nil }
-	ui := &coordinatorWizard{input: bufio.NewReader(strings.NewReader("1\nPREPARE DECISION\n")), output: &bytes.Buffer{}}
-	if err := runWorkflowV4DecisionMenu(ui, profile, signer, setupIdentity{ID: "coordinator-test"}, protocol); err != nil {
+	ui := &coordinatorWizard{input: bufio.NewReader(strings.NewReader("6\nPREPARE DECISION\n")), output: &bytes.Buffer{}}
+	if err := runWorkflowV4DecisionMenu(ui, profile, signer, setupIdentity{ID: "coordinator-test"}, protocol, nil); err != nil {
 		t.Fatal(err)
 	}
 	joined := strings.Join(launch, " ")
@@ -152,6 +153,49 @@ func TestWorkflowV4DecisionRejectsWrongCeremonyBeforeSigning(t *testing.T) {
 	ui := &coordinatorWizard{input: bufio.NewReader(strings.NewReader("")), output: &bytes.Buffer{}}
 	if err := requireDecisionEvidence(filepath.Join(work, "decision.json"), filepath.Join(work, "decision-evidence"), "expected", ui); err == nil {
 		t.Fatal("wrong ceremony decision accepted")
+	}
+}
+
+func TestWorkflowV4DecisionReviewShowsExactReferencedReport(t *testing.T) {
+	work := t.TempDir()
+	evidence := filepath.Join(work, "decision", "evidence")
+	if err := os.MkdirAll(evidence, 0700); err != nil {
+		t.Fatal(err)
+	}
+	report := []byte("reviewer: Alice\nfinding: checked source and build\n")
+	if err := os.WriteFile(filepath.Join(evidence, "source-release.json"), report, 0600); err != nil {
+		t.Fatal(err)
+	}
+	gates := make([]workflowV4DecisionGate, 13)
+	for i := range gates {
+		gates[i] = workflowV4DecisionGate{Gate: "gate", Status: "PASS", Evidence: []transcript.ArtifactRef{}}
+	}
+	gates[0].Evidence = []transcript.ArtifactRef{workflowV4GeneratedRef("decision/evidence/source-release.json", report)}
+	raw, err := json.Marshal(struct {
+		CeremonyID string                   `json:"ceremony_id"`
+		Decision   string                   `json:"decision"`
+		Gates      []workflowV4DecisionGate `json:"gates"`
+	}{"ceremony-test", "GO", gates})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision := filepath.Join(work, "decision", "decision.json")
+	if err := os.WriteFile(decision, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	output := &bytes.Buffer{}
+	ui := &coordinatorWizard{output: output}
+	if err := requireDecisionEvidence(decision, work, "ceremony-test", ui); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "reviewer: Alice") || !strings.Contains(output.String(), "Gate gate: PASS") {
+		t.Fatal("signing review hid a referenced report or gate")
+	}
+	if err := os.WriteFile(filepath.Join(evidence, "source-release.json"), []byte("changed"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := requireDecisionEvidence(decision, work, "ceremony-test", ui); err == nil {
+		t.Fatal("signing review accepted changed report bytes")
 	}
 }
 
@@ -206,7 +250,7 @@ func TestWorkflowV4DecisionVerifyPassesEverySignatureToPinnedTool(t *testing.T) 
 	var launch []string
 	workflowV4ChildExecutor = func(args []string) error { launch = append([]string(nil), args...); return nil }
 	ui := &coordinatorWizard{input: bufio.NewReader(strings.NewReader("3\n" + strings.Join(paths, "\n") + "\n\n")), output: &bytes.Buffer{}}
-	if err := runWorkflowV4DecisionMenu(ui, p, signer, setupIdentity{ID: "coordinator-test"}, protocol); err != nil {
+	if err := runWorkflowV4DecisionMenu(ui, p, signer, setupIdentity{ID: "coordinator-test"}, protocol, nil); err != nil {
 		t.Fatal(err)
 	}
 	joined := strings.Join(launch, " ")

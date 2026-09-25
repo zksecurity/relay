@@ -612,6 +612,9 @@ func (p *rolePreparer) menu() error {
 		if p.d.Role != "upload-station" {
 			fmt.Fprintln(p.ui.output, "7) Prepare, review and sign MY enrollment (after receiving the signed definition)")
 			fmt.Fprintln(p.ui.output, "9) Send my public identity to the coordinator\n10) Send my public enrollment folder to the coordinator")
+			if p.d.Role == "release-signer" && regularPreparationFile(filepath.Join(p.d.Work, "ceremony", "public", "ceremony.json")) {
+				fmt.Fprintln(p.ui.output, "11) Transfer GO decision public files through AWS (online, keyless)")
+			}
 		}
 		fmt.Fprintln(p.ui.output, "8) Show all setup steps (including those that do not apply)\n[E] Export bug report\n0) Save and exit")
 		choice, err := p.ui.ask("Choose", next.choice)
@@ -651,6 +654,12 @@ func (p *rolePreparer) menu() error {
 			err = p.reportPublicHandoff("identity")
 		case "10":
 			err = p.reportPublicHandoff("enrollment")
+		case "11":
+			if p.d.Role != "release-signer" || !regularPreparationFile(filepath.Join(p.d.Work, "ceremony", "public", "ceremony.json")) {
+				err = errors.New("online GO decision handoff applies only to the release signer")
+			} else {
+				err = runWorkflowV4SignerDecisionHandoff(&p.ui, p.d.Work, filepath.Join(p.d.Keys, "identity.json"))
+			}
 		case "8":
 			for n, label := range []string{"Prepare approved images", "Generate/review MY identity", "Import a public file", "Create a phase profile", "Open the ceremony workflow", "Show folders and requirements", "Prepare and sign MY enrollment"} {
 				status := "Applies; prerequisites may still be missing"
