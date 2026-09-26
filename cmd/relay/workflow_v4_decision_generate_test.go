@@ -12,7 +12,7 @@ import (
 
 func testGuidedDecisionAnswers() workflowV4DecisionAnswers {
 	a := workflowV4DecisionAnswers{
-		Schema: workflowV4DecisionQuestionsSchema, CeremonyID: testHandoffDigest("ceremony"),
+		Schema: workflowV4LegacyDecisionQuestionsSchema, CeremonyID: testHandoffDigest("ceremony"),
 		CandidateID: testHandoffDigest("candidate"), CheckpointSHA256: testHandoffDigest("checkpoint"),
 		PolicySHA256: testHandoffDigest("policy"), CoordinatorID: "coordinator-1", DecidedAt: "2026-09-25T00:00:00Z",
 		Accepted: []workflowV4AcceptedReviewScope{{Phase: "phase1", Position: 1, ParticipantID: "participant-1"}},

@@ -115,7 +115,14 @@ func workflowV4DecisionReport(title string, answers workflowV4DecisionAnswers, p
 }
 
 func workflowV4BuildDecisionArtifacts(answers workflowV4DecisionAnswers, definition workflowV4DecisionDefinitionFields, checkpoint transcript.SignedArtifactRefs) (map[string][]byte, []byte, error) {
-	if answers.Schema != workflowV4DecisionQuestionsSchema || answers.CeremonyID != definition.CeremonyID || len(answers.Accepted) == 0 || len(answers.Answers) == 0 {
+	if answers.Schema == workflowV4DecisionQuestionsSchema {
+		expanded, err := workflowV4ExpandDecisionAnswersV2(answers)
+		if err != nil {
+			return nil, nil, err
+		}
+		return workflowV4BuildDecisionArtifacts(expanded, definition, checkpoint)
+	}
+	if answers.Schema != workflowV4LegacyDecisionQuestionsSchema || answers.CeremonyID != definition.CeremonyID || len(answers.Accepted) == 0 || len(answers.Answers) == 0 {
 		return nil, nil, errors.New("incomplete bound decision questionnaire")
 	}
 	if err := workflowV4ValidateDecisionAnswers(answers); err != nil {

@@ -14,10 +14,11 @@ Before release, run a test-only one-machine smoke check of the candidate's
 actual `start.sh` menus with a small circuit and separate role directories.
 Because an unpublished PR has no attested role-images release, label any local
 release fixture synthetic and do not count its release verification as passed.
-A small K11 circuit cannot qualify production GO: current V5 production policy
-requires two participants per phase, and the pinned proof-tool's GO gate
-requires the exact K21 circuit. Supplement the menu run with direct unit and
-fake-AWS tests, but do not substitute those for the menu run.
+A small K11 circuit can exercise V5's circuit-bound GO format with two
+participants per phase. This synthetic smoke uses test-only role images and
+review answers, so a prepared GO from it is not production approval. Supplement
+the menu run with direct unit and fake-AWS tests, but do not substitute those
+for the menu run.
 
 Before release, also run the candidate's two-host AWS handoff using the actual
 coordinator and signer `start.sh` menus. Identify any test-only release fixture
@@ -297,72 +298,78 @@ manual reviewed V5 draft remains available for those policies.
 
 ## Questionnaire and generated evidence
 
-Questions use `Yes`, `No`, `Unknown`, and `Not reviewed yet` where applicable,
-with no affirmative default. Structured review conclusions are `Accept`,
-`Reject`, or `Incomplete or unknown`; the rehearsal outcome is `Pass`, `Fail`,
-or `Incomplete or unknown`. The coordinator reports reviews by other people
-as attributed reports, not forged approvals. Relay records who answered and
-when. It never requests private keys, seeds, randomness, credentials, or
+Question set V2 uses numbered choices (the number or full label is accepted).
+The displayed `[value]` is a real saved answer or safe default; Enter accepts
+it. `Example (not saved): ...` gives a format example only. No example is
+silently submitted. Invalid choices repeat the same prompt without exiting.
+`:save` retains a partial questionnaire; reopening resumes at its first
+unanswered question. `:back` revises the preceding answer. No favorable
+choice is a default: choices start at `Unknown`, while free text starts at
+`Not established` or `Not assessed`. The coordinator reports reviews by other
+people as attributed reports, not forged approvals. Relay records who answered
+and when. It never requests private keys, seeds, randomness, credentials, or
 private infrastructure details.
+
+Every favorable review choice means **accepted with no unresolved blocker**.
+`Review accepted; blocker remains`, `Rejected`, `Not reviewed`, and `Unknown`
+cannot yield a passing gate. Positive free text is never semantically
+certified by Relay. A reviewer/date answer uses `Name; YYYY-MM-DD UTC`; the
+deployment target uses `Network; application or service`. Both are parsed only
+to populate the existing V5 fields; a missing half prevents a passing gate.
 
 **Pinned source release** — Relay displays the exact source commit:
 
-1. Was the pinned source release reviewed?
-2. Who reviewed it, and when?
-3. What source, build, and release checks were performed?
-4. What were the findings, limits, and exceptions?
-5. Did the reviewer conclude this pinned release was acceptable for this ceremony?
-6. Is any source or release issue still blocking its use?
+1. Review outcome: accepted without blocker, accepted with blocker, rejected,
+   not reviewed, or unknown.
+2. Reviewer and UTC date.
+3. Source, build, and release checks.
+4. Findings, limits, and exceptions.
 
 **Exact circuit rehearsal** — Relay displays the signed circuit binding:
 
-7. Was this exact circuit rehearsed and reviewed?
-8. Who ran and reviewed the rehearsal, and when?
-9. Did the reviewed rehearsal use the displayed circuit binding?
-10. What was run, and what were the results?
-11. Did the exact-circuit rehearsal complete successfully?
-12. What differed from this ceremony, failed, or was not checked?
-13. Is any rehearsal finding still blocking production use?
+5. Did the reviewed rehearsal use this exact signed circuit?
+6. Rehearsal review outcome, including a distinct unresolved-blocker choice.
+7. Runner/reviewer and UTC date.
+8. What ran and its results.
+9. Differences, failures, unchecked scope, and limits.
 
 **Deployment and operation**:
 
-14. Which network and application, contract, or service will receive the key?
-15. Who approves, prepares, and performs deployment?
-16. How will they check signed GO, final release, and the exact verifying key before deployment?
-17. What are the activation conditions and procedure?
-18. How can use be halted or rolled back, and what cannot be reversed?
-19. Who checks the deployed key and application state afterward, and how?
-20. Who reviewed this procedure, when, and with what findings?
-21. Did the reviewer approve the procedure for this ceremony?
-22. Is any deployment or operational issue still blocking production use?
+10. Network and application, contract, or service.
+11. Approval, preparation, and deployment owners.
+12. Predeployment checks of signed GO, final release, and exact key.
+13. Activation conditions and procedure.
+14. Halt or rollback procedure and irreversible limits.
+15. Postdeployment check and owner.
+16. Reviewer and UTC date.
+17. Plan review outcome, including a distinct unresolved-blocker choice.
+18. Findings and limits.
 
-**Participant assurance** — repeat for each accepted contribution, showing
-its authenticated phase, position, and participant. A review may cover
-multiple contributions only when the coordinator explicitly names them and
-confirms the relevant conditions were unchanged. Relay derives the exact
-accepted `(phase, position, participant)` set from the authenticated final
-release, requires exactly one answer entry for each tuple and each assurance
-topic, and rejects missing, duplicate, or stale tuples before assigning
-`PASS`. Proof-tool checks the resulting report bytes, but does not establish
-this semantic coverage itself:
-
-23. Was the participant's host security reviewed?
-24. Who reviewed it, when, what did they check, and what remains unverified?
-25. Did the reviewer accept that host for this contribution?
-26. Is any host-security issue unresolved?
-27. Was the randomness source and generation process reviewed?
-28. Who reviewed it, when, what did they check, and what remains unverified?
-29. Did the reviewer accept that randomness process for this contribution?
-30. Is any randomness issue unresolved?
-31. Was cleanup reviewed?
-32. Who reviewed it, when, what did they check about snapshots, memory dumps,
-    swap, backups, and retained randomness, and what remains unverified?
-33. Did the reviewer accept the cleanup outcome for this contribution?
-34. Is any cleanup issue unresolved?
+**Participant assurance** — one shared section covers both phases. It first
+asks whether the shared review truly covers every authenticated contribution.
+Host security, randomness, and cleanup each have their own reviewer/date,
+checks/findings/limits, and outcome. These can name different reviewers.
+For every accepted `(phase, position, participant)` tuple, Relay then shows
+the authenticated identity and asks for the actual host label plus three
+independent outcomes: host security, fresh randomness, and cleanup. Each topic
+may be `Covered and accepted; no unresolved blocker`, `Separately accepted; no
+unresolved blocker`, `Review accepted; blocker remains`, `Rejected`, or
+`Unknown`. A separately assessed or adverse topic also asks for specific
+findings/limits and its own reviewer/date. A changed host or cleanup failure
+therefore cannot be hidden behind one blanket answer. Shared acceptance counts
+for a tuple only if shared coverage, that topic's shared review, and that
+tuple's topic answer all affirm it. Relay rejects missing, duplicate, or stale
+tuples before assigning `PASS`; proof-tool checks resulting report bytes, but
+does not establish human truth.
 
 **Final review**:
 
-35. Is there any other known reason to withhold GO?
+The final review follows every contribution: is there another known reason to
+withhold GO, and what are the final findings and limits? Six accepted
+contributions require 54 ordinary prompts, versus 114 in V1; exceptions add
+topic-specific follow-ups. A shorter single-answer-per-contribution form was
+rejected by adversarial review because it could conceal different hosts or
+topic-specific blockers.
 
 Relay derives the outcome from all 13 V5 gates; there is no independent GO
 choice that can contradict them. A favorable human gate requires the
@@ -401,10 +408,14 @@ and bindings, not the truth of the statements.
 
 The private resumable questionnaire is bound to ceremony ID, candidate ID,
 final checkpoint digest, signed policy digest, coordinator identity, and a
-question-set version. A changed binding stops generation and requires review;
+question-set version. A previously saved V1 form resumes under V1 rules,
+without rewriting its attributed answers. A changed binding stops generation and requires review;
 answers cannot silently transfer to a different release. Before preparation,
-the coordinator may correct answers. After preparation, evidence and decision
-bytes are immutable. Enabled external audits still require V5 signed reports
+the coordinator may correct answers with `:back`. Once a private preparation
+intent exists, the exact questionnaire bytes and decision timestamp are frozen:
+retry skips questions and verifies the saved intent before repeating proof-tool
+preparation. After preparation, evidence and decision bytes are immutable.
+Enabled external audits still require V5 signed reports
 even for NO-GO, because V5 validates their count separately from outcome.
 The auditor list must match the verified release package.
 
@@ -413,11 +424,16 @@ protected, resumable private staging directory on the same filesystem. It reject
 unexpected files, path traversal, size-limit violations, duplicate names,
 and conflicting references, then checks every generated byte and digest.
 A durable private intent records ceremony and candidate bindings and each
-proposed output hash before
-anything enters `ceremony/public/decision/`. It promotes into a previously
-absent decision directory, retains the exact draft privately outside
-`ceremony/public/decision/`, and runs proof-tool
-`decision prepare` against the staged evidence root with output directed to a
+proposed output hash before anything enters `ceremony/public/decision/`.
+The pinned `decision prepare` verifier requires the entire signed final-release
+tree, not only the generated decision reports, and it rejects release files
+with multiple hardlinks. Relay therefore builds a fresh private evidence root
+with independent files for every authenticated public snapshot file and the
+staged reports. It uses filesystem clones where supported and streamed copies
+otherwise, rejecting collisions and unexpected file types. It checks source
+and staged hashes before preparation and again after the pinned tool returns,
+including on tool failure. A clone/copy can need significant temporary disk
+space; failure leaves canonical public files untouched. The tool output goes to a
 fresh private check file. Relay compares that deterministic output with any
 retained staged output, validates the complete decision and referenced
 evidence, then durably promotes the whole staged decision directory to the

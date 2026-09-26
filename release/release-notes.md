@@ -8,6 +8,16 @@ the pinned proof-tool to prepare and verify the exact decision. Incomplete or
 adverse structured answers yield NO-GO. The reviewed manual V5 draft path
 remains available for other signed policies and recovery.
 
+The questionnaire now shows numbered choices and separate, unsaved format
+examples. Invalid choices can be corrected in place; partial answers can be
+saved and resumed. A shared participant review can reduce repeated questions,
+while every accepted contribution still identifies its host and records
+separate host, randomness, and cleanup outcomes. The older saved questionnaire
+format remains resumable. Decision preparation now supplies the pinned verifier
+with the complete authenticated final-release tree and staged reports, fixing
+a failure where a valid signed release could not be found in the decision-only
+staging folder.
+
 The coordinator can send the exact decision packet through the ceremony's
 private AWS inbox. The release signer's upgraded `start.sh` has a separate
 online, keyless action to download it, and another to return the already-signed

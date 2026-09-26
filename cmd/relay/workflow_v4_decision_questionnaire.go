@@ -16,7 +16,10 @@ import (
 	"github.com/zksecurity/relay/internal/transcript"
 )
 
-const workflowV4DecisionQuestionsSchema = "relay-guided-decision-answers-v1"
+const (
+	workflowV4DecisionQuestionsSchema       = "relay-guided-decision-answers-v2"
+	workflowV4LegacyDecisionQuestionsSchema = "relay-guided-decision-answers-v1"
+)
 
 type workflowV4AcceptedReviewScope struct {
 	Phase         string `json:"phase"`
@@ -153,7 +156,7 @@ func workflowV4LoadDecisionAnswers(work string, binding workflowV4DecisionAnswer
 	path := workflowV4QuestionnairePath(work)
 	var saved workflowV4DecisionAnswers
 	if err := setupReadJSON(path, &saved); err == nil {
-		if saved.Schema != binding.Schema || saved.CeremonyID != binding.CeremonyID || saved.CandidateID != binding.CandidateID || saved.CheckpointSHA256 != binding.CheckpointSHA256 || saved.PolicySHA256 != binding.PolicySHA256 || saved.CoordinatorID != binding.CoordinatorID || !slices.Equal(saved.Accepted, binding.Accepted) || saved.DecidedAt == "" || saved.Answers == nil {
+		if (saved.Schema != binding.Schema && saved.Schema != workflowV4LegacyDecisionQuestionsSchema) || saved.CeremonyID != binding.CeremonyID || saved.CandidateID != binding.CandidateID || saved.CheckpointSHA256 != binding.CheckpointSHA256 || saved.PolicySHA256 != binding.PolicySHA256 || saved.CoordinatorID != binding.CoordinatorID || !slices.Equal(saved.Accepted, binding.Accepted) || (saved.Schema == workflowV4LegacyDecisionQuestionsSchema && saved.DecidedAt == "") || saved.Answers == nil {
 			return saved, errors.New("retained questionnaire belongs to different authenticated inputs")
 		}
 		return saved, nil
@@ -163,7 +166,7 @@ func workflowV4LoadDecisionAnswers(work string, binding workflowV4DecisionAnswer
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return binding, err
 	}
-	binding.DecidedAt = time.Now().UTC().Format(time.RFC3339)
+	binding.DecidedAt = ""
 	binding.Answers = map[string]string{}
 	return binding, saveJSONAtomic(path, binding)
 }
@@ -365,10 +368,42 @@ func runWorkflowV4GuidedDecision(ui *coordinatorWizard, online, signer guidedPro
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(ui.output, "Guided V5 production decision\nCeremony: %s\nFinal checkpoint: %s\nCandidate: %s\nPinned source: %s\nAccepted contributions: %d\nRelay records your attributed answers; it does not verify whether a human review happened. Do not enter keys, randomness, credentials, or private host details.\n", binding.CeremonyID, binding.CheckpointSHA256, binding.CandidateID, definition.Software.SourceCommit, len(accepted))
-	if err := workflowV4AskDecisionQuestions(ui, online.Work, &answers); err != nil {
-		return err
+	intentPath := filepath.Join(online.Work, "workflow-v4", "decision", "intent.json")
+	_, intentErr := os.Lstat(intentPath)
+	if intentErr != nil && !errors.Is(intentErr, os.ErrNotExist) {
+		return intentErr
 	}
+	frozenRetry := intentErr == nil
+	fmt.Fprintf(ui.output, "Guided V5 production decision\nCeremony: %s\nFinal checkpoint: %s\nCandidate: %s\nPinned source: %s\nAccepted contributions: %d\nRelay records your attributed answers; it does not verify whether a human review happened. Do not enter keys, randomness, credentials, or private host details.\n", binding.CeremonyID, binding.CheckpointSHA256, binding.CandidateID, definition.Software.SourceCommit, len(accepted))
+	if frozenRetry {
+		fmt.Fprintln(ui.output, "Resuming the exact saved preparation intent; answers and decision time are frozen. Relay will recheck their hashes before retrying.")
+	} else if answers.Schema == workflowV4LegacyDecisionQuestionsSchema {
+		fmt.Fprintln(ui.output, "Resuming the saved V1 questionnaire. Its answers and preparation intent remain bound to this exact release.")
+	}
+	var askErr error
+	if frozenRetry {
+		// The durable intent freezes questionnaire bytes. Re-prompting would
+		// change the decision timestamp and make an interrupted retry fail.
+	} else if answers.Schema == workflowV4LegacyDecisionQuestionsSchema {
+		askErr = workflowV4AskDecisionQuestions(ui, online.Work, &answers)
+	} else {
+		askErr = workflowV4AskDecisionQuestionsV2(ui, online.Work, &answers)
+	}
+	if errors.Is(askErr, errWorkflowV4DecisionQuestionnaireSaved) {
+		fmt.Fprintln(ui.output, "Questionnaire saved. Reopen D → 1 to continue.")
+		return nil
+	}
+	if askErr != nil {
+		return askErr
+	}
+	if answers.Schema == workflowV4DecisionQuestionsSchema && answers.DecidedAt == "" {
+		answers.DecidedAt = time.Now().UTC().Format(time.RFC3339)
+		if err := saveJSONAtomic(workflowV4QuestionnairePath(online.Work), answers); err != nil {
+			return err
+		}
+	}
+
+reviewDecision:
 	files, draft, err := workflowV4BuildDecisionArtifacts(answers, definition, snapshot.Head())
 	if err != nil {
 		return err
@@ -393,9 +428,41 @@ func runWorkflowV4GuidedDecision(ui *coordinatorWizard, online, signer guidedPro
 	for _, key := range keys {
 		fmt.Fprintf(ui.output, "  %s: %q\n", key, answers.Answers[key])
 	}
-	if err := ui.confirm("Prepare the displayed decision and reports; this does not sign them", "PREPARE DECISION"); err != nil {
-		return err
+	if !frozenRetry && answers.Schema == workflowV4DecisionQuestionsSchema {
+		for {
+			choice, err := ui.ask("Type PREPARE DECISION, EDIT ANSWERS, or SAVE", "")
+			if err != nil {
+				return err
+			}
+			switch strings.ToUpper(choice) {
+			case "PREPARE DECISION":
+				goto preparationConfirmed
+			case "SAVE":
+				fmt.Fprintln(ui.output, "Questionnaire saved without preparing a decision.")
+				return nil
+			case "EDIT ANSWERS":
+				if err := workflowV4AskDecisionQuestionsV2(ui, online.Work, &answers, true); err != nil {
+					if errors.Is(err, errWorkflowV4DecisionQuestionnaireSaved) {
+						fmt.Fprintln(ui.output, "Questionnaire saved without preparing a decision.")
+						return nil
+					}
+					return err
+				}
+				answers.DecidedAt = time.Now().UTC().Format(time.RFC3339)
+				if err := saveJSONAtomic(workflowV4QuestionnairePath(online.Work), answers); err != nil {
+					return err
+				}
+				goto reviewDecision
+			default:
+				fmt.Fprintln(ui.output, "Choose one of the displayed actions; no decision was prepared.")
+			}
+		}
+	} else if !frozenRetry {
+		if err := ui.confirm("Prepare the displayed decision and reports; this does not sign them", "PREPARE DECISION"); err != nil {
+			return err
+		}
 	}
+preparationConfirmed:
 	if err := workflowV4RetainDecisionPreparationIntent(online.Work, answers, files, draft); err != nil {
 		return err
 	}
@@ -418,14 +485,23 @@ func runWorkflowV4GuidedDecision(ui *coordinatorWizard, online, signer guidedPro
 	if err != nil {
 		return err
 	}
-	mappedEvidence, err := pathWithin(signer.Work, stage, "/work")
+	prepareEvidence, verifyEvidence, err := workflowV4DecisionPrepareEvidenceRoot(online.Work, snapshot.Files(), stage)
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(prepareEvidence)
+	mappedEvidence, err := pathWithin(signer.Work, prepareEvidence, "/work")
 	if err != nil {
 		return err
 	}
 	command := append([]string{"mpc-ceremony", "decision", "prepare"}, common...)
 	command = append(command, "--draft", mappedDraft, "--evidence-root", mappedEvidence, "--out", mappedOut)
-	if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
-		return err
+	prepareErr := runWorkflowV4ProfileCommand(signer, command, false)
+	if err := verifyEvidence(); err != nil {
+		return fmt.Errorf("authenticated decision inputs changed during proof-tool preparation: %w", err)
+	}
+	if prepareErr != nil {
+		return prepareErr
 	}
 	preparedBytes, err := readTesseraRegularFile(checkHost, 16<<20, false)
 	if err != nil {
