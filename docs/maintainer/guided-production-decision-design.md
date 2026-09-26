@@ -411,7 +411,8 @@ final checkpoint digest, signed policy digest, coordinator identity, and a
 question-set version. A previously saved V1 form resumes under V1 rules,
 without rewriting its attributed answers. A changed binding stops generation and requires review;
 answers cannot silently transfer to a different release. Before preparation,
-the coordinator may correct answers with `:back`. Once a private preparation
+the coordinator may correct answers with `:back` or the final `EDIT ANSWERS`
+action. Once a private preparation
 intent exists, the exact questionnaire bytes and decision timestamp are frozen:
 retry skips questions and verifies the saved intent before repeating proof-tool
 preparation. After preparation, evidence and decision bytes are immutable.
