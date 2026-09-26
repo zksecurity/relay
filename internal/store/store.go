@@ -36,15 +36,21 @@ type Credentials struct {
 }
 
 type Client struct {
+	Binary        string
 	Profile       string
 	Endpoint      string
 	Region        string
 	Bucket        string
 	PublicBaseURL string
 	Credentials   *Credentials
-	NoSign        bool
-	httpClient    *http.Client
-	ctx           context.Context
+	// CredentialProvider supplies verified short-lived host credentials for
+	// each AWS call. It is used by long multipart publications so a session
+	// can be renewed between parts without exposing a host profile alias.
+	CredentialProvider func(context.Context) (*Credentials, error)
+	CredentialsFile    string
+	NoSign             bool
+	httpClient         *http.Client
+	ctx                context.Context
 }
 
 // WithContext returns an operation-scoped copy. It cancels direct AWS CLI
@@ -86,13 +92,52 @@ func (c Client) args(rest ...string) []string {
 }
 
 func (c Client) run(args ...string) ([]byte, error) {
+	return c.RunAWS(c.args(args...)...)
+}
+
+// RunAWS invokes an AWS CLI command with this client's bound credential source.
+// Callers supplying a credential provider must not also pass --profile.
+func (c Client) RunAWS(args ...string) ([]byte, error) {
 	ctx := c.operationContext()
-	cmd := exec.CommandContext(ctx, "aws", c.args(args...)...)
+	if c.CredentialProvider != nil {
+		for _, arg := range args {
+			if arg == "--profile" || strings.HasPrefix(arg, "--profile=") {
+				return nil, errors.New("bound AWS session must not use a host profile")
+			}
+		}
+	}
+	binary := c.Binary
+	if binary == "" {
+		binary = "aws"
+	}
+	cmd := exec.CommandContext(ctx, binary, args...)
 	if c.ctx != nil {
 		// Bound waits for inherited output pipes after the direct child exits.
 		cmd.WaitDelay = 2 * time.Second
 	}
-	if c.Credentials != nil {
+	if c.CredentialProvider != nil {
+		if c.Profile != "" || c.Credentials != nil || c.CredentialsFile != "" {
+			return nil, errors.New("ambiguous AWS credential source")
+		}
+		credentials, err := c.CredentialProvider(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if credentials == nil || credentials.AccessKeyID == "" || credentials.SecretAccessKey == "" || credentials.SessionToken == "" {
+			return nil, errors.New("verified AWS session credentials unavailable")
+		}
+		cmd.Env = append(cleanAWSHostEnvironment(),
+			"AWS_CONFIG_FILE=/nonexistent", "AWS_SHARED_CREDENTIALS_FILE=/nonexistent",
+			"AWS_ACCESS_KEY_ID="+credentials.AccessKeyID,
+			"AWS_SECRET_ACCESS_KEY="+credentials.SecretAccessKey,
+			"AWS_SESSION_TOKEN="+credentials.SessionToken,
+		)
+	} else if c.CredentialsFile != "" {
+		if c.Credentials != nil || c.Profile == "" {
+			return nil, errors.New("ambiguous AWS credential source")
+		}
+		cmd.Env = append(cleanAWSHostEnvironment(), "AWS_CONFIG_FILE=/nonexistent", "AWS_SHARED_CREDENTIALS_FILE="+c.CredentialsFile)
+	} else if c.Credentials != nil {
 		cmd.Env = append(os.Environ(),
 			"AWS_ACCESS_KEY_ID="+c.Credentials.AccessKeyID,
 			"AWS_SECRET_ACCESS_KEY="+c.Credentials.SecretAccessKey,
@@ -105,13 +150,27 @@ func (c Client) run(args ...string) ([]byte, error) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, fmt.Errorf("aws %s: %w: %s",
-			strings.Join(args[:1], " "), err, strings.TrimSpace(stderr.String()))
+		label := "command"
+		if len(args) > 0 {
+			label = args[0]
+		}
+		return nil, fmt.Errorf("aws %s: %w: %s", label, err, strings.TrimSpace(stderr.String()))
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	return stdout.Bytes(), nil
+}
+
+func cleanAWSHostEnvironment() []string {
+	env := make([]string, 0, len(os.Environ())+3)
+	for _, item := range os.Environ() {
+		key, _, _ := strings.Cut(item, "=")
+		if !strings.HasPrefix(key, "AWS_") {
+			env = append(env, item)
+		}
+	}
+	return append(env, "AWS_EC2_METADATA_DISABLED=true", "AWS_PAGER=", "AWS_CLI_AUTO_PROMPT=off")
 }
 
 // ErrExists reports that the key was already present and was left untouched.

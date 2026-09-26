@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -123,12 +122,15 @@ func runWorkflowV4PublishNoGoTrial(ui *coordinatorWizard, online guidedProfile, 
 	}
 	ceremonyHex := strings.TrimPrefix(manifest.CeremonyID, "sha256:")
 	key := "trials/no-go/" + ceremonyHex + "/" + digest + "/ceremony.zip"
-	objects := store.Client{Profile: config.CoordinatorProfile, Region: config.Region, Endpoint: config.Endpoint, Bucket: config.PublishedBucket}
+	objects, err := workflowV4BoundHostAWS(online, config, config.PublishedBucket)
+	if err != nil {
+		return err
+	}
 	public := store.Client{PublicBaseURL: config.PublishedBaseURL}
 	if err := ui.confirm("Publish this verified NO-GO archive under a content-addressed trial prefix; this never creates an approved-release pointer", "PUBLISH NO-GO TRIAL"); err != nil {
 		return err
 	}
-	if err := publishWorkflowV4LargeTrialArchive(objects, public, config, key, archive, digest, online.Work); err != nil {
+	if err := publishWorkflowV4LargeTrialArchive(objects, public, key, archive, digest, online.Work); err != nil {
 		return err
 	}
 	notice := []byte("NO-GO TRIAL ARCHIVE\nCeremony: " + manifest.CeremonyID + "\nArchive SHA-256: " + digest + "\nThis archive is public test evidence. The signed decision inside is NO-GO; these keys are not approved for production use. Read its evidence for operator and host limitations.\n")
@@ -178,7 +180,7 @@ func publishWorkflowV4TrialNotice(objects, public store.Client, key string, noti
 	return nil
 }
 
-func publishWorkflowV4LargeTrialArchive(objects, public store.Client, config access.StorageConfig, key, archive, digest, work string) error {
+func publishWorkflowV4LargeTrialArchive(objects, public store.Client, key, archive, digest, work string) error {
 	if !strings.HasPrefix(key, "trials/no-go/") || !strings.HasSuffix(key, "/"+digest+"/ceremony.zip") {
 		return errors.New("invalid content-addressed NO-GO trial object key")
 	}
@@ -187,12 +189,9 @@ func publishWorkflowV4LargeTrialArchive(objects, public store.Client, config acc
 		return err
 	}
 	if !present {
-		// Archives can exceed S3's single PutObject size. The AWS CLI handles
-		// multipart upload; the SHA-addressed key and exact public readback make
-		// an interrupted retry detectable without a blind success claim.
-		cmd := exec.Command("aws", "--profile", config.CoordinatorProfile, "--region", config.Region, "s3", "cp", archive, "s3://"+config.PublishedBucket+"/"+key, "--no-progress")
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-		if err := cmd.Run(); err != nil {
+		// Use the same bound AWS login as other coordinator operations.
+		// Interrupted or uncertain uploads are reconciled by exact readback.
+		if err := objects.PutLargeNoReplace(key, archive, work); err != nil {
 			// The client may have lost the success response. Read back before
 			// treating the operation as failed or attempting another upload.
 			if checkErr := checkWorkflowV4TrialReadback(public, key, digest, work); checkErr == nil {

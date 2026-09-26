@@ -53,6 +53,36 @@ esac
 	}
 }
 
+func TestMultipartAccessProbeAbortsWithoutPublishing(t *testing.T) {
+	bin := t.TempDir()
+	log := filepath.Join(bin, "calls.log")
+	shim := `#!/bin/sh
+printf '%s\n' "$*" >> "$AWS_TEST_LOG"
+case "$*" in
+  *create-multipart-upload*) printf '{"UploadId":"probe-upload"}\n' ;;
+  *abort-multipart-upload*) printf '{}\n' ;;
+  *) exit 31 ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(bin, "aws"), []byte(shim), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("AWS_TEST_LOG", log)
+	client := Client{Bucket: "published"}
+	if err := client.ProbeMultipartWrite("approved/exact/ceremony.zip"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := string(raw)
+	if strings.Count(calls, "create-multipart-upload") != 1 || strings.Count(calls, "abort-multipart-upload") != 1 || strings.Contains(calls, "upload-part") || strings.Contains(calls, "complete-multipart-upload") {
+		t.Fatalf("probe published bytes or leaked an upload: %s", calls)
+	}
+}
+
 // This opt-in test checks real S3 conditional multipart completion without
 // involving a ceremony or creating an approved-release pointer.
 func TestLiveConditionalMultipartPublication(t *testing.T) {

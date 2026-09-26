@@ -18,6 +18,11 @@ reviews and signs offline. Object
 hashes and the final checkpoint are checked during transfer; pinned proof-tool
 verification remains required before the signature counts.
 
+Host-side AWS calls for decision transfer and publication use the coordinator's
+reviewed login binding instead of assuming its container-only profile exists on
+the host. The legacy GO publication action checks access to the exact archive
+and pointer keys before requesting the final publish confirmation.
+
 For guided decisions, the coordinator verifies the required signatures and
 packs the exact GO or NO-GO archive in the decision menu. It checks the
 extracted staged archive against the signed decision before retaining it. A

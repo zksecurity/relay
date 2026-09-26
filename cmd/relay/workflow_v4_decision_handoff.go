@@ -356,7 +356,10 @@ func runWorkflowV4PublishDecisionHandoff(ui *coordinatorWizard, online guidedPro
 	if err := ui.confirm("Upload the exact public decision and referenced evidence to the private AWS handoff; no signing key is used", "SEND DECISION PACKET"); err != nil {
 		return err
 	}
-	client := store.Client{Profile: config.CoordinatorProfile, Region: config.Region, Endpoint: config.Endpoint, Bucket: config.InboxBucket}
+	client, err := workflowV4BoundHostAWS(online, config, config.InboxBucket)
+	if err != nil {
+		return err
+	}
 	for _, file := range manifest.Files {
 		if err := workflowV4HandoffPut(client, file.Key, filepath.Join(root, filepath.FromSlash(file.Name)), filepath.Dir(manifestPath), 16<<20); err != nil {
 			return fmt.Errorf("send decision handoff %s: %w", file.Name, err)
@@ -404,7 +407,10 @@ func runWorkflowV4FetchDecisionSignature(ui *coordinatorWizard, online guidedPro
 	}
 	prefix, _ := workflowV4HandoffPrefix(manifest.CeremonyID, manifest.DecisionSHA256)
 	key := prefix + "/signatures/" + manifest.SignerID + ".sig"
-	client := store.Client{Profile: config.CoordinatorProfile, Region: config.Region, Endpoint: config.Endpoint, Bucket: config.InboxBucket}
+	client, err := workflowV4BoundHostAWS(online, config, config.InboxBucket)
+	if err != nil {
+		return err
+	}
 	dir := filepath.Dir(workflowV4HandoffManifestPath(online.Work))
 	temporary, err := os.MkdirTemp(dir, ".signature-fetch-*")
 	if err != nil {

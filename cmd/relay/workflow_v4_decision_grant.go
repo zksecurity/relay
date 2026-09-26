@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -243,7 +242,11 @@ func runWorkflowV4IssueDecisionTransferGrant(ui *coordinatorWizard, online guide
 		return err
 	}
 	prefix, _ := workflowV4HandoffPrefix(m.CeremonyID, m.DecisionSHA256)
-	if err := workflowV4HandoffReadback(coordinatorClient(config, config.InboxBucket), prefix+"/manifest.json", manifestPath, filepath.Dir(manifestPath), 16<<20); err != nil {
+	client, err := workflowV4BoundHostAWS(online, config, config.InboxBucket)
+	if err != nil {
+		return err
+	}
+	if err := workflowV4HandoffReadback(client, prefix+"/manifest.json", manifestPath, filepath.Dir(manifestPath), 16<<20); err != nil {
 		return fmt.Errorf("completed packet manifest is not retained in AWS: %w", err)
 	}
 	kind, err := ui.ask("Grant purpose: 1) Download packet  2) Upload signed public signature", "1")
@@ -274,14 +277,18 @@ func runWorkflowV4IssueDecisionTransferGrant(ui *coordinatorWizard, online guide
 	if err := ui.confirm("Issue this exact temporary AWS grant", "ISSUE TEMPORARY GRANT"); err != nil {
 		return err
 	}
+	issuer, err := workflowV4BoundHostAWS(online, config, config.InboxBucket)
+	if err != nil {
+		return err
+	}
 	grant, err := workflowV4IssueDecisionGrantWithRunner(config, m, manifestSHA, kind, ttl, func(args ...string) ([]byte, error) {
-		command := exec.Command("aws", args...)
-		var stdout, stderr bytes.Buffer
-		command.Stdout, command.Stderr = &stdout, &stderr
-		if err := command.Run(); err != nil {
-			return nil, fmt.Errorf("AWS STS assume-role: %w: %s", err, strings.TrimSpace(stderr.String()))
+		if len(args) < 2 || args[0] != "--profile" || args[1] != config.IssuerProfile {
+			return nil, errors.New("unexpected AWS grant issuer profile")
 		}
-		return stdout.Bytes(), nil
+		if issuer.CredentialProvider != nil {
+			return issuer.RunAWS(args[2:]...)
+		}
+		return issuer.RunAWS(args...)
 	})
 	if err != nil {
 		return err

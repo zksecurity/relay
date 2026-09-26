@@ -6,6 +6,36 @@ coordinator and release-signer guides. It does not change the pinned proof-tool,
 the signed ceremony definition, or an existing prepared decision. The AWS
 handoff is transport, not a new approval or a substitute for signature checks.
 
+## Exact upgrade qualification before production use
+
+First qualify the candidate with the published v0.6.0 source release in an
+isolated V5 ceremony using the real approved images and two hosts. Start both
+coordinator and signer from published v0.6.0 launchers, finish and save a
+completed operation, then select the candidate coordinator and signer launchers
+independently with `ceremony upgrade`. Confirm the signed definition,
+proof-tool image pin, identity, and completed checkpoints are byte-for-byte
+unchanged. Exercise the signed release, guided decision, private AWS packet,
+separate temporary download and upload grants, offline signer review and
+signing, public signature return, required-signature verification, and archive
+packing. Test refusal during an unfinished operation, an expired grant renewed
+without another signature, and a wrong account, bucket, or credential binding.
+Independently verify the final archive against the known ceremony ID and
+coordinator key. This candidate test does not qualify the published pair.
+
+After v0.6.3 is published with its manifest and attestations, repeat the same
+test using the exact published v0.6.0 and v0.6.3 launchers and their verified
+assets. Record both release commits, architecture-specific hashes, image pins,
+ceremony ID, test storage destination, upgrade boundary, results, and independent
+verification report. Only that run qualifies the exact published pair for an
+ongoing production ceremony.
+
+For the retained pointer-based `G` action, the coordinator's host uses its
+reviewed AWS login binding, including renewal of temporary session credentials.
+Before asking for `PUBLISH APPROVED GO`, Relay starts and aborts a multipart
+upload at both the exact archive key and exact pointer key. This probes upload
+permission without publishing an object. It cannot guarantee later network
+availability or public readback; those remain checked after publication.
+
 Scope of the first implementation: signed V5 policies with zero optional
 ceremony audits, external security-audit signoffs, public witnesses, and
 mirrors. This covers the ceremony used to qualify the guided flow. Relay

@@ -125,7 +125,16 @@ func runWorkflowV4PublishGo(ui *coordinatorWizard, online guidedProfile, config 
 	if err := runWorkflowV4ProfileCommand(proof, verify, false); err != nil {
 		return fmt.Errorf("verify exact GO and required signatures: %w", err)
 	}
-	objects := store.Client{Profile: config.CoordinatorProfile, Region: config.Region, Endpoint: config.Endpoint, Bucket: config.PublishedBucket}
+	objects, err := workflowV4BoundHostAWS(online, config, config.PublishedBucket)
+	if err != nil {
+		return err
+	}
+	if err := objects.ProbeMultipartWrite(record.ArchiveKey); err != nil {
+		return fmt.Errorf("check GO archive upload access before confirmation: %w", err)
+	}
+	if err := objects.ProbeMultipartWrite(record.PointerKey); err != nil {
+		return fmt.Errorf("check GO pointer upload access before confirmation: %w", err)
+	}
 	public := store.Client{PublicBaseURL: config.PublishedBaseURL}
 	if err := ui.confirm("Publish only the exact signed GO archive and the one fixed approved-release pointer", "PUBLISH APPROVED GO"); err != nil {
 		return err
