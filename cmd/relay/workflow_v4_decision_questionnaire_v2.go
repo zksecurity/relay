@@ -182,7 +182,7 @@ func workflowV4ReviewerDate(value string) (string, string, bool) {
 	}
 	date := strings.TrimSpace(parts[1])
 	parsed, err := time.Parse("2006-01-02 UTC", date)
-	if err != nil || parsed.After(time.Now().UTC().Add(24*time.Hour)) {
+	if err != nil || parsed.After(time.Now().UTC()) {
 		return "Not established", "Not established", false
 	}
 	return strings.TrimSpace(parts[0]), date, true
@@ -243,7 +243,7 @@ func workflowV4ExpandDecisionAnswersV2(answers workflowV4DecisionAnswers) (workf
 	putReview("deployment", read("deployment.status"), read("deployment.reviewer_date"), read("deployment.verification"), read("deployment.findings"), true)
 	delete(old.Answers, "deployment.scope")
 	target := strings.SplitN(read("deployment.target"), ";", 2)
-	if len(target) == 2 {
+	if len(target) == 2 && workflowV4Established(strings.TrimSpace(target[0])) && workflowV4Established(strings.TrimSpace(target[1])) {
 		old.Answers["deployment.network"] = strings.TrimSpace(target[0])
 		old.Answers["deployment.application"] = strings.TrimSpace(target[1])
 	} else {

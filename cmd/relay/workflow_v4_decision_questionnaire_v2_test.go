@@ -177,3 +177,46 @@ func TestGuidedDecisionLoadsFrozenV1Questionnaire(t *testing.T) {
 		t.Fatal("changed frozen questionnaire was accepted")
 	}
 }
+
+func TestGuidedDecisionV2ResumeAndEditSavedAnswers(t *testing.T) {
+	work := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(work, "workflow-v4"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	a := testGuidedDecisionAnswersV2(2)
+	a.Answers = map[string]string{}
+	var first bytes.Buffer
+	ui := &coordinatorWizard{input: bufio.NewReader(strings.NewReader("1\nNamed reviewer; 2026-09-26 UTC\n:save\n")), output: &first}
+	if err := workflowV4AskDecisionQuestionsV2(ui, work, &a); err != errWorkflowV4DecisionQuestionnaireSaved {
+		t.Fatalf("partial form did not save: %v", err)
+	}
+	var resumed bytes.Buffer
+	ui = &coordinatorWizard{input: bufio.NewReader(strings.NewReader("Checked exact build and source commit\n:save\n")), output: &resumed}
+	if err := workflowV4AskDecisionQuestionsV2(ui, work, &a); err != errWorkflowV4DecisionQuestionnaireSaved {
+		t.Fatalf("partial form did not resume: %v", err)
+	}
+	if strings.Contains(resumed.String(), "What was the source-release review outcome?") || a.Answers["source.checks"] != "Checked exact build and source commit" {
+		t.Fatal("resume repeated answered questions or lost the new answer")
+	}
+	var edited bytes.Buffer
+	ui = &coordinatorWizard{input: bufio.NewReader(strings.NewReader("2\n:save\n")), output: &edited}
+	if err := workflowV4AskDecisionQuestionsV2(ui, work, &a, true); err != errWorkflowV4DecisionQuestionnaireSaved {
+		t.Fatalf("review screen could not edit earlier answer: %v", err)
+	}
+	if a.Answers["source.status"] != workflowV4ReviewBlocked || !strings.Contains(edited.String(), "What was the source-release review outcome?") {
+		t.Fatal("edit did not revisit the first answer")
+	}
+}
+
+func TestGuidedDecisionV2IncompleteDeploymentTargetCannotPass(t *testing.T) {
+	a := testGuidedDecisionAnswersV2(2)
+	a.Answers["deployment.target"] = "Cardano mainnet; Not established"
+	expanded, err := workflowV4ExpandDecisionAnswersV2(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, _ := workflowV4DecisionReviewStatus(expanded.Answers, "deployment")
+	if status != "PENDING" {
+		t.Fatalf("incomplete deployment target passed: %s", status)
+	}
+}
