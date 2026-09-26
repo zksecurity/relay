@@ -130,7 +130,7 @@ func TestWorkflowV5DecisionPreparePassesPublicEvidenceRoot(t *testing.T) {
 	defer func() { workflowV4ChildExecutor = previous }()
 	var launch []string
 	workflowV4ChildExecutor = func(args []string) error { launch = append([]string(nil), args...); return nil }
-	ui := &coordinatorWizard{input: bufio.NewReader(strings.NewReader("6\nPREPARE DECISION\n")), output: &bytes.Buffer{}}
+	ui := &coordinatorWizard{input: bufio.NewReader(strings.NewReader("7\nPREPARE DECISION\n")), output: &bytes.Buffer{}}
 	if err := runWorkflowV4DecisionMenu(ui, profile, signer, setupIdentity{ID: "coordinator-test"}, protocol, nil); err != nil {
 		t.Fatal(err)
 	}

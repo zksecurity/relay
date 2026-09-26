@@ -43,13 +43,18 @@ type workflowV4DecisionHandoff struct {
 }
 
 type workflowV4SignerHandoffTransport struct {
-	Schema         string `json:"schema"`
-	Profile        string `json:"profile"`
-	Region         string `json:"region"`
-	Bucket         string `json:"bucket"`
-	ManifestKey    string `json:"manifest_key"`
-	ManifestSHA256 string `json:"manifest_sha256"`
-	SnapshotPath   string `json:"snapshot_path"`
+	Schema           string `json:"schema"`
+	CeremonyID       string `json:"ceremony_id"`
+	CandidateID      string `json:"candidate_id"`
+	CheckpointSHA256 string `json:"checkpoint_sha256"`
+	DecisionSHA256   string `json:"decision_sha256"`
+	SignerID         string `json:"signer_id"`
+	Region           string `json:"region"`
+	Bucket           string `json:"bucket"`
+	ManifestKey      string `json:"manifest_key"`
+	ManifestSHA256   string `json:"manifest_sha256"`
+	SignatureKey     string `json:"signature_key"`
+	SnapshotPath     string `json:"snapshot_path"`
 }
 
 func workflowV4HandoffHex(digest string) (string, error) {
@@ -87,6 +92,19 @@ func workflowV4HandoffObjectKey(prefix, digest string) (string, error) {
 	return prefix + "/objects/" + value, nil
 }
 
+func workflowV4SafeSignerID(id string) bool {
+	if id == "" || len(id) > 128 {
+		return false
+	}
+	for _, c := range id {
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_' || c == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func (m workflowV4DecisionHandoff) validate() error {
 	if m.Schema != workflowV4DecisionHandoffSchema {
 		return errors.New("unsupported decision handoff format")
@@ -101,7 +119,7 @@ func (m workflowV4DecisionHandoff) validate() error {
 	if _, err := workflowV4HandoffHex(m.CandidateID); err != nil {
 		return err
 	}
-	if m.SignerID == "" || len(m.SignerID) > 128 || strings.ContainsAny(m.SignerID, "/\\\x00\n\r") {
+	if !workflowV4SafeSignerID(m.SignerID) {
 		return errors.New("invalid decision handoff signer")
 	}
 	if err := validateStorageFirstOrigin("decision handoff public origin", m.PublishedBaseURL); err != nil {
@@ -446,6 +464,14 @@ func workflowV4SignerTransportPath(work string) string {
 	return filepath.Join(work, "workflow-v4", "decision-handoff", "transport.json")
 }
 
+func workflowV4DecisionGrantMatchesTransport(grant workflowV4DecisionTransferGrant, transport workflowV4SignerHandoffTransport) bool {
+	return grant.CeremonyID == transport.CeremonyID && grant.CandidateID == transport.CandidateID &&
+		grant.CheckpointSHA256 == transport.CheckpointSHA256 && grant.DecisionSHA256 == transport.DecisionSHA256 &&
+		grant.ManifestSHA256 == transport.ManifestSHA256 && grant.ManifestKey == transport.ManifestKey &&
+		grant.SignatureKey == transport.SignatureKey && grant.SignerID == transport.SignerID &&
+		grant.Region == transport.Region && grant.InboxBucket == transport.Bucket
+}
+
 func workflowV4HandoffEnsureDir(path string) error {
 	parent := filepath.Dir(path)
 	if path == parent {
@@ -461,48 +487,20 @@ func workflowV4HandoffEnsureDir(path string) error {
 }
 
 func workflowV4SignerDownloadDecision(ui *coordinatorWizard, work, signerID string) error {
-	profile, err := ui.required("AWS profile authorized to read the private decision handoff and later upload your public signature", "")
+	grantPath, err := ui.required("Absolute path to the coordinator's PRIVATE download grant (mode 0600)", "")
 	if err != nil {
 		return err
 	}
-	region, err := ui.required("AWS region supplied by the coordinator", "")
+	if err := workflowV4SignerGrantOutsideWork(grantPath, work); err != nil {
+		return err
+	}
+	grant, err := workflowV4LoadDecisionTransferGrant(grantPath, "download", signerID)
 	if err != nil {
 		return err
 	}
-	bucket, err := ui.required("Private AWS inbox bucket supplied by the coordinator", "")
-	if err != nil {
-		return err
-	}
-	ceremonyID, err := ui.required("Authenticated ceremony ID to compare", "")
-	if err != nil {
-		return err
-	}
-	checkpointSHA, err := ui.required("Exact signed final checkpoint SHA-256 supplied by the coordinator", "")
-	if err != nil {
-		return err
-	}
-	decisionSHA, err := ui.required("Exact decision SHA-256 supplied by the coordinator", "")
-	if err != nil {
-		return err
-	}
-	manifestSHA, err := ui.required("Exact handoff manifest SHA-256 supplied by the coordinator", "")
-	if err != nil {
-		return err
-	}
-	prefix, err := workflowV4HandoffPrefix(ceremonyID, decisionSHA)
-	if err != nil {
-		return err
-	}
-	if _, err := workflowV4HandoffHex(checkpointSHA); err != nil {
-		return err
-	}
-	if _, err := workflowV4HandoffHex(manifestSHA); err != nil {
-		return err
-	}
-	if profile == "" || region == "" || bucket == "" || strings.ContainsAny(profile+region+bucket, "\x00\n\r") {
-		return errors.New("invalid AWS transport settings")
-	}
-	manifestKey := prefix + "/manifest.json"
+	ceremonyID, checkpointSHA, decisionSHA := grant.CeremonyID, grant.CheckpointSHA256, grant.DecisionSHA256
+	manifestSHA, manifestKey := grant.ManifestSHA256, grant.ManifestKey
+	fmt.Fprintf(ui.output, "Private download grant expires %s. Compare ceremony %s, final checkpoint %s, decision %s, and manifest %s with the coordinator's separately communicated values before offline signing. This grant is transport access, not proof of authenticity.\n", grant.ExpiresAt, ceremonyID, checkpointSHA, decisionSHA, manifestSHA)
 	base := filepath.Dir(workflowV4SignerTransportPath(work))
 	if err := workflowV4HandoffEnsureDir(filepath.Join(work, "workflow-v4")); err != nil {
 		return err
@@ -514,7 +512,13 @@ func workflowV4SignerDownloadDecision(ui *coordinatorWizard, work, signerID stri
 	if err != nil {
 		return err
 	}
-	client := store.Client{Profile: profile, Region: region, Bucket: bucket}
+	complete := false
+	defer func() {
+		if !complete {
+			_ = os.RemoveAll(stage)
+		}
+	}()
+	client := workflowV4DecisionGrantClient(grant)
 	manifestPath := filepath.Join(stage, "handoff-manifest.json")
 	if _, err := client.GetVersionedAtMost(manifestKey, manifestPath, 16<<20); err != nil {
 		return err
@@ -528,7 +532,7 @@ func workflowV4SignerDownloadDecision(ui *coordinatorWizard, work, signerID stri
 		return err
 	}
 	manifest, err := workflowV4DecodeHandoff(raw)
-	if err != nil || manifest.CeremonyID != ceremonyID || manifest.CheckpointSHA256 != checkpointSHA || manifest.DecisionSHA256 != decisionSHA || manifest.SignerID != signerID {
+	if err != nil || manifest.CeremonyID != ceremonyID || manifest.CandidateID != grant.CandidateID || manifest.CheckpointSHA256 != checkpointSHA || manifest.DecisionSHA256 != decisionSHA || manifest.SignerID != signerID {
 		return errors.New("AWS decision handoff does not match the selected ceremony, checkpoint and decision")
 	}
 	var snapshotBytes int64
@@ -627,7 +631,7 @@ func workflowV4SignerDownloadDecision(ui *coordinatorWizard, work, signerID stri
 			return fmt.Errorf("retain decision packet without replacing existing file: %w", err)
 		}
 	}
-	transport := workflowV4SignerHandoffTransport{Schema: "relay-signer-decision-transport-v1", Profile: profile, Region: region, Bucket: bucket, ManifestKey: manifestKey, ManifestSHA256: manifestSHA, SnapshotPath: snapshotDir}
+	transport := workflowV4SignerHandoffTransport{Schema: "relay-signer-decision-transport-v1", CeremonyID: grant.CeremonyID, CandidateID: grant.CandidateID, CheckpointSHA256: grant.CheckpointSHA256, DecisionSHA256: grant.DecisionSHA256, SignerID: signerID, Region: grant.Region, Bucket: grant.InboxBucket, ManifestKey: manifestKey, ManifestSHA256: manifestSHA, SignatureKey: grant.SignatureKey, SnapshotPath: snapshotDir}
 	transportRaw, err := json.Marshal(transport)
 	if err != nil {
 		return err
@@ -635,6 +639,7 @@ func workflowV4SignerDownloadDecision(ui *coordinatorWizard, work, signerID stri
 	if err := setupWriteBytesNewOrExact(workflowV4SignerTransportPath(work), transportRaw, 0600); err != nil {
 		return err
 	}
+	complete = true
 	fmt.Fprintf(ui.output, "Decision packet downloaded. Its bytes and transport manifest match the supplied hashes; the offline guide must still authenticate the signed snapshot and decision.\nSnapshot path for start.sh → 5: %s\nDecision: %s\nFinal checkpoint: %s\nExit, disconnect all networks, then open the offline signing guide.\n", snapshotDir, decisionSHA, checkpointSHA)
 	return nil
 }
@@ -644,8 +649,22 @@ func workflowV4SignerUploadDecisionSignature(ui *coordinatorWizard, work, signer
 	if err := setupReadJSON(workflowV4SignerTransportPath(work), &transport); err != nil {
 		return err
 	}
-	if transport.Schema != "relay-signer-decision-transport-v1" || transport.Profile == "" || transport.Bucket == "" || transport.Region == "" {
+	if transport.Schema != "relay-signer-decision-transport-v1" || transport.SignerID != signerID || transport.Bucket == "" || transport.Region == "" {
 		return errors.New("missing or invalid retained signer AWS transport settings")
+	}
+	grantPath, err := ui.required("Absolute path to the coordinator's PRIVATE upload grant (mode 0600); request a fresh grant if the old one expired", "")
+	if err != nil {
+		return err
+	}
+	if err := workflowV4SignerGrantOutsideWork(grantPath, work); err != nil {
+		return err
+	}
+	grant, err := workflowV4LoadDecisionTransferGrant(grantPath, "upload", signerID)
+	if err != nil {
+		return fmt.Errorf("upload access stopped; retain the existing public signature and request a fresh upload grant if needed: %w", err)
+	}
+	if !workflowV4DecisionGrantMatchesTransport(grant, transport) {
+		return errors.New("upload grant differs from the exact downloaded decision packet")
 	}
 	manifestPath := filepath.Join(filepath.Dir(transport.SnapshotPath), "handoff-manifest.json")
 	retainedSHA, _, err := workflowV4FileSHA256(manifestPath, 16<<20)
@@ -696,7 +715,7 @@ func workflowV4SignerUploadDecisionSignature(ui *coordinatorWizard, work, signer
 	if err := ui.confirm("Reconnect only after offline signing has finished; this transfer does not use your signing key", "UPLOAD PUBLIC SIGNATURE"); err != nil {
 		return err
 	}
-	client := store.Client{Profile: transport.Profile, Region: transport.Region, Bucket: transport.Bucket}
+	client := workflowV4DecisionGrantClient(grant)
 	if err := workflowV4HandoffPut(client, key, signaturePath, filepath.Dir(workflowV4SignerTransportPath(work)), 16<<20); err != nil {
 		return err
 	}

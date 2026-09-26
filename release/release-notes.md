@@ -11,7 +11,10 @@ remains available for other signed policies and recovery.
 The coordinator can send the exact decision packet through the ceremony's
 private AWS inbox. The release signer's upgraded `start.sh` has a separate
 online, keyless action to download it, and another to return the already-signed
-public decision signature. The signer still reviews and signs offline. Object
+public decision signature. The coordinator issues separate temporary private
+download and upload grants; the signer needs no persistent AWS profile. An
+expired upload grant can be renewed without signing again. The signer still
+reviews and signs offline. Object
 hashes and the final checkpoint are checked during transfer; pinned proof-tool
 verification remains required before the signature counts.
 

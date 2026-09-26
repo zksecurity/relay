@@ -90,6 +90,7 @@ the existing decision numbering:
 3) Verify required signatures and pack the archive
 4) Send the decision packet through AWS
 5) Fetch the release signer's public signature from AWS
+6) Issue or renew a temporary private signer transfer grant
 0) Back
 ```
 
@@ -126,17 +127,40 @@ the existing decision numbering:
    ceremony ID, final checkpoint, decision digest, manifest key and digest.
    A retry accepts only identical complete bytes. The packet stays private
    before GO and does not become an official public release.
-4. On the release signer's **online, keyless** `start.sh` handoff screen,
+4. `D → 6` issues a short-lived AWS STS grant through the coordinator's
+   configured grant-role issuer after the packet is complete. The coordinator
+   chooses a **download grant** before signer review or a distinct **upload
+   grant** after offline signing. The download session policy permits
+   `GetObject`/`GetObjectVersion` only for the exact manifest key and the
+   decision's `objects/*` prefix. The downloaded manifest still lists and
+   hashes every allowed object. The upload policy permits `PutObject`,
+   `GetObject`, and `GetObjectVersion` only for this signer's exact public
+   signature key. Neither policy grants list, delete, published-bucket,
+   neighboring-prefix, or other-decision access. AWS IAM cannot require
+   Relay's create-only upload header; a leaked upload grant can preempt the
+   exact key and cause a visible denial of service, but cannot create a valid
+   decision signature. The private mode-0600 grant binds the ceremony, candidate, final checkpoint, decision,
+   manifest digest, signer identity, destination, and expiry. Relay saves it
+   outside the coordinator's mounted work folder and public tree, then prints
+   its path; the coordinator delivers that
+   private file to the signer through an agreed confidential channel. The
+   signer stores it outside the mounted role work folder; Relay rejects a
+   grant inside that folder or under symbolic-link directories. The
+   grant is not uploaded to AWS or embedded in the public packet. A renewed
+   grant is a new file and STS session for the same immutable handoff; it never
+   changes or repeats the decision signature. Relay explains that earlier
+   sessions may remain valid until expiry.
+5. On the release signer's **online, keyless** `start.sh` handoff screen,
    separate from the offline signer guide, the signer selects **Download
-   decision packet from AWS**. The coordinator gives the signer the public
-   private AWS handoff location, final-checkpoint digest, and decision digest;
-   these are discovery hints, not trust anchors. The signed ceremony does not
-   contain an AWS bucket or origin. Relay validates the configured bucket and
-   fixed key shape, checks the downloaded packet against the ceremony ID,
-   final-release checkpoint, and decision digest supplied for comparison,
-   and displays those bindings. It
-   never selects a "latest" packet from an AWS listing. The separate online
-   transport profile has bounded read permission to this handoff prefix. It
+   decision packet from AWS**. The coordinator privately delivers the grant
+   file and separately communicates the ceremony ID, final-checkpoint digest,
+   decision digest, and manifest digest for comparison. These transport hints
+   are not trust anchors. The signed ceremony does not contain an AWS bucket
+   or origin. Relay validates the grant's bucket and fixed key shape, checks
+   the downloaded packet against the grant's exact bindings, and displays
+   those bindings for comparison. It never selects a "latest" packet from an
+   AWS listing. The signer selects the private download grant file, whose
+   expiry Relay checks before using its temporary credentials. It
    downloads the snapshot objects from the published origin and decision
    objects from the private handoff into a fresh directory with strict
    per-file and total limits, and checks the manifest and every object hash.
@@ -150,29 +174,29 @@ the existing decision numbering:
    all networks and use the existing offline `D → 2` review and
    `SIGN DECISION` step. No AWS credentials or network are mounted in the
    signing container.
-5. After offline signing, the signer exits the signing guide, reconnects,
+6. After offline signing, the signer exits the signing guide, reconnects,
    and chooses **Upload my public decision signature** in the keyless
-   `start.sh` handoff. A separately configured signer AWS identity has only
-   write and readback permission for the ceremony's private
-   inbox signature prefix, and bounded read permission for the decision
-   packet prefix; it has no published-bucket write permission and is
-   never mounted with the signer key. The online action reads only the public
+   `start.sh` handoff. They select a newly issued private upload grant for the
+   identical packet. If it expires, the coordinator issues another upload
+   grant; the existing signed public signature is retained and never regenerated
+   by the transfer action. No AWS
+   profile is required on the signer host. The online action reads only the public
    signature and authenticated public metadata; it cannot launch the signer
    container or open `signing.hex`. Relay uploads the exact public
    `release-signer.sig` under a ceremony, release, decision digest, and signer
-   ID-bound immutable key and reads back its size/hash. This identity is a
-   transport prerequisite, not a decision signer; without it, the manual
+   ID-bound immutable key and reads back its size/hash. The temporary grant is
+   a transport prerequisite, not a decision signer; without it, the manual
    public-file return remains an explicit fallback. The coordinator's
    **Fetch decision signature from AWS** action downloads only that expected
-   key with a strict size bound into a fresh path, checks its recorded hash,
-   and promotes it into the canonical decision tree without replacing a
+   key with a strict size bound into a fresh path, records its hash, and
+   retains it in the canonical decision tree without replacing a
    different file. `D → 3` then checks the cryptographic signer/decision
    binding and complete V5 threshold with pinned proof-tool; fetch alone
    never reports the decision verified.
    A missing, partial, duplicate, or mismatched object never counts as an
    approval. If the coordinator signs NO-GO, V5 permits its one authorized
    signature; signer countersignature is optional.
-6. `D → 3` checks the authenticated returned public signature and builds a staged archive
+7. `D → 3` checks the authenticated returned public signature and builds a staged archive
    from the canonical release and decision tree, enforcing the archive
    allowlist and manifest. Relay records the staged archive's hash and size
    before extraction. It extracts that archive into a private
@@ -200,18 +224,16 @@ Both coordinator and release signer need the new Relay guide for the AWS path;
 the pinned proof-tool remains unchanged. The handoff is unavailable to old
 guides, which retain the manual public-file route. Frozen signed ceremony
 definitions and existing prepared decisions remain byte-for-byte unchanged.
-The AWS path requires the configured private inbox bucket,
-and a separately authorized signer upload identity. Relay checks these before
-offering the path and never silently switches to manual transfer. The offline
-release-signer profile continues to reject storage credentials. The keyless
-handoff is a separate `start.sh` action with a distinct transport profile, so
-the online step cannot weaken that guard. Dedicated permanently air-gapped
+The AWS path requires the configured private inbox bucket and grant-role
+issuer. The coordinator issues exact scoped grants through `D → 6`; no signer
+AWS profile is required. The offline release-signer profile continues to
+reject storage credentials. The keyless handoff is a separate `start.sh`
+action and never mounts a grant in the signing container. Dedicated permanently air-gapped
 signer hosts cannot use the AWS return action themselves; they use a separate
 keyless transfer station for the public signature or the manual fallback.
-Before showing questions, Relay checks both the signed policy requirement
-and the actual external-audit report/signoff count against the 16-signoff
-limit. It stops on a larger count instead of silently dropping a reviewed
-report or generating an unrepresentable decision.
+Before showing questions, Relay checks the signed policy and stops if it
+requires any optional auditor, external signoff, witness, or mirror. The
+manual reviewed V5 draft remains available for those policies.
 
 ## Questionnaire and generated evidence
 
@@ -399,10 +421,10 @@ and must not claim the archive is the latest decision. This later verifier
 ## AWS handoff and recovery
 
 The first release adds the signer packet display and AWS return path to both
-guides. The signer online transport action uses a distinct profile and never
-opens the signing key or launches a signing container. Its AWS credentials
-are restricted to the ceremony's private inbox handoff prefix; the signer
-needs no coordinator storage credentials. A private inbox object is not itself
+guides. The signer online transport action uses only the coordinator-issued
+short-lived private grant and never opens the signing key or launches a signing
+container. No persistent AWS signer profile or coordinator storage credentials
+are copied to the signer. A private inbox object is not itself
 trusted: the coordinator uses the authenticated assignment, exact release and
 decision bindings, and proof-tool signature verification. An attacker who can
 write a conflicting object can delay delivery, but cannot create a valid
@@ -459,7 +481,12 @@ exact pinned proof-tool and current signer image, including:
   maximum 20-plus-20 contribution roster against the gate evidence and report
   size limits. Test wrong-bucket, wrong-key, stale decision, wrong signer,
   altered packet, partial upload, same-byte retry, conflicting-byte retry,
-  missing AWS permission, and switching between AWS and manual return.
+  missing AWS permission, expired download and upload grants, renewed upload
+  access without another signature, forbidden writes with a download grant,
+  forbidden reads outside the packet, neighboring object keys, grant file
+  permissions and diagnostic exclusion, and switching between AWS and manual
+  return. The real AWS probe must demonstrate that the session policy reduces
+  the configured grant role's bucket-wide base permission.
   Optional archive hosting and hosted-copy readback remain separate.
 - Public verification with the independently trusted ceremony ID, altered
   archive, NO-GO archive, expanded size above 64 GiB with explicit resource
@@ -506,4 +533,12 @@ uses a separate keyless online signer action, and checks exact ceremony,
 checkpoint, decision, and signer bindings. It reuses the signed public
 snapshot objects instead of uploading a potentially huge second copy, and
 keeps pre-GO review reports in the private inbox. Its completion manifest
-and optional supporting files stay outside the canonical decision tree.
+and optional supporting files stay outside the canonical decision tree. A
+follow-up review of the temporary-grant revision found that a credential
+spanning offline signing can expire, and that the ordinary contribution grant
+has overly broad read/write scope for this handoff. The design now issues
+separate read and upload sessions, restricts upload to one exact key, and
+allows upload-grant renewal without repeating a signature. AWS limits STS
+inline session policy text to 2,048 characters, so the read policy covers
+only this decision's `objects/*` prefix and exact manifest key rather than
+enumerating every object.

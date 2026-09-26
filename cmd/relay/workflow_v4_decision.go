@@ -59,7 +59,7 @@ func runWorkflowV4DecisionMenu(ui *coordinatorWizard, online, signer guidedProfi
 	}
 	fmt.Fprintln(ui.output, "Production decision for the exact signed release. Review the decision and complete evidence before signing.")
 	if online.Role == "coordinator" {
-		fmt.Fprintln(ui.output, "1) Answer review questions and prepare the decision\n2) Review evidence and sign my decision\n3) Verify required signatures and pack the archive\n4) Send the decision packet through AWS\n5) Fetch the release signer's public signature from AWS\n6) Prepare my existing reviewed V5 draft (recovery)\n0) Back")
+		fmt.Fprintln(ui.output, "1) Answer review questions and prepare the decision\n2) Review evidence and sign my decision\n3) Verify required signatures and pack the archive\n4) Send the decision packet through AWS\n5) Fetch the release signer's public signature from AWS\n6) Issue or renew a private signer transfer grant\n7) Prepare my existing reviewed V5 draft (recovery)\n0) Back")
 	} else {
 		fmt.Fprintln(ui.output, "2) Review evidence and sign my decision\n0) Back")
 	}
@@ -75,7 +75,7 @@ func runWorkflowV4DecisionMenu(ui *coordinatorWizard, online, signer guidedProfi
 			return errors.New("the guided decision requires a synchronized V5 coordinator and the canonical decision tree")
 		}
 		return runWorkflowV4GuidedDecision(ui, online, signer, identity, protocol, *snapshot, common, decisionHost, evidenceHost)
-	case "6":
+	case "7":
 		if online.Role != "coordinator" {
 			return errors.New("only the coordinator prepares the canonical decision")
 		}
@@ -235,6 +235,11 @@ func runWorkflowV4DecisionMenu(ui *coordinatorWizard, online, signer guidedProfi
 			return errors.New("only the coordinator can fetch a returned decision signature")
 		}
 		return runWorkflowV4FetchDecisionSignature(ui, online, protocol, *snapshot)
+	case "6":
+		if online.Role != "coordinator" || snapshot == nil {
+			return errors.New("only a synchronized coordinator can issue a decision transfer grant")
+		}
+		return runWorkflowV4IssueDecisionTransferGrant(ui, online, protocol, *snapshot)
 	default:
 		return errors.New("unknown decision action")
 	}
