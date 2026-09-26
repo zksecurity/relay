@@ -8,26 +8,39 @@ handoff is transport, not a new approval or a substitute for signature checks.
 
 ## Exact upgrade qualification before production use
 
-First qualify the candidate with the published v0.6.0 source release in an
-isolated V5 ceremony using the real approved images and two hosts. Start both
-coordinator and signer from published v0.6.0 launchers, finish and save a
-completed operation, then select the candidate coordinator and signer launchers
-independently with `ceremony upgrade`. Confirm the signed definition,
-proof-tool image pin, identity, and completed checkpoints are byte-for-byte
-unchanged. Exercise the signed release, guided decision, private AWS packet,
+Before release, run a test-only one-machine smoke check of the candidate's
+actual `start.sh` menus with a small circuit and separate role directories.
+Because an unpublished PR has no attested role-images release, label any local
+release fixture synthetic and do not count its release verification as passed.
+A small K11 circuit cannot qualify production GO: current V5 production policy
+requires two participants per phase, and the pinned proof-tool's GO gate
+requires the exact K21 circuit. Supplement the menu run with direct unit and
+fake-AWS tests, but do not substitute those for the menu run.
+
+Before release, also run the candidate's two-host AWS handoff using the actual
+coordinator and signer `start.sh` menus. Identify any test-only release fixture
+and do not count it as attested release verification. Exercise a signed release,
+guided decision, private AWS packet,
 separate temporary download and upload grants, offline signer review and
 signing, public signature return, required-signature verification, and archive
 packing. Test refusal during an unfinished operation, an expired grant renewed
 without another signature, and a wrong account, bucket, or credential binding.
 Independently verify the final archive against the known ceremony ID and
-coordinator key. This candidate test does not qualify the published pair.
+coordinator key. The two hosts must each follow their actual `start.sh` menus;
+direct commands are supplemental diagnostics. This candidate test does not
+qualify an upgrade or the published pair.
 
-After v0.6.3 is published with its manifest and attestations, repeat the same
-test using the exact published v0.6.0 and v0.6.3 launchers and their verified
-assets. Record both release commits, architecture-specific hashes, image pins,
-ceremony ID, test storage destination, upgrade boundary, results, and independent
-verification report. Only that run qualifies the exact published pair for an
-ongoing production ceremony.
+After v0.6.3 is published with its manifest and attestations, run a fresh
+isolated two-host V5 ceremony with the exact published v0.6.0 launchers and
+approved images. Complete Phase 2, save both guides at an operation boundary,
+then upgrade the coordinator and signer separately to the exact published
+v0.6.3 launchers. Confirm that the signed definition, proof-tool image pin,
+identities, and completed checkpoints are unchanged. Repeat the decision and
+AWS handoff through both `start.sh` menus, then independently verify the final
+archive. Record both release commits, architecture-specific hashes, image pins,
+ceremony ID, test storage destination, upgrade boundary, results, and verifier
+report. Only that run qualifies the exact published pair for an ongoing
+production ceremony.
 
 For the retained pointer-based `G` action, the coordinator's host uses its
 reviewed AWS login binding, including renewal of temporary session credentials.
