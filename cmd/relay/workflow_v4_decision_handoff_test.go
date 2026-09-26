@@ -203,3 +203,104 @@ func TestDecisionHandoffRejectsWrongReleaseBinding(t *testing.T) {
 		t.Fatal("wrong final checkpoint accepted")
 	}
 }
+
+func TestFetchedSignatureIsNotPromotedBeforeVerification(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "fetched.sig")
+	destination := filepath.Join(dir, "release-signer.sig")
+	if err := os.WriteFile(source, []byte("invalid signature"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := workflowV4PromoteVerifiedDecisionSignature(source, destination, func(string) error {
+		return os.ErrInvalid
+	}); err == nil {
+		t.Fatal("invalid signature passed verification")
+	}
+	if _, err := os.Lstat(destination); !os.IsNotExist(err) {
+		t.Fatal("invalid signature occupied the canonical path")
+	}
+	if err := os.WriteFile(source, []byte("valid replacement"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := workflowV4PromoteVerifiedDecisionSignature(source, destination, func(string) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := os.ReadFile(destination)
+	if err != nil || string(retained) != "valid replacement" {
+		t.Fatal("validated replacement was not retained exactly")
+	}
+}
+
+func TestRetainedSignerDownloadCanBeReusedAndDetectsLostSnapshot(t *testing.T) {
+	work, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := testDecisionHandoff(t)
+	stage := filepath.Join(work, "incoming-decision-test")
+	snapshotDir := filepath.Join(stage, "snapshot")
+	if err := os.MkdirAll(filepath.Join(snapshotDir, "objects"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	manifestRaw, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(stage, "handoff-manifest.json")
+	if err := os.WriteFile(manifestPath, manifestRaw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	snapshotRaw, err := json.MarshalIndent(m.Snapshot, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(snapshotDir, offlineSnapshotFile), snapshotRaw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range m.Snapshot.Files {
+		object := filepath.Join(snapshotDir, "objects", strings.TrimPrefix(ref.SHA256, "sha256:"))
+		if err := os.WriteFile(object, []byte("public checkpoint"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	decisionDir := filepath.Join(work, "ceremony", "public", "decision")
+	if err := os.MkdirAll(decisionDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{"decision.json": "decision", "coordinator.sig": "coordinator-signature"} {
+		if err := os.WriteFile(filepath.Join(decisionDir, name), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	prefix, _ := workflowV4HandoffPrefix(m.CeremonyID, m.DecisionSHA256)
+	manifestHash, _, err := workflowV4FileSHA256(manifestPath, 16<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := workflowV4SignerHandoffTransport{Schema: "relay-signer-decision-transport-v1", CeremonyID: m.CeremonyID, CandidateID: m.CandidateID, CheckpointSHA256: m.CheckpointSHA256, DecisionSHA256: m.DecisionSHA256, SignerID: m.SignerID, Region: "us-east-1", Bucket: "private-inbox", ManifestKey: prefix + "/manifest.json", ManifestSHA256: manifestHash, SignatureKey: prefix + "/signatures/" + m.SignerID + ".sig", SnapshotPath: snapshotDir}
+	if err := workflowV4ValidateRetainedDecisionDownload(work, m.SignerID, transport); err != nil {
+		t.Fatalf("exact completed download could not be reused: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(decisionDir, "unexpected.tmp"), []byte("sidecar"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := workflowV4ValidateRetainedDecisionDownload(work, m.SignerID, transport); err == nil {
+		t.Fatal("unexpected retained decision sidecar was ignored")
+	}
+	if err := os.Remove(filepath.Join(decisionDir, "unexpected.tmp")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(snapshotDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := workflowV4ValidateRetainedDecisionDownload(work, m.SignerID, transport); err == nil {
+		t.Fatal("lost snapshot was treated as a reusable download")
+	}
+	canonical := filepath.Join(decisionDir, "decision.json")
+	if err := os.WriteFile(canonical, []byte("partial"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := setupWriteBytesNewOrExact(canonical, []byte("decision"), 0600); err == nil {
+		t.Fatal("retry silently replaced conflicting canonical decision bytes")
+	}
+}

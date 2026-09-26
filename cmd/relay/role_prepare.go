@@ -658,7 +658,7 @@ func (p *rolePreparer) menu() error {
 			if p.d.Role != "release-signer" || !regularPreparationFile(filepath.Join(p.d.Work, "ceremony", "public", "ceremony.json")) {
 				err = errors.New("online GO decision handoff applies only to the release signer")
 			} else {
-				err = runWorkflowV4SignerDecisionHandoff(&p.ui, p.d.Work, filepath.Join(p.d.Keys, "identity.json"))
+				err = runWorkflowV4SignerDecisionHandoff(&p.ui, p.d.Work, p.d.Keys, p.d.Trust)
 			}
 		case "8":
 			for n, label := range []string{"Prepare approved images", "Generate/review MY identity", "Import a public file", "Create a phase profile", "Open the ceremony workflow", "Show folders and requirements", "Prepare and sign MY enrollment"} {

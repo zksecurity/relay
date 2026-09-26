@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -283,14 +284,18 @@ func workflowV4ValidateDecisionAnswers(answers workflowV4DecisionAnswers) error 
 	return nil
 }
 
-func workflowV4PromoteDecisionArtifacts(work string, files map[string][]byte, draft []byte) error {
-	decisionDir := filepath.Join(work, "ceremony", "public", "decision")
+func workflowV4StageDecisionArtifacts(work string, files map[string][]byte, draft []byte) (string, string, error) {
+	stage := filepath.Join(work, "workflow-v4", "decision", "staging")
+	if err := workflowV4HandoffEnsureDir(stage); err != nil {
+		return "", "", err
+	}
+	decisionDir := filepath.Join(stage, "decision")
 	if err := workflowV4HandoffEnsureDir(decisionDir); err != nil {
-		return err
+		return "", "", err
 	}
 	evidenceDir := filepath.Join(decisionDir, "evidence")
 	if err := workflowV4HandoffEnsureDir(evidenceDir); err != nil {
-		return err
+		return "", "", err
 	}
 	names := make([]string, 0, len(files))
 	for name := range files {
@@ -298,13 +303,42 @@ func workflowV4PromoteDecisionArtifacts(work string, files map[string][]byte, dr
 	}
 	slices.Sort(names)
 	for _, name := range names {
-		path := filepath.Join(work, "ceremony", "public", filepath.FromSlash(name))
+		path := filepath.Join(stage, filepath.FromSlash(name))
 		if filepath.Dir(path) != evidenceDir {
-			return errors.New("invalid generated evidence path")
+			return "", "", errors.New("invalid generated evidence path")
 		}
 		if err := setupWriteBytesNewOrExact(path, files[name], 0600); err != nil {
-			return err
+			return "", "", err
 		}
 	}
-	return setupWriteBytesNewOrExact(filepath.Join(work, "decision-draft.json"), draft, 0600)
+	if err := setupWriteBytesNewOrExact(filepath.Join(stage, "draft.json"), draft, 0600); err != nil {
+		return "", "", err
+	}
+	if err := setupWriteBytesNewOrExact(filepath.Join(work, "decision-draft.json"), draft, 0600); err != nil {
+		return "", "", err
+	}
+	allowed := map[string]bool{"draft.json": true, "decision": true, "decision/evidence": true, "decision/decision.json": true}
+	for _, name := range names {
+		allowed[name] = true
+	}
+	if err := filepath.WalkDir(stage, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == stage {
+			return nil
+		}
+		relative, err := filepath.Rel(stage, path)
+		if err != nil || !allowed[filepath.ToSlash(relative)] || entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("unexpected staged decision file %s", path)
+		}
+		isDirectory := relative == "decision" || filepath.ToSlash(relative) == "decision/evidence"
+		if entry.IsDir() != isDirectory {
+			return fmt.Errorf("invalid staged decision file type %s", path)
+		}
+		return nil
+	}); err != nil {
+		return "", "", err
+	}
+	return stage, filepath.Join(decisionDir, "decision.json"), nil
 }

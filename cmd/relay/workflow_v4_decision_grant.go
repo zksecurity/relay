@@ -112,16 +112,18 @@ func workflowV4LoadDecisionTransferGrant(path, kind, signerID string) (workflowV
 	return grant, grant.validate(time.Now().UTC())
 }
 
-func workflowV4SignerGrantOutsideWork(path, work string) error {
+func workflowV4SignerGrantOutsideMounts(path string, mounts ...string) error {
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
 		return errors.New("private grant path must be absolute and clean")
 	}
 	if err := requireOfflineRealPath(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("private grant directory: %w", err)
 	}
-	relative, err := filepath.Rel(work, path)
-	if err != nil || relative == "." || relative == ".." || !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return errors.New("private grant must be outside the release signer's mounted work folder")
+	for _, mount := range mounts {
+		relative, err := filepath.Rel(mount, path)
+		if err != nil || relative == "." || relative == ".." || !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return errors.New("private grant must be outside all release-signer container mounts")
+		}
 	}
 	return nil
 }

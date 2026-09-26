@@ -323,6 +323,15 @@ func runWorkflowV4GuidedDecision(ui *coordinatorWizard, online, signer guidedPro
 	if err != nil || state.Progress.FinalRelease == nil {
 		return errors.New("record the signed final release before preparing a production decision")
 	}
+	if _, err := os.Lstat(decisionHost); err == nil {
+		if err := requireDecisionEvidence(decisionHost, evidenceHost, protocol.Definition.CeremonyID, ui); err != nil {
+			return fmt.Errorf("retained decision needs reviewed recovery: %w", err)
+		}
+		fmt.Fprintln(ui.output, "An existing decision is retained. Choose D → 2 to review it and let pinned proof-tool verify it before any signature; Relay will not prepare it again.")
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	if err := requireFreshDecisionOutput(decisionHost); err != nil {
 		return err
 	}
@@ -377,23 +386,60 @@ func runWorkflowV4GuidedDecision(ui *coordinatorWizard, online, signer guidedPro
 	if err := workflowV4RetainDecisionPreparationIntent(online.Work, answers, files, draft); err != nil {
 		return err
 	}
-	if err := workflowV4PromoteDecisionArtifacts(online.Work, files, draft); err != nil {
+	stage, preparedHost, err := workflowV4StageDecisionArtifacts(online.Work, files, draft)
+	if err != nil {
 		return err
 	}
-	draftHost := filepath.Join(online.Work, "decision-draft.json")
+	draftHost := filepath.Join(stage, "draft.json")
 	mappedDraft, err := pathWithin(signer.Work, draftHost, "/work")
 	if err != nil {
 		return err
 	}
-	mappedOut, err := pathWithin(signer.Work, decisionHost, "/work")
+	checkDir, err := os.MkdirTemp(filepath.Join(online.Work, "workflow-v4", "decision"), ".prepare-check-*")
 	if err != nil {
 		return err
 	}
-	mappedEvidence, err := pathWithin(signer.Work, evidenceHost, "/work")
+	defer os.RemoveAll(checkDir)
+	checkHost := filepath.Join(checkDir, "decision.json")
+	mappedOut, err := pathWithin(signer.Work, checkHost, "/work")
+	if err != nil {
+		return err
+	}
+	mappedEvidence, err := pathWithin(signer.Work, stage, "/work")
 	if err != nil {
 		return err
 	}
 	command := append([]string{"mpc-ceremony", "decision", "prepare"}, common...)
 	command = append(command, "--draft", mappedDraft, "--evidence-root", mappedEvidence, "--out", mappedOut)
-	return runWorkflowV4ProfileCommand(signer, command, false)
+	if err := runWorkflowV4ProfileCommand(signer, command, false); err != nil {
+		return err
+	}
+	preparedBytes, err := readTesseraRegularFile(checkHost, 16<<20, false)
+	if err != nil {
+		return err
+	}
+	if err := setupWriteBytesNewOrExact(preparedHost, preparedBytes, 0600); err != nil {
+		return fmt.Errorf("staged decision differs from deterministic proof-tool output; retain it for reviewed recovery: %w", err)
+	}
+	root, _ := snapshot.Root()
+	if err := workflowV4HandoffDecisionRelease(preparedHost, candidateID, snapshot.Head().Record.Digest.SHA256, root); err != nil {
+		return fmt.Errorf("staged decision is incomplete or differs; retain it for reviewed recovery: %w", err)
+	}
+	if err := requireDecisionEvidence(preparedHost, stage, protocol.Definition.CeremonyID, ui); err != nil {
+		return fmt.Errorf("staged decision evidence differs: %w", err)
+	}
+	if err := requireFreshDecisionOutput(decisionHost); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(filepath.Dir(decisionHost)); !errors.Is(err, os.ErrNotExist) {
+		return errors.New("canonical decision directory already exists; retain it for reviewed recovery")
+	}
+	if err := os.Rename(filepath.Join(stage, "decision"), filepath.Dir(decisionHost)); err != nil {
+		return fmt.Errorf("promote complete staged decision: %w", err)
+	}
+	if err := syncDirectory(evidenceHost); err != nil {
+		return err
+	}
+	fmt.Fprintln(ui.output, "Prepared decision and evidence were promoted together. Choose D → 2 to review and sign the exact canonical files.")
+	return nil
 }

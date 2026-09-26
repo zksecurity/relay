@@ -427,8 +427,10 @@ func runWorkflowV4FetchDecisionSignature(ui *coordinatorWizard, online guidedPro
 		return errors.New("returned public signature has the wrong role or signer identity")
 	}
 	destination := filepath.Join(online.Work, "ceremony", "public", "decision", "release-signer.sig")
-	if err := setupWriteBytesNewOrExact(destination, bytes, 0600); err != nil {
-		return fmt.Errorf("retain exact returned signature without replacement: %w", err)
+	if err := workflowV4PromoteVerifiedDecisionSignature(path, destination, func(candidate string) error {
+		return workflowV4VerifyFetchedDecisionSignature(online, protocol, candidate)
+	}); err != nil {
+		return fmt.Errorf("returned signature could not be retained as verified; canonical decision files are unchanged (request a corrected public signature through the manual return path if the AWS object is occupied): %w", err)
 	}
 	sha, _, err := workflowV4FileSHA256(destination, 16<<20)
 	if err != nil {
@@ -438,9 +440,60 @@ func runWorkflowV4FetchDecisionSignature(ui *coordinatorWizard, online guidedPro
 	return nil
 }
 
-func runWorkflowV4SignerDecisionHandoff(ui *coordinatorWizard, work, publicIdentityPath string) error {
+func workflowV4PromoteVerifiedDecisionSignature(source, destination string, verify func(string) error) error {
+	before, err := readTesseraRegularFile(source, 16<<20, false)
+	if err != nil {
+		return err
+	}
+	if err := verify(source); err != nil {
+		return err
+	}
+	after, err := readTesseraRegularFile(source, 16<<20, false)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(before, after) {
+		return errors.New("fetched signature changed during verification")
+	}
+	return setupWriteBytesNewOrExact(destination, before, 0600)
+}
+
+func workflowV4VerifyFetchedDecisionSignature(online guidedProfile, protocol transcript.DefinitionProtocol, candidate string) error {
+	root := filepath.Join(online.Work, "ceremony", "public")
+	decision := filepath.Join(root, "decision", "decision.json")
+	if _, err := readTesseraRegularFile(decision, 16<<20, false); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(filepath.Join(root, "decision"))
+	if err != nil {
+		return err
+	}
+	command := []string{"mpc-ceremony", "decision", "verify", "--ceremony", "/work/ceremony/public/ceremony.json", "--ceremony-signature", "/work/ceremony/public/ceremony.sig", "--coordinator-public-key-file", "/trust/setup-coordinator.hex", "--decision", "/work/ceremony/public/decision/decision.json", "--evidence-root", "/work/ceremony/public"}
+	for _, entry := range entries {
+		if entry.Name() == "decision.json" || entry.Name() == "evidence" {
+			continue
+		}
+		if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), ".sig") || entry.Name() == "release-signer.sig" {
+			return errors.New("unexpected canonical decision file before signature verification")
+		}
+		command = append(command, "--signature", "/work/ceremony/public/decision/"+entry.Name())
+	}
+	mapped, err := pathWithin(online.Work, candidate, "/work")
+	if err != nil {
+		return err
+	}
+	command = append(command, "--signature", mapped)
+	keyless := online
+	keyless.Keys = ""
+	if protocol.DefinitionSchema != "proof-tool-mpc-ceremony-definition-v5" || protocol.Definition.Mode != "production" {
+		return errors.New("returned signature requires a V5 production decision")
+	}
+	return runWorkflowV4ProfileCommand(keyless, command, false)
+}
+
+func runWorkflowV4SignerDecisionHandoff(ui *coordinatorWizard, work, keys, trust string) error {
 	var identity setupIdentity
-	if err := setupReadJSON(publicIdentityPath, &identity); err != nil || identity.ID == "" {
+	if err := setupReadJSON(filepath.Join(keys, "identity.json"), &identity); err != nil || identity.ID == "" {
 		return errors.New("generate and review your public release-signer identity before AWS decision handoff")
 	}
 	fmt.Fprintln(ui.output, "ONLINE, KEYLESS TRANSFER. Exit the offline signing guide before using this action. It never opens your signing key or launches a signing container.\n1) Download the coordinator's decision packet from AWS\n2) Upload my already-signed PUBLIC decision signature to AWS\n0) Back")
@@ -452,9 +505,9 @@ func runWorkflowV4SignerDecisionHandoff(ui *coordinatorWizard, work, publicIdent
 	case "0", "":
 		return nil
 	case "1":
-		return workflowV4SignerDownloadDecision(ui, work, identity.ID)
+		return workflowV4SignerDownloadDecision(ui, work, keys, trust, identity.ID)
 	case "2":
-		return workflowV4SignerUploadDecisionSignature(ui, work, identity.ID)
+		return workflowV4SignerUploadDecisionSignature(ui, work, keys, trust, identity.ID)
 	default:
 		return errors.New("choose a listed decision transfer action")
 	}
@@ -472,6 +525,83 @@ func workflowV4DecisionGrantMatchesTransport(grant workflowV4DecisionTransferGra
 		grant.Region == transport.Region && grant.InboxBucket == transport.Bucket
 }
 
+func workflowV4ValidateRetainedDecisionDownload(work, signerID string, transport workflowV4SignerHandoffTransport) error {
+	if transport.Schema != "relay-signer-decision-transport-v1" || transport.SignerID != signerID || !filepath.IsAbs(transport.SnapshotPath) {
+		return errors.New("retained decision transport has the wrong signer or format")
+	}
+	if _, err := pathWithin(work, transport.SnapshotPath, "/work"); err != nil {
+		return err
+	}
+	stage := filepath.Dir(transport.SnapshotPath)
+	if !strings.HasPrefix(filepath.Base(stage), "incoming-decision-") || filepath.Dir(stage) != work {
+		return errors.New("retained decision snapshot has an unexpected path")
+	}
+	if err := requireOfflineRealPath(stage); err != nil {
+		return err
+	}
+	manifestPath := filepath.Join(stage, "handoff-manifest.json")
+	sha, _, err := workflowV4FileSHA256(manifestPath, 16<<20)
+	if err != nil || sha != transport.ManifestSHA256 {
+		return errors.New("retained decision manifest differs")
+	}
+	raw, err := readTesseraRegularFile(manifestPath, 16<<20, false)
+	if err != nil {
+		return err
+	}
+	manifest, err := workflowV4DecodeHandoff(raw)
+	if err != nil || manifest.CeremonyID != transport.CeremonyID || manifest.CandidateID != transport.CandidateID || manifest.CheckpointSHA256 != transport.CheckpointSHA256 || manifest.DecisionSHA256 != transport.DecisionSHA256 || manifest.SignerID != signerID {
+		return errors.New("retained decision manifest binding differs")
+	}
+	prefix, err := workflowV4HandoffPrefix(manifest.CeremonyID, manifest.DecisionSHA256)
+	if err != nil || transport.ManifestKey != prefix+"/manifest.json" || transport.SignatureKey != prefix+"/signatures/"+signerID+".sig" {
+		return errors.New("retained decision transport object keys differ")
+	}
+	snapshotRaw, err := json.MarshalIndent(manifest.Snapshot, "", "  ")
+	if err != nil {
+		return err
+	}
+	retainedSnapshot, err := readTesseraRegularFile(filepath.Join(transport.SnapshotPath, offlineSnapshotFile), 16<<20, false)
+	if err != nil || !bytes.Equal(snapshotRaw, retainedSnapshot) {
+		return errors.New("retained public snapshot inventory differs")
+	}
+	if _, err := openWorkflowV4OfflineStore(transport.SnapshotPath); err != nil {
+		return err
+	}
+	for _, ref := range manifest.Snapshot.Files {
+		path := filepath.Join(transport.SnapshotPath, "objects", strings.TrimPrefix(ref.SHA256, "sha256:"))
+		sha, size, err := workflowV4FileSHA256(path, ref.Size)
+		if err != nil || sha != ref.SHA256 || size != ref.Size {
+			return fmt.Errorf("retained snapshot object differs: %s", ref.Name)
+		}
+	}
+	for _, file := range manifest.Files {
+		path := filepath.Join(work, "ceremony", "public", filepath.FromSlash(file.Name))
+		sha, size, err := workflowV4FileSHA256(path, file.Size)
+		if err != nil || sha != file.SHA256 || size != file.Size {
+			return fmt.Errorf("retained decision file differs: %s", file.Name)
+		}
+	}
+	decisionDir := filepath.Join(work, "ceremony", "public", "decision")
+	allowed := map[string]bool{"decision": true, "decision/evidence": true, "decision/release-signer.sig": true}
+	for _, file := range manifest.Files {
+		allowed[file.Name] = true
+	}
+	publicRoot := filepath.Join(work, "ceremony", "public")
+	if err := filepath.WalkDir(decisionDir, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		name, err := filepath.Rel(publicRoot, path)
+		if err != nil || !allowed[filepath.ToSlash(name)] || entry.Type()&os.ModeSymlink != 0 || (!entry.IsDir() && !entry.Type().IsRegular()) {
+			return errors.New("retained decision tree contains an unexpected file or type")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
 func workflowV4HandoffEnsureDir(path string) error {
 	parent := filepath.Dir(path)
 	if path == parent {
@@ -486,17 +616,34 @@ func workflowV4HandoffEnsureDir(path string) error {
 	return requireOfflineRealPath(path)
 }
 
-func workflowV4SignerDownloadDecision(ui *coordinatorWizard, work, signerID string) error {
+func workflowV4SignerDownloadDecision(ui *coordinatorWizard, work, keys, trust, signerID string) error {
+	transportPath := workflowV4SignerTransportPath(work)
+	var prior workflowV4SignerHandoffTransport
+	priorExists := false
+	if err := setupReadJSON(transportPath, &prior); err == nil {
+		priorExists = true
+		if err := workflowV4ValidateRetainedDecisionDownload(work, signerID, prior); err == nil {
+			fmt.Fprintf(ui.output, "The exact decision packet is already retained and byte-checked at %s. Open the offline signing guide with this snapshot; it must still authenticate the signed ceremony and decision.\n", prior.SnapshotPath)
+			return nil
+		} else {
+			fmt.Fprintf(ui.output, "The previous decision packet cannot be reused (%v). A fresh matching grant can recover missing download files. Conflicting canonical decision files require reviewed manual recovery; Relay will not replace them.\n", err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("retained signer transport needs reviewed recovery: %w", err)
+	}
 	grantPath, err := ui.required("Absolute path to the coordinator's PRIVATE download grant (mode 0600)", "")
 	if err != nil {
 		return err
 	}
-	if err := workflowV4SignerGrantOutsideWork(grantPath, work); err != nil {
+	if err := workflowV4SignerGrantOutsideMounts(grantPath, work, keys, trust); err != nil {
 		return err
 	}
 	grant, err := workflowV4LoadDecisionTransferGrant(grantPath, "download", signerID)
 	if err != nil {
 		return err
+	}
+	if priorExists && !workflowV4DecisionGrantMatchesTransport(grant, prior) {
+		return errors.New("recovery download grant differs from the retained ceremony and decision")
 	}
 	ceremonyID, checkpointSHA, decisionSHA := grant.CeremonyID, grant.CheckpointSHA256, grant.DecisionSHA256
 	manifestSHA, manifestKey := grant.ManifestSHA256, grant.ManifestKey
@@ -636,7 +783,11 @@ func workflowV4SignerDownloadDecision(ui *coordinatorWizard, work, signerID stri
 	if err != nil {
 		return err
 	}
-	if err := setupWriteBytesNewOrExact(workflowV4SignerTransportPath(work), transportRaw, 0600); err != nil {
+	if priorExists {
+		if err := saveJSONAtomic(transportPath, transport); err != nil {
+			return err
+		}
+	} else if err := setupWriteBytesNewOrExact(transportPath, transportRaw, 0600); err != nil {
 		return err
 	}
 	complete = true
@@ -644,7 +795,7 @@ func workflowV4SignerDownloadDecision(ui *coordinatorWizard, work, signerID stri
 	return nil
 }
 
-func workflowV4SignerUploadDecisionSignature(ui *coordinatorWizard, work, signerID string) error {
+func workflowV4SignerUploadDecisionSignature(ui *coordinatorWizard, work, keys, trust, signerID string) error {
 	var transport workflowV4SignerHandoffTransport
 	if err := setupReadJSON(workflowV4SignerTransportPath(work), &transport); err != nil {
 		return err
@@ -656,7 +807,7 @@ func workflowV4SignerUploadDecisionSignature(ui *coordinatorWizard, work, signer
 	if err != nil {
 		return err
 	}
-	if err := workflowV4SignerGrantOutsideWork(grantPath, work); err != nil {
+	if err := workflowV4SignerGrantOutsideMounts(grantPath, work, keys, trust); err != nil {
 		return err
 	}
 	grant, err := workflowV4LoadDecisionTransferGrant(grantPath, "upload", signerID)

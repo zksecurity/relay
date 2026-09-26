@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -32,6 +34,40 @@ func testGuidedDecisionAnswers() workflowV4DecisionAnswers {
 		a.Answers["deployment."+field] = "Specific reviewed deployment detail"
 	}
 	return a
+}
+
+func TestGuidedDecisionStagingResumesExactFilesAndRejectsPartialBytes(t *testing.T) {
+	work, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(work, "workflow-v4", "decision"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string][]byte{"decision/evidence/review.md": []byte("reviewed exact evidence")}
+	draft := []byte(`{"draft":"exact"}`)
+	stage, prepared, err := workflowV4StageDecisionArtifacts(work, files, draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(work, "ceremony", "public", "decision")); !os.IsNotExist(err) {
+		t.Fatal("staging entered the canonical public decision tree")
+	}
+	if _, _, err := workflowV4StageDecisionArtifacts(work, files, draft); err != nil {
+		t.Fatalf("exact interrupted staging did not resume: %v", err)
+	}
+	if err := os.WriteFile(prepared, []byte("partial decision"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := workflowV4StageDecisionArtifacts(work, files, draft); err != nil {
+		t.Fatalf("existing output should be retained for validation: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stage, "decision", "evidence", "review.md"), []byte("partial"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := workflowV4StageDecisionArtifacts(work, files, draft); err == nil {
+		t.Fatal("partial evidence was silently replaced")
+	}
 }
 
 func TestGuidedDecisionDerivesGOAndNOGOFromStructuredAnswers(t *testing.T) {

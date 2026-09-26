@@ -128,26 +128,32 @@ func TestDecisionGrantRejectsExpiredOrMismatchedBinding(t *testing.T) {
 	}
 }
 
-func TestDecisionGrantMustStayOutsideSignerWork(t *testing.T) {
+func TestDecisionGrantMustStayOutsideSignerMounts(t *testing.T) {
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	work := filepath.Join(root, "signer-work")
-	if err := os.Mkdir(work, 0700); err != nil {
+	keys := filepath.Join(root, "signer-keys")
+	trust := filepath.Join(root, "signer-trust")
+	for _, path := range []string{work, keys, trust} {
+		if err := os.Mkdir(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := workflowV4SignerGrantOutsideMounts(filepath.Join(root, "grant.json"), work, keys, trust); err != nil {
 		t.Fatal(err)
 	}
-	if err := workflowV4SignerGrantOutsideWork(filepath.Join(root, "grant.json"), work); err != nil {
-		t.Fatal(err)
-	}
-	if err := workflowV4SignerGrantOutsideWork(filepath.Join(work, "grant.json"), work); err == nil {
-		t.Fatal("grant inside signer work would enter the offline signing mount")
+	for _, mount := range []string{work, keys, trust} {
+		if err := workflowV4SignerGrantOutsideMounts(filepath.Join(mount, "grant.json"), work, keys, trust); err == nil {
+			t.Fatalf("grant inside signer mount %s accepted", mount)
+		}
 	}
 	link := filepath.Join(root, "link")
 	if err := os.Symlink(work, link); err != nil {
 		t.Fatal(err)
 	}
-	if err := workflowV4SignerGrantOutsideWork(filepath.Join(link, "grant.json"), work); err == nil {
+	if err := workflowV4SignerGrantOutsideMounts(filepath.Join(link, "grant.json"), work, keys, trust); err == nil {
 		t.Fatal("grant under symlink directory accepted")
 	}
 }
