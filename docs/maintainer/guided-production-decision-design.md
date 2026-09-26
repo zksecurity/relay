@@ -1,7 +1,9 @@
 # Guided V5 production decision
 
-Status: implemented in the draft Relay worktree; full two-host AWS and Linux
-ceremony qualification remains pending before release. The change affects the
+Status: decision questionnaire and decision-signature AWS handoff are implemented
+in the draft Relay worktree. The earlier release-review handoff remains an
+implementation gap, and full two-host AWS and Linux ceremony qualification
+remains pending before release. The change affects the
 coordinator and release-signer guides. It does not change the pinned proof-tool,
 the signed ceremony definition, or an existing prepared decision. The AWS
 handoff is transport, not a new approval or a substitute for signature checks.
@@ -480,6 +482,49 @@ and must not claim the archive is the latest decision. This later verifier
   guided-decision release.
 
 ## AWS handoff and recovery
+
+### Earlier release-review handoff (required before merge)
+
+The coordinator and release signer also exchange public files *before* the GO
+decision. Current V5 menus export a local public snapshot, require the offline
+signer to enter that directory, and import the signer's complete release package
+from another local directory. This is not the AWS decision handoff below. The
+first release must guide both transfers in `start.sh` so operators do not have
+to copy either directory manually.
+
+After the coordinator freezes its review, an online, keyless signer action must
+download the exact authenticated public snapshot from the configured AWS-backed
+public origin into a fresh bounded directory. The coordinator gives the signer
+the expected ceremony ID, coordinator-key fingerprint, signed update and
+checkpoint digest through the agreed independent channel. The download is
+transport only: the offline guide must still authenticate the signed history,
+all required hashes, the exact review checkpoint, and the already trusted
+coordinator key. It must reject a changed or partial retained snapshot and
+must not use an unqualified "latest" state as an approval. The snapshot is
+public, so it needs no private read grant; a grant must not be introduced merely
+to fetch public objects.
+
+After offline review and release signing, the signer exits the offline guide.
+An online, keyless `start.sh` action accepts a coordinator-issued temporary
+grant scoped to the exact signer, frozen review checkpoint, ceremony and one
+immutable release-package attempt. It checks the package's closed inventory
+and exact signed binding before uploading, uses resumable create-only delivery,
+and publishes the completion manifest last. The signing key and AWS grant must
+never share a container mount. The coordinator's `start.sh` fetches the exact
+attempt, verifies the signed release package, and records the final-release
+checkpoint. Keep the existing manual public-directory import as an explicit
+fallback; neither route may silently overwrite or replace a conflicting
+retained package. Expired grants can be renewed for the same immutable signed
+package without repeating offline signing.
+
+Reuse the existing release-grant/inbox verifier and upload-station delivery
+logic where their bindings match V5, but do not assume the legacy upload
+station's role setup or prompts are appropriate for the signer's `start.sh`.
+Test a real two-host menu path, wrong ceremony/signer/checkpoint/grant, partial
+downloads and uploads, hash or signature mismatch, restart after each boundary,
+grant renewal, conflicting direct import, and proof that no signing key or AWS
+credential enters the wrong container. The earlier release handoff is a
+separate qualification gate from the GO-decision handoff.
 
 The first release adds the signer packet display and AWS return path to both
 guides. The signer online transport action uses only the coordinator-issued
