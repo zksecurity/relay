@@ -612,6 +612,15 @@ func (p *rolePreparer) menu() error {
 		if p.d.Role != "upload-station" {
 			fmt.Fprintln(p.ui.output, "7) Prepare, review and sign MY enrollment (after receiving the signed definition)")
 			fmt.Fprintln(p.ui.output, "9) Send my public identity to the coordinator\n10) Send my public enrollment folder to the coordinator")
+			if p.d.Role == "release-signer" && regularPreparationFile(filepath.Join(p.d.Work, "ceremony", "public", "ceremony.json")) {
+				fmt.Fprintln(p.ui.output, "11) Transfer GO decision public files through AWS (online, keyless)")
+			}
+			if p.d.Role == "release-signer" && regularPreparationFile(filepath.Join(p.d.Keys, "identity.json")) && workflowV4ReleaseHandoffSetupAvailable(p.d.Work) {
+				fmt.Fprintln(p.ui.output, "12) Download the public release-review snapshot from AWS (online, keyless)")
+				if regularPreparationFile(filepath.Join(p.d.Work, "workflow-v4", "release", workflowV4ReleasePackageDir, "manifest.sig")) {
+					fmt.Fprintln(p.ui.output, "13) Upload my signed public release package through AWS (online, keyless)")
+				}
+			}
 		}
 		fmt.Fprintln(p.ui.output, "8) Show all setup steps (including those that do not apply)\n[E] Export bug report\n0) Save and exit")
 		choice, err := p.ui.ask("Choose", next.choice)
@@ -651,6 +660,35 @@ func (p *rolePreparer) menu() error {
 			err = p.reportPublicHandoff("identity")
 		case "10":
 			err = p.reportPublicHandoff("enrollment")
+		case "11":
+			if p.d.Role != "release-signer" || !regularPreparationFile(filepath.Join(p.d.Work, "ceremony", "public", "ceremony.json")) {
+				err = errors.New("online GO decision handoff applies only to the release signer")
+			} else {
+				err = workflowV4WithSignerTransferLock(p.d.Work, func() error {
+					return runWorkflowV4SignerDecisionHandoff(&p.ui, p.d.Work, p.d.Keys, p.d.Trust)
+				})
+			}
+		case "12":
+			if p.d.Role != "release-signer" || !regularPreparationFile(filepath.Join(p.d.Keys, "identity.json")) || !workflowV4ReleaseHandoffSetupAvailable(p.d.Work) {
+				err = errors.New("release snapshot download requires a prepared release-signer identity")
+			} else {
+				err = workflowV4WithSignerTransferLock(p.d.Work, func() error {
+					return workflowV4SignerDownloadReleaseSnapshot(&p.ui, p.d.Work)
+				})
+			}
+		case "13":
+			if p.d.Role != "release-signer" || !workflowV4ReleaseHandoffSetupAvailable(p.d.Work) || !regularPreparationFile(filepath.Join(p.d.Work, "workflow-v4", "release", workflowV4ReleasePackageDir, "manifest.sig")) {
+				err = errors.New("release upload requires an already-signed public package")
+			} else {
+				profile, profileErr := p.profile("release-signer")
+				if profileErr != nil {
+					err = profileErr
+				} else {
+					err = workflowV4WithSignerTransferLock(p.d.Work, func() error {
+						return workflowV4SignerUploadReleasePackage(&p.ui, profile, p.d.Keys)
+					})
+				}
+			}
 		case "8":
 			for n, label := range []string{"Prepare approved images", "Generate/review MY identity", "Import a public file", "Create a phase profile", "Open the ceremony workflow", "Show folders and requirements", "Prepare and sign MY enrollment"} {
 				status := "Applies; prerequisites may still be missing"

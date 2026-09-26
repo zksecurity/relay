@@ -203,6 +203,10 @@ func runWorkflowV4PrepareTrialArchive(ui *coordinatorWizard, online guidedProfil
 	if outcome.Decision != "NO-GO" && outcome.Decision != "GO" {
 		return errors.New("verified production decision has no supported outcome")
 	}
+	guided := workflowV4GuidedDecisionActive(online.Work)
+	if guided && outcome.Decision == "NO-GO" && !slices.Contains(signatures, "decision/coordinator.sig") {
+		return errors.New("guided NO-GO requires the coordinator's exact decision signature")
+	}
 	var binding struct {
 		Release struct {
 			ReleaseID              string                        `json:"release_id"`
@@ -243,6 +247,11 @@ func runWorkflowV4PrepareTrialArchive(ui *coordinatorWizard, online guidedProfil
 		if err := workflowV4ArchivePlaceholdersMatchCurrent(retainedManifest, m, root); err != nil {
 			return fmt.Errorf("retained public archive differs from current public handoff: %w", err)
 		}
+		if guided {
+			if err := workflowV4VerifyGuidedArchive(online, out, m, root); err != nil {
+				return err
+			}
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	} else {
@@ -262,6 +271,11 @@ func runWorkflowV4PrepareTrialArchive(ui *coordinatorWizard, online guidedProfil
 		if err := packCeremony(online.Work, packed, m); err != nil {
 			return err
 		}
+		if guided {
+			if err := workflowV4VerifyGuidedArchive(online, packed, m, root); err != nil {
+				return err
+			}
+		}
 		if err := os.Link(packed, out); err != nil {
 			return fmt.Errorf("retain complete public archive without replacement: %w", err)
 		}
@@ -274,10 +288,55 @@ func runWorkflowV4PrepareTrialArchive(ui *coordinatorWizard, online guidedProfil
 		return err
 	}
 	if outcome.Decision == "NO-GO" {
+		if guided {
+			fmt.Fprintf(ui.output, "Signed NO-GO evidence archive: %s\nSHA-256: %s\nShare only as NO-GO evidence; no production approval exists.\n", out, digest)
+			return nil
+		}
 		fmt.Fprintf(ui.output, "NO-GO trial archive: %s\nSHA-256: %s\nChoose T to publish this exact trial archive. It must never be presented as an approved production release.\n", out, digest)
 		return nil
 	}
+	if guided {
+		fmt.Fprintf(ui.output, "Signed GO archive: %s\nSHA-256: %s\nShare this exact archive by the chosen public channel. A verifier must independently compare its ceremony ID. No separate publication signature or pointer is required.\n", out, digest)
+		return nil
+	}
 	fmt.Fprintf(ui.output, "GO archive: %s\nSHA-256: %s\nChoose A to review and sign its publication authorization. No coordinator key was used to pack this archive.\n", out, digest)
+	return nil
+}
+
+func workflowV4VerifyGuidedArchive(online guidedProfile, archive string, expected verification.Manifest, currentRoot string) error {
+	before, size, err := workflowV4FileSHA256(archive, 1<<40)
+	if err != nil {
+		return err
+	}
+	root, actual, err := verification.Extract(archive, 1<<40)
+	if err != nil {
+		return fmt.Errorf("extract staged guided archive: %w", err)
+	}
+	defer os.RemoveAll(root)
+	if !workflowV4ArchiveMatchesExpected(actual, expected) {
+		return errors.New("extracted guided archive differs from authenticated inventory")
+	}
+	if err := workflowV4ArchivePlaceholdersMatchCurrent(actual, expected, currentRoot); err != nil {
+		return err
+	}
+	if actual.Decision == nil {
+		return errors.New("guided archive lacks a decision")
+	}
+	proof := online
+	proof.Work = root
+	proof.Keys = ""
+	proof.Credentials = ""
+	command := []string{"mpc-ceremony", "decision", "verify", "--ceremony", "/work/ceremony/public/ceremony.json", "--ceremony-signature", "/work/ceremony/public/ceremony.sig", "--coordinator-public-key-file", "/trust/setup-coordinator.hex", "--decision", "/work/" + actual.Decision.Record, "--evidence-root", "/work/" + actual.Decision.EvidenceRoot}
+	for _, name := range actual.Decision.Signatures {
+		command = append(command, "--signature", "/work/"+name)
+	}
+	if err := runWorkflowV4ProfileCommand(proof, command, false); err != nil {
+		return fmt.Errorf("verify extracted guided decision: %w", err)
+	}
+	after, afterSize, err := workflowV4FileSHA256(archive, 1<<40)
+	if err != nil || after != before || afterSize != size {
+		return errors.New("guided archive changed during extracted-byte verification")
+	}
 	return nil
 }
 

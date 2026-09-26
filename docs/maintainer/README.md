@@ -11,6 +11,7 @@ These references support release engineering, profile preparation, and recovery.
 | Try the coordinator setup UI locally | [Local coordinator test](local-coordinator.md) |
 | Review/test the guided role workflows | [Workflow review](role-workflow-review.md) |
 | Implement the agreed guided-journey redesign | [Journey design](guided-journey-design.md) |
+| Guide the V5 GO/NO-GO questionnaire and decision | [Production decision design](guided-production-decision-design.md) |
 | Design storage-first ceremony synchronization | [Storage-first workflow](storage-first-ceremony-design.md) |
 | Review final verification and release-signer trust | [Release verification](release-verification-trust-model.md) |
 | Implement the trusted coordinator and storage model | [Next implementation](trusted-services-implementation-plan.md) |

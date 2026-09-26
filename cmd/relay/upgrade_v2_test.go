@@ -81,6 +81,19 @@ func TestUpgradeV2BindsAuthenticatedV5CoordinatorProtocol(t *testing.T) {
 	}
 }
 
+func TestUpgradeV2BindsAuthenticatedV5ReleaseSignerProtocol(t *testing.T) {
+	_, d := testUpgradeV2(t, "release-signer")
+	d.Schema = upgrade.OperatorTransitionSchema
+	d.QualificationSHA256 = ""
+	d.SafePredecessors = nil
+	if err := upgradeV2BindAuthenticatedProtocol(&d, "proof-tool-mpc-ceremony-definition-v5"); err != nil {
+		t.Fatal(err)
+	}
+	if d.OnlineImage != "" {
+		t.Fatal("release-signer update selected another Docker image")
+	}
+}
+
 func TestUpgradeV2PreservesInterruptedContributionAndHighWater(t *testing.T) {
 	s, d := testUpgradeV2(t, "participant")
 	protocol, b := workflowV4TestBinding(t)

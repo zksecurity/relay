@@ -101,7 +101,11 @@ func runWorkflowV4FinalReleaseLifecycle(ui *coordinatorWizard, snapshot storagef
 		if err := ui.confirm("Authenticate the downloaded package against the signed release-signer assignment and frozen coordinator review, then record it", "VERIFY AND RECORD RELEASE"); err != nil {
 			return err
 		}
-		if err := runWorkflowV4VerifyReleasePackage(online, received, expected.Identity.KeyID); err != nil {
+		verifyReceived := runWorkflowV4VerifyReleasePackage
+		if workflowV4CoordinatorDirectRelease(protocol) {
+			verifyReceived = workflowV4VerifyClosedReleasePackage
+		}
+		if err := verifyReceived(online, received, expected.Identity.KeyID); err != nil {
 			return err
 		}
 		if err := os.MkdirAll(filepath.Dir(releaseDir), 0o700); err != nil {

@@ -142,8 +142,8 @@ func runCeremonyUpgradeV2(args []string) error {
 	if source == targetCommit {
 		return errors.New("this application is already the original release")
 	}
-	if *approval == "" && (p.Role != "coordinator" || setup != nil) {
-		return errors.New("operator-selected upgrades currently require an initialized coordinator; other roles retain their existing qualified upgrade path")
+	if *approval == "" && (setup != nil || (p.Role != "coordinator" && p.Role != "release-signer")) {
+		return errors.New("operator-selected upgrades require an initialized coordinator or release signer; other roles retain their existing qualified upgrade path")
 	}
 	fmt.Fprintln(os.Stdout, "Exit every Relay session normally first. If a process was killed or a child may still be running, cancel and resolve that with the original runtime. Do not run other commands during this update. Have all sessions exited normally?")
 	if err := confirmGuided(os.Stdin, os.Stdout); err != nil {

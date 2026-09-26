@@ -101,3 +101,23 @@ func (c Client) putMultipartNoReplace(file *os.File, size int64, key, work strin
 	completed = true
 	return nil
 }
+
+// ProbeMultipartWrite checks that the chosen credential can start and abort a
+// multipart upload at this exact key. It creates no public object and must
+// finish before the human publication confirmation is requested.
+func (c Client) ProbeMultipartWrite(key string) error {
+	raw, err := c.run("create-multipart-upload", "--bucket", c.Bucket, "--key", key, "--output", "json")
+	if err != nil {
+		return fmt.Errorf("probe publication upload access: %w", err)
+	}
+	var created struct {
+		UploadID string `json:"UploadId"`
+	}
+	if json.Unmarshal(raw, &created) != nil || created.UploadID == "" {
+		return errors.New("publication access probe did not return an upload ID")
+	}
+	if _, err := c.run("abort-multipart-upload", "--bucket", c.Bucket, "--key", key, "--upload-id", created.UploadID); err != nil {
+		return fmt.Errorf("could not abort publication access probe: %w", err)
+	}
+	return nil
+}

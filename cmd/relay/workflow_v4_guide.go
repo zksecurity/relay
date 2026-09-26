@@ -352,7 +352,7 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 					} else if releaseProgress.PackageReady {
 						actionLabel = ""
 						if workflowV4CoordinatorDirectRelease(protocol) {
-							fmt.Fprintf(ui.output, "Transfer only the signed public package directory to the coordinator's online workspace: %s\nKeep your signing key offline.\n", releaseProgress.PackageDir)
+							fmt.Fprintf(ui.output, "Signed public package: %s\nSave and exit while offline. After reconnecting, choose setup action 13 to upload it with the coordinator's temporary grant. Manual public-directory transfer remains available. Keep your signing key private.\n", releaseProgress.PackageDir)
 						} else {
 							fmt.Fprintf(ui.output, "Transfer only the signed public package directory to the online upload workspace: %s\nKeep your signing key offline.\n", releaseProgress.PackageDir)
 						}
@@ -436,7 +436,7 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 						return grantErr
 					}
 					if errors.Is(importErr, os.ErrNotExist) && errors.Is(releaseErr, os.ErrNotExist) && !hasGrant {
-						actionLabel = ""
+						actionLabel = "Create a private upload grant for the release signer's public package"
 					}
 				}
 			}
@@ -455,6 +455,7 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 			}
 			if c, e := snapshot.State(); e == nil && c.Progress.ReleaseReview != nil && c.Progress.FinalRelease == nil {
 				if workflowV4CoordinatorDirectRelease(protocol) {
+					fmt.Fprintln(ui.output, "[H] Publish the exact release-review snapshot through AWS")
 					fmt.Fprintln(ui.output, "[U] Import the offline signer's returned public release package")
 				} else {
 					fmt.Fprintln(ui.output, "[U] Upload the offline signer's returned public release package")
@@ -469,11 +470,15 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 		if decisionAvailable {
 			fmt.Fprintln(ui.output, "[D] Production GO/NO-GO decision (separate from release signing)")
 			if p.Role == "coordinator" {
-				fmt.Fprintln(ui.output, "[P] Verify signed decision and pack its exact public archive")
-				fmt.Fprintln(ui.output, "[A] Review and sign GO publication authorization (network-disabled container)")
-				fmt.Fprintln(ui.output, "[G] Publish prepared signed GO and approved pointer")
-				fmt.Fprintln(ui.output, "[T] Publish prepared NO-GO trial archive")
-				fmt.Fprintln(ui.output, "[V] Independently read back an officially published GO release")
+				if workflowV4GuidedDecisionActive(p.Work) {
+					fmt.Fprintln(ui.output, "Guided decision: choose D → 3 to verify signatures and pack the exact archive. No official-publication pointer is required.")
+				} else {
+					fmt.Fprintln(ui.output, "[P] Verify signed decision and pack its exact public archive")
+					fmt.Fprintln(ui.output, "[A] Review and sign GO publication authorization (network-disabled container)")
+					fmt.Fprintln(ui.output, "[G] Publish prepared signed GO and approved pointer")
+					fmt.Fprintln(ui.output, "[T] Publish prepared NO-GO trial archive")
+					fmt.Fprintln(ui.output, "[V] Independently read back an officially published GO release")
+				}
 			}
 		}
 		limits, limitsErr := resolvedDockerRuntimeLimits(p.Resources)
@@ -487,7 +492,19 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 			return err
 		}
 		switch strings.ToUpper(strings.TrimSpace(answer)) {
+		case "H":
+			if p.Role != "coordinator" || snapshot.Checked() == 0 || !workflowV4CoordinatorDirectRelease(protocol) {
+				fmt.Fprintln(ui.output, "A verified V5 coordinator release review is required.")
+				continue
+			}
+			if err := runWorkflowV4PublishReleaseSnapshot(ui, p, protocol, snapshot); err != nil {
+				ui.message(toneError, "Release snapshot handoff stopped: %v\n", err)
+			}
 		case "A":
+			if workflowV4GuidedDecisionActive(p.Work) {
+				fmt.Fprintln(ui.output, "This guided decision uses the exact signed archive, without a separate publication authorization.")
+				continue
+			}
 			if !decisionAvailable || p.Role != "coordinator" {
 				fmt.Fprintln(ui.output, "A signed final release and coordinator role are required.")
 				continue
@@ -496,6 +513,10 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 				ui.message(toneError, "GO authorization stopped: %v\nRetained files were preserved for review.\n", err)
 			}
 		case "G":
+			if workflowV4GuidedDecisionActive(p.Work) {
+				fmt.Fprintln(ui.output, "This guided decision does not create an official-publication pointer.")
+				continue
+			}
 			if !decisionAvailable || p.Role != "coordinator" {
 				fmt.Fprintln(ui.output, "A signed final release and coordinator role are required.")
 				continue
@@ -504,6 +525,10 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 				ui.message(toneError, "GO publication stopped: %v\nRetained files were preserved; inspect them before retrying.\n", err)
 			}
 		case "T":
+			if workflowV4GuidedDecisionActive(p.Work) {
+				fmt.Fprintln(ui.output, "The guided decision archive is prepared through D → 3; share that exact archive by the chosen public channel.")
+				continue
+			}
 			if !decisionAvailable || p.Role != "coordinator" {
 				fmt.Fprintln(ui.output, "A signed final release and coordinator role are required.")
 				continue
@@ -512,6 +537,10 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 				ui.message(toneError, "NO-GO trial publication stopped: %v\nRetained files were preserved; inspect them before retrying.\n", err)
 			}
 		case "V":
+			if workflowV4GuidedDecisionActive(p.Work) {
+				fmt.Fprintln(ui.output, "Use relay verify-ceremony --archive on the exact guided decision archive and compare its ceremony ID independently.")
+				continue
+			}
 			if !decisionAvailable || p.Role != "coordinator" {
 				fmt.Fprintln(ui.output, "A signed final release and coordinator role are required.")
 				continue
@@ -521,6 +550,10 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 				ui.message(toneError, "Official GO readback stopped: %v\n", err)
 			}
 		case "P":
+			if workflowV4GuidedDecisionActive(p.Work) {
+				fmt.Fprintln(ui.output, "Choose D → 3 for this guided decision.")
+				continue
+			}
 			if !decisionAvailable || p.Role != "coordinator" {
 				fmt.Fprintln(ui.output, "A signed final release and coordinator role are required.")
 				continue
@@ -533,7 +566,7 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 				fmt.Fprintln(ui.output, "A signed final release in an authenticated V5 production ceremony is required.")
 				continue
 			}
-			if err := runWorkflowV4DecisionMenu(ui, p, signer, identity, protocol); err != nil {
+			if err := runWorkflowV4DecisionMenu(ui, p, signer, identity, protocol, &snapshot); err != nil {
 				ui.message(toneError, "Production decision action stopped: %v\nRetained files were preserved; no signing is automatically repeated.\n", err)
 			}
 			continue

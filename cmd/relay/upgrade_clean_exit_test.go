@@ -111,3 +111,55 @@ func TestCleanExitRejectsRetainedReleaseHandoff(t *testing.T) {
 		t.Fatal("accepted an unresolved release handoff")
 	}
 }
+
+func TestReleaseSignerUpgradeRequiresCompletedLocalWork(t *testing.T) {
+	s, d := testUpgradeV2(t, "release-signer")
+	d.Schema = upgrade.OperatorTransitionSchema
+	d.Protocol = "proof-tool-mpc-ceremony-definition-v5"
+	d.QualificationSHA256 = ""
+	d.SafePredecessors = nil
+	if err := upgradeRequireSignerCleanExit(s.Profile, d); err == nil {
+		t.Fatal("accepted signer workspace without a journal")
+	}
+	protocol, binding := workflowV4TestBinding(t)
+	binding.Name = s.Profile.Name
+	binding.Role = "release-signer"
+	binding.IdentityID = "release-signer-test"
+	binding.Work = s.Profile.Work
+	for kind, runtime := range binding.Runtimes {
+		runtime.Mounts["/work"] = s.Profile.Work
+		binding.Runtimes[kind] = runtime
+	}
+	j, err := openWorkflowV4Journal(protocol, protocol.DefinitionRefs, binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := j.close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := upgradeRequireSignerCleanExit(s.Profile, d); err == nil {
+		t.Fatal("accepted signer workspace without a completed activity log")
+	}
+	if err := appendAuditActivity(diagnosticContext{Work: s.Profile.Work, Role: "release-signer"}, "completed", nil, "setup"); err != nil {
+		t.Fatal(err)
+	}
+	if err := upgradeRequireSignerCleanExit(s.Profile, d); err != nil {
+		t.Fatalf("rejected normally closed signer workspace: %v", err)
+	}
+	imported := filepath.Join(s.Profile.Work, "incoming-definition")
+	if err := os.Mkdir(imported, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(imported, "ceremony.json"), []byte("public handoff"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := upgradeRequireSignerCleanExit(s.Profile, d); err != nil {
+		t.Fatalf("rejected inventoried public signer handoff: %v", err)
+	}
+	if err := appendAuditActivity(diagnosticContext{Work: s.Profile.Work, Role: "release-signer"}, "started", nil, strings.Repeat("1", 32)); err != nil {
+		t.Fatal(err)
+	}
+	if err := upgradeRequireSignerCleanExit(s.Profile, d); err == nil {
+		t.Fatal("accepted unfinished signer activity")
+	}
+}

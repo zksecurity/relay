@@ -121,7 +121,7 @@ func (d DeclarationV2) Validate() error {
 	if !validImage(d.OriginalImage, imageRole) || !validImage(d.SigningImage, "relay-role-offline") || !digestPattern.MatchString(d.ProofToolSHA256) {
 		return errors.New("missing immutable runtime or qualification binding")
 	}
-	protocolSupported := d.Protocol == "proof-tool-mpc-ceremony-definition-v4" || (d.Role == "coordinator" && d.Protocol == "proof-tool-mpc-ceremony-definition-v5")
+	protocolSupported := d.Protocol == "proof-tool-mpc-ceremony-definition-v4" || ((d.Role == "coordinator" || d.Role == "release-signer") && d.Protocol == "proof-tool-mpc-ceremony-definition-v5")
 	if !protocolSupported || d.StorageLayout != "storage-first-v2" || d.ProfileSchema != "relay-guided-role-v1" || d.JournalSchema != "relay-workflow-v4-state-v1" {
 		return errors.New("unsupported upgrade format")
 	}

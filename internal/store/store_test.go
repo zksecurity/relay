@@ -1,11 +1,43 @@
 package store
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestBoundCredentialProviderIgnoresAmbientAWSProfile(t *testing.T) {
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args")
+	envPath := filepath.Join(dir, "env")
+	bin := filepath.Join(dir, "aws")
+	script := `#!/bin/sh
+printf '%s\n' "$@" > "$RELAY_TEST_ARGS"
+printf '%s\n%s\n%s\n%s\n' "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$AWS_SESSION_TOKEN" "$AWS_PROFILE" > "$RELAY_TEST_ENV"
+`
+	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RELAY_TEST_ARGS", argsPath)
+	t.Setenv("RELAY_TEST_ENV", envPath)
+	t.Setenv("AWS_PROFILE", "wrong-host-profile")
+	client := Client{Binary: bin, Region: "us-east-1", CredentialProvider: func(context.Context) (*Credentials, error) {
+		return &Credentials{AccessKeyID: "bound-key", SecretAccessKey: "bound-secret", SessionToken: "bound-token"}, nil
+	}}
+	if _, err := client.RunAWS("sts", "get-caller-identity"); err != nil {
+		t.Fatal(err)
+	}
+	args, _ := os.ReadFile(argsPath)
+	env, _ := os.ReadFile(envPath)
+	if string(args) != "sts\nget-caller-identity\n" || string(env) != "bound-key\nbound-secret\nbound-token\n\n" {
+		t.Fatalf("wrong bound AWS call: args=%q env=%q", args, env)
+	}
+	if _, err := client.RunAWS("--profile", "wrong-host-profile", "sts", "get-caller-identity"); err == nil {
+		t.Fatal("accepted host profile override of bound login")
+	}
+}
 
 func TestTemporaryCredentialsReachOnlyChildEnvironment(t *testing.T) {
 	dir := t.TempDir()

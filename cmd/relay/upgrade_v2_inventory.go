@@ -108,13 +108,17 @@ func upgradeV2Inventory(p guidedProfile, d upgrade.DeclarationV2) (upgradeInvent
 			}
 			return nil
 		}
-		if !allowed[first] && first != diagnosticDirectory {
+		// Signer setup imports public files into named handoff folders. Include
+		// every byte in the inventory rather than rejecting an ordinary
+		// completed v0.6.0 signer workspace at the upgrade boundary.
+		signerHandoff := p.Role == "release-signer" && (strings.HasPrefix(first, "incoming-") || strings.HasPrefix(first, "ceremony-import-"))
+		if !allowed[first] && first != diagnosticDirectory && !signerHandoff {
 			return fmt.Errorf("unrecognized retained workspace entry %q; preserve it for review", first)
 		}
 		if first == "workflow-v4" {
 			parts := strings.Split(rel, "/")
 			if len(parts) > 1 {
-				known := map[string]bool{"resources": true, "role-launches": true, "state.json": true, "coordinator": true, "release": true, "beacons": true, "scopes": true, "commits": true, "inputs": true, "results": true, "temporary": true, "staging": true, ".relay-workspace.lock": true}
+				known := map[string]bool{"resources": true, "role-launches": true, "state.json": true, "coordinator": true, "release": true, "decision": true, "beacons": true, "scopes": true, "commits": true, "inputs": true, "results": true, "temporary": true, "staging": true, ".relay-workspace.lock": true}
 				name := parts[1]
 				if !known[name] && !(len(parts) == 2 && strings.HasSuffix(name, ".json") && (strings.HasPrefix(name, "contributor-") || strings.HasPrefix(name, "execution-"))) {
 					return fmt.Errorf("unknown retained workflow state %q", name)
