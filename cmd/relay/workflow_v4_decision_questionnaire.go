@@ -169,6 +169,9 @@ func workflowV4LoadDecisionAnswers(work string, binding workflowV4DecisionAnswer
 }
 
 func workflowV4AskDecisionAnswer(ui *coordinatorWizard, work string, answers *workflowV4DecisionAnswers, key, prompt string, choices []string) error {
+	if len(choices) != 0 {
+		prompt += " (" + strings.Join(choices, " / ") + ")"
+	}
 	value, err := ui.ask(prompt, answers.Answers[key])
 	if err != nil {
 		return err
@@ -177,8 +180,18 @@ func workflowV4AskDecisionAnswer(ui *coordinatorWizard, work string, answers *wo
 	if value == "" || len(value) > 4096 {
 		return fmt.Errorf("answer %s must be nonempty and at most 4096 bytes", key)
 	}
-	if len(choices) != 0 && !slices.Contains(choices, value) {
-		return fmt.Errorf("answer %s must be one of %s", key, strings.Join(choices, ", "))
+	if len(choices) != 0 {
+		matched := false
+		for _, choice := range choices {
+			if strings.EqualFold(value, choice) {
+				value = choice
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return fmt.Errorf("answer %s must be one of %s", key, strings.Join(choices, ", "))
+		}
 	}
 	answers.Answers[key] = value
 	return saveJSONAtomic(workflowV4QuestionnairePath(work), answers)
