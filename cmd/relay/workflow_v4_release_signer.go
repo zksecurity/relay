@@ -212,6 +212,10 @@ func runWorkflowV4ReleaseUpload(ui *coordinatorWizard, snapshot storagefirst.Sna
 	if err != nil {
 		return err
 	}
+	return runWorkflowV4ReleaseUploadWithGrant(ui, snapshot, protocol, config, online, identity, keyID, progress, grant)
+}
+
+func runWorkflowV4ReleaseUploadWithGrant(ui *coordinatorWizard, snapshot storagefirst.SnapshotV4, protocol transcript.DefinitionProtocol, config access.StorageConfig, online guidedProfile, identity, keyID string, progress workflowV4ReleaseSignerProgress, grant access.StorageFirstGrant) error {
 	destination := storagefirst.GrantDestination{Provider: config.Provider, Endpoint: config.Endpoint, Region: config.Region, InboxBucket: config.InboxBucket}
 	if err := storagefirst.ValidateReleaseGrantV4At(snapshot, protocol, identity, grant, destination, time.Now().UTC()); err != nil {
 		return err

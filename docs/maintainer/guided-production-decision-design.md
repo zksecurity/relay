@@ -1,9 +1,9 @@
 # Guided V5 production decision
 
-Status: decision questionnaire and decision-signature AWS handoff are implemented
-in the draft Relay worktree. The earlier release-review handoff remains an
-implementation gap, and full two-host AWS and Linux ceremony qualification
-remains pending before release. The change affects the
+Status: decision questionnaire, decision-signature AWS handoff, and the earlier
+release-review snapshot/package handoff are implemented in the draft Relay
+worktree. Full two-host AWS and Linux ceremony qualification remains pending
+before release. The change affects the
 coordinator and release-signer guides. It does not change the pinned proof-tool,
 the signed ceremony definition, or an existing prepared decision. The AWS
 handoff is transport, not a new approval or a substitute for signature checks.
@@ -483,14 +483,13 @@ and must not claim the archive is the latest decision. This later verifier
 
 ## AWS handoff and recovery
 
-### Earlier release-review handoff (required before merge)
+### Earlier release-review handoff
 
 The coordinator and release signer also exchange public files *before* the GO
-decision. Current V5 menus export a local public snapshot, require the offline
-signer to enter that directory, and import the signer's complete release package
-from another local directory. This is not the AWS decision handoff below. The
-first release must guide both transfers in `start.sh` so operators do not have
-to copy either directory manually.
+decision. The draft menus add a public AWS release-review snapshot transfer and
+a private-grant signed-package return. The existing local directory handoff is
+retained for recovery. These transfers are separate from the AWS decision
+handoff below and still require two-host qualification before merge.
 
 After the coordinator freezes its review, an online, keyless signer action must
 download the exact authenticated public snapshot from the configured AWS-backed

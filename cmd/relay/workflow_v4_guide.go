@@ -352,7 +352,7 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 					} else if releaseProgress.PackageReady {
 						actionLabel = ""
 						if workflowV4CoordinatorDirectRelease(protocol) {
-							fmt.Fprintf(ui.output, "Transfer only the signed public package directory to the coordinator's online workspace: %s\nKeep your signing key offline.\n", releaseProgress.PackageDir)
+							fmt.Fprintf(ui.output, "Signed public package: %s\nSave and exit while offline. After reconnecting, choose setup action 13 to upload it with the coordinator's temporary grant. Manual public-directory transfer remains available. Keep your signing key private.\n", releaseProgress.PackageDir)
 						} else {
 							fmt.Fprintf(ui.output, "Transfer only the signed public package directory to the online upload workspace: %s\nKeep your signing key offline.\n", releaseProgress.PackageDir)
 						}
@@ -436,7 +436,7 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 						return grantErr
 					}
 					if errors.Is(importErr, os.ErrNotExist) && errors.Is(releaseErr, os.ErrNotExist) && !hasGrant {
-						actionLabel = ""
+						actionLabel = "Create a private upload grant for the release signer's public package"
 					}
 				}
 			}
@@ -455,6 +455,7 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 			}
 			if c, e := snapshot.State(); e == nil && c.Progress.ReleaseReview != nil && c.Progress.FinalRelease == nil {
 				if workflowV4CoordinatorDirectRelease(protocol) {
+					fmt.Fprintln(ui.output, "[H] Publish the exact release-review snapshot through AWS")
 					fmt.Fprintln(ui.output, "[U] Import the offline signer's returned public release package")
 				} else {
 					fmt.Fprintln(ui.output, "[U] Upload the offline signer's returned public release package")
@@ -491,6 +492,14 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 			return err
 		}
 		switch strings.ToUpper(strings.TrimSpace(answer)) {
+		case "H":
+			if p.Role != "coordinator" || snapshot.Checked() == 0 || !workflowV4CoordinatorDirectRelease(protocol) {
+				fmt.Fprintln(ui.output, "A verified V5 coordinator release review is required.")
+				continue
+			}
+			if err := runWorkflowV4PublishReleaseSnapshot(ui, p, protocol, snapshot); err != nil {
+				ui.message(toneError, "Release snapshot handoff stopped: %v\n", err)
+			}
 		case "A":
 			if workflowV4GuidedDecisionActive(p.Work) {
 				fmt.Fprintln(ui.output, "This guided decision uses the exact signed archive, without a separate publication authorization.")

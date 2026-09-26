@@ -18,6 +18,14 @@ reviews and signs offline. Object
 hashes and the final checkpoint are checked during transfer; pinned proof-tool
 verification remains required before the signature counts.
 
+Before release signing, the coordinator can publish the frozen public review
+snapshot through AWS. The signer downloads and hash-checks it from the public
+origin in a keyless `start.sh` action, then authenticates and signs it offline.
+After signing, another keyless action uploads only the verified public release
+package with a temporary grant scoped to that signer and review checkpoint.
+The coordinator fetches and verifies that package before recording the release.
+The existing public-directory handoff remains available for recovery.
+
 Host-side AWS calls for decision transfer and publication use the coordinator's
 reviewed login binding instead of assuming its container-only profile exists on
 the host. The legacy GO publication action checks access to the exact archive
