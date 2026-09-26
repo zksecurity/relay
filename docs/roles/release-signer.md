@@ -20,8 +20,11 @@ authenticated source checkout.
    This role does not need a transport profile.
 
 Prepared actions do not download images or contact GitHub. Do not choose image
-preparation again while operating offline. Never bring storage credentials
-or an online upload profile onto the signing machine.
+preparation again while operating offline. The GO decision handoff uses a
+separate online, keyless `start.sh` action with temporary grants kept outside
+the signing work, key, and trust folders. Exit that action and disconnect the
+host before reviewing or signing. An existing V5 signer can follow the
+[release-signer update guide](../release-signer-upgrade.md) to add this menu.
 
 ## Follow the workflow
 

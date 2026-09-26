@@ -233,6 +233,12 @@ Both coordinator and release signer need the new Relay guide for the AWS path;
 the pinned proof-tool remains unchanged. The handoff is unavailable to old
 guides, which retain the manual public-file route. Frozen signed ceremony
 definitions and existing prepared decisions remain byte-for-byte unchanged.
+An existing V5 release signer may select the new launcher between completed
+operations through `ceremony upgrade --role release-signer`; it retains the
+original network-disabled signing image. The signer update refuses unfinished
+local actions and must pass an exact v0.6.0-to-target continuation test before
+use in an ongoing production ceremony. The coordinator selects its update
+separately. See [release-signer upgrade](../release-signer-upgrade.md).
 The AWS path requires the configured private inbox bucket and grant-role
 issuer. The coordinator issues exact scoped grants through `D → 6`; no signer
 AWS profile is required. The offline release-signer profile continues to

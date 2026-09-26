@@ -9,7 +9,9 @@ printed `start.sh` command; no settings-loading command is needed.
 Use the [ceremony flow map](ceremony-flow.md) to see how the role lanes and
 handoffs fit together before starting.
 
-For an existing ceremony, see [upgrade the coordinator CLI](coordinator-upgrade.md).
+For an existing ceremony, see [upgrade the coordinator CLI](coordinator-upgrade.md)
+or [update a V5 release signer](release-signer-upgrade.md) for the AWS decision
+handoff.
 
 | Your assignment | Guide |
 | --- | --- |

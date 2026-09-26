@@ -30,7 +30,9 @@ ceremony ID. Older pointer-based publication records remain verifiable.
 The setup contracts, signed ceremony format, and proof-tool pin are unchanged.
 The AWS decision handoff and report display require this Relay release on both
 the coordinator and release signer. Existing frozen ceremonies keep their
-original approved release and may use their supported upgrade process only
-between completed operations. Tessera does not need a schema change for this
+original approved release and may select coordinator and release-signer CLI
+updates separately between completed operations. The signer update retains the
+original network-disabled signing image and refuses incomplete local actions.
+Tessera does not need a schema change for this
 guided flow; it should treat the hosted archive and signed GO as historical
 approval, not as a claim that the archive is the latest ceremony state.

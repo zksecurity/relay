@@ -18,6 +18,9 @@ import (
 // Admission only: never call this when starting an already selected app or
 // repairing its start script. Those operations must preserve ordinary recovery.
 func upgradeRequireCleanExit(s upgradeSelectionV2, d upgrade.DeclarationV2, qualificationSchema string) error {
+	if s.Setup == nil && d.Role == "release-signer" && d.OperatorSelected() && d.OnlineImage == "" {
+		return upgradeRequireSignerCleanExit(s.Profile, d)
+	}
 	onlineReplacementAllowed := qualificationSchema == upgrade.OnlineCleanExitQualificationSchema || d.OperatorSelected()
 	if s.Setup != nil || d.Role != "coordinator" || (!onlineReplacementAllowed && d.OnlineImage != d.OriginalImage) {
 		return errors.New("this update supports only initialized coordinators with qualified online images")
@@ -151,6 +154,41 @@ func upgradeRequireCleanExit(s upgradeSelectionV2, d upgrade.DeclarationV2, qual
 	}
 	if recheck != nil {
 		return recheck()
+	}
+	return nil
+}
+
+// An offline signer has no coordinator high-water mark to replay. Require a
+// normally closed local journal and complete activity history, then retain an
+// exact inventory. The new launcher still uses the original signing image and
+// authenticates the signed definition before the next signer operation.
+func upgradeRequireSignerCleanExit(p guidedProfile, d upgrade.DeclarationV2) error {
+	if p.Role != "release-signer" || d.Role != p.Role || d.OnlineImage != "" {
+		return errors.New("signer update must retain the original signing runtime")
+	}
+	inv, err := upgradeV2Inventory(p, d)
+	if err != nil {
+		return err
+	}
+	if len(inv.Pending) != 0 {
+		return errors.New("finish or resolve the release-signer action using the current Relay before updating")
+	}
+	for _, gap := range inv.HistoryGaps {
+		if gap == "activity-log-missing" || gap == "partial-final-record" || gap == "actions-without-recorded-completion" {
+			return errors.New("finish or resolve incomplete release-signer activity using the current Relay before updating")
+		}
+	}
+	var journal workflowV4State
+	if err := readWorkflowV4JSON(filepath.Join(p.Work, "workflow-v4/state.json"), &journal); err != nil {
+		return fmt.Errorf("open release-signer journal before updating: %w", err)
+	}
+	if journal.Marker.Binding.Role != p.Role || journal.Marker.Binding.Work != p.Work || journal.Marker.Binding.Name != p.Name {
+		return errors.New("release-signer journal belongs to another profile")
+	}
+	for _, op := range journal.Operations {
+		if !workflowV4OperationResolved(op.Status) {
+			return errors.New("finish or resolve the release-signer action using the current Relay before updating")
+		}
 	}
 	return nil
 }

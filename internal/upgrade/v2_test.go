@@ -23,6 +23,24 @@ func TestV5CoordinatorUpgradePreservesProtocolBoundary(t *testing.T) {
 	}
 }
 
+func TestV5ReleaseSignerUpgradeKeepsOriginalRuntime(t *testing.T) {
+	d := fixtureV2()
+	d.Role = "release-signer"
+	d.Protocol = "proof-tool-mpc-ceremony-definition-v5"
+	d.OriginalImage = d.SigningImage
+	d.OnlineImage = ""
+	d.Schema = OperatorTransitionSchema
+	d.QualificationSHA256 = ""
+	d.SafePredecessors = nil
+	if err := d.Validate(); err != nil {
+		t.Fatalf("V5 signer upgrade rejected: %v", err)
+	}
+	d.OnlineImage = fixtureV2().OnlineImage
+	if err := d.Validate(); err == nil {
+		t.Fatal("signer upgrade changed the network-disabled runtime")
+	}
+}
+
 func TestV2RejectsUnsupportedAndAmbiguousAuthority(t *testing.T) {
 	d := fixtureV2()
 	raw, _ := json.Marshal(d)
