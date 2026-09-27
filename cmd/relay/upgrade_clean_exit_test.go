@@ -183,6 +183,35 @@ func TestCleanExitRejectsUnacceptedPublicOutput(t *testing.T) {
 	}
 }
 
+func TestUpgradeCompletedPreliminaryRequiresAcceptedKeys(t *testing.T) {
+	const prefix = "ceremony/public/final/preliminary/"
+	keys := []string{"ownership-destination.ccs", "ownership.pk", "ownership.vk", "cardano-vk.bin", "cardano-vk.hex", "cardano-vk-format.txt"}
+	other := []string{"preliminary-final-keys.json", "preliminary-final-keys.sig.json", "preliminary-checksums.sha256"}
+	var inv upgradeInventory
+	public := map[string]transcript.ArtifactRef{}
+	for _, name := range keys {
+		inv.Files = append(inv.Files, upgradeInventoryFile{Name: prefix + name, SHA256: strings.Repeat("a", 64), Size: 7})
+		public["final/candidate/"+name] = transcript.ArtifactRef{Name: "final/candidate/" + name, Digest: transcript.Digest{SHA256: "sha256:" + strings.Repeat("a", 64), Size: 7}}
+	}
+	for _, name := range other {
+		inv.Files = append(inv.Files, upgradeInventoryFile{Name: prefix + name, SHA256: strings.Repeat("b", 64), Size: 7})
+	}
+	if allowed, err := upgradeCompletedPreliminaryFiles(inv, public); err != nil || len(allowed) != 9 {
+		t.Fatalf("completed accepted tree refused: %d %v", len(allowed), err)
+	}
+	wrong := public["final/candidate/ownership.pk"]
+	wrong.Digest.SHA256 = "sha256:" + strings.Repeat("c", 64)
+	public["final/candidate/ownership.pk"] = wrong
+	if _, err := upgradeCompletedPreliminaryFiles(inv, public); err == nil {
+		t.Fatal("changed key matched accepted final candidate")
+	}
+	public["final/candidate/ownership.pk"] = transcript.ArtifactRef{Name: "final/candidate/ownership.pk", Digest: transcript.Digest{SHA256: "sha256:" + strings.Repeat("a", 64), Size: 7}}
+	inv.Files = append(inv.Files, upgradeInventoryFile{Name: prefix + "extra", SHA256: strings.Repeat("a", 64), Size: 7})
+	if _, err := upgradeCompletedPreliminaryFiles(inv, public); err == nil {
+		t.Fatal("unexpected preliminary file admitted")
+	}
+}
+
 func TestCleanExitRejectsRetainedReleaseHandoff(t *testing.T) {
 	p := guidedProfile{Work: t.TempDir()}
 	inv := upgradeInventory{Files: []upgradeInventoryFile{{Name: "workflow-v4/coordinator/release/grants/release.json"}}}

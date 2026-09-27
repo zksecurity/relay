@@ -306,6 +306,10 @@ func upgradeRequireSignerCleanExit(p guidedProfile, d upgrade.DeclarationV2) err
 
 func upgradeCheckCleanFiles(p guidedProfile, inv upgradeInventory, accepted map[string]transcript.CheckpointInspectionV4, public map[string]transcript.ArtifactRef) error {
 	root := filepath.Join(p.Work, "ceremony/public")
+	preliminary, err := upgradeCompletedPreliminaryFiles(inv, public)
+	if err != nil {
+		return err
+	}
 	for _, f := range inv.Files {
 		path := filepath.Join(p.Work, filepath.FromSlash(f.Name))
 		// Release grants and received release packages are cross-role handoffs.
@@ -315,6 +319,9 @@ func upgradeCheckCleanFiles(p guidedProfile, inv upgradeInventory, accepted map[
 			return errors.New("release handoff is still retained; finish or resolve it with the original Relay before updating")
 		}
 		if strings.HasPrefix(f.Name, "ceremony/public/") {
+			if preliminary[f.Name] {
+				continue
+			}
 			name := strings.TrimPrefix(f.Name, "ceremony/public/")
 			if name == "coordinator-public-key.hex" {
 				if !upgradeSamePublicKey(path, filepath.Join(p.Trust, "setup-coordinator.hex")) {
@@ -369,6 +376,46 @@ func upgradeCheckCleanFiles(p guidedProfile, inv upgradeInventory, accepted map[
 		}
 	}
 	return nil
+}
+
+// Finalization leaves its preliminary key tree in the public workspace, but
+// the accepted final candidate carries the authoritative copies. No later
+// ceremony action reads the preliminary tree. Admit its fixed historical file
+// set only after every key file matches the accepted candidate exactly; the
+// remaining metadata/checksum files are retained as unused local history.
+func upgradeCompletedPreliminaryFiles(inv upgradeInventory, public map[string]transcript.ArtifactRef) (map[string]bool, error) {
+	const prefix = "ceremony/public/final/preliminary/"
+	files := map[string]upgradeInventoryFile{}
+	for _, file := range inv.Files {
+		if strings.HasPrefix(file.Name, prefix) {
+			files[strings.TrimPrefix(file.Name, prefix)] = file
+		}
+	}
+	if len(files) == 0 {
+		return nil, nil
+	}
+	keys := []string{"ownership-destination.ccs", "ownership.pk", "ownership.vk", "cardano-vk.bin", "cardano-vk.hex", "cardano-vk-format.txt"}
+	other := []string{"preliminary-final-keys.json", "preliminary-final-keys.sig.json", "preliminary-checksums.sha256"}
+	if len(files) != len(keys)+len(other) {
+		return nil, errors.New("preliminary final-key tree is incomplete or has unexpected files")
+	}
+	allowed := map[string]bool{}
+	for _, name := range keys {
+		file, ok := files[name]
+		accepted, signed := public["final/candidate/"+name]
+		if !ok || !signed || accepted.Digest.SHA256 != "sha256:"+file.SHA256 || accepted.Digest.Size != file.Size {
+			return nil, fmt.Errorf("preliminary %s differs from the accepted final candidate", name)
+		}
+		allowed[prefix+name] = true
+	}
+	for _, name := range other {
+		file, ok := files[name]
+		if !ok || file.Size <= 0 || file.Size > 16<<20 {
+			return nil, fmt.Errorf("preliminary %s is missing or oversized", name)
+		}
+		allowed[prefix+name] = true
+	}
+	return allowed, nil
 }
 
 func upgradeSamePublicKey(a, b string) bool {
