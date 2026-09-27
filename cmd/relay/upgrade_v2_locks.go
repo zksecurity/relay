@@ -8,6 +8,11 @@ import (
 	"path/filepath"
 )
 
+type upgradeRelatedProfile struct {
+	dir     string
+	profile guidedProfile
+}
+
 // Old entry points lock either preparation or saved-profile activity, whereas
 // the storage-first guide locks Work. Hold all existing matching locks during
 // activation; otherwise an old enrollment helper can race the inventory.
@@ -58,6 +63,7 @@ func upgradeV2LockRelated(p guidedProfile, root, alreadyLocked string) (func(), 
 		release()
 		return nil, errors.New("too many saved profiles to inventory safely")
 	}
+	var related []upgradeRelatedProfile
 	for _, name := range names {
 		if !name.IsDir() {
 			continue
@@ -89,27 +95,34 @@ func upgradeV2LockRelated(p guidedProfile, root, alreadyLocked string) (func(), 
 					return nil, err
 				}
 			}
-			// A saved action without a completion marker might still have a child. It
-			// is not made safe merely by an empty generic V4 journal.
-			err = filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
-				if err != nil {
-					return err
-				}
-				if e.Type()&os.ModeSymlink != 0 {
-					return errors.New("symlink in saved activity")
-				}
-				if e.IsDir() && e.Name() == "activity" {
-					if err := checkGuidedAttempts(path); err != nil {
-						return fmt.Errorf("resolve retained saved action under its original application before updating: %w", err)
-					}
-					return filepath.SkipDir
-				}
-				return nil
-			})
+			related = append(related, upgradeRelatedProfile{dir: dir, profile: profile})
+		}
+	}
+	for _, saved := range related {
+		dir := saved.dir
+		// A saved action without a completion marker might still have a child. It
+		// is not made safe merely by an empty generic V4 journal.
+		err = filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
 			if err != nil {
-				release()
-				return nil, err
+				return err
 			}
+			if e.Type()&os.ModeSymlink != 0 {
+				return errors.New("symlink in saved activity")
+			}
+			if e.IsDir() && e.Name() == "activity" {
+				if err := checkGuidedAttempts(path); err != nil {
+					if upgradeSupersededStorageProbe(p, saved, path, related) {
+						return filepath.SkipDir
+					}
+					return fmt.Errorf("resolve retained saved action under its original application before updating: %w", err)
+				}
+				return filepath.SkipDir
+			}
+			return nil
+		})
+		if err != nil {
+			release()
+			return nil, err
 		}
 	}
 	return release, nil
