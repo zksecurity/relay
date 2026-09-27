@@ -85,6 +85,17 @@ func TestUpgradeSupersededStorageProbe(t *testing.T) {
 		t.Fatalf("upgrade admission rejected superseded setup probe: %v", err)
 	}
 	release()
+	// The operator may retry the mistyped saved check after the corrected
+	// configuration was recorded. That retry does not undo the configuration.
+	if err := writeJSONNoReplace(filepath.Join(activity, "attempt-2.json"), guidedAttempt{StartedAt: "2026-09-03T00:00:00Z"}, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSONNoReplace(filepath.Join(activity, "attempt-2.json.done"), guidedAttempt{StartedAt: "2026-09-03T00:00:00Z", CompletedAt: "2026-09-03T00:01:00Z", Success: false}, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if !upgradeSupersededStorageProbe(base, failed, activity, []upgradeRelatedProfile{failed, later}) {
+		t.Fatal("a failed retry after configuration incorrectly blocked upgrade")
+	}
 	if upgradeSupersededStorageProbe(base, failed, activity, []upgradeRelatedProfile{failed}) {
 		t.Fatal("failed probe was accepted without later configuration")
 	}

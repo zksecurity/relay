@@ -45,12 +45,8 @@ func upgradeSupersededStorageProbe(target guidedProfile, failed upgradeRelatedPr
 	if _, err := os.Lstat(filepath.Join(target.Work, "coordinator-setup", settingsName+".checked.json")); !os.IsNotExist(err) {
 		return false
 	}
-	old, ok := upgradeLatestAttempt(activity)
-	if !ok || old.Success || old.CompletedAt == "" {
-		return false
-	}
-	oldTime, err := time.Parse(time.RFC3339Nano, old.CompletedAt)
-	if err != nil {
+	firstFailure, ok := upgradeFirstFailedProbeAttempt(activity)
+	if !ok {
 		return false
 	}
 	current, err := loadStorageConfig(filepath.Join(target.Work, "ceremony", "config", "relay-storage.json"))
@@ -71,12 +67,48 @@ func upgradeSupersededStorageProbe(target guidedProfile, failed upgradeRelatedPr
 			continue
 		}
 		completedTime, err := time.Parse(time.RFC3339Nano, completed.CompletedAt)
-		if err == nil && completedTime.After(oldTime) {
+		if err == nil && completedTime.After(firstFailure) {
 			fmt.Fprintf(os.Stdout, "Older failed storage setup probe %s was superseded by the completed ceremony storage configuration. Its record remains saved; inspect setup-probes/ for an orphaned test object if the earlier failure included a cleanup error.\n", failed.profile.Name)
 			return true
 		}
 	}
 	return false
+}
+
+// A retry of the original, now-obsolete probe can happen after storage was
+// configured. Compare the successful configuration with the first failed
+// attempt, while requiring every saved probe attempt to be fully recorded.
+func upgradeFirstFailedProbeAttempt(activity string) (time.Time, bool) {
+	entries, err := os.ReadDir(activity)
+	if err != nil {
+		return time.Time{}, false
+	}
+	var first time.Time
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, "attempt-") || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		if !entry.Type().IsRegular() {
+			return time.Time{}, false
+		}
+		raw, err := readTesseraRegularFile(filepath.Join(activity, name+".done"), 1<<20, true)
+		if err != nil {
+			return time.Time{}, false
+		}
+		var done guidedAttempt
+		if json.Unmarshal(raw, &done) != nil || done.Success || done.CompletedAt == "" {
+			return time.Time{}, false
+		}
+		when, err := time.Parse(time.RFC3339Nano, done.CompletedAt)
+		if err != nil {
+			return time.Time{}, false
+		}
+		if first.IsZero() || when.Before(first) {
+			first = when
+		}
+	}
+	return first, !first.IsZero()
 }
 
 func upgradeLatestAttempt(activity string) (guidedAttempt, bool) {
