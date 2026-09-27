@@ -30,7 +30,16 @@ func upgradeRequireCleanExit(s upgradeSelectionV2, d upgrade.DeclarationV2, qual
 	if err != nil {
 		return err
 	}
+	activity, _, err := readAuditActivity(p.Work)
+	if err != nil {
+		return err
+	}
+	staleSignerImport := false
 	for _, gap := range inv.HistoryGaps {
+		if gap == "actions-without-recorded-completion" && upgradeOnlyPendingSignerEnrollmentImport(activity) {
+			staleSignerImport = true
+			continue
+		}
 		if gap == "partial-final-record" || gap == "actions-without-recorded-completion" {
 			return errors.New("finish or resolve the interrupted action using your current Relay before updating")
 		}
@@ -93,6 +102,7 @@ func upgradeRequireCleanExit(s upgradeSelectionV2, d upgrade.DeclarationV2, qual
 	if head == "" {
 		return errors.New("accepted checkpoint is missing; inspect it with your current Relay")
 	}
+	acceptedHead := head
 	cli, err := exec.LookPath("docker")
 	if err != nil {
 		return err
@@ -108,6 +118,7 @@ func upgradeRequireCleanExit(s upgradeSelectionV2, d upgrade.DeclarationV2, qual
 	accepted := map[string]transcript.CheckpointInspectionV4{}
 	files := map[string]transcript.ArtifactRef{}
 	signature := filepath.Join(filepath.Dir(head), "checkpoint.sig")
+	acceptedSignature := signature
 	for count := 0; ; count++ {
 		if count > transcript.MaxCheckpointSequenceV4 {
 			return errors.New("checkpoint ancestry exceeds limit")
@@ -152,8 +163,108 @@ func upgradeRequireCleanExit(s upgradeSelectionV2, d upgrade.DeclarationV2, qual
 	if err := upgradeCheckCleanFiles(p, inv, accepted, files); err != nil {
 		return err
 	}
+	if staleSignerImport {
+		if err := upgradeCheckCommittedSignerEnrollment(inspector, root, acceptedHead, acceptedSignature, id, inv); err != nil {
+			return fmt.Errorf("uncompleted signer enrollment activity is not covered by accepted progress: %w", err)
+		}
+	}
 	if recheck != nil {
 		return recheck()
+	}
+	return nil
+}
+
+// The activity log records a start before the signer-enrollment source prompt.
+// Its missing completion cannot be called a success. It can, however, be
+// carried forward as an explicit audit gap when this is the only pending local
+// observation and the independently authenticated ceremony state is clean.
+func upgradeOnlyPendingSignerEnrollmentImport(events []diagnosticEvent) bool {
+	pending := map[string]diagnosticEvent{}
+	seen := map[string]bool{}
+	for _, event := range events {
+		if event.OperationID == "" {
+			continue
+		}
+		if event.Outcome == "started" {
+			if seen[event.OperationID] {
+				return false
+			}
+			seen[event.OperationID] = true
+			pending[event.OperationID] = event
+		} else {
+			delete(pending, event.OperationID)
+		}
+	}
+	if len(pending) != 1 {
+		return false
+	}
+	for _, event := range pending {
+		return event.Role == "coordinator" && event.Stage == "workflow-v4" && event.Action == "import-signer-enrollment"
+	}
+	return false
+}
+
+func upgradeCheckCommittedSignerEnrollment(inspector transcript.Inspector, root, head, signature, ceremonyID string, inv upgradeInventory) error {
+	protocol, err := inspector.DefinitionProtocol()
+	if err != nil {
+		return err
+	}
+	checkpoint, metadata, err := inspector.CheckpointGuidanceV4(root, head, signature)
+	if err != nil {
+		return err
+	}
+	if protocol.Definition.CeremonyID != ceremonyID || checkpoint.Checkpoint.CeremonyID != ceremonyID || metadata.Metadata.CeremonyID != ceremonyID {
+		return errors.New("signed enrollment belongs to another ceremony")
+	}
+	expected, err := upgradeMatchCommittedSignerEnrollment(protocol, metadata)
+	if err != nil {
+		return err
+	}
+	return upgradeCheckSignerImportStaging(inv, expected.Identity.ID)
+}
+
+func upgradeMatchCommittedSignerEnrollment(protocol transcript.DefinitionProtocol, metadata transcript.EnrollmentMetadataInspectionV4) (transcript.ExpectedEnrollment, error) {
+	expected, err := workflowV4ReleaseSignerAssignment(protocol)
+	if err != nil {
+		return expected, err
+	}
+	for _, item := range metadata.Metadata.Enrollments {
+		enrollment := item.Enrollment
+		base := filepath.Join("enrollments", expected.Identity.ID)
+		if enrollment.Role == expected.Role && enrollment.RoleIndex == expected.RoleIndex && enrollment.Identity == expected.Identity &&
+			item.Refs.Record.Name == filepath.Join(base, "enrollment.json") && item.Refs.Signature.Name == filepath.Join(base, "enrollment.sig") {
+			return expected, nil
+		}
+	}
+	return expected, errors.New("assigned release-signer enrollment is not in the accepted checkpoint")
+}
+
+// An import writes a fresh, never-reused staging directory and leaves it in
+// place even after success. Keep those bytes in the inventory. In the narrow
+// stale-activity case, any staged signer file must exactly match a public file
+// already covered by the accepted checkpoint; an orphaned partial directory
+// with no files is inert, but uncommitted or conflicting staged bytes block.
+func upgradeCheckSignerImportStaging(inv upgradeInventory, identityID string) error {
+	files := make(map[string]upgradeInventoryFile, len(inv.Files))
+	for _, file := range inv.Files {
+		files[file.Name] = file
+	}
+	prefix := "workflow-v4/staging/enrollment-" + identityID + "-"
+	for _, file := range inv.Files {
+		if !strings.HasPrefix(file.Name, prefix) {
+			continue
+		}
+		tail := strings.TrimPrefix(file.Name, prefix)
+		marker := "/artifacts/"
+		index := strings.Index(tail, marker)
+		if index <= 0 || strings.Contains(tail[:index], "/") {
+			return errors.New("unexpected retained signer enrollment staging file")
+		}
+		publicName := "ceremony/public/" + tail[index+len(marker):]
+		public, ok := files[publicName]
+		if !ok || public.SHA256 != file.SHA256 || public.Size != file.Size {
+			return errors.New("signer enrollment staging file differs from accepted public output")
+		}
 	}
 	return nil
 }
@@ -195,6 +306,10 @@ func upgradeRequireSignerCleanExit(p guidedProfile, d upgrade.DeclarationV2) err
 
 func upgradeCheckCleanFiles(p guidedProfile, inv upgradeInventory, accepted map[string]transcript.CheckpointInspectionV4, public map[string]transcript.ArtifactRef) error {
 	root := filepath.Join(p.Work, "ceremony/public")
+	preliminary, err := upgradeCompletedPreliminaryFiles(inv, public)
+	if err != nil {
+		return err
+	}
 	for _, f := range inv.Files {
 		path := filepath.Join(p.Work, filepath.FromSlash(f.Name))
 		// Release grants and received release packages are cross-role handoffs.
@@ -204,6 +319,9 @@ func upgradeCheckCleanFiles(p guidedProfile, inv upgradeInventory, accepted map[
 			return errors.New("release handoff is still retained; finish or resolve it with the original Relay before updating")
 		}
 		if strings.HasPrefix(f.Name, "ceremony/public/") {
+			if preliminary[f.Name] {
+				continue
+			}
 			name := strings.TrimPrefix(f.Name, "ceremony/public/")
 			if name == "coordinator-public-key.hex" {
 				if !upgradeSamePublicKey(path, filepath.Join(p.Trust, "setup-coordinator.hex")) {
@@ -258,6 +376,46 @@ func upgradeCheckCleanFiles(p guidedProfile, inv upgradeInventory, accepted map[
 		}
 	}
 	return nil
+}
+
+// Finalization leaves its preliminary key tree in the public workspace, but
+// the accepted final candidate carries the authoritative copies. No later
+// ceremony action reads the preliminary tree. Admit its fixed historical file
+// set only after every key file matches the accepted candidate exactly; the
+// remaining metadata/checksum files are retained as unused local history.
+func upgradeCompletedPreliminaryFiles(inv upgradeInventory, public map[string]transcript.ArtifactRef) (map[string]bool, error) {
+	const prefix = "ceremony/public/final/preliminary/"
+	files := map[string]upgradeInventoryFile{}
+	for _, file := range inv.Files {
+		if strings.HasPrefix(file.Name, prefix) {
+			files[strings.TrimPrefix(file.Name, prefix)] = file
+		}
+	}
+	if len(files) == 0 {
+		return nil, nil
+	}
+	keys := []string{"ownership-destination.ccs", "ownership.pk", "ownership.vk", "cardano-vk.bin", "cardano-vk.hex", "cardano-vk-format.txt"}
+	other := []string{"preliminary-final-keys.json", "preliminary-final-keys.sig.json", "preliminary-checksums.sha256"}
+	if len(files) != len(keys)+len(other) {
+		return nil, errors.New("preliminary final-key tree is incomplete or has unexpected files")
+	}
+	allowed := map[string]bool{}
+	for _, name := range keys {
+		file, ok := files[name]
+		accepted, signed := public["final/candidate/"+name]
+		if !ok || !signed || accepted.Digest.SHA256 != "sha256:"+file.SHA256 || accepted.Digest.Size != file.Size {
+			return nil, fmt.Errorf("preliminary %s differs from the accepted final candidate", name)
+		}
+		allowed[prefix+name] = true
+	}
+	for _, name := range other {
+		file, ok := files[name]
+		if !ok || file.Size <= 0 || file.Size > 16<<20 {
+			return nil, fmt.Errorf("preliminary %s is missing or oversized", name)
+		}
+		allowed[prefix+name] = true
+	}
+	return allowed, nil
 }
 
 func upgradeSamePublicKey(a, b string) bool {

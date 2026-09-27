@@ -53,6 +53,7 @@ type workflowV4LiveUpgradeHook struct {
 	Candidate          string
 	TargetWork         string
 	AfterPhase1        func(*workflowV4LiveRole)
+	AfterReleaseReview func(*workflowV4LiveRole)
 	Execute            func(string, []string, func(string, []string) error) error
 	OldCalls, NewCalls int
 }
@@ -344,7 +345,7 @@ func runLiveFullProviderJourneyWithUpgrade(t *testing.T, awsLive bool, upgradeHo
 	}
 
 	runWorkflowV4LiveTurn(t, objects, protocol, config, &coordinator, &participant, "phase1")
-	if upgradeHook != nil {
+	if upgradeHook != nil && upgradeHook.AfterPhase1 != nil {
 		// A normal reopened CLI refreshes its accepted-state anchor before exit.
 		// Local TLS fixtures skip that terminal, so perform the same verified sync.
 		syncWorkflowV4LiveRole(t, &coordinator, objects)
@@ -359,6 +360,10 @@ func runLiveFullProviderJourneyWithUpgrade(t *testing.T, awsLive bool, upgradeHo
 	runWorkflowV4LiveBeacon(t, objects, protocol, &coordinator, workflowV4BeaconPhase2, "RECORD PHASE2 BEACON\n")
 	runWorkflowV4LiveLifecycle(t, objects, protocol, &coordinator, workflowV4Finalize, "FINALIZE CANDIDATE\n")
 	runWorkflowV4LiveLifecycle(t, objects, protocol, &coordinator, workflowV4Review, "SIGN EVIDENCE BUNDLE\n")
+	if upgradeHook != nil && upgradeHook.AfterReleaseReview != nil {
+		syncWorkflowV4LiveRole(t, &coordinator, objects)
+		upgradeHook.AfterReleaseReview(&coordinator)
+	}
 
 	snapshot := syncWorkflowV4LiveRole(t, &coordinator, objects)
 	if err := runWorkflowV4CoordinatorLifecycle(workflowV4LiveUI("CREATE RELEASE GRANT\n"), workflowV4Release, snapshot, protocol, coordinator.profile, coordinator.signer, coordinator.inspector); err != nil {

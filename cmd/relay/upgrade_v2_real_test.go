@@ -355,7 +355,7 @@ func runUpgradeTwoPhaseJourney(t *testing.T, f upgradeRealFixture, local bool, s
 	if f.request.QualificationSchema == upgrade.OnlineCleanExitQualificationSchema {
 		configureOnlineUpgradeScenario(t, f, hook, store)
 	}
-	hook.AfterPhase1 = func(role *workflowV4LiveRole) {
+	upgradeAtBoundary := func(role *workflowV4LiveRole) {
 		before := map[string]string{}
 		for _, path := range []string{filepath.Join(role.profile.Keys, "identity.json"), filepath.Join(role.profile.Keys, "signing.hex"), filepath.Join(role.profile.Work, "ceremony/public/ceremony.json"), filepath.Join(role.profile.Work, "ceremony/public/ceremony.sig")} {
 			h, err := setupFileHash(path)
@@ -418,6 +418,11 @@ func runUpgradeTwoPhaseJourney(t *testing.T, f upgradeRealFixture, local bool, s
 				t.Fatal("update changed original keys or signed ceremony")
 			}
 		}
+	}
+	if os.Getenv("RELAY_UPGRADE_CLEAN_SCENARIO") == "stale-signer-import" {
+		hook.AfterReleaseReview = upgradeAtBoundary
+	} else {
+		hook.AfterPhase1 = upgradeAtBoundary
 	}
 	runV4LiveFullR2Journey(t, hook)
 }

@@ -227,9 +227,9 @@ func IsCleanExitQualification(schema string) bool {
 	return schema == CleanExitQualificationSchema || schema == OnlineCleanExitQualificationSchema
 }
 
-var OnlineCleanExitQualificationChecks = []string{"completed-step-continuation", "updater-interruption", "unsafe-update-refusal", "online-runtime-retry", "predecessor-reentry"}
+var OnlineCleanExitQualificationChecks = []string{"completed-step-continuation", "stale-signer-enrollment-import", "updater-interruption", "unsafe-update-refusal", "online-runtime-retry", "predecessor-reentry"}
 
-var CleanExitQualificationChecks = []string{"completed-step-continuation", "updater-interruption", "unsafe-update-refusal"}
+var CleanExitQualificationChecks = []string{"completed-step-continuation", "stale-signer-enrollment-import", "updater-interruption", "unsafe-update-refusal"}
 
 // V4 evidence exercises one original executable, not arbitrary retained versions.
 func validateOnlineCleanExitScope(d DeclarationV2) error {

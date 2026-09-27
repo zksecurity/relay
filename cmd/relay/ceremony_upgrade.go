@@ -185,7 +185,9 @@ func upgradeImageProofHashMode(image, platform string, pull bool) (string, error
 	// the actual binary from a never-started, unmounted container and hash it
 	// locally. This does not substitute or execute a host Proof-tool binary.
 	bound := client.BindHost(endpoint)
-	raw, _, err := bound.Output("create", "--pull=never", "--platform", platform, "--network=none", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--ulimit=core=0:0", "--log-driver=none", "--entrypoint="+dockerCeremonyBinary, image)
+	// Even though this container is never started, bound its declared capacity.
+	// Another Relay admission can observe it while Docker finishes a removal.
+	raw, _, err := bound.Output("create", "--pull=never", "--platform", platform, "--network=none", "--read-only", "--cpus=1", "--memory=1g", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--ulimit=core=0:0", "--log-driver=none", "--entrypoint="+dockerCeremonyBinary, image)
 	if err != nil {
 		return "", err
 	}
