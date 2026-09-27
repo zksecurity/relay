@@ -196,7 +196,9 @@ func TestUpgradeCompletedPreliminaryRequiresAcceptedKeys(t *testing.T) {
 	for _, name := range other {
 		inv.Files = append(inv.Files, upgradeInventoryFile{Name: prefix + name, SHA256: strings.Repeat("b", 64), Size: 7})
 	}
-	if allowed, err := upgradeCompletedPreliminaryFiles(inv, public); err != nil || len(allowed) != 9 {
+	inv.Files = append(inv.Files, upgradeInventoryFile{Name: "ceremony/public/final/public-finalization-evidence.json", SHA256: strings.Repeat("d", 64), Size: 7})
+	public["final/candidate/public-finalization-evidence.json"] = transcript.ArtifactRef{Name: "final/candidate/public-finalization-evidence.json", Digest: transcript.Digest{SHA256: "sha256:" + strings.Repeat("d", 64), Size: 7}}
+	if allowed, err := upgradeCompletedPreliminaryFiles(inv, public); err != nil || len(allowed) != 10 {
 		t.Fatalf("completed accepted tree refused: %d %v", len(allowed), err)
 	}
 	wrong := public["final/candidate/ownership.pk"]

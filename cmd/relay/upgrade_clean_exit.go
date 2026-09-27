@@ -378,20 +378,25 @@ func upgradeCheckCleanFiles(p guidedProfile, inv upgradeInventory, accepted map[
 	return nil
 }
 
-// Finalization leaves its preliminary key tree in the public workspace, but
-// the accepted final candidate carries the authoritative copies. No later
-// ceremony action reads the preliminary tree. Admit its fixed historical file
-// set only after every key file matches the accepted candidate exactly; the
-// remaining metadata/checksum files are retained as unused local history.
+// Finalization leaves its preliminary key tree and public proof in the public
+// workspace, but the accepted final candidate carries the authoritative copies.
+// No later ceremony action reads the preliminary tree. Admit its fixed historical
+// file set only after the keys and proof match the accepted candidate exactly;
+// the remaining metadata/checksum files are retained as unused local history.
 func upgradeCompletedPreliminaryFiles(inv upgradeInventory, public map[string]transcript.ArtifactRef) (map[string]bool, error) {
 	const prefix = "ceremony/public/final/preliminary/"
+	const evidence = "ceremony/public/final/public-finalization-evidence.json"
 	files := map[string]upgradeInventoryFile{}
+	var evidenceFile *upgradeInventoryFile
 	for _, file := range inv.Files {
 		if strings.HasPrefix(file.Name, prefix) {
 			files[strings.TrimPrefix(file.Name, prefix)] = file
+		} else if file.Name == evidence {
+			copy := file
+			evidenceFile = &copy
 		}
 	}
-	if len(files) == 0 {
+	if len(files) == 0 && evidenceFile == nil {
 		return nil, nil
 	}
 	keys := []string{"ownership-destination.ccs", "ownership.pk", "ownership.vk", "cardano-vk.bin", "cardano-vk.hex", "cardano-vk-format.txt"}
@@ -415,6 +420,11 @@ func upgradeCompletedPreliminaryFiles(inv upgradeInventory, public map[string]tr
 		}
 		allowed[prefix+name] = true
 	}
+	acceptedEvidence, signed := public["final/candidate/public-finalization-evidence.json"]
+	if evidenceFile == nil || !signed || acceptedEvidence.Digest.SHA256 != "sha256:"+evidenceFile.SHA256 || acceptedEvidence.Digest.Size != evidenceFile.Size {
+		return nil, errors.New("preliminary public proof differs from the accepted final candidate")
+	}
+	allowed[evidence] = true
 	return allowed, nil
 }
 
