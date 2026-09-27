@@ -1,12 +1,10 @@
 ## What changed
 
-An initialized coordinator can select a Relay CLI update when its only
-unfinished local activity entry is an older release-signer enrollment import,
-provided the signed accepted ceremony history independently verifies the exact
-assigned signer's enrollment and all other clean-exit checks pass. The missing
-activity completion remains visible as an audit gap; Relay does not invent a
-successful completion or repeat the import. Other unfinished actions continue
-to block an update.
+At release review, a coordinator upgrade now recognizes the completed
+preliminary public proof left by finalization. Its bytes must match the copy
+in the accepted signed final candidate. Missing or changed evidence still
+blocks the upgrade. This completes the retained-state fix begun in v0.6.5;
+no ceremony command is replayed by the update.
 
 ## Tessera compatibility
 
