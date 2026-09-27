@@ -35,6 +35,85 @@ func TestCleanExitPublicKeyFormatting(t *testing.T) {
 	}
 }
 
+func TestUpgradeOnlyPendingSignerEnrollmentImport(t *testing.T) {
+	start := diagnosticEvent{OperationID: "one", Outcome: "started", Role: "coordinator", Stage: "workflow-v4", Action: "import-signer-enrollment"}
+	for _, tc := range []struct {
+		name   string
+		events []diagnosticEvent
+		allow  bool
+	}{
+		{"one pending signer import", []diagnosticEvent{start}, true},
+		{"unrelated completed action", []diagnosticEvent{{OperationID: "old", Outcome: "started"}, {OperationID: "old", Outcome: "succeeded"}, start}, true},
+		{"no pending import", []diagnosticEvent{start, {OperationID: "one", Outcome: "succeeded"}}, false},
+		{"other pending action", []diagnosticEvent{start, {OperationID: "two", Outcome: "started", Action: "coordinator-action"}}, false},
+		{"wrong role", []diagnosticEvent{{OperationID: "one", Outcome: "started", Role: "participant", Stage: start.Stage, Action: start.Action}}, false},
+		{"wrong stage", []diagnosticEvent{{OperationID: "one", Outcome: "started", Role: start.Role, Stage: "setup", Action: start.Action}}, false},
+		{"wrong action", []diagnosticEvent{{OperationID: "one", Outcome: "started", Role: start.Role, Stage: start.Stage, Action: "enrollment"}}, false},
+		{"reused identifier", []diagnosticEvent{start, start}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := upgradeOnlyPendingSignerEnrollmentImport(tc.events); got != tc.allow {
+				t.Fatalf("allow=%v, want %v", got, tc.allow)
+			}
+		})
+	}
+}
+
+func TestUpgradeMatchCommittedSignerEnrollment(t *testing.T) {
+	protocol, _ := workflowV4TestBinding(t)
+	expected, err := workflowV4ReleaseSignerAssignment(protocol)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata := transcript.EnrollmentMetadataInspectionV4{}
+	metadata.Metadata.Enrollments = []transcript.CommittedEnrollmentMetadataV4{{
+		Refs: transcript.SignedArtifactRefs{
+			Record:    transcript.ArtifactRef{Name: filepath.Join("enrollments", expected.Identity.ID, "enrollment.json")},
+			Signature: transcript.ArtifactRef{Name: filepath.Join("enrollments", expected.Identity.ID, "enrollment.sig")},
+		},
+		Enrollment: transcript.EnrollmentInspection{Role: expected.Role, RoleIndex: expected.RoleIndex, Identity: expected.Identity},
+	}}
+	if _, err := upgradeMatchCommittedSignerEnrollment(protocol, metadata); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []struct {
+		name string
+		edit func(*transcript.EnrollmentInspection)
+	}{
+		{"wrong identity", func(e *transcript.EnrollmentInspection) { e.Identity.ID = "other" }},
+		{"wrong key", func(e *transcript.EnrollmentInspection) { e.Identity.KeyID = "other" }},
+		{"wrong role", func(e *transcript.EnrollmentInspection) { e.Role = "participant" }},
+		{"wrong index", func(e *transcript.EnrollmentInspection) { e.RoleIndex++ }},
+	} {
+		t.Run(mutate.name, func(t *testing.T) {
+			wrong := metadata
+			wrong.Metadata.Enrollments = append([]transcript.CommittedEnrollmentMetadataV4(nil), metadata.Metadata.Enrollments...)
+			mutate.edit(&wrong.Metadata.Enrollments[0].Enrollment)
+			if _, err := upgradeMatchCommittedSignerEnrollment(protocol, wrong); err == nil {
+				t.Fatal("accepted a different signed enrollment")
+			}
+		})
+	}
+}
+
+func TestUpgradeCheckSignerImportStaging(t *testing.T) {
+	id := "release-signer-test"
+	public := upgradeInventoryFile{Name: "ceremony/public/enrollments/" + id + "/enrollment.json", SHA256: "accepted", Size: 9}
+	staged := upgradeInventoryFile{Name: "workflow-v4/staging/enrollment-" + id + "-123/artifacts/enrollments/" + id + "/enrollment.json", SHA256: public.SHA256, Size: public.Size}
+	if err := upgradeCheckSignerImportStaging(upgradeInventory{Files: []upgradeInventoryFile{public, staged}}, id); err != nil {
+		t.Fatal("rejected retained exact staging copy", err)
+	}
+	for _, bad := range []upgradeInventoryFile{
+		{Name: staged.Name, SHA256: "uncommitted", Size: staged.Size},
+		{Name: staged.Name, SHA256: staged.SHA256, Size: staged.Size + 1},
+		{Name: "workflow-v4/staging/enrollment-" + id + "-123/other.json", SHA256: staged.SHA256, Size: staged.Size},
+	} {
+		if err := upgradeCheckSignerImportStaging(upgradeInventory{Files: []upgradeInventoryFile{public, bad}}, id); err == nil {
+			t.Fatalf("accepted conflicting signer staging file %s", bad.Name)
+		}
+	}
+}
+
 func TestCleanExitRefusesMissingEvidenceWithoutSelecting(t *testing.T) {
 	for _, schema := range []string{upgrade.CleanExitQualificationSchema, upgrade.OnlineCleanExitQualificationSchema} {
 		t.Run(schema, func(t *testing.T) { testCleanExitRefusesMissingEvidence(t, schema) })

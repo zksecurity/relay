@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -35,6 +36,9 @@ func runCleanExitScenario(t *testing.T, scenario string) {
 func TestUpgradeCleanExitContinuation(t *testing.T) { runCleanExitScenario(t, "continuation") }
 func TestUpgradeCleanExitInterruption(t *testing.T) { runCleanExitScenario(t, "interruption") }
 func TestUpgradeCleanExitRefusal(t *testing.T)      { runCleanExitScenario(t, "refusal") }
+func TestUpgradeCleanExitStaleSignerImport(t *testing.T) {
+	runCleanExitScenario(t, "stale-signer-import")
+}
 
 // Hash private files without emitting their contents or names in public reports.
 func cleanExitTree(t *testing.T, roots ...string) map[string]string {
@@ -83,6 +87,17 @@ func exerciseCleanExitScenario(t *testing.T, f upgradeRealFixture, s upgradeSele
 	}
 	if err := os.WriteFile(s.StartPath, s.PreviousStart, 0700); err != nil {
 		t.Fatal(err)
+	}
+	if scenario == "stale-signer-import" {
+		activity := diagnosticContext{Work: s.Profile.Work, Role: "coordinator", Release: d.SourceApp, Stage: "workflow-v4", Action: "import-signer-enrollment"}
+		if err := appendAuditActivity(activity, "started", nil, strings.Repeat("a", 32)); err != nil {
+			t.Fatal(err)
+		}
+		inv, err := upgradeV2Inventory(s.Profile, d)
+		if err != nil || !slices.Contains(inv.HistoryGaps, "actions-without-recorded-completion") {
+			t.Fatal("missing retained activity gap", err)
+		}
+		s.InventorySHA256 = inv.digest()
 	}
 	ceremonyBefore := cleanExitTree(t, filepath.Join(s.Profile.Work, "ceremony"), s.Profile.Trust, s.Profile.Keys)
 	if scenario == "refusal" {
@@ -165,6 +180,12 @@ func exerciseCleanExitScenario(t *testing.T, f upgradeRealFixture, s upgradeSele
 	}
 	if raw, err := os.ReadFile(s.StartPath); err != nil || string(raw) != string(upgradeV2StartBytes(s)) {
 		t.Fatal("new entry point not installed")
+	}
+	if scenario == "stale-signer-import" {
+		_, gaps, err := readAuditActivity(s.Profile.Work)
+		if err != nil || !slices.Contains(gaps, "actions-without-recorded-completion") {
+			t.Fatal("upgrade erased the unresolved local activity observation", err)
+		}
 	}
 	// Exercise the actual target binary's selected-state reader and same-target
 	// repair branch. It must not fetch new approval or replay ceremony work.
