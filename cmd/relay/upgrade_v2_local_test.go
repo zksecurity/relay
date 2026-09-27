@@ -168,7 +168,7 @@ func TestUpgradeLocalTwoPhaseJourney(t *testing.T) {
 	}
 	// Exact Linux binary is a permitted companion artifact, never executed on macOS.
 	copied := filepath.Join(root, "mpc-ceremony-linux")
-	out, e := exec.Command(docker, "create", f.request.Declaration.SigningImage).Output()
+	out, e := exec.Command(docker, "create", "--cpus=1", "--memory=1g", f.request.Declaration.SigningImage).Output()
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -179,6 +179,9 @@ func TestUpgradeLocalTwoPhaseJourney(t *testing.T) {
 	defer exec.Command(docker, "rm", id).Run()
 	if b, e := exec.Command(docker, "cp", id+":"+dockerCeremonyBinary, copied).CombinedOutput(); e != nil {
 		t.Fatalf("extract fixture binary: %v %s", e, b)
+	}
+	if b, e := exec.Command(docker, "rm", id).CombinedOutput(); e != nil {
+		t.Fatalf("remove fixture container: %v %s", e, b)
 	}
 	h, e := setupFileHash(copied)
 	if e != nil || "sha256:"+h != f.request.Declaration.ProofToolSHA256 {
