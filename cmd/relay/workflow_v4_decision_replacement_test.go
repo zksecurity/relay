@@ -1,11 +1,113 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/zksecurity/relay/internal/storagefirst"
+	"github.com/zksecurity/relay/internal/transcript"
 )
+
+func TestDecisionReplacementGuideResumesSyntheticInterruptedRetirement(t *testing.T) {
+	work, m := replacementFixture(t)
+	trust, keys := t.TempDir(), t.TempDir()
+	commit := strings.Repeat("a", 40)
+	online := guidedProfile{Role: "coordinator", Work: work, Trust: trust, Keys: keys, ReleaseCommit: commit}
+	signer := guidedProfile{Role: "decision-signer", Work: work, Trust: trust, Keys: keys, ReleaseCommit: commit}
+	protocol := transcript.DefinitionProtocol{DefinitionSchema: "proof-tool-mpc-ceremony-definition-v5", Definition: transcript.Definition{Mode: "production"}}
+	snapshot := &storagefirst.SnapshotV4{}
+	var output bytes.Buffer
+	ui := &coordinatorWizard{input: bufio.NewReader(strings.NewReader("8\n")), output: &output}
+	if err := runWorkflowV4DecisionMenu(ui, online, signer, setupIdentity{}, protocol, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "Resume the confirmed unsigned-decision replacement") || !strings.Contains(output.String(), "Completed the previously confirmed unsigned decision retirement") {
+		t.Fatalf("guide did not show and complete recovery:\n%s", output.String())
+	}
+	state, err := decisionReplacementReadState(work)
+	if err != nil || state.Pending != nil || !state.Awaiting || len(state.Committed) != 1 {
+		t.Fatalf("guide did not retain completed replacement: %+v, %v", state, err)
+	}
+	for _, item := range m.Items {
+		if _, err := os.Lstat(filepath.Join(work, filepath.FromSlash(item.Source))); !os.IsNotExist(err) {
+			t.Fatalf("active source remains after guide recovery: %s", item.Source)
+		}
+	}
+}
+
+// The test-only launcher executes the same coordinator decision menu reached
+// from start.sh, with a synthetic pending replacement. It does not claim to
+// authenticate a final release or qualify an attested production launcher.
+func TestDecisionReplacementSyntheticStartSh(t *testing.T) {
+	work, _ := replacementFixture(t)
+	root := filepath.Dir(work)
+	trust, keys := filepath.Join(root, "trust"), filepath.Join(root, "keys")
+	for _, dir := range []string{trust, keys} {
+		if err := os.Mkdir(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	argsPath := filepath.Join(root, "launcher-args.txt")
+	wrapper := filepath.Join(root, "relay-test-wrapper")
+	q := func(v string) string { return "'" + strings.ReplaceAll(v, "'", "'\\''") + "'" }
+	contents := fmt.Sprintf("#!/usr/bin/env bash\nset -euo pipefail\nprintf '%%s\\n' \"$@\" > %s\nexec %s -test.run '^TestDecisionReplacementStartShChild$' -test.v\n", q(argsPath), q(os.Args[0]))
+	if err := os.WriteFile(wrapper, []byte(contents), 0700); err != nil {
+		t.Fatal(err)
+	}
+	s := upgradeSelectionV2{Profile: guidedProfile{Name: "synthetic-decision", Role: "coordinator", Work: work, Trust: trust, Keys: keys, ReleaseCommit: strings.Repeat("a", 40)}}
+	start := filepath.Join(root, "start.sh")
+	if err := os.WriteFile(start, cleanExitOriginalStart(s, wrapper), 0700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(start)
+	cmd.Env = append(os.Environ(), "RELAY_SYNTHETIC_START_WORK="+work, "RELAY_SYNTHETIC_START_TRUST="+trust, "RELAY_SYNTHETIC_START_KEYS="+keys)
+	cmd.Stdin = strings.NewReader("8\n")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("synthetic start.sh failed: %v\n%s", err, out)
+	}
+	for _, phrase := range []string{"Resume the confirmed unsigned-decision replacement", "Completed the previously confirmed unsigned decision retirement"} {
+		if !strings.Contains(string(out), phrase) {
+			t.Fatalf("start.sh did not reach replacement menu: %s\n%s", phrase, out)
+		}
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, phrase := range []string{"coordinator\nprepare\n", "--name\nsynthetic-decision\n", "--work\n" + work + "\n"} {
+		if !strings.Contains(string(args), phrase) {
+			t.Fatalf("start.sh routed unexpected arguments:\n%s", args)
+		}
+	}
+	state, err := decisionReplacementReadState(work)
+	if err != nil || state.Pending != nil || !state.Awaiting {
+		t.Fatalf("start.sh did not retain completed replacement: %+v, %v", state, err)
+	}
+}
+
+func TestDecisionReplacementStartShChild(t *testing.T) {
+	work := os.Getenv("RELAY_SYNTHETIC_START_WORK")
+	if work == "" {
+		return
+	}
+	trust, keys := os.Getenv("RELAY_SYNTHETIC_START_TRUST"), os.Getenv("RELAY_SYNTHETIC_START_KEYS")
+	commit := strings.Repeat("a", 40)
+	online := guidedProfile{Role: "coordinator", Work: work, Trust: trust, Keys: keys, ReleaseCommit: commit}
+	signer := guidedProfile{Role: "decision-signer", Work: work, Trust: trust, Keys: keys, ReleaseCommit: commit}
+	protocol := transcript.DefinitionProtocol{DefinitionSchema: "proof-tool-mpc-ceremony-definition-v5", Definition: transcript.Definition{Mode: "production"}}
+	ui := &coordinatorWizard{input: bufio.NewReader(os.Stdin), output: os.Stdout}
+	snapshot := &storagefirst.SnapshotV4{}
+	if err := runWorkflowV4DecisionMenu(ui, online, signer, setupIdentity{}, protocol, snapshot); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func replacementFixture(t *testing.T) (string, decisionReplacementManifest) {
 	t.Helper()
