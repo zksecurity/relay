@@ -112,7 +112,7 @@ func runWorkflowV4DecisionMenu(ui *coordinatorWizard, online, signer guidedProfi
 		if online.Role != "coordinator" || snapshot == nil || decisionHost == legacyDecision {
 			return errors.New("unsigned decision replacement requires the synchronized V5 coordinator")
 		}
-		return decisionReplacementPrepare(ui, online, signer, identity, protocol, *snapshot, replacement)
+		return decisionReplacementPrepare(ui, online, identity, protocol, *snapshot, replacement)
 	case "7":
 		if online.Role != "coordinator" {
 			return errors.New("only the coordinator prepares the canonical decision")

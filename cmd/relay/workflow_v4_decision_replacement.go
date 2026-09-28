@@ -304,7 +304,7 @@ func decisionReplacementLatest(state decisionReplacementState) (decisionReplacem
 	return latest, latest.Sequence != 0
 }
 
-func decisionReplacementPrepare(ui *coordinatorWizard, online, signer guidedProfile, identity setupIdentity, protocol transcript.DefinitionProtocol, snapshot storagefirst.SnapshotV4, state decisionReplacementState) error {
+func decisionReplacementPrepare(ui *coordinatorWizard, online guidedProfile, identity setupIdentity, protocol transcript.DefinitionProtocol, snapshot storagefirst.SnapshotV4, state decisionReplacementState) error {
 	if state.Pending != nil {
 		if err := decisionReplacementResume(online.Work, *state.Pending); err != nil {
 			return err
@@ -318,7 +318,7 @@ func decisionReplacementPrepare(ui *coordinatorWizard, online, signer guidedProf
 	if len(state.Committed) >= decisionReplacementMaxGenerations {
 		return errors.New("unsigned decision replacement reached its generation limit")
 	}
-	if err := decisionReplacementEligible(ui, online, signer, identity, protocol, snapshot); err != nil {
+	if err := decisionReplacementEligible(ui, online, identity, protocol, snapshot); err != nil {
 		return err
 	}
 	oldPath := filepath.Join(online.Work, "ceremony", "public", "decision", "decision.json")
@@ -391,7 +391,7 @@ func decisionReplacementPrepare(ui *coordinatorWizard, online, signer guidedProf
 	return nil
 }
 
-func decisionReplacementEligible(ui *coordinatorWizard, online, signer guidedProfile, identity setupIdentity, protocol transcript.DefinitionProtocol, snapshot storagefirst.SnapshotV4) error {
+func decisionReplacementEligible(ui *coordinatorWizard, online guidedProfile, identity setupIdentity, protocol transcript.DefinitionProtocol, snapshot storagefirst.SnapshotV4) error {
 	state, err := snapshot.State()
 	if err != nil || state.Progress.FinalRelease == nil || state.Progress.Terminal != nil || snapshot.Head().Record.Digest.SHA256 != state.Progress.FinalRelease.Record.Digest.SHA256 {
 		return errors.New("replacement requires the authenticated signed final-release checkpoint")
@@ -494,9 +494,6 @@ func decisionReplacementEligible(ui *coordinatorWizard, online, signer guidedPro
 		}
 	}
 	decisionPath := filepath.Join(decisionDir, "decision.json")
-	if err := requireDecisionEvidence(decisionPath, filepath.Join(online.Work, "ceremony", "public"), answers.CeremonyID, &coordinatorWizard{output: io.Discard}); err != nil {
-		return err
-	}
 	root, _ := snapshot.Root()
 	if err := workflowV4HandoffDecisionRelease(decisionPath, candidateID, snapshot.Head().Record.Digest.SHA256, root); err != nil {
 		return err
@@ -515,68 +512,12 @@ func decisionReplacementEligible(ui *coordinatorWizard, online, signer guidedPro
 	if json.Unmarshal(decisionRaw, &decision) != nil || json.Unmarshal(draft, &preview) != nil || decision.Decision != preview.Decision {
 		return errors.New("canonical decision outcome differs from guided answers")
 	}
-	if err := decisionReplacementCheckPinnedPreparation(online, signer, snapshot, decisionRaw); err != nil {
-		return err
-	}
-	fmt.Fprintf(ui.output, "Current unsigned decision: %s (%s). Its exact bytes and guided evidence match the authenticated final release.\n", decisionReplacementDigest(decisionRaw), decision.Decision)
+	fmt.Fprintf(ui.output, "Current unsigned decision: %s (%s). Its retained bytes match the saved guided preparation and signed-release binding. The discarded decision is not re-verified; the replacement must pass pinned proof-tool checks before signing.\n", decisionReplacementDigest(decisionRaw), decision.Decision)
 	for _, gate := range preview.Gates {
 		if gate.Status != "PASS" && gate.Status != "NOT_REQUIRED" {
 			fmt.Fprintf(ui.output, "  %s: %s — %s\n", gate.Gate, gate.Status, gate.Rationale)
 		}
 	}
 	fmt.Fprintln(ui.output, "The public decision tree, private preparation, questionnaire, and root draft will be preserved in a private recovery directory. No signature or remote copy can be withdrawn by this action.")
-	return nil
-}
-
-func decisionReplacementCheckPinnedPreparation(online, signer guidedProfile, snapshot storagefirst.SnapshotV4, canonical []byte) error {
-	public := filepath.Join(online.Work, "ceremony", "public")
-	stageEvidence, verifyEvidence, err := workflowV4DecisionPrepareEvidenceRoot(online.Work, snapshot.Files(), public)
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(stageEvidence)
-	checkDir, err := os.MkdirTemp(online.Work, ".decision-replacement-check-*")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(checkDir)
-	mapWork := func(path string) (string, error) { return pathWithin(signer.Work, path, "/work") }
-	ceremony, err := mapWork(filepath.Join(public, "ceremony.json"))
-	if err != nil {
-		return err
-	}
-	ceremonySig, err := mapWork(filepath.Join(public, "ceremony.sig"))
-	if err != nil {
-		return err
-	}
-	key, err := pathWithin(signer.Trust, filepath.Join(signer.Trust, "setup-coordinator.hex"), "/trust")
-	if err != nil {
-		return err
-	}
-	draft, err := mapWork(filepath.Join(online.Work, "decision-draft.json"))
-	if err != nil {
-		return err
-	}
-	evidence, err := mapWork(stageEvidence)
-	if err != nil {
-		return err
-	}
-	outHost := filepath.Join(checkDir, "decision.json")
-	out, err := mapWork(outHost)
-	if err != nil {
-		return err
-	}
-	command := []string{"mpc-ceremony", "decision", "prepare", "--ceremony", ceremony, "--ceremony-signature", ceremonySig, "--coordinator-public-key-file", key, "--draft", draft, "--evidence-root", evidence, "--out", out}
-	prepareErr := runWorkflowV4ProfileCommand(signer, command, false)
-	if err := verifyEvidence(); err != nil {
-		return fmt.Errorf("decision inputs changed during pinned re-preparation: %w", err)
-	}
-	if prepareErr != nil {
-		return fmt.Errorf("pinned decision preparation failed: %w", prepareErr)
-	}
-	actual, err := readTesseraRegularFile(outHost, 16<<20, false)
-	if err != nil || string(actual) != string(canonical) {
-		return errors.New("current decision differs from pinned deterministic preparation")
-	}
 	return nil
 }

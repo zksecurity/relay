@@ -1,6 +1,6 @@
 ## What changed
 
-The V5 coordinator guide can preserve a locally prepared, unsigned GO/NO-GO decision and prepare a corrected one for the same signed final release. It checks the retained decision with the pinned proof-tool, blocks replacement after signing or handoff begins, and resumes an interrupted retirement from exact file hashes. The guided questionnaire now shows which answers keep GO gates pending, lets the coordinator edit a selected gate, and requires an explicit GO or NO-GO preparation phrase.
+The V5 coordinator guide can preserve a locally prepared, unsigned GO/NO-GO decision and prepare a corrected one for the same signed final release. It checks the old decision's saved local bytes and release binding without rerunning proof-tool on a decision being discarded. It blocks replacement after signing or handoff begins and resumes an interrupted retirement from exact file hashes. The new decision must pass pinned proof-tool preparation and evidence checks before signing. The guided questionnaire shows which answers keep GO gates pending, lets the coordinator edit a selected gate, and requires an explicit GO or NO-GO preparation phrase.
 
 ## Tessera compatibility
 
