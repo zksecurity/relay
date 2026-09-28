@@ -1,14 +1,7 @@
 ## What changed
 
-At release review, a coordinator upgrade now recognizes the completed
-preliminary public proof left by finalization. Its bytes must match the copy
-in the accepted signed final candidate. Missing or changed evidence still
-blocks the upgrade. This completes the retained-state fix begun in v0.6.5;
-no ceremony command is replayed by the update.
+The V5 coordinator guide can preserve a locally prepared, unsigned GO/NO-GO decision and prepare a corrected one for the same signed final release. It checks the retained decision with the pinned proof-tool, blocks replacement after signing or handoff begins, and resumes an interrupted retirement from exact file hashes. The guided questionnaire now shows which answers keep GO gates pending, lets the coordinator edit a selected gate, and requires an explicit GO or NO-GO preparation phrase.
 
 ## Tessera compatibility
 
-The setup contracts, signed ceremony format, and proof-tool pin are unchanged.
-Existing ceremonies retain their frozen role images. No Tessera schema or
-website change is required. This is a Relay-only coordinator upgrade admission
-fix; it does not alter mathematical verification or production GO/NO-GO rules.
+This is a Relay-only coordinator workflow change. The signed ceremony format, setup contracts, proof-tool pin, participant flow, and release-signer CLI are unchanged. Existing ceremonies remain on their frozen release; a coordinator update requires the supported upgrade check and must be qualified against its retained state before use.

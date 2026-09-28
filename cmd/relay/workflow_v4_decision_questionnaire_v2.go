@@ -162,6 +162,13 @@ func workflowV4AskDecisionQuestionsV2(ui *coordinatorWizard, work string, answer
 				continue
 			}
 		}
+		if strings.HasSuffix(question.key, ".reviewer_date") && value != "Not established" {
+			_, _, valid := workflowV4ReviewerDate(value)
+			if !valid {
+				fmt.Fprintln(ui.output, "Use Name; YYYY-MM-DD UTC, or Not established if the review did not happen. This answer was not saved.")
+				continue
+			}
+		}
 		answers.Answers[question.key] = value
 		answers.DecidedAt = ""
 		if err := saveJSONAtomic(workflowV4QuestionnairePath(work), answers); err != nil {
