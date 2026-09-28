@@ -393,7 +393,7 @@ func decisionReplacementPrepare(ui *coordinatorWizard, online guidedProfile, ide
 
 func decisionReplacementEligible(ui *coordinatorWizard, online guidedProfile, identity setupIdentity, protocol transcript.DefinitionProtocol, snapshot storagefirst.SnapshotV4) error {
 	state, err := snapshot.State()
-	if err != nil || state.Progress.FinalRelease == nil || state.Progress.Terminal != nil || snapshot.Head().Record.Digest.SHA256 != state.Progress.FinalRelease.Record.Digest.SHA256 {
+	if err != nil || state.Progress.FinalRelease == nil || state.Progress.Terminal != nil || state.Transition.Kind != "final-release-recorded" {
 		return errors.New("replacement requires the authenticated signed final-release checkpoint")
 	}
 	definition, policySHA, err := workflowV4DecisionDefinition(protocol, online.Work)
