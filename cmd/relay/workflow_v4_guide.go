@@ -470,7 +470,15 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 		if decisionAvailable {
 			fmt.Fprintln(ui.output, "[D] Production GO/NO-GO decision (separate from release signing)")
 			if p.Role == "coordinator" {
-				if workflowV4GuidedDecisionActive(p.Work) {
+				replacement, replacementErr := decisionReplacementReadState(p.Work)
+				if replacementErr != nil {
+					return replacementErr
+				}
+				if replacement.Pending != nil {
+					fmt.Fprintln(ui.output, "Unsigned decision replacement is interrupted; choose D → 8 to resume it.")
+				} else if replacement.Awaiting {
+					fmt.Fprintln(ui.output, "Unsigned decision was preserved privately; choose D → 1 to review the replacement questionnaire.")
+				} else if workflowV4GuidedDecisionActive(p.Work) {
 					fmt.Fprintln(ui.output, "Guided decision: choose D → 3 to verify signatures and pack the exact archive. No official-publication pointer is required.")
 				} else {
 					fmt.Fprintln(ui.output, "[P] Verify signed decision and pack its exact public archive")
@@ -491,7 +499,18 @@ func runWorkflowV4GuideLoop(settingsRoot string, p, signer guidedProfile, identi
 		if err != nil {
 			return err
 		}
-		switch strings.ToUpper(strings.TrimSpace(answer)) {
+		selected := strings.ToUpper(strings.TrimSpace(answer))
+		if decisionAvailable && p.Role == "coordinator" && strings.Contains("|A|G|T|V|P|", "|"+selected+"|") {
+			replacement, replacementErr := decisionReplacementReadState(p.Work)
+			if replacementErr != nil {
+				return replacementErr
+			}
+			if replacement.Pending != nil || replacement.Awaiting {
+				fmt.Fprintln(ui.output, "Finish the unsigned decision replacement through D before using another decision or publication action.")
+				continue
+			}
+		}
+		switch selected {
 		case "H":
 			if p.Role != "coordinator" || snapshot.Checked() == 0 || !workflowV4CoordinatorDirectRelease(protocol) {
 				fmt.Fprintln(ui.output, "A verified V5 coordinator release review is required.")

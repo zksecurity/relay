@@ -310,6 +310,10 @@ func upgradeCheckCleanFiles(p guidedProfile, inv upgradeInventory, accepted map[
 	if err != nil {
 		return err
 	}
+	unsignedDecision, err := upgradeLocalUnsignedDecisionFiles(p, inv)
+	if err != nil {
+		return err
+	}
 	for _, f := range inv.Files {
 		path := filepath.Join(p.Work, filepath.FromSlash(f.Name))
 		// Release grants and received release packages are cross-role handoffs.
@@ -319,7 +323,7 @@ func upgradeCheckCleanFiles(p guidedProfile, inv upgradeInventory, accepted map[
 			return errors.New("release handoff is still retained; finish or resolve it with the original Relay before updating")
 		}
 		if strings.HasPrefix(f.Name, "ceremony/public/") {
-			if preliminary[f.Name] {
+			if preliminary[f.Name] || unsignedDecision[f.Name] {
 				continue
 			}
 			name := strings.TrimPrefix(f.Name, "ceremony/public/")

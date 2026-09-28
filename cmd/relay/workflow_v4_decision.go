@@ -29,6 +29,13 @@ func runWorkflowV4DecisionMenu(ui *coordinatorWizard, online, signer guidedProfi
 	if signer.Role != "decision-signer" || signer.Work != online.Work || signer.Trust != online.Trust || signer.Keys != online.Keys || signer.ReleaseCommit != online.ReleaseCommit {
 		return errors.New("the approved offline decision signer does not match this role")
 	}
+	replacement, err := decisionReplacementReadState(online.Work)
+	if err != nil {
+		return err
+	}
+	if online.Role != "coordinator" && (replacement.Pending != nil || replacement.Awaiting) {
+		return errors.New("coordinator decision replacement is unfinished")
+	}
 	base := filepath.Join(online.Work, "ceremony", "public")
 	trustName := "coordinator-public-key.hex"
 	if online.Role == "coordinator" {
@@ -59,13 +66,30 @@ func runWorkflowV4DecisionMenu(ui *coordinatorWizard, online, signer guidedProfi
 	}
 	fmt.Fprintln(ui.output, "Production decision for the exact signed release. Review the decision and complete evidence before signing.")
 	if online.Role == "coordinator" {
-		fmt.Fprintln(ui.output, "1) Answer review questions and prepare the decision\n2) Review evidence and sign my decision\n3) Verify required signatures and pack the archive\n4) Send the decision packet through AWS\n5) Fetch the release signer's public signature from AWS\n6) Issue or renew a private signer transfer grant\n7) Prepare my existing reviewed V5 draft (recovery)\n0) Back")
+		switch {
+		case replacement.Pending != nil:
+			fmt.Fprintln(ui.output, "8) Resume the confirmed unsigned-decision replacement\n0) Back")
+		case replacement.Awaiting:
+			fmt.Fprintln(ui.output, "1) Review answers and prepare the replacement decision\n0) Back")
+		default:
+			fmt.Fprintln(ui.output, "1) Answer review questions and prepare the decision\n2) Review evidence and sign my decision\n3) Verify required signatures and pack the archive\n4) Send the decision packet through AWS\n5) Fetch the release signer's public signature from AWS\n6) Issue or renew a private signer transfer grant\n7) Prepare my existing reviewed V5 draft (recovery)")
+			if regularPreparationFile(decisionHost) && decisionHost != legacyDecision {
+				fmt.Fprintln(ui.output, "8) Replace my unsigned, unshared prepared decision")
+			}
+			fmt.Fprintln(ui.output, "0) Back")
+		}
 	} else {
 		fmt.Fprintln(ui.output, "2) Review evidence and sign my decision\n0) Back")
 	}
 	choice, err := ui.ask("Choose a decision action", "")
 	if err != nil {
 		return err
+	}
+	if replacement.Pending != nil && choice != "8" && choice != "0" && choice != "" {
+		return errors.New("finish the confirmed unsigned-decision replacement before another decision action")
+	}
+	if replacement.Awaiting && choice != "1" && choice != "0" && choice != "" {
+		return errors.New("review the replacement questionnaire before another decision action")
 	}
 	switch choice {
 	case "", "0":
@@ -74,7 +98,21 @@ func runWorkflowV4DecisionMenu(ui *coordinatorWizard, online, signer guidedProfi
 		if online.Role != "coordinator" || snapshot == nil || decisionHost == legacyDecision {
 			return errors.New("the guided decision requires a synchronized V5 coordinator and the canonical decision tree")
 		}
+		if replacement.Awaiting {
+			latest, ok := decisionReplacementLatest(replacement)
+			if !ok {
+				return errors.New("retired questionnaire generation is unavailable")
+			}
+			if err := decisionReplacementSeedQuestionnaire(online.Work, latest); err != nil {
+				return err
+			}
+		}
 		return runWorkflowV4GuidedDecision(ui, online, signer, identity, protocol, *snapshot, common, decisionHost, evidenceHost)
+	case "8":
+		if online.Role != "coordinator" || snapshot == nil || decisionHost == legacyDecision {
+			return errors.New("unsigned decision replacement requires the synchronized V5 coordinator")
+		}
+		return decisionReplacementPrepare(ui, online, identity, protocol, *snapshot, replacement)
 	case "7":
 		if online.Role != "coordinator" {
 			return errors.New("only the coordinator prepares the canonical decision")

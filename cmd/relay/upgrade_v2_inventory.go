@@ -77,6 +77,9 @@ func upgradeV2Inventory(p guidedProfile, d upgrade.DeclarationV2) (upgradeInvent
 	// Include all work, not only the generic journal. Unknown top-level folders
 	// must be reviewed rather than hidden behind an empty state.Operations.
 	allowed := map[string]bool{"ceremony": true, "workflow-v4": true, "coordinator-setup": true, "role-preparation": true, "my-enrollment": true, "custody": true, "runs": true, "approved-tools": true, "enrollment.json": true, "enrollment.sig": true, "enrollment-disclosure.txt": true, "environment.json": true, ".relay-workspace-v4.json": true}
+	if p.Role == "coordinator" {
+		allowed["decision-draft.json"] = true
+	}
 	allowed[".relay"] = true // retained rollback/fork high-water records
 	err = filepath.WalkDir(p.Work, func(path string, e fs.DirEntry, err error) error {
 		if err != nil {
@@ -119,6 +122,9 @@ func upgradeV2Inventory(p guidedProfile, d upgrade.DeclarationV2) (upgradeInvent
 			parts := strings.Split(rel, "/")
 			if len(parts) > 1 {
 				known := map[string]bool{"resources": true, "role-launches": true, "state.json": true, "coordinator": true, "release": true, "decision": true, "beacons": true, "scopes": true, "commits": true, "inputs": true, "results": true, "temporary": true, "staging": true, ".relay-workspace.lock": true}
+				if p.Role == "coordinator" {
+					known["decision-questionnaire.json"], known["decision-replacements"] = true, true
+				}
 				name := parts[1]
 				if !known[name] && !(len(parts) == 2 && strings.HasSuffix(name, ".json") && (strings.HasPrefix(name, "contributor-") || strings.HasPrefix(name, "execution-"))) {
 					return fmt.Errorf("unknown retained workflow state %q", name)
@@ -233,6 +239,11 @@ func upgradeV2Inventory(p guidedProfile, d upgrade.DeclarationV2) (upgradeInvent
 	})
 	if err != nil {
 		return inv, err
+	}
+	if p.Role == "coordinator" {
+		if _, err := decisionReplacementReadState(p.Work); err != nil {
+			return inv, fmt.Errorf("retained decision replacement state: %w", err)
+		}
 	}
 	slices.Sort(inv.Kinds)
 	inv.Kinds = slices.Compact(inv.Kinds)

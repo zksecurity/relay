@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -368,6 +370,11 @@ func runWorkflowV4GuidedDecision(ui *coordinatorWizard, online, signer guidedPro
 	if err != nil {
 		return err
 	}
+	if replacement, err := decisionReplacementReadState(online.Work); err != nil {
+		return err
+	} else if replacement.Awaiting {
+		fmt.Fprintln(ui.output, "The saved answers were copied from the retired unsigned decision as editable suggestions. Review and correct each claim before preparing another decision.")
+	}
 	intentPath := filepath.Join(online.Work, "workflow-v4", "decision", "intent.json")
 	_, intentErr := os.Lstat(intentPath)
 	if intentErr != nil && !errors.Is(intentErr, os.ErrNotExist) {
@@ -419,6 +426,9 @@ reviewDecision:
 	for _, gate := range view.Gates {
 		fmt.Fprintf(ui.output, "  %s: %s — %s\n", gate.Gate, gate.Status, gate.Rationale)
 	}
+	if answers.Schema == workflowV4DecisionQuestionsSchema {
+		decisionShowGoRequirements(ui, answers, view.Gates)
+	}
 	keys := make([]string, 0, len(answers.Answers))
 	for key := range answers.Answers {
 		keys = append(keys, key)
@@ -430,12 +440,20 @@ reviewDecision:
 	}
 	if !frozenRetry && answers.Schema == workflowV4DecisionQuestionsSchema {
 		for {
-			choice, err := ui.ask("Type PREPARE DECISION, EDIT ANSWERS, or SAVE", "")
+			phrase := "PREPARE GO DECISION"
+			if view.Decision != "GO" {
+				phrase = "PREPARE NO-GO"
+			}
+			choice, err := ui.ask("Type "+phrase+", a gate number to edit, EDIT ANSWERS, or SAVE", "")
 			if err != nil {
 				return err
 			}
 			switch strings.ToUpper(choice) {
-			case "PREPARE DECISION":
+			case phrase, "PREPARE DECISION":
+				if strings.ToUpper(choice) == "PREPARE DECISION" && view.Decision != "GO" {
+					fmt.Fprintln(ui.output, "The derived result is NO-GO. Review the remaining gates and type PREPARE NO-GO only if you intend to preserve that outcome.")
+					continue
+				}
 				goto preparationConfirmed
 			case "SAVE":
 				fmt.Fprintln(ui.output, "Questionnaire saved without preparing a decision.")
@@ -454,7 +472,33 @@ reviewDecision:
 				}
 				goto reviewDecision
 			default:
-				fmt.Fprintln(ui.output, "Choose one of the displayed actions; no decision was prepared.")
+				gate, convertErr := strconv.Atoi(strings.TrimSpace(choice))
+				if convertErr != nil || gate < 1 || gate > len(view.Gates) {
+					fmt.Fprintln(ui.output, "Choose one of the displayed actions; no decision was prepared.")
+					continue
+				}
+				changed, editErr := decisionEditGate(ui, online.Work, &answers, gate)
+				if errors.Is(editErr, errWorkflowV4DecisionQuestionnaireSaved) {
+					fmt.Fprintln(ui.output, "Questionnaire saved without preparing a decision.")
+					return nil
+				}
+				if editErr != nil {
+					fmt.Fprintf(ui.output, "%v\n", editErr)
+					continue
+				}
+				if changed {
+					if err := decisionCompleteChangedQuestions(ui, online.Work, &answers); err != nil {
+						if errors.Is(err, errWorkflowV4DecisionQuestionnaireSaved) {
+							return nil
+						}
+						return err
+					}
+					answers.DecidedAt = time.Now().UTC().Format(time.RFC3339)
+					if err := saveJSONAtomic(workflowV4QuestionnairePath(online.Work), answers); err != nil {
+						return err
+					}
+					goto reviewDecision
+				}
 			}
 		}
 	} else if !frozenRetry {
@@ -506,6 +550,26 @@ preparationConfirmed:
 	preparedBytes, err := readTesseraRegularFile(checkHost, 16<<20, false)
 	if err != nil {
 		return err
+	}
+	if replacement, err := decisionReplacementReadState(online.Work); err != nil {
+		return err
+	} else if len(replacement.Committed) != 0 {
+		for _, retired := range replacement.Committed {
+			if decisionReplacementDigest(preparedBytes) == retired.OldDecisionSHA256 {
+				return errors.New("replacement decision matches a retired unsigned decision; change an answer before preparing it")
+			}
+		}
+		latest, ok := decisionReplacementLatest(replacement)
+		if !ok {
+			return errors.New("retired decision generation is unavailable")
+		}
+		var prior workflowV4DecisionAnswers
+		if err := setupReadJSON(decisionReplacementRetiredPath(online.Work, latest, "workflow-v4/decision-questionnaire.json"), &prior); err != nil {
+			return err
+		}
+		if maps.Equal(prior.Answers, answers.Answers) {
+			return errors.New("replacement requires a changed answer, not only a new decision time")
+		}
 	}
 	if err := setupWriteBytesNewOrExact(preparedHost, preparedBytes, 0600); err != nil {
 		return fmt.Errorf("staged decision differs from deterministic proof-tool output; retain it for reviewed recovery: %w", err)
