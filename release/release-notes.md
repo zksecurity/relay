@@ -1,7 +1,7 @@
 ## What changed
 
-The V5 coordinator guide can preserve a locally prepared, unsigned GO/NO-GO decision and prepare a corrected one for the same signed final release. It checks the old decision's saved local bytes and release binding without rerunning proof-tool on a decision being discarded. It blocks replacement after signing or handoff begins and resumes an interrupted retirement from exact file hashes. The new decision must pass pinned proof-tool preparation and evidence checks before signing. The guided questionnaire shows which answers keep GO gates pending, lets the coordinator edit a selected gate, and requires an explicit GO or NO-GO preparation phrase.
+The coordinator upgrade now accepts the retained public snapshot manifest created by the V5 `[H]` release-review handoff after the signed final release is recorded. It checks the manifest's exact local bytes, signed release-review checkpoint and final-release ancestry, and every referenced public file before selecting the new application. Unfinished grants, imports, and received release packages still block an upgrade. No ceremony files are changed by this check.
 
 ## Tessera compatibility
 
-This is a Relay-only coordinator workflow change. The signed ceremony format, setup contracts, proof-tool pin, participant flow, and release-signer CLI are unchanged. Existing ceremonies remain on their frozen release; a coordinator update requires the supported upgrade check and must be qualified against its retained state before use.
+This is a Relay-only coordinator upgrade fix. The signed ceremony format, setup contracts, proof-tool pin, participant flow, and release-signer CLI are unchanged. Existing ceremonies retain their frozen ceremony release; the coordinator application can update through the supported upgrade check.

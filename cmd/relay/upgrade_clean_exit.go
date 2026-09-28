@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -306,6 +308,10 @@ func upgradeRequireSignerCleanExit(p guidedProfile, d upgrade.DeclarationV2) err
 
 func upgradeCheckCleanFiles(p guidedProfile, inv upgradeInventory, accepted map[string]transcript.CheckpointInspectionV4, public map[string]transcript.ArtifactRef) error {
 	root := filepath.Join(p.Work, "ceremony/public")
+	releaseSnapshot, err := upgradeCompletedReleaseSnapshotManifest(p, inv, accepted, public)
+	if err != nil {
+		return err
+	}
 	preliminary, err := upgradeCompletedPreliminaryFiles(inv, public)
 	if err != nil {
 		return err
@@ -320,6 +326,9 @@ func upgradeCheckCleanFiles(p guidedProfile, inv upgradeInventory, accepted map[
 		// Until a terminal release checkpoint covers them, they must be resolved
 		// with the original runtime rather than carried into an application update.
 		if strings.HasPrefix(f.Name, "workflow-v4/coordinator/release/") {
+			if releaseSnapshot && f.Name == "workflow-v4/coordinator/release/snapshot-manifest.json" {
+				continue
+			}
 			return errors.New("release handoff is still retained; finish or resolve it with the original Relay before updating")
 		}
 		if strings.HasPrefix(f.Name, "ceremony/public/") {
@@ -380,6 +389,82 @@ func upgradeCheckCleanFiles(p guidedProfile, inv upgradeInventory, accepted map[
 		}
 	}
 	return nil
+}
+
+// H retains a public transport manifest after its release-review snapshot has
+// been sent. Once the final-release checkpoint is signed, that manifest is
+// historical local output, not an unfinished signer handoff. Admit only its
+// exact bytes and signed ancestry; grants, imports and received packages keep
+// the normal unresolved-handoff rejection above.
+func upgradeCompletedReleaseSnapshotManifest(p guidedProfile, inv upgradeInventory, accepted map[string]transcript.CheckpointInspectionV4, public map[string]transcript.ArtifactRef) (bool, error) {
+	const name = "workflow-v4/coordinator/release/snapshot-manifest.json"
+	var retained *upgradeInventoryFile
+	files := make(map[string]upgradeInventoryFile, len(inv.Files))
+	for _, file := range inv.Files {
+		files[file.Name] = file
+		if file.Name == name {
+			copy := file
+			retained = &copy
+		}
+	}
+	if retained == nil {
+		return false, nil
+	}
+	if p.Role != "coordinator" || len(accepted) == 0 || len(public) == 0 {
+		return false, errors.New("release snapshot requires authenticated coordinator final-release history")
+	}
+	raw, err := readTesseraRegularFile(filepath.Join(p.Work, filepath.FromSlash(name)), 16<<20, false)
+	if err != nil || int64(len(raw)) != retained.Size || "sha256:"+upgradeBytesHash(raw) != "sha256:"+retained.SHA256 {
+		return false, errors.New("retained release snapshot changed during upgrade")
+	}
+	if err := rejectCommitJournalDuplicateFields(raw); err != nil {
+		return false, fmt.Errorf("retained release snapshot: %w", err)
+	}
+	var manifest workflowV4PublicSnapshot
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&manifest); err != nil {
+		return false, fmt.Errorf("retained release snapshot: %w", err)
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return false, errors.New("retained release snapshot has trailing data")
+	}
+	if err := workflowV4ValidateReleaseSnapshot(manifest, manifest.Root.CeremonyID, manifest.Root.Checkpoint.SHA256); err != nil {
+		return false, err
+	}
+	review, ok := accepted[manifest.Root.Checkpoint.Name]
+	if !ok || review.Checkpoint.CeremonyID != manifest.Root.CeremonyID || review.Checkpoint.Transition.Kind != "release-review-recorded" || review.Checkpoint.Progress.ReleaseReview == nil || review.Checkpoint.Progress.FinalRelease != nil {
+		return false, errors.New("release snapshot is not bound to an authenticated release-review checkpoint")
+	}
+	refs := review.CheckpointRefs
+	if manifest.Root.Checkpoint.Name != refs.Record.Name || manifest.Root.Checkpoint.SHA256 != refs.Record.Digest.SHA256 || manifest.Root.Checkpoint.Size != refs.Record.Digest.Size ||
+		manifest.Root.CheckpointSignature.Name != refs.Signature.Name || manifest.Root.CheckpointSignature.SHA256 != refs.Signature.Digest.SHA256 || manifest.Root.CheckpointSignature.Size != refs.Signature.Digest.Size {
+		return false, errors.New("release snapshot root differs from signed release-review checkpoint")
+	}
+	final := false
+	for _, checked := range accepted {
+		if checked.Checkpoint.CeremonyID == manifest.Root.CeremonyID && checked.Checkpoint.Transition.Kind == "final-release-recorded" && checked.Checkpoint.Progress.FinalRelease != nil && checked.Checkpoint.PreviousCheckpoint != nil && *checked.Checkpoint.PreviousCheckpoint == refs {
+			final = true
+			break
+		}
+	}
+	if !final {
+		return false, errors.New("release snapshot is not the predecessor of an authenticated final release")
+	}
+	rootRecord, rootSignature := false, false
+	for _, ref := range manifest.Files {
+		file, exists := files["ceremony/public/"+ref.Name]
+		signed, authenticated := public[ref.Name]
+		if !exists || !authenticated || file.SHA256 != strings.TrimPrefix(ref.SHA256, "sha256:") || file.Size != ref.Size || signed.Digest.SHA256 != ref.SHA256 || signed.Digest.Size != ref.Size {
+			return false, fmt.Errorf("release snapshot file %q is not retained with authenticated bytes", ref.Name)
+		}
+		rootRecord = rootRecord || ref == manifest.Root.Checkpoint
+		rootSignature = rootSignature || ref == manifest.Root.CheckpointSignature
+	}
+	if !rootRecord || !rootSignature {
+		return false, errors.New("release snapshot omits its signed checkpoint pair")
+	}
+	return true, nil
 }
 
 // Finalization leaves its preliminary key tree and public proof in the public

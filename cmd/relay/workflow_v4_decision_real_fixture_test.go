@@ -16,6 +16,7 @@ import (
 	"github.com/zksecurity/relay/internal/state"
 	"github.com/zksecurity/relay/internal/storagefirst"
 	"github.com/zksecurity/relay/internal/store"
+	"github.com/zksecurity/relay/internal/transcript"
 )
 
 // Opt-in qualification of a copied V5 final-release snapshot. This test reads
@@ -140,6 +141,54 @@ func TestDecisionReplacementAuthenticateRealFinalFixture(t *testing.T) {
 		t.Fatalf("fixture did not authenticate the signed final release: state=%v sequence=%d transition=%s", err, signed.Sequence, signed.Transition.Kind)
 	}
 	t.Logf("authenticated production-mode V5 test release %s at signed update %d with %d retained public files", definition.CeremonyID, signed.Sequence, len(snapshot.Files()))
+	if os.Getenv("RELAY_UPGRADE_RELEASE_SNAPSHOT_TEST") == "1" {
+		if os.Getenv("RELAY_DECISION_FIXTURE_MUTATION_OK") != "1" {
+			t.Fatal("set explicit mutation consent for the isolated fixture only")
+		}
+		handoff, err := os.ReadFile(filepath.Join(work, "smoke-release-snapshot-20", offlineSnapshotFile))
+		if err != nil {
+			t.Fatal(err)
+		}
+		manifestPath := workflowV4ReleaseSnapshotManifestPath(work)
+		if err := os.MkdirAll(filepath.Dir(manifestPath), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(manifestPath, handoff, 0600); err != nil {
+			t.Fatal(err)
+		}
+		accepted := map[string]transcript.CheckpointInspectionV4{}
+		publicRefs := map[string]transcript.ArtifactRef{}
+		for pair := snapshot.Head(); ; {
+			checked, err := inspector.StoredCheckpointV4(public, filepath.Join(public, filepath.FromSlash(pair.Record.Name)), filepath.Join(public, filepath.FromSlash(pair.Signature.Name)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			accepted[pair.Record.Name] = checked
+			for _, ref := range []transcript.ArtifactRef{pair.Record, pair.Signature, checked.Checkpoint.Definition.Record, checked.Checkpoint.Definition.Signature} {
+				publicRefs[ref.Name] = ref
+			}
+			required, err := transcript.RequiredPublicArtifactsV4(checked)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, ref := range required {
+				publicRefs[ref.Name] = ref
+			}
+			if checked.Checkpoint.PreviousCheckpoint == nil {
+				break
+			}
+			pair = *checked.Checkpoint.PreviousCheckpoint
+		}
+		inv := upgradeInventory{Files: []upgradeInventoryFile{{Name: "workflow-v4/coordinator/release/snapshot-manifest.json", SHA256: decisionReplacementDigest(handoff)[7:], Size: int64(len(handoff))}}}
+		for _, ref := range snapshot.Files() {
+			inv.Files = append(inv.Files, upgradeInventoryFile{Name: "ceremony/public/" + ref.Name, SHA256: strings.TrimPrefix(ref.SHA256, "sha256:"), Size: ref.Size})
+		}
+		allowed, err := upgradeCompletedReleaseSnapshotManifest(guidedProfile{Role: "coordinator", Work: work}, inv, accepted, publicRefs)
+		if err != nil || !allowed {
+			t.Fatalf("real signed H snapshot rejected: %v", err)
+		}
+		t.Log("completed H snapshot matched the pinned signed release-review ancestry and retained public files")
+	}
 	if os.Getenv("RELAY_DECISION_REAL_LIFECYCLE") != "1" {
 		return
 	}
