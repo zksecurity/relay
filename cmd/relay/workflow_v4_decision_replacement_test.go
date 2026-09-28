@@ -15,6 +15,11 @@ func replacementFixture(t *testing.T) (string, decisionReplacementManifest) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return work, replacementFixtureAt(t, work)
+}
+
+func replacementFixtureAt(t *testing.T, work string) decisionReplacementManifest {
+	t.Helper()
 	paths := decisionReplacementPaths(work)
 	for _, path := range paths {
 		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -30,7 +35,7 @@ func replacementFixture(t *testing.T) (string, decisionReplacementManifest) {
 			t.Fatal(err)
 		}
 	}
-	m := decisionReplacementManifest{Schema: decisionReplacementSchema, Generation: "01-test", Sequence: 1, CeremonyID: "ceremony", CandidateID: "candidate", CheckpointSHA256: "checkpoint", PolicySHA256: "policy", CoordinatorID: "coordinator", OldDecisionSHA256: decisionReplacementDigest([]byte("old"))}
+	m := decisionReplacementManifest{Schema: decisionReplacementSchema, Generation: "01-test", Sequence: 1, CeremonyID: "ceremony", CandidateID: "candidate", CheckpointSHA256: "checkpoint", PolicySHA256: "policy", CoordinatorID: "coordinator", OldDecisionSHA256: decisionReplacementDigest([]byte("old")), Reason: "Correct an unsigned draft"}
 	for _, path := range paths {
 		files, _, err := decisionReplacementTree(path)
 		if err != nil {
@@ -45,7 +50,7 @@ func replacementFixture(t *testing.T) (string, decisionReplacementManifest) {
 	if err := writeJSONNoReplace(filepath.Join(decisionReplacementRoot(work), m.Generation, "manifest.json"), m, 0600); err != nil {
 		t.Fatal(err)
 	}
-	return work, m
+	return m
 }
 
 func TestDecisionReplacementInterruptedMoves(t *testing.T) {

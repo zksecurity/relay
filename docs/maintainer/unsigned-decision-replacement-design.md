@@ -1,6 +1,6 @@
 # Replace an unsigned prepared V5 decision
 
-Status: implementation in progress in this branch. No production ceremony state, proof-tool pin, or published release is changed by this document.
+Status: implemented in draft PR #94; synthetic upgrade and local recovery tests are included. Exact late-stage ceremony qualification and required release review remain pending. No production ceremony state, proof-tool pin, or published release is changed by this document.
 
 ## Problem and exact recovery boundary
 

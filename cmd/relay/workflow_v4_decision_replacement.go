@@ -172,8 +172,11 @@ func decisionReplacementReadState(work string) (decisionReplacementState, error)
 		if err := setupReadJSON(filepath.Join(dir, "manifest.json"), &manifest); err != nil {
 			return state, fmt.Errorf("replacement manifest %s: %w", entry.Name(), err)
 		}
-		if manifest.Schema != decisionReplacementSchema || manifest.Generation != entry.Name() || manifest.Sequence < 1 || manifest.Sequence > decisionReplacementMaxGenerations || manifest.CeremonyID == "" || manifest.CheckpointSHA256 == "" || len(manifest.OldDecisionSHA256) != 71 || seenSequence[manifest.Sequence] || seenDigest[manifest.OldDecisionSHA256] || len(manifest.Items) != len(expectedSources) {
+		if manifest.Schema != decisionReplacementSchema || manifest.Generation != entry.Name() || manifest.Sequence < 1 || manifest.Sequence > decisionReplacementMaxGenerations || manifest.CeremonyID == "" || manifest.CheckpointSHA256 == "" || len(manifest.Reason) == 0 || len(manifest.Reason) > 1024 || len(manifest.OldDecisionSHA256) != 71 || seenSequence[manifest.Sequence] || seenDigest[manifest.OldDecisionSHA256] || len(manifest.Items) != len(expectedSources) {
 			return state, errors.New("invalid or duplicate decision replacement generation")
+		}
+		if _, err := hex.DecodeString(strings.TrimPrefix(manifest.OldDecisionSHA256, "sha256:")); err != nil || !strings.HasPrefix(manifest.OldDecisionSHA256, "sha256:") {
+			return state, errors.New("invalid retired decision digest")
 		}
 		if ceremonyID == "" {
 			ceremonyID, checkpointSHA = manifest.CeremonyID, manifest.CheckpointSHA256
