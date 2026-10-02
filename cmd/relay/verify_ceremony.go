@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -61,6 +62,12 @@ func runVerifyCeremony(args []string) error {
 		if err != nil {
 			return err
 		}
+	}
+	if runtime.GOOS == "darwin" {
+		if *tool != "mpc-ceremony" {
+			return errors.New("macOS verification uses the proof tool pinned inside the approved Docker image; --mpc-ceremony cannot override it")
+		}
+		return runMacVerifyCeremony(*archive, *publishedBaseURL, *expectedCeremonyID, *expectedCoordinatorKey, *maxBytes)
 	}
 	// This pin is compiled into the installed CLI, never supplied by the archive.
 	measured, err := measuredReleaseTools(*tool)
