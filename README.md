@@ -18,6 +18,28 @@ Each role guide explains its numbered helper, public-file handoffs, and recovery
 The coordinator supplies ceremony-specific public inputs and reviewed arguments.
 Never send a role's private key to the coordinator or website.
 
+## Verify a public ceremony
+
+Anyone with the complete public ceremony ZIP can check its signed release,
+contributions, final keys, and production GO decision. This does not require a
+ceremony role, signing key, or AWS credentials:
+
+```bash
+relay verify-ceremony --archive /absolute/path/to/go-ceremony.zip
+```
+
+Use a released Relay executable with its pinned proof tool. On macOS, install
+Docker Desktop and GitHub CLI: Relay authenticates its matching release image
+and runs the Linux proof tool inside Docker. The check can take substantial time
+and needs disk space to expand the archive. Inspect the JSON result for
+`"passed": true` and compare its `ceremony_id` with an independently obtained
+ceremony ID. A guided V5 archive does not require an official storage pointer,
+so `"officially_published": false` does not by itself mean verification failed.
+
+This verifies existing proof evidence; it does not create a new application
+proof. See [public verification and publication](docs/tasks/upload.md) for the
+optional official-publication check and its separate trust inputs.
+
 ## Develop and maintain
 
 - [Maintainer reference](docs/maintainer/README.md)
