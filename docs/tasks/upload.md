@@ -69,6 +69,19 @@ The JSON report says `"officially_published": true` only after the verifier
 authenticates the official pointer, archive, signed decision and final-release
 checkpoint. Keep the public evidence and logs for the agreed retention period.
 
+On macOS, the released `relay-darwin-arm64` or `relay-darwin-amd64` executable
+accepts the same `verify-ceremony` command. It authenticates the matching
+release's Linux online image and runs the pinned proof tool through a **local**
+Docker Desktop daemon. Install Docker Desktop and GitHub CLI first; no ceremony
+role, signing key, AWS profile, or `start.sh` is needed. The archive and any
+independently trusted coordinator public key are mounted read-only, and expanded
+files use a temporary private directory on the Mac. Allow enough local disk
+space for the archive's expanded contents. Relay removes that directory and the
+verification container when the command ends. Archive-only verification runs
+without container network access. For a guided V5 decision with no official
+pointer, omit the three publication flags above and independently compare the
+report's `ceremony_id`; `officially_published` will remain false.
+
 ## Upgrading a ceremony already in progress
 
 An initialized v0.6.0 coordinator can select a new published coordinator

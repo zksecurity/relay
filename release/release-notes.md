@@ -1,7 +1,7 @@
 ## What changed
 
-The coordinator upgrade now accepts the retained public snapshot manifest created by the V5 `[H]` release-review handoff after the signed final release is recorded. It checks the manifest's exact local bytes, signed release-review checkpoint and final-release ancestry, and every referenced public file before selecting the new application. Unfinished grants, imports, and received release packages still block an upgrade. No ceremony files are changed by this check.
+Public ceremony verification now works from the released macOS Relay CLI. It authenticates the same-release online image, uses its pinned Linux proof tool through local Docker, and returns the existing JSON verification report. The archive and optional trusted coordinator key are read-only inputs; no ceremony role or signing key is required. Linux verification and existing ceremony workflows are unchanged.
 
 ## Tessera compatibility
 
-This is a Relay-only coordinator upgrade fix. The signed ceremony format, setup contracts, proof-tool pin, participant flow, and release-signer CLI are unchanged. Existing ceremonies retain their frozen ceremony release; the coordinator application can update through the supported upgrade check.
+This is a Relay-only public-verifier feature. It does not change the signed ceremony format, setup contracts, proof-tool pin, participant or signer workflows, or frozen ceremony releases. Tessera may continue using its existing Relay integration.
